@@ -406,7 +406,7 @@ class Router:
                 notes=["no RetrievalVerifier configured on Router"],
             )
 
-        result = self.retrieval_verifier.verify(claim)
+        result = self.retrieval_verifier.verify(claim, source_turn_id=source_turn_id)
 
         if result.outcome is VerificationOutcome.VERIFIED:
             return Decision(
