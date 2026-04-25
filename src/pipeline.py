@@ -205,11 +205,13 @@ def build_pipeline(
 ) -> Pipeline:
     """Convenience constructor used by app.py and integration tests."""
     from src.predicate_registry import load_default_registry
+    from src.verifiers.retrieval_verifier import RetrievalVerifier
 
     store = FactStore(db_path)
     registry = registry or load_default_registry()
     llm = llm or LLMClient()
     extractor = ClaimExtractor(llm, registry)
-    router = Router(store, registry)
+    retrieval_verifier = RetrievalVerifier(store=store, llm=llm, registry=registry)
+    router = Router(store, registry, retrieval_verifier=retrieval_verifier)
     corrector = Corrector(llm)
     return Pipeline(store, registry, llm, extractor, router, corrector)

@@ -23,7 +23,7 @@ from src.verifiers.python_verifiers import (
     VerificationResult,
     get_verifier,
 )
-from src.verifiers.retrieval_stub import retrieval_verify
+from src.verifiers.retrieval_verifier import RetrievalResult, RetrievalVerifier
 from src.verifiers.store_verifier import (
     StoreLookupOutcome,
     store_lookup_verify,
@@ -63,6 +63,7 @@ class Decision:
     contradicting_fact_id: Optional[int] = None
     matching_fact_id: Optional[int] = None
     verifier_result: Optional[VerificationResult] = None
+    retrieval_result: Optional[RetrievalResult] = None  # set when retrieval ran
     correction: Optional[dict] = None  # {original_object, corrected_object, explanation}
     notes: list[str] = field(default_factory=list)
 
@@ -78,15 +79,24 @@ class Decision:
             "verifier_result": (
                 self.verifier_result.to_dict() if self.verifier_result else None
             ),
+            "retrieval_result": (
+                self.retrieval_result.to_dict() if self.retrieval_result else None
+            ),
             "correction": self.correction,
             "notes": self.notes,
         }
 
 
 class Router:
-    def __init__(self, store: FactStore, registry: PredicateRegistry):
+    def __init__(
+        self,
+        store: FactStore,
+        registry: PredicateRegistry,
+        retrieval_verifier: RetrievalVerifier | None = None,
+    ):
         self.store = store
         self.registry = registry
+        self.retrieval_verifier = retrieval_verifier
 
     # ---- entry point -----------------------------------------------------
 
@@ -312,17 +322,78 @@ class Router:
         )
 
     def _route_retrieval(self, claim: dict, source_turn_id: int) -> Decision:
-        stub = retrieval_verify(claim)
+        if self.retrieval_verifier is None:
+            # No verifier configured — fall through to unverified-with-low-confidence,
+            # the v0.1 behavior. Tests that don't care about retrieval can omit it.
+            return Decision(
+                claim=claim,
+                outcome=RoutingOutcome.RETRIEVAL_STUB,
+                stored_fact_id=self._store_model_fact(
+                    claim,
+                    source_turn_id,
+                    confidence=CONF_RETRIEVAL_STUB,
+                    verification_status="unverified",
+                ),
+                notes=["no RetrievalVerifier configured on Router"],
+            )
+
+        result = self.retrieval_verifier.verify(claim)
+
+        if result.outcome is VerificationOutcome.VERIFIED:
+            return Decision(
+                claim=claim,
+                outcome=RoutingOutcome.VERIFIED,
+                stored_fact_id=self._store_model_fact(
+                    claim,
+                    source_turn_id,
+                    confidence=CONF_STORE_VERIFIED,
+                    verification_status="verified",
+                ),
+                retrieval_result=result,
+            )
+
+        if result.outcome is VerificationOutcome.CONTRADICTED:
+            # We don't necessarily have a clean "corrected_object" — the judge
+            # only confirmed the claim is wrong. Surface the verdict text as
+            # the correction explanation.
+            return Decision(
+                claim=claim,
+                outcome=RoutingOutcome.CONTRADICTED,
+                stored_fact_id=self._store_model_fact(
+                    claim,
+                    source_turn_id,
+                    confidence=CONF_PYTHON_CORRECTION,
+                    verification_status="contradicted",
+                ),
+                retrieval_result=result,
+                correction={
+                    "original_object": claim["object"],
+                    "corrected_object": (
+                        result.actual_value
+                        if result.actual_value is not None
+                        else "(see judge justification)"
+                    ),
+                    "explanation": result.explanation
+                    or (result.verdict.justification if result.verdict else ""),
+                    "source_text": claim.get("source_text", ""),
+                },
+            )
+
+        # INCONCLUSIVE — retrieval failed, no results, judge unsure, etc.
         return Decision(
             claim=claim,
-            outcome=RoutingOutcome.RETRIEVAL_STUB,
+            outcome=RoutingOutcome.UNVERIFIED,
             stored_fact_id=self._store_model_fact(
                 claim,
                 source_turn_id,
                 confidence=CONF_RETRIEVAL_STUB,
                 verification_status="unverified",
             ),
-            notes=[stub.explanation],
+            retrieval_result=result,
+            notes=[
+                f"retrieval inconclusive: {result.error_flag or 'insufficient_evidence'}: "
+                f"{result.explanation}"
+            ],
         )
 
     def _route_unverifiable(self, claim: dict, source_turn_id: int) -> Decision:
