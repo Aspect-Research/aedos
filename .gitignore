@@ -54,3 +54,6 @@ htmlcov/
 
 # uv
 uv.lock
+
+# Claude Code local settings (per-machine, not part of the project)
+.claude/settings.local.json
