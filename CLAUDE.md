@@ -10,6 +10,105 @@ rejected, or flagged. User-stated facts are stored as ground truth.
 
 See `ARCHITECTURE.md` for the design rationale and a full data-flow diagram.
 
+## v0.3 changes (read before touching anything)
+
+> **The schema and representation changed.** Old `aedos.db` files are
+> incompatible with v0.3 — run `python scripts/reset_db.py` before first
+> use. Old `predicates.yaml` is gone; `patterns.yaml` replaces it.
+
+### The big shift: closed vocabulary → patterns
+
+v0.1/v0.2 had a closed predicate vocabulary (~37 predicates) and
+verification methods declared per predicate. v0.3 replaces that with
+**8 patterns** (`patterns.yaml`) and **free-form predicates** within
+each pattern. Verification semantics come from the pattern. New
+predicates within an existing pattern require no code change — they're
+just used in extraction and inherit the pattern's routing.
+
+Why this scales where the predicate approach didn't: every conversation
+introduces relations that don't fit a curated list. Open vocabulary
+breaks canonicalization. Patterns let predicate labels grow organically
+while keeping verification predictable, because the verification method
+is determined by the structural type, not the surface label.
+
+### How to add a new predicate (common, no code change)
+
+You don't add anything. The extractor produces predicates as part of
+fact extraction; if it picks a label not yet seen in the codebase, that's
+fine. The router dispatches by pattern. The python verifier registry is
+keyed by predicate name, so if you want a *python* verifier for a new
+predicate, register it (see below); otherwise the pattern's default
+verification method handles it.
+
+### How to add a new python verifier within an existing pattern
+
+1. Write a `verify_<predicate>(claim) -> VerificationResult` function in
+   `src/verifiers/python_verifiers.py`. The claim has `slots`; read the
+   slots you need.
+2. Register in the `VERIFIERS` dict at the bottom of the file, keyed by
+   predicate name (NOT function name).
+3. Add tests.
+
+The pattern's verification rules use `python_when_predicate_supported`
+(see `quantitative` for the example) — the router checks `VERIFIERS` for
+a registered verifier and falls through to the next rule (typically
+retrieval) if none is registered.
+
+### How to add a new pattern (rare, requires discussion)
+
+This is an architectural decision, not a routine change. The pattern set
+is bounded for a reason: each pattern needs declared slots,
+discriminating examples in the prompt, key-slot identity for store
+lookups, and a query strategy if it uses retrieval. The corrector also
+needs to know how to interpret the verification status it produces.
+
+If you genuinely need a new pattern:
+
+1. Append the entry to `patterns.yaml` with all required fields:
+   `description`, `slots`, `verification_method`, `example_predicates`,
+   `example_extractions`, `disambiguation_notes`, `query_strategy` (if
+   retrieval), `flag_non_user_as_anomaly` (if user-authoritative branch).
+2. Add the pattern's key slots to `KEY_SLOTS_BY_PATTERN` in `src/router.py`.
+3. If the flat view in `src/fact_store.py` should project the pattern's
+   subject/object slots, update the COALESCE in the `facts_flat` view.
+4. Update extractor few-shot examples in `src/extractor.py` to teach
+   the pattern's discriminators.
+5. Tests at every layer.
+
+### Granular verification statuses
+
+Six values now (was five in v0.2):
+
+- `verified`, `contradicted`, `user_asserted` — same as before
+- `unverifiable_in_principle` — pattern's resolved method is `unverifiable`
+- `retrieval_inconclusive` — **NEW v0.3** — verifier ran, judge said
+  INSUFFICIENT_EVIDENCE. The corrector hedges these.
+- `retrieval_failed` — **NEW v0.3** — verifier got no useful signal
+  (network error / no_results / judge unparseable). The corrector does
+  **NOT** hedge — adding "I think" to a possibly-true claim is worse
+  than leaving it. The pipeline logs `verifier_failure` events instead.
+- `unverifiable_pending_implementation` — catch-all for python verifier
+  inconclusive / store-lookup miss
+- `routing_anomaly` — pattern with `flag_non_user_as_anomaly` got a
+  non-user agent. Corrector noops; pipeline logs the offending slot.
+
+The `retrieval_inconclusive` vs `retrieval_failed` split is the v0.3 fix
+for a v0.2 bug: hedging on verifier failure made the system *more*
+wrong. Hedge only when there's positive evidence of uncertainty.
+
+### Slots-aware retrieval queries
+
+Each retrieval pattern declares a `query_strategy` — an ordered list of
+templates with `{slot}` placeholders. The verifier tries them in order
+and uses the first attempt that returns ≥ 2 results. Each attempt logs
+to `pipeline_events` as `retrieval_query_attempt`.
+
+Critical: never prepend "current" to a query. Temporal scope comes from
+the slots' `valid_from` / `valid_until`, not from query string magic.
+The judge prompt has two variants — one for currently-held claims (no
+`valid_until` slot) and one for historical claims (with explicit
+period). The verifier picks the right prompt based on slot values.
+
 ## v0.2 changes (read before touching anything)
 
 > **The schema enum widened.** Old `aedos.db` files are incompatible
@@ -117,7 +216,11 @@ These are load-bearing invariants:
 - **One primary code path per flow.** No mode flags, no alternate routes.
   If a new behavior is needed, add it to the existing path or ask first.
 
-## How to add a new predicate
+## (v0.2) How to add a new predicate — superseded by v0.3
+
+In v0.3, predicates are free-form within a pattern. See
+"v0.3 changes" → "How to add a new predicate" above. The v0.2
+guidance below is preserved for context.
 
 1. Append an entry to `predicates.yaml`:
 
