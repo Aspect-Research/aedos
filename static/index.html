@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aedos — claim-verification chat</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Aedos</h1>
+  <nav class="tabs">
+    <button class="tab active" data-tab="chat">Chat + Trace</button>
+    <button class="tab" data-tab="facts">Fact Store</button>
+    <button class="tab" data-tab="predicates">Predicates</button>
+  </nav>
+  <div class="header-actions">
+    <button id="reset-btn" title="Wipe the database">Reset DB</button>
+  </div>
+</header>
+
+<main>
+  <!-- Chat + Trace tab ---------------------------------------------- -->
+  <section id="tab-chat" class="tab-panel active">
+    <div class="split">
+      <div class="chat-pane">
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="input" placeholder="Type a message..." rows="2" required></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </div>
+      <div class="trace-pane">
+        <h2>Pipeline trace — latest turn</h2>
+        <div id="trace" class="trace">
+          <p class="hint">No turns yet. Send a message to see the extraction → verification → correction pipeline.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Fact Store tab ------------------------------------------------ -->
+  <section id="tab-facts" class="tab-panel">
+    <div class="toolbar">
+      <label>Subject <input id="f-subject" placeholder="e.g. user"></label>
+      <label>Predicate <input id="f-predicate" placeholder="e.g. likes"></label>
+      <label>Asserted by
+        <select id="f-asserted-by">
+          <option value="">(any)</option>
+          <option value="user">user</option>
+          <option value="model">model</option>
+          <option value="python_verifier">python_verifier</option>
+          <option value="external">external</option>
+        </select>
+      </label>
+      <label>Verification status
+        <select id="f-status">
+          <option value="">(any)</option>
+          <option value="verified">verified</option>
+          <option value="unverified">unverified</option>
+          <option value="contradicted">contradicted</option>
+          <option value="user_asserted">user_asserted</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="f-only-valid"> only currently valid</label>
+      <button id="facts-refresh">Refresh</button>
+    </div>
+    <div id="facts-table" class="facts-table"></div>
+  </section>
+
+  <!-- Predicates tab ------------------------------------------------ -->
+  <section id="tab-predicates" class="tab-panel">
+    <div id="predicates-table" class="predicates-table"></div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
