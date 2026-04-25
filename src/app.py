@@ -113,6 +113,7 @@ def list_predicates() -> list[dict[str, Any]]:
             "object_type": p.object_type,
             "verification_method": p.verification_method,
             "python_verifier": p.python_verifier,
+            "retrieval_query_template": p.retrieval_query_template,
             "description": p.description,
             "example": p.example,
         }
