@@ -29,15 +29,18 @@ from src.verifiers.store_verifier import (
     store_lookup_verify,
 )
 
-# Confidence levels per the spec.
+# Confidence levels.
 CONF_USER_ASSERTED = 0.95
 CONF_PYTHON_VERIFIED = 0.99
 CONF_PYTHON_CORRECTION = 0.99
 CONF_STORE_VERIFIED = 0.95
 CONF_STORE_CORRECTION = 0.95
-CONF_UNVERIFIED = 0.5
-CONF_RETRIEVAL_STUB = 0.4
-CONF_UNVERIFIABLE = 0.3
+CONF_PENDING_IMPLEMENTATION = 0.4  # retrieval failed / no user assertion / etc.
+CONF_UNVERIFIABLE_IN_PRINCIPLE = 0.3
+CONF_ROUTING_ANOMALY = 0.2
+
+# v0.1 alias kept so external callers don't break:
+CONF_UNVERIFIED = CONF_PENDING_IMPLEMENTATION
 
 
 class RoutingOutcome(str, Enum):
@@ -48,15 +51,23 @@ class RoutingOutcome(str, Enum):
     # Model-turn outcomes
     VERIFIED = "verified"
     CONTRADICTED = "contradicted"
-    UNVERIFIED = "unverified"
-    RETRIEVAL_STUB = "retrieval_stub"
-    UNVERIFIABLE_FLAGGED = "unverifiable_flagged"
+    UNVERIFIED = "unverified"  # generic "we couldn't verify"
+    UNVERIFIABLE_IN_PRINCIPLE = "unverifiable_in_principle"
+    ROUTING_ANOMALY = "routing_anomaly"
+
+
+def _is_user_subject(subject: str) -> bool:
+    return subject.strip().lower() in {"user", "me", "i"}
 
 
 @dataclass
 class Decision:
     claim: dict
     outcome: RoutingOutcome
+    # Section 4: explicit verification_status + confidence on every decision so
+    # the corrector can plan interventions without re-querying the fact store.
+    verification_status: str = ""
+    confidence: float = 0.0
     stored_fact_id: Optional[int] = None
     boosted_fact_id: Optional[int] = None
     closed_fact_ids: list[int] = field(default_factory=list)
@@ -71,6 +82,8 @@ class Decision:
         return {
             "claim": self.claim,
             "outcome": self.outcome.value,
+            "verification_status": self.verification_status,
+            "confidence": self.confidence,
             "stored_fact_id": self.stored_fact_id,
             "boosted_fact_id": self.boosted_fact_id,
             "closed_fact_ids": self.closed_fact_ids,
@@ -125,10 +138,12 @@ class Router:
         if existing:
             fid = existing[0].id
             assert fid is not None
-            self.store.boost_confidence(fid)
+            new_conf = self.store.boost_confidence(fid)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.USER_DUPLICATE,
+                verification_status="user_asserted",
+                confidence=new_conf,
                 boosted_fact_id=fid,
                 notes=[f"user repeated an already-known fact (id={fid})"],
             )
@@ -160,6 +175,8 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.USER_CONTRADICTED_PRIOR,
+                verification_status="user_asserted",
+                confidence=CONF_USER_ASSERTED,
                 stored_fact_id=new_id,
                 closed_fact_ids=closed,
                 notes=[
@@ -167,7 +184,11 @@ class Router:
                 ],
             )
         return Decision(
-            claim=claim, outcome=RoutingOutcome.USER_STORED, stored_fact_id=new_id
+            claim=claim,
+            outcome=RoutingOutcome.USER_STORED,
+            verification_status="user_asserted",
+            confidence=CONF_USER_ASSERTED,
+            stored_fact_id=new_id,
         )
 
     # ---- model claims ----------------------------------------------------
@@ -175,6 +196,12 @@ class Router:
     def _route_model(self, claim: dict, source_turn_id: int) -> Decision:
         predicate_meta = self.registry.get(claim["predicate"])
         method = predicate_meta.verification_method
+
+        # Routing anomaly: a user-authoritative predicate must have 'user' as
+        # its subject. If the model asserted one about another entity, this is
+        # almost always upstream extraction error, not a content claim.
+        if method == "user_authoritative" and not _is_user_subject(claim["subject"]):
+            return self._route_routing_anomaly(claim, source_turn_id)
 
         if method == "python":
             return self._route_python(claim, source_turn_id, predicate_meta.python_verifier)
@@ -191,6 +218,26 @@ class Router:
             f"router has no handler for verification_method={method!r}"
         )
 
+    def _route_routing_anomaly(self, claim: dict, source_turn_id: int) -> Decision:
+        return Decision(
+            claim=claim,
+            outcome=RoutingOutcome.ROUTING_ANOMALY,
+            verification_status="routing_anomaly",
+            confidence=CONF_ROUTING_ANOMALY,
+            stored_fact_id=self._store_model_fact(
+                claim,
+                source_turn_id,
+                confidence=CONF_ROUTING_ANOMALY,
+                verification_status="routing_anomaly",
+            ),
+            notes=[
+                f"routing anomaly: user-authoritative predicate "
+                f"{claim['predicate']!r} was asserted about non-user subject "
+                f"{claim['subject']!r}; this almost always indicates an "
+                f"upstream extractor error rather than a wrong content claim"
+            ],
+        )
+
     def _route_python(
         self, claim: dict, source_turn_id: int, verifier_name: str | None
     ) -> Decision:
@@ -202,11 +249,13 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
+                verification_status="unverifiable_pending_implementation",
+                confidence=CONF_PENDING_IMPLEMENTATION,
                 stored_fact_id=self._store_model_fact(
                     claim,
                     source_turn_id,
-                    confidence=CONF_UNVERIFIED,
-                    verification_status="unverified",
+                    confidence=CONF_PENDING_IMPLEMENTATION,
+                    verification_status="unverifiable_pending_implementation",
                 ),
                 notes=[f"python verifier {verifier_name} raised {type(e).__name__}: {e}"],
             )
@@ -215,6 +264,8 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
+                verification_status="verified",
+                confidence=CONF_PYTHON_VERIFIED,
                 stored_fact_id=self._store_model_fact(
                     claim,
                     source_turn_id,
@@ -246,6 +297,8 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
+                verification_status="contradicted",
+                confidence=CONF_PYTHON_CORRECTION,
                 stored_fact_id=corrected_fact_id,
                 verifier_result=result,
                 correction={
@@ -256,15 +309,18 @@ class Router:
                 },
             )
 
-        # inconclusive
+        # inconclusive: the predicate is python-verifiable in principle, but
+        # this particular input shape couldn't be parsed. Mark as pending.
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
+            verification_status="unverifiable_pending_implementation",
+            confidence=CONF_PENDING_IMPLEMENTATION,
             stored_fact_id=self._store_model_fact(
                 claim,
                 source_turn_id,
-                confidence=CONF_UNVERIFIED,
-                verification_status="unverified",
+                confidence=CONF_PENDING_IMPLEMENTATION,
+                verification_status="unverifiable_pending_implementation",
             ),
             verifier_result=result,
             notes=[f"python verifier inconclusive: {result.explanation}"],
@@ -275,10 +331,12 @@ class Router:
 
         if result.outcome is StoreLookupOutcome.MATCH:
             assert result.matching_fact is not None and result.matching_fact.id is not None
-            self.store.boost_confidence(result.matching_fact.id)
+            new_conf = self.store.boost_confidence(result.matching_fact.id)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
+                verification_status="verified",
+                confidence=new_conf,
                 boosted_fact_id=result.matching_fact.id,
                 matching_fact_id=result.matching_fact.id,
                 notes=["model claim matched a stored user-asserted fact"],
@@ -290,6 +348,8 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
+                verification_status="contradicted",
+                confidence=CONF_STORE_CORRECTION,
                 contradicting_fact_id=cf.id,
                 correction={
                     "original_object": claim["object"],
@@ -305,34 +365,38 @@ class Router:
                 },
             )
 
-        # MISS: store as unverified, don't fabricate the user's preference.
+        # MISS: the user hasn't said this. Mark as pending — we'd verify if we
+        # had ground truth, we just don't yet.
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
+            verification_status="unverifiable_pending_implementation",
+            confidence=CONF_PENDING_IMPLEMENTATION,
             stored_fact_id=self._store_model_fact(
                 claim,
                 source_turn_id,
-                confidence=CONF_UNVERIFIED,
-                verification_status="unverified",
+                confidence=CONF_PENDING_IMPLEMENTATION,
+                verification_status="unverifiable_pending_implementation",
             ),
             notes=[
                 "model asserted a user-authoritative fact the user hasn't stated; "
-                "stored low-confidence"
+                "stored low-confidence pending user assertion"
             ],
         )
 
     def _route_retrieval(self, claim: dict, source_turn_id: int) -> Decision:
         if self.retrieval_verifier is None:
-            # No verifier configured — fall through to unverified-with-low-confidence,
-            # the v0.1 behavior. Tests that don't care about retrieval can omit it.
+            # No verifier configured — treat as pending until one is wired in.
             return Decision(
                 claim=claim,
-                outcome=RoutingOutcome.RETRIEVAL_STUB,
+                outcome=RoutingOutcome.UNVERIFIED,
+                verification_status="unverifiable_pending_implementation",
+                confidence=CONF_PENDING_IMPLEMENTATION,
                 stored_fact_id=self._store_model_fact(
                     claim,
                     source_turn_id,
-                    confidence=CONF_RETRIEVAL_STUB,
-                    verification_status="unverified",
+                    confidence=CONF_PENDING_IMPLEMENTATION,
+                    verification_status="unverifiable_pending_implementation",
                 ),
                 notes=["no RetrievalVerifier configured on Router"],
             )
@@ -343,6 +407,8 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
+                verification_status="verified",
+                confidence=CONF_STORE_VERIFIED,
                 stored_fact_id=self._store_model_fact(
                     claim,
                     source_turn_id,
@@ -359,6 +425,8 @@ class Router:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
+                verification_status="contradicted",
+                confidence=CONF_PYTHON_CORRECTION,
                 stored_fact_id=self._store_model_fact(
                     claim,
                     source_turn_id,
@@ -379,15 +447,19 @@ class Router:
                 },
             )
 
-        # INCONCLUSIVE — retrieval failed, no results, judge unsure, etc.
+        # INCONCLUSIVE — retrieval errored, returned nothing, judge said
+        # insufficient_evidence, or judge output couldn't be parsed. All of
+        # these are "verifiable in principle, just not by this run".
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
+            verification_status="unverifiable_pending_implementation",
+            confidence=CONF_PENDING_IMPLEMENTATION,
             stored_fact_id=self._store_model_fact(
                 claim,
                 source_turn_id,
-                confidence=CONF_RETRIEVAL_STUB,
-                verification_status="unverified",
+                confidence=CONF_PENDING_IMPLEMENTATION,
+                verification_status="unverifiable_pending_implementation",
             ),
             retrieval_result=result,
             notes=[
@@ -399,12 +471,14 @@ class Router:
     def _route_unverifiable(self, claim: dict, source_turn_id: int) -> Decision:
         return Decision(
             claim=claim,
-            outcome=RoutingOutcome.UNVERIFIABLE_FLAGGED,
+            outcome=RoutingOutcome.UNVERIFIABLE_IN_PRINCIPLE,
+            verification_status="unverifiable_in_principle",
+            confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
             stored_fact_id=self._store_model_fact(
                 claim,
                 source_turn_id,
-                confidence=CONF_UNVERIFIABLE,
-                verification_status="unverified",
+                confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
+                verification_status="unverifiable_in_principle",
             ),
             notes=["predicate is unverifiable by design"],
         )

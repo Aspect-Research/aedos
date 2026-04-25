@@ -21,7 +21,24 @@ from typing import Any, Iterable
 OBJECT_TYPES = {"int", "string", "bool", "entity", "count"}
 POLARITIES = {0, 1}
 ASSERTED_BY = {"user", "model", "python_verifier", "external"}
-VERIFICATION_STATUSES = {"verified", "unverified", "contradicted", "user_asserted"}
+VERIFICATION_STATUSES = {
+    # Actively verified by python, retrieval, or store match.
+    "verified",
+    # A verifier returned a contradiction.
+    "contradicted",
+    # User stated this fact directly; ground truth for user-authoritative predicates.
+    "user_asserted",
+    # Predicate's verification_method is `unverifiable` (will_happen, might, ...).
+    "unverifiable_in_principle",
+    # Verification *could* succeed in principle but didn't:
+    #   - retrieval verifier returned error / no_results / insufficient_evidence
+    #   - python verifier inconclusive (couldn't parse the input shape)
+    #   - user_authoritative store lookup miss on a user subject
+    "unverifiable_pending_implementation",
+    # User-authoritative predicate asserted by the model about a non-user subject.
+    # Strong signal of upstream extractor error, not a content-level problem.
+    "routing_anomaly",
+}
 PIPELINE_STAGES = {
     "user_extraction",
     "user_storage",
@@ -30,6 +47,8 @@ PIPELINE_STAGES = {
     "verification",
     "correction",
     "final",
+    # New in v0.2: emitted whenever the router detects a routing anomaly.
+    "routing_anomaly_detected",
 }
 
 # Confidence adjustments

@@ -216,7 +216,7 @@ def test_model_unverifiable_is_flagged_not_corrected(tmp_path):
 
     flagged = p.store.query_facts(predicate="will_happen")
     assert len(flagged) == 1
-    assert flagged[0].verification_status == "unverified"
+    assert flagged[0].verification_status == "unverifiable_in_principle"
     assert flagged[0].confidence == pytest.approx(0.3)
 
 

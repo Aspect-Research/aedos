@@ -122,7 +122,7 @@ def test_model_python_contradicted_stores_correction(router, store):
     assert stored.verification_status == "verified"
 
 
-def test_model_python_inconclusive_stored_unverified(router, store):
+def test_model_python_inconclusive_stored_pending(router, store):
     claim = _claim(
         "has_count",
         subject="strawberry",
@@ -132,8 +132,8 @@ def test_model_python_inconclusive_stored_unverified(router, store):
     d = router.route(claim, origin="model", source_turn_id=1)
     assert d.outcome is RoutingOutcome.UNVERIFIED
     f = store.get_fact(d.stored_fact_id)
-    assert f.confidence == pytest.approx(0.5)
-    assert f.verification_status == "unverified"
+    assert f.confidence == pytest.approx(0.4)
+    assert f.verification_status == "unverifiable_pending_implementation"
 
 
 def test_model_python_verifier_crash_is_caught(router, store, monkeypatch):
@@ -179,27 +179,31 @@ def test_model_user_authoritative_contradiction_flags_correction(router, store):
     assert d.correction is not None
 
 
-def test_model_user_authoritative_miss_stored_unverified(router, store):
+def test_model_user_authoritative_miss_stored_pending(router, store):
     d = router.route(_claim("likes"), origin="model", source_turn_id=1)
     assert d.outcome is RoutingOutcome.UNVERIFIED
     f = store.get_fact(d.stored_fact_id)
-    assert f.confidence == pytest.approx(0.5)
+    assert f.confidence == pytest.approx(0.4)
+    assert f.verification_status == "unverifiable_pending_implementation"
 
 
 # ---------- retrieval + unverifiable ----------
 
 
-def test_retrieval_predicate_stored_low_confidence(router, store):
+def test_retrieval_predicate_with_no_verifier_marks_pending(router, store):
+    """Without a retrieval verifier configured, retrieval predicates are pending."""
     claim = _claim(
         "capital_of", subject="Berlin", object="Germany", object_type="entity"
     )
     d = router.route(claim, origin="model", source_turn_id=1)
-    assert d.outcome is RoutingOutcome.RETRIEVAL_STUB
+    assert d.outcome is RoutingOutcome.UNVERIFIED
+    assert d.verification_status == "unverifiable_pending_implementation"
     f = store.get_fact(d.stored_fact_id)
+    assert f.verification_status == "unverifiable_pending_implementation"
     assert f.confidence == pytest.approx(0.4)
 
 
-def test_unverifiable_predicate_flagged(router, store):
+def test_unverifiable_predicate_marked_in_principle(router, store):
     claim = _claim(
         "will_happen",
         subject="weather",
@@ -207,9 +211,65 @@ def test_unverifiable_predicate_flagged(router, store):
         object_type="string",
     )
     d = router.route(claim, origin="model", source_turn_id=1)
-    assert d.outcome is RoutingOutcome.UNVERIFIABLE_FLAGGED
+    assert d.outcome is RoutingOutcome.UNVERIFIABLE_IN_PRINCIPLE
+    assert d.verification_status == "unverifiable_in_principle"
     f = store.get_fact(d.stored_fact_id)
+    assert f.verification_status == "unverifiable_in_principle"
     assert f.confidence == pytest.approx(0.3)
+
+
+# ---------- Section 4: routing anomaly ----------
+
+
+def test_user_authoritative_predicate_about_non_user_subject_flags_anomaly(router, store):
+    """A user_authoritative predicate must have 'user' as subject. Otherwise: anomaly."""
+    bad = _claim("likes", subject="Donald Trump", object="peanut butter")
+    d = router.route(bad, origin="model", source_turn_id=1)
+    assert d.outcome is RoutingOutcome.ROUTING_ANOMALY
+    assert d.verification_status == "routing_anomaly"
+    assert d.confidence == pytest.approx(0.2)
+    assert d.stored_fact_id is not None
+    f = store.get_fact(d.stored_fact_id)
+    assert f.verification_status == "routing_anomaly"
+
+
+def test_user_authoritative_about_user_subject_is_not_anomaly(router, store):
+    """The same predicate WITH a user subject must NOT trip anomaly detection."""
+    fine = _claim("likes", subject="user", object="peanut butter")
+    d = router.route(fine, origin="model", source_turn_id=1)
+    assert d.outcome is not RoutingOutcome.ROUTING_ANOMALY
+    assert d.verification_status != "routing_anomaly"
+
+
+def test_anomaly_subject_normalization():
+    """'me', 'I', 'User' all count as user — only other subjects trip the anomaly."""
+    from src.router import _is_user_subject
+
+    assert _is_user_subject("user")
+    assert _is_user_subject("User")
+    assert _is_user_subject(" me ")
+    assert _is_user_subject("I")
+    assert not _is_user_subject("Donald Trump")
+    assert not _is_user_subject("the cat")
+    assert not _is_user_subject("")
+
+
+# ---------- verification_status & confidence on Decision ----------
+
+
+def test_decision_carries_verification_status_and_confidence(router, store):
+    """Section 4 invariant: every Decision has both fields set."""
+    cases = [
+        _claim("likes", subject="user", object="apple"),
+        _claim("has_count", subject="strawberry",
+               object=json.dumps({"item": "r", "count": 3}), object_type="count"),
+        _claim("will_happen", subject="weather", object="rain", object_type="string"),
+        _claim("likes", subject="Donald Trump", object="apple"),  # anomaly
+    ]
+    for claim in cases:
+        d = router.route(claim, origin="model", source_turn_id=1)
+        assert d.verification_status, f"missing verification_status on {claim}"
+        assert d.confidence > 0, f"missing confidence on {claim}"
 
 
 # ---------- guardrails ----------
