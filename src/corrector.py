@@ -1,55 +1,210 @@
-"""Response corrector.
+"""Response corrector with per-claim intervention planning.
 
-When verification contradicts one or more claims in the assistant's draft,
-the corrector rewrites the draft so the corrected facts land naturally.
-It's a single LLM call with a flat, deterministic prompt — no tools, no
-structured output.
+The corrector now decides, per claim, what kind of edit (if any) the
+assistant draft needs:
 
-The pipeline decides when to invoke this; if every claim in a response was
-VERIFIED, UNVERIFIED, or flagged, there's nothing to correct and the
-corrector isn't called at all.
+    verified / user_asserted   → noop          (no intervention)
+    contradicted               → REPLACE       (use the verified value)
+    unverifiable_pending_…     → HEDGE         (insert a verification hedge)
+    unverifiable_in_principle  → SOFTEN        (predictive language)
+    routing_anomaly            → noop          (logged separately by pipeline)
+
+Multiple interventions on the same draft are batched into a single LLM
+rewrite. If every claim is verified or otherwise needs no intervention,
+the LLM is not called at all and the draft is returned verbatim.
+
+The decision logic is deterministic and testable. Only the rewrite step
+calls the LLM.
 """
 
 from __future__ import annotations
 
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Any, Iterable, Optional
 
 from src.llm_client import LLMClient
+from src.router import Decision
 
-CORRECTOR_SYSTEM = """You rewrite an assistant response so that specific factual claims reflect the correct answer.
+# Intervention type values are deliberately a fixed string set, not an enum,
+# so the prompt can include them inline as keywords.
+INTERVENTION_HEDGE = "hedge"
+INTERVENTION_REPLACE = "replace"
+INTERVENTION_SOFTEN = "soften"
+INTERVENTION_REMOVE = "remove"
+
+
+@dataclass
+class Intervention:
+    intervention_type: str
+    claim: dict
+    verification_status: str
+    reason: str
+    verified_value: Optional[Any] = None  # only meaningful for `replace`
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "intervention_type": self.intervention_type,
+            "claim": self.claim,
+            "verification_status": self.verification_status,
+            "reason": self.reason,
+            "verified_value": self.verified_value,
+        }
+
+
+CORRECTOR_SYSTEM = """You apply targeted edits to an assistant response.
+
+Each intervention names a specific claim and the kind of edit needed.
+
+Intervention types:
+- hedge: the claim was not verified by any source. Add a hedge near it
+  ("I believe...", "as of my last training data...", "you may want to
+  verify with a current source"). Do NOT delete the claim itself.
+- replace: the claim is wrong. Replace the wrong value with the verified
+  one. Preserve everything around it.
+- soften: the claim is an unverifiable prediction stated as if certain.
+  Soften with words like "might", "could", "is expected to". If the
+  source text is already adequately hedged, leave it alone.
+- remove: rare; only delete the claim if the instruction explicitly says
+  remove. Otherwise prefer hedge.
 
 Rules:
-- Preserve the tone, structure, and any content unrelated to a correction.
-- State the correct information directly. Do not apologize, narrate the correction, or hedge with "actually..." phrasing.
-- If a claim was wrong, replace it with the correct version as if the assistant had known it all along.
-- Output only the rewritten response. No preamble, no explanation."""
+- MINIMAL CHANGES. Preserve everything not directly affected by an
+  intervention. Match tone and structure.
+- Do NOT apologize, narrate the correction, or add "actually" / "to be
+  precise" preludes.
+- Output ONLY the rewritten response. No preamble, no explanation.
+- If multiple interventions apply, do them all in one rewritten
+  response."""
 
 
 class Corrector:
     def __init__(self, llm: LLMClient):
         self.llm = llm
 
-    def correct(self, original_text: str, corrections: Iterable[dict]) -> str:
-        corrections = list(corrections)
-        if not corrections:
-            return original_text
+    # ---- planning -------------------------------------------------------
 
-        lines = [
-            "Original response:",
-            "```",
-            original_text,
-            "```",
-            "",
-            "Apply these corrections:",
-        ]
-        for i, c in enumerate(corrections, 1):
-            src = c.get("source_text", "").strip() or "(no source span recorded)"
-            lines.append(
-                f"{i}. In the phrase {src!r}: the claim that the object is "
-                f"{c.get('original_object')!r} is wrong; the correct value is "
-                f"{c.get('corrected_object')!r}. "
-                f"({c.get('explanation', '').strip()})"
+    def plan_interventions(self, decisions: Iterable[Decision]) -> list[Intervention]:
+        """Decide what edit (if any) each Decision implies.
+
+        Routing-anomaly decisions return None here — the pipeline logs
+        them separately as their own pipeline_event.
+        """
+        out: list[Intervention] = []
+        for d in decisions:
+            intervention = self._plan_one(d)
+            if intervention is not None:
+                out.append(intervention)
+        return out
+
+    def _plan_one(self, d: Decision) -> Intervention | None:
+        status = d.verification_status
+
+        if status in ("verified", "user_asserted"):
+            return None
+        if status == "routing_anomaly":
+            return None  # logged separately; not a content-level edit
+
+        if status == "contradicted":
+            corrected = (d.correction or {}).get("corrected_object")
+            explanation = (d.correction or {}).get(
+                "explanation", "a verifier contradicted this claim"
+            )
+            return Intervention(
+                intervention_type=INTERVENTION_REPLACE,
+                claim=d.claim,
+                verification_status=status,
+                verified_value=corrected,
+                reason=explanation,
             )
 
-        user_message = "\n".join(lines)
-        return self.llm.rewrite(CORRECTOR_SYSTEM, user_message)
+        if status == "unverifiable_pending_implementation":
+            # The spec ties a hedge to confidence < 0.5; that's how this
+            # status is always stored, but we keep the threshold explicit
+            # so adjusting confidence later doesn't silently change behavior.
+            if d.confidence < 0.5:
+                return Intervention(
+                    intervention_type=INTERVENTION_HEDGE,
+                    claim=d.claim,
+                    verification_status=status,
+                    reason=(
+                        "verifier returned no conclusive evidence; "
+                        "the model's claim is unverified"
+                    ),
+                )
+            return None
+
+        if status == "unverifiable_in_principle":
+            return Intervention(
+                intervention_type=INTERVENTION_SOFTEN,
+                claim=d.claim,
+                verification_status=status,
+                reason=(
+                    "predicate is unverifiable by design; soften any "
+                    "definite framing"
+                ),
+            )
+
+        return None  # unknown status — be conservative, don't intervene
+
+    # ---- application ----------------------------------------------------
+
+    def apply(self, draft: str, interventions: Iterable[Intervention]) -> str:
+        interventions = list(interventions)
+        if not interventions:
+            return draft
+
+        return self.llm.rewrite(CORRECTOR_SYSTEM, _format_user_message(draft, interventions))
+
+    # ---- back-compat (v0.1 surface) -------------------------------------
+
+    def correct(self, original_text: str, corrections: Iterable[dict]) -> str:
+        """v0.1 entry point. Synthesizes REPLACE interventions from corrections."""
+        interventions = [
+            Intervention(
+                intervention_type=INTERVENTION_REPLACE,
+                claim={
+                    "subject": "(legacy)",
+                    "predicate": "(legacy)",
+                    "object": c.get("original_object", ""),
+                    "source_text": c.get("source_text", ""),
+                },
+                verification_status="contradicted",
+                verified_value=c.get("corrected_object"),
+                reason=c.get("explanation", ""),
+            )
+            for c in corrections
+        ]
+        return self.apply(original_text, interventions)
+
+
+def _format_user_message(draft: str, interventions: list[Intervention]) -> str:
+    lines = [
+        "Original response:",
+        '"""',
+        draft,
+        '"""',
+        "",
+        f"Apply these {len(interventions)} intervention(s) in a single rewrite:",
+        "",
+    ]
+    for i, iv in enumerate(interventions, 1):
+        c = iv.claim
+        triple = (
+            f"({c.get('subject', '?')}, "
+            f"{c.get('predicate', '?')}, "
+            f"{c.get('object', '?')}, "
+            f"polarity={c.get('polarity', '?')})"
+        )
+        src = (c.get("source_text") or "").strip() or "(no source text recorded)"
+        lines.append(f"{i}. [{iv.intervention_type}] claim={triple}")
+        lines.append(f"   verification_status: {iv.verification_status}")
+        lines.append(f"   source_text: {src!r}")
+        if iv.intervention_type == INTERVENTION_REPLACE and iv.verified_value is not None:
+            lines.append(f"   verified_value: {iv.verified_value!r}")
+        lines.append(f"   reason: {iv.reason}")
+        lines.append("")
+    lines.append(
+        "Make minimal changes. Preserve everything not affected by an "
+        "intervention. Return only the rewritten response."
+    )
+    return "\n".join(lines)
