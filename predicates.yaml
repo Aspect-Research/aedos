@@ -187,38 +187,113 @@ product_equals:
   example: "2*3*4 = 24 -> ([2,3,4], product_equals, 24)"
 
 # -----------------------------------------------------------------------------
-# Retrieval: would need an external knowledge source. Stubbed for v1.
+# Retrieval: verified against external sources via the retrieval verifier.
+# Each entry may declare a `retrieval_query_template` — a template string with
+# {subject} and {object} placeholders that the verifier formats to build a
+# search query. Without a template the verifier falls back to "{subject} {object}".
 # -----------------------------------------------------------------------------
 
 capital_of:
   object_type: entity
   verification_method: retrieval
+  retrieval_query_template: "capital of {object}"
   description: The subject city is the capital of the object country/region.
   example: "Paris is the capital of France -> (Paris, capital_of, France)"
 
 born_in_year:
   object_type: int
   verification_method: retrieval
+  retrieval_query_template: "{subject} born year"
   description: The subject person was born in the object year.
   example: "Einstein was born in 1879 -> (Einstein, born_in_year, 1879)"
 
 located_in:
   object_type: entity
   verification_method: retrieval
+  retrieval_query_template: "{subject} location"
   description: The subject place is located within the object region/country.
   example: "Kyoto is in Japan -> (Kyoto, located_in, Japan)"
 
 authored_by:
   object_type: entity
   verification_method: retrieval
+  retrieval_query_template: "who wrote {subject}"
   description: The subject work was authored by the object person.
   example: "'Dune' was written by Frank Herbert -> (Dune, authored_by, Frank Herbert)"
 
 founded_in:
   object_type: int
   verification_method: retrieval
+  retrieval_query_template: "when was {subject} founded"
   description: The subject organization was founded in the object year.
   example: "Anthropic was founded in 2021 -> (Anthropic, founded_in, 2021)"
+
+holds_role:
+  object_type: string
+  verification_method: retrieval
+  retrieval_query_template: "current {object}"
+  description: |
+    Subject currently holds the named role/position/office. Use for
+    specific named roles (US President, CEO of Apple, Mayor of Berlin).
+    Prefer over `is_a` whenever the object is a specific role rather than
+    a general category. Never use `believes` or `is_a` as a fallback for
+    role-holding claims.
+  example: "Donald Trump is the US President -> (Donald Trump, holds_role, \"US President\")"
+
+is_a:
+  object_type: string
+  verification_method: retrieval
+  retrieval_query_template: "{subject} {object}"
+  description: |
+    Subject is a member of a general category, profession, or kind. Use
+    for category membership and profession ("Marie Curie was a physicist",
+    "the kakapo is a bird"). Do NOT use `is_a` for specific named roles or
+    positions — that's `holds_role`. Do NOT use `is_a` as a fallback for
+    arbitrary copular sentences.
+  example: "Marie Curie was a physicist -> (Marie Curie, is_a, \"physicist\")"
+
+headed_by:
+  object_type: entity
+  verification_method: retrieval
+  retrieval_query_template: "head of {subject}"
+  description: |
+    The subject organization, country, or institution is currently headed
+    by the object person. Inverse of `holds_role` from the institution's
+    perspective. Use when the sentence frames the institution as the
+    subject ("Apple is led by Tim Cook"); use `holds_role` when framing
+    the person as subject ("Tim Cook is CEO of Apple").
+  example: "The United States is headed by Donald Trump -> (United States, headed_by, Donald Trump)"
+
+member_of:
+  object_type: string
+  verification_method: retrieval
+  retrieval_query_template: "{subject} member of {object}"
+  description: |
+    Subject belongs to the named group, organization, party, or body. Use
+    for political party membership, board membership, club membership.
+    Distinct from `holds_role` (a specific position) and `is_a` (a general
+    category).
+  example: "JD Vance is a Republican -> (JD Vance, member_of, \"Republican Party\")"
+
+succeeded_by:
+  object_type: entity
+  verification_method: retrieval
+  retrieval_query_template: "{subject} successor"
+  description: |
+    The subject role-holder was succeeded in their role by the object
+    person. Useful for political and corporate succession. The successor
+    is the more recent holder.
+  example: "Joe Biden was succeeded by Donald Trump -> (Joe Biden, succeeded_by, Donald Trump)"
+
+preceded_by:
+  object_type: entity
+  verification_method: retrieval
+  retrieval_query_template: "{subject} predecessor"
+  description: |
+    The subject role-holder was preceded in their role by the object
+    person. Inverse of `succeeded_by`. The predecessor is the earlier
+    holder.
+  example: "Donald Trump was preceded by Joe Biden -> (Donald Trump, preceded_by, Joe Biden)"
 
 # -----------------------------------------------------------------------------
 # Unverifiable: no verification procedure exists. Stored low-confidence, flagged.

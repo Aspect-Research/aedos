@@ -151,3 +151,59 @@ def test_empty_file_rejected(tmp_path):
     p.write_text("", encoding="utf-8")
     with pytest.raises(PredicateRegistryError):
         PredicateRegistry.from_yaml(p)
+
+
+# ---------- Section 2: role predicates ----------
+
+
+@pytest.mark.parametrize(
+    "name", ["holds_role", "is_a", "headed_by", "member_of", "succeeded_by", "preceded_by"]
+)
+def test_role_predicate_loads_with_retrieval_method(name):
+    reg = load_default_registry()
+    p = reg.get(name)
+    assert p.verification_method == "retrieval"
+    assert p.example, f"{name} must have a non-empty example"
+    assert p.description, f"{name} must have a non-empty description"
+    assert p.retrieval_query_template, (
+        f"{name} must declare a retrieval_query_template (Section 3 needs it)"
+    )
+
+
+def test_holds_role_distinct_from_is_a():
+    reg = load_default_registry()
+    holds_role = reg.get("holds_role")
+    is_a = reg.get("is_a")
+    # Both string-typed retrieval predicates, but their descriptions must
+    # discriminate them — these two are the most-confused pair.
+    assert "role" in holds_role.description.lower() or "position" in holds_role.description.lower()
+    assert "category" in is_a.description.lower() or "profession" in is_a.description.lower()
+
+
+def test_retrieval_query_template_only_on_retrieval_predicates(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        yaml.safe_dump(
+            {
+                "user_pred": {
+                    "object_type": "string",
+                    "verification_method": "user_authoritative",
+                    "retrieval_query_template": "{subject}",
+                    "description": "x",
+                    "example": "x",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(PredicateRegistryError, match="retrieval_query_template"):
+        PredicateRegistry.from_yaml(bad)
+
+
+def test_existing_retrieval_predicates_now_have_templates():
+    """v0.1 retrieval predicates need templates so they actually verify in v0.2."""
+    reg = load_default_registry()
+    for name in ("capital_of", "born_in_year", "located_in", "authored_by", "founded_in"):
+        assert reg.get(name).retrieval_query_template, (
+            f"{name} should declare a retrieval_query_template"
+        )
