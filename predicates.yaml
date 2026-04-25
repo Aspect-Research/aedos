@@ -1,0 +1,243 @@
+# Aedos predicate registry.
+#
+# Bounded vocabulary — the extractor is forbidden from inventing predicates
+# outside this list. To add one, append an entry and (if python-verifiable)
+# add a function in src/verifiers/python_verifiers.py under the same name.
+#
+# Fields:
+#   object_type: int | string | bool | entity | count
+#   verification_method: user_authoritative | python | store_lookup | retrieval | unverifiable
+#   python_verifier: required iff verification_method == python
+#   description: one sentence, shown to the extractor LLM
+#   example: one concrete example, shown to the extractor LLM
+#
+# object_type 'count' encodes a counting claim as JSON in the object field:
+#   {"item": "<thing being counted>", "count": <int>}
+# This keeps the predicate stable while carrying enough structure for the
+# python verifier to operate without re-parsing prose.
+
+# -----------------------------------------------------------------------------
+# User-authoritative: the user is the source of truth for these claims about
+# themselves. Verified for the model via lookup against user-asserted facts.
+# -----------------------------------------------------------------------------
+
+likes:
+  object_type: entity
+  verification_method: user_authoritative
+  description: Subject enjoys or has positive affinity toward the object.
+  example: "I like peanut butter -> (user, likes, peanut butter)"
+
+dislikes:
+  object_type: entity
+  verification_method: user_authoritative
+  description: Subject has negative affinity toward the object. Use polarity=1 with 'dislikes', NOT polarity=0 with 'likes', unless the user explicitly said "don't like".
+  example: "I hate broccoli -> (user, dislikes, broccoli)"
+
+owns:
+  object_type: entity
+  verification_method: user_authoritative
+  description: Subject possesses the object (physical or abstract).
+  example: "I have a red bike -> (user, owns, red bike)"
+
+lives_in:
+  object_type: entity
+  verification_method: user_authoritative
+  description: Subject currently resides in the named place.
+  example: "I live in Berlin -> (user, lives_in, Berlin)"
+
+works_at:
+  object_type: entity
+  verification_method: user_authoritative
+  description: Subject is currently employed by the named organization.
+  example: "I work at Anthropic -> (user, works_at, Anthropic)"
+
+studies_at:
+  object_type: entity
+  verification_method: user_authoritative
+  description: Subject is currently enrolled at the named institution.
+  example: "I study at MIT -> (user, studies_at, MIT)"
+
+named:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject's name is the given string.
+  example: "My name is Asa -> (user, named, Asa)"
+
+aged:
+  object_type: int
+  verification_method: user_authoritative
+  description: Subject's age in years.
+  example: "I am 34 -> (user, aged, 34)"
+
+pronouns:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject's stated pronouns.
+  example: "My pronouns are they/them -> (user, pronouns, they/them)"
+
+prefers:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject has a stated preference (choice between options, style preference, etc.).
+  example: "I prefer dark mode -> (user, prefers, dark mode)"
+
+believes:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject holds a stated belief. Use for explicit "I believe..." / "I think..." statements about the world.
+  example: "I believe the client is wrong -> (user, believes, the client is wrong)"
+
+feels:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject's current emotional state or reaction.
+  example: "I'm tired -> (user, feels, tired)"
+
+plans_to:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject intends to do the stated thing.
+  example: "I'm going to move next month -> (user, plans_to, move next month)"
+
+has_goal:
+  object_type: string
+  verification_method: user_authoritative
+  description: Subject has a stated longer-term goal.
+  example: "I want to learn Rust -> (user, has_goal, learn Rust)"
+
+# -----------------------------------------------------------------------------
+# Python-verifiable: a deterministic function can check these.
+# -----------------------------------------------------------------------------
+
+has_count:
+  object_type: count
+  verification_method: python
+  python_verifier: verify_has_count
+  description: |
+    Counts occurrences of an item (substring, letter, element) in the subject.
+    The object MUST be encoded as JSON: {"item": "<what is counted>", "count": <int>}.
+    The subject is the container (a word, phrase, or list literal).
+  example: 'How many p''s in strawberry? -> (strawberry, has_count, {"item": "p", "count": 3})'
+
+spelled_as:
+  object_type: string
+  verification_method: python
+  python_verifier: verify_spelled_as
+  description: The subject word is spelled out as the object (letters joined with no separator or with hyphens).
+  example: "'strawberry' is spelled s-t-r-a-w-b-e-r-r-y -> (strawberry, spelled_as, s-t-r-a-w-b-e-r-r-y)"
+
+has_length:
+  object_type: int
+  verification_method: python
+  python_verifier: verify_has_length
+  description: The length (number of characters) of the subject string equals the object integer.
+  example: "'hello' has 5 letters -> (hello, has_length, 5)"
+
+equals:
+  object_type: string
+  verification_method: python
+  python_verifier: verify_equals
+  description: The subject and object are literally equal as strings (case-insensitive, whitespace-trimmed).
+  example: "'foo' equals 'foo' -> (foo, equals, foo)"
+
+greater_than:
+  object_type: int
+  verification_method: python
+  python_verifier: verify_greater_than
+  description: The numeric subject is strictly greater than the object. Subject must be a numeric literal.
+  example: "10 is greater than 5 -> (10, greater_than, 5)"
+
+less_than:
+  object_type: int
+  verification_method: python
+  python_verifier: verify_less_than
+  description: The numeric subject is strictly less than the object. Subject must be a numeric literal.
+  example: "3 is less than 7 -> (3, less_than, 7)"
+
+contains_substring:
+  object_type: string
+  verification_method: python
+  python_verifier: verify_contains_substring
+  description: The subject string contains the object string as a substring (case-insensitive).
+  example: "'strawberry' contains 'berry' -> (strawberry, contains_substring, berry)"
+
+is_anagram_of:
+  object_type: string
+  verification_method: python
+  python_verifier: verify_is_anagram_of
+  description: Subject and object use the same multiset of letters (ignoring case and whitespace).
+  example: "'listen' is an anagram of 'silent' -> (listen, is_anagram_of, silent)"
+
+sum_equals:
+  object_type: int
+  verification_method: python
+  python_verifier: verify_sum_equals
+  description: |
+    The sum of the numeric operands in the subject equals the object.
+    Subject MUST be a JSON list of numbers, e.g. "[2, 3, 4]".
+  example: "2+3+4 = 9 -> ([2,3,4], sum_equals, 9)"
+
+product_equals:
+  object_type: int
+  verification_method: python
+  python_verifier: verify_product_equals
+  description: |
+    The product of the numeric operands in the subject equals the object.
+    Subject MUST be a JSON list of numbers, e.g. "[2, 3, 4]".
+  example: "2*3*4 = 24 -> ([2,3,4], product_equals, 24)"
+
+# -----------------------------------------------------------------------------
+# Retrieval: would need an external knowledge source. Stubbed for v1.
+# -----------------------------------------------------------------------------
+
+capital_of:
+  object_type: entity
+  verification_method: retrieval
+  description: The subject city is the capital of the object country/region.
+  example: "Paris is the capital of France -> (Paris, capital_of, France)"
+
+born_in_year:
+  object_type: int
+  verification_method: retrieval
+  description: The subject person was born in the object year.
+  example: "Einstein was born in 1879 -> (Einstein, born_in_year, 1879)"
+
+located_in:
+  object_type: entity
+  verification_method: retrieval
+  description: The subject place is located within the object region/country.
+  example: "Kyoto is in Japan -> (Kyoto, located_in, Japan)"
+
+authored_by:
+  object_type: entity
+  verification_method: retrieval
+  description: The subject work was authored by the object person.
+  example: "'Dune' was written by Frank Herbert -> (Dune, authored_by, Frank Herbert)"
+
+founded_in:
+  object_type: int
+  verification_method: retrieval
+  description: The subject organization was founded in the object year.
+  example: "Anthropic was founded in 2021 -> (Anthropic, founded_in, 2021)"
+
+# -----------------------------------------------------------------------------
+# Unverifiable: no verification procedure exists. Stored low-confidence, flagged.
+# -----------------------------------------------------------------------------
+
+will_happen:
+  object_type: string
+  verification_method: unverifiable
+  description: A prediction about a future event.
+  example: "It will rain tomorrow -> (weather, will_happen, rain tomorrow)"
+
+might:
+  object_type: string
+  verification_method: unverifiable
+  description: A possibility / hedge about an uncertain fact.
+  example: "The meeting might be cancelled -> (meeting, might, be cancelled)"
+
+believed_by_many:
+  object_type: string
+  verification_method: unverifiable
+  description: A claim about what many/most people believe. Typically unverifiable without polling.
+  example: "Most people think X -> (X, believed_by_many, true)"
