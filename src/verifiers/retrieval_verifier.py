@@ -32,7 +32,7 @@ from bs4 import BeautifulSoup
 
 from src.fact_store import FactStore
 from src.llm_client import LLMClient
-from src.predicate_registry import PredicateRegistry
+from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias; rewritten §5
 from src.verifiers.python_verifiers import VerificationOutcome, VerificationResult
 
 
