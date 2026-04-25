@@ -1,23 +1,29 @@
-"""Verification router.
+"""Verification router (v0.3 — pattern-based).
 
-Takes each extracted claim plus its origin (user or assistant) and applies
-the storage + verification policy from the design spec. Returns a
-``VerificationDecision`` per claim — the pipeline uses that to log events,
-update the turn, and (for contradictions) build the correction prompt.
+Dispatches each extracted fact (pattern + predicate + slots) to the
+correct verifier. The verification method comes from the PATTERN, with
+optional conditional rules evaluated against the slot values.
 
-The router is the single place that decides what ``asserted_by``,
-``verification_status``, and ``confidence`` get written to the store. Every
-other component just feeds it claims and consumes the decision.
+Key v0.3 changes:
+- Decision dispatches on pattern, not predicate.
+- Routing anomaly: a pattern's `flag_non_user_as_anomaly` opt-in fires
+  when agent is non-user. Used by `preference` and `propositional_attitude`
+  where non-user agents almost always indicate extractor error. Patterns
+  like `spatial_temporal` (where non-user agents are normal) opt out.
+- Python verifier dispatch is keyed by predicate name; new predicates
+  within a pattern fall through to the pattern's default method.
+- Retrieval failures get split status (`retrieval_inconclusive` vs
+  `retrieval_failed`) per Section 6.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from src.fact_store import Fact, FactStore
-from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias; renamed in §4
+from src.pattern_registry import Pattern, PatternRegistry
 from src.verifiers.python_verifiers import (
     VerificationOutcome,
     VerificationResult,
@@ -33,39 +39,51 @@ from src.verifiers.store_verifier import (
 CONF_USER_ASSERTED = 0.95
 CONF_PYTHON_VERIFIED = 0.99
 CONF_PYTHON_CORRECTION = 0.99
+CONF_RETRIEVAL_VERIFIED = 0.95
+CONF_RETRIEVAL_CORRECTION = 0.95
 CONF_STORE_VERIFIED = 0.95
-CONF_STORE_CORRECTION = 0.95
-CONF_PENDING_IMPLEMENTATION = 0.4  # retrieval failed / no user assertion / etc.
+CONF_PENDING_IMPLEMENTATION = 0.4
+CONF_RETRIEVAL_INCONCLUSIVE = 0.4
+CONF_RETRIEVAL_FAILED = 0.4
 CONF_UNVERIFIABLE_IN_PRINCIPLE = 0.3
 CONF_ROUTING_ANOMALY = 0.2
 
-# v0.1 alias kept so external callers don't break:
+# v0.2 alias kept for any external callers:
 CONF_UNVERIFIED = CONF_PENDING_IMPLEMENTATION
 
 
 class RoutingOutcome(str, Enum):
-    # User-turn outcomes
     USER_STORED = "user_stored"
     USER_DUPLICATE = "user_duplicate"
     USER_CONTRADICTED_PRIOR = "user_contradicted_prior"
-    # Model-turn outcomes
     VERIFIED = "verified"
     CONTRADICTED = "contradicted"
-    UNVERIFIED = "unverified"  # generic "we couldn't verify"
+    UNVERIFIED = "unverified"
     UNVERIFIABLE_IN_PRINCIPLE = "unverifiable_in_principle"
     ROUTING_ANOMALY = "routing_anomaly"
 
 
-def _is_user_subject(subject: str) -> bool:
-    return subject.strip().lower() in {"user", "me", "i"}
+# Slots that define identity for each pattern's store-lookup key.
+KEY_SLOTS_BY_PATTERN: dict[str, list[str]] = {
+    "preference": ["agent", "object"],
+    "propositional_attitude": ["agent", "proposition"],
+    "spatial_temporal": ["entity", "location"],
+    "categorical": ["entity", "category"],
+    "role_assignment": ["agent", "role", "org"],
+    "relational": ["subject", "object"],
+    "quantitative": ["subject", "property"],
+    "event": ["event_type", "occurred_at"],
+}
+
+
+def _is_user(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() in {"user", "me", "i"}
 
 
 @dataclass
 class Decision:
     claim: dict
     outcome: RoutingOutcome
-    # Section 4: explicit verification_status + confidence on every decision so
-    # the corrector can plan interventions without re-querying the fact store.
     verification_status: str = ""
     confidence: float = 0.0
     stored_fact_id: Optional[int] = None
@@ -74,9 +92,10 @@ class Decision:
     contradicting_fact_id: Optional[int] = None
     matching_fact_id: Optional[int] = None
     verifier_result: Optional[VerificationResult] = None
-    retrieval_result: Optional[RetrievalResult] = None  # set when retrieval ran
-    correction: Optional[dict] = None  # {original_object, corrected_object, explanation}
+    retrieval_result: Optional[RetrievalResult] = None
+    correction: Optional[dict] = None
     notes: list[str] = field(default_factory=list)
+    anomaly_slot: Optional[dict] = None  # {slot, expected, actual} for routing anomalies
 
     def to_dict(self) -> dict:
         return {
@@ -97,6 +116,7 @@ class Decision:
             ),
             "correction": self.correction,
             "notes": self.notes,
+            "anomaly_slot": self.anomaly_slot,
         }
 
 
@@ -104,37 +124,40 @@ class Router:
     def __init__(
         self,
         store: FactStore,
-        registry: PredicateRegistry,
+        registry: PatternRegistry,
         retrieval_verifier: RetrievalVerifier | None = None,
     ):
         self.store = store
         self.registry = registry
         self.retrieval_verifier = retrieval_verifier
 
-    # ---- entry point -----------------------------------------------------
+    # ---- entry point ---------------------------------------------------
 
     def route(self, claim: dict, origin: str, source_turn_id: int) -> Decision:
         if origin not in ("user", "model"):
             raise ValueError(f"origin must be 'user' or 'model', got {origin!r}")
-        if not self.registry.has(claim["predicate"]):
+        pattern_name = claim.get("pattern")
+        if not isinstance(pattern_name, str) or not self.registry.has(pattern_name):
             raise ValueError(
-                f"unknown predicate {claim['predicate']!r} — extractor should have filtered it"
+                f"unknown pattern {pattern_name!r} on claim — extractor should have filtered"
             )
+        pattern = self.registry.get(pattern_name)
 
         if origin == "user":
-            return self._route_user(claim, source_turn_id)
-        return self._route_model(claim, source_turn_id)
+            return self._route_user(claim, pattern, source_turn_id)
+        return self._route_model(claim, pattern, source_turn_id)
 
-    # ---- user claims -----------------------------------------------------
+    # ---- user-origin claims --------------------------------------------
 
-    def _route_user(self, claim: dict, source_turn_id: int) -> Decision:
-        subject = claim["subject"]
-        predicate = claim["predicate"]
-        obj = claim["object"]
+    def _route_user(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+        slots = claim.get("slots", {})
         polarity = int(claim["polarity"])
+        key_slots = self._key_slots(pattern, slots)
 
-        # Same fact already asserted? Boost, don't duplicate.
-        existing = self.store.find_currently_valid(subject, predicate, obj, polarity)
+        existing = self.store.find_currently_valid(
+            pattern.name, predicate=claim["predicate"],
+            slot_match=key_slots, polarity=polarity,
+        )
         if existing:
             fid = existing[0].id
             assert fid is not None
@@ -148,28 +171,18 @@ class Router:
                 notes=[f"user repeated an already-known fact (id={fid})"],
             )
 
-        # Opposite-polarity fact currently valid? Close it, then store the new.
-        opposite = self.store.find_contradictions(subject, predicate, obj, polarity)
+        opposite = self.store.find_contradictions(
+            pattern.name, claim["predicate"], key_slots, polarity
+        )
         closed: list[int] = []
         for f in opposite:
             assert f.id is not None
             self.store.close_fact(f.id)
             closed.append(f.id)
 
-        new_id = self.store.insert_fact(
-            Fact(
-                subject=subject,
-                predicate=predicate,
-                object=obj,
-                object_type=claim["object_type"],
-                polarity=polarity,
-                confidence=CONF_USER_ASSERTED,
-                asserted_by="user",
-                verification_status="user_asserted",
-                source_turn_id=source_turn_id,
-                source_text=claim.get("source_text"),
-            )
-        )
+        new_id = self._store(claim, source_turn_id, asserted_by="user",
+                             confidence=CONF_USER_ASSERTED,
+                             verification_status="user_asserted")
 
         if closed:
             return Decision(
@@ -179,9 +192,7 @@ class Router:
                 confidence=CONF_USER_ASSERTED,
                 stored_fact_id=new_id,
                 closed_fact_ids=closed,
-                notes=[
-                    f"user reversed prior assertion; closed {len(closed)} old fact(s)"
-                ],
+                notes=[f"user reversed prior assertion; closed {len(closed)} old fact(s)"],
             )
         return Decision(
             claim=claim,
@@ -191,73 +202,89 @@ class Router:
             stored_fact_id=new_id,
         )
 
-    # ---- model claims ----------------------------------------------------
+    # ---- model-origin claims -------------------------------------------
 
-    def _route_model(self, claim: dict, source_turn_id: int) -> Decision:
-        predicate_meta = self.registry.get(claim["predicate"])
-        method = predicate_meta.verification_method
+    def _route_model(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+        slots = claim.get("slots", {})
 
-        # Routing anomaly: a user-authoritative predicate must have 'user' as
-        # its subject. If the model asserted one about another entity, this is
-        # almost always upstream extraction error, not a content claim.
-        if method == "user_authoritative" and not _is_user_subject(claim["subject"]):
-            return self._route_routing_anomaly(claim, source_turn_id)
+        # Routing anomaly: pattern opted in to flag non-user agents.
+        anomaly = self._maybe_anomaly(pattern, slots)
+        if anomaly is not None:
+            return self._route_routing_anomaly(claim, source_turn_id, anomaly)
+
+        # Resolve the verification method, with python-fallback handling.
+        method = self._resolve_method(pattern, slots, predicate=claim["predicate"])
 
         if method == "python":
-            return self._route_python(claim, source_turn_id, predicate_meta.python_verifier)
-        if method in ("store_lookup", "user_authoritative"):
-            # user_authoritative claims from the MODEL are verified via store
-            # lookup against what the user previously asserted.
-            return self._route_store(claim, source_turn_id)
+            return self._route_python(claim, source_turn_id)
+        if method == "user_authoritative":
+            # Model asserted what would be a user-authoritative claim — verify
+            # against what the user has previously said.
+            return self._route_store(claim, pattern, source_turn_id)
+        if method == "store_lookup":
+            return self._route_store(claim, pattern, source_turn_id)
         if method == "retrieval":
             return self._route_retrieval(claim, source_turn_id)
         if method == "unverifiable":
             return self._route_unverifiable(claim, source_turn_id)
 
-        raise RuntimeError(
-            f"router has no handler for verification_method={method!r}"
-        )
+        raise RuntimeError(f"router has no handler for verification_method={method!r}")
 
-    def _route_routing_anomaly(self, claim: dict, source_turn_id: int) -> Decision:
-        return Decision(
-            claim=claim,
-            outcome=RoutingOutcome.ROUTING_ANOMALY,
-            verification_status="routing_anomaly",
-            confidence=CONF_ROUTING_ANOMALY,
-            stored_fact_id=self._store_model_fact(
-                claim,
-                source_turn_id,
-                confidence=CONF_ROUTING_ANOMALY,
-                verification_status="routing_anomaly",
-            ),
-            notes=[
-                f"routing anomaly: user-authoritative predicate "
-                f"{claim['predicate']!r} was asserted about non-user subject "
-                f"{claim['subject']!r}; this almost always indicates an "
-                f"upstream extractor error rather than a wrong content claim"
-            ],
-        )
+    # ---- method resolution ---------------------------------------------
 
-    def _route_python(
-        self, claim: dict, source_turn_id: int, verifier_name: str | None
-    ) -> Decision:
-        assert verifier_name, "registry should have enforced this"
-        verifier = get_verifier(verifier_name)
+    def _resolve_method(self, pattern: Pattern, slots: dict, *, predicate: str) -> str:
+        """Walk the pattern's rules, handling python_when_predicate_supported.
+
+        That pseudo-method means "use python if a verifier exists for this
+        predicate; otherwise advance to the next rule".
+        """
+        for i, rule in enumerate(pattern.verification_rules):
+            if not rule.matches(slots):
+                continue
+            if rule.method == "python_when_predicate_supported":
+                if get_verifier(predicate) is not None:
+                    return "python"
+                continue  # advance to the next rule
+            return rule.method
+        # If we exhausted all rules (shouldn't happen — registry validates a
+        # default), fall back to unverifiable.
+        return "unverifiable"
+
+    def _maybe_anomaly(self, pattern: Pattern, slots: dict) -> dict | None:
+        """Return {slot, expected, actual} if this is a routing anomaly, else None."""
+        if not pattern.flag_non_user_as_anomaly:
+            return None
+        # The anomaly trigger is "the user-authoritative branch's `when`
+        # condition isn't met". Find that branch.
+        for rule in pattern.verification_rules:
+            if rule.method == "user_authoritative" and rule.when:
+                slot_name, expected = next(iter(rule.when.items()))
+                actual = slots.get(slot_name)
+                if not _is_user(actual) and not (
+                    isinstance(actual, str) and actual.strip().lower() == str(expected).strip().lower()
+                ):
+                    return {"slot": slot_name, "expected": expected, "actual": actual}
+        return None
+
+    # ---- per-method handlers -------------------------------------------
+
+    def _route_python(self, claim: dict, source_turn_id: int) -> Decision:
+        verifier = get_verifier(claim["predicate"])
+        assert verifier is not None, "_resolve_method should have ensured this"
         try:
             result = verifier(claim)
-        except Exception as e:  # fail loudly but don't crash the pipeline
+        except Exception as e:
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
                 verification_status="unverifiable_pending_implementation",
                 confidence=CONF_PENDING_IMPLEMENTATION,
-                stored_fact_id=self._store_model_fact(
-                    claim,
-                    source_turn_id,
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
                     confidence=CONF_PENDING_IMPLEMENTATION,
                     verification_status="unverifiable_pending_implementation",
                 ),
-                notes=[f"python verifier {verifier_name} raised {type(e).__name__}: {e}"],
+                notes=[f"python verifier raised {type(e).__name__}: {e}"],
             )
 
         if result.outcome is VerificationOutcome.VERIFIED:
@@ -266,59 +293,45 @@ class Router:
                 outcome=RoutingOutcome.VERIFIED,
                 verification_status="verified",
                 confidence=CONF_PYTHON_VERIFIED,
-                stored_fact_id=self._store_model_fact(
-                    claim,
-                    source_turn_id,
-                    confidence=CONF_PYTHON_VERIFIED,
-                    verification_status="verified",
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
+                    confidence=CONF_PYTHON_VERIFIED, verification_status="verified",
                 ),
                 verifier_result=result,
             )
 
         if result.outcome is VerificationOutcome.CONTRADICTED:
-            # Store the correction (not the wrong claim) as a verified fact.
-            correction_object = (
-                str(result.actual_value) if result.actual_value is not None else claim["object"]
-            )
-            corrected_fact_id = self.store.insert_fact(
-                Fact(
-                    subject=claim["subject"],
-                    predicate=claim["predicate"],
-                    object=correction_object,
-                    object_type=claim["object_type"],
-                    polarity=1,  # the correction is a positive claim about reality
-                    confidence=CONF_PYTHON_CORRECTION,
-                    asserted_by="python_verifier",
-                    verification_status="verified",
-                    source_turn_id=source_turn_id,
-                    source_text=claim.get("source_text"),
-                )
+            corrected_slots = dict(claim.get("slots") or {})
+            if result.actual_value is not None:
+                corrected_slots["value"] = result.actual_value
+            corrected_claim = dict(claim)
+            corrected_claim["slots"] = corrected_slots
+            corrected_id = self._store(
+                corrected_claim, source_turn_id, asserted_by="python_verifier",
+                confidence=CONF_PYTHON_CORRECTION, verification_status="verified",
             )
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
                 confidence=CONF_PYTHON_CORRECTION,
-                stored_fact_id=corrected_fact_id,
+                stored_fact_id=corrected_id,
                 verifier_result=result,
                 correction={
-                    "original_object": claim["object"],
-                    "corrected_object": correction_object,
+                    "original_object": claim.get("slots", {}).get("value"),
+                    "corrected_object": result.actual_value,
                     "explanation": result.explanation,
                     "source_text": claim.get("source_text", ""),
                 },
             )
 
-        # inconclusive: the predicate is python-verifiable in principle, but
-        # this particular input shape couldn't be parsed. Mark as pending.
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
             verification_status="unverifiable_pending_implementation",
             confidence=CONF_PENDING_IMPLEMENTATION,
-            stored_fact_id=self._store_model_fact(
-                claim,
-                source_turn_id,
+            stored_fact_id=self._store(
+                claim, source_turn_id, asserted_by="model",
                 confidence=CONF_PENDING_IMPLEMENTATION,
                 verification_status="unverifiable_pending_implementation",
             ),
@@ -326,11 +339,12 @@ class Router:
             notes=[f"python verifier inconclusive: {result.explanation}"],
         )
 
-    def _route_store(self, claim: dict, source_turn_id: int) -> Decision:
-        result = store_lookup_verify(claim, self.store)
-
+    def _route_store(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+        result = store_lookup_verify(
+            claim, self.store, key_slot_names=KEY_SLOTS_BY_PATTERN.get(pattern.name, [])
+        )
         if result.outcome is StoreLookupOutcome.MATCH:
-            assert result.matching_fact is not None and result.matching_fact.id is not None
+            assert result.matching_fact and result.matching_fact.id is not None
             new_conf = self.store.boost_confidence(result.matching_fact.id)
             return Decision(
                 claim=claim,
@@ -341,62 +355,53 @@ class Router:
                 matching_fact_id=result.matching_fact.id,
                 notes=["model claim matched a stored user-asserted fact"],
             )
-
         if result.outcome is StoreLookupOutcome.CONTRADICTION:
-            assert result.contradicting_fact is not None
             cf = result.contradicting_fact
+            assert cf is not None
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
-                confidence=CONF_STORE_CORRECTION,
+                confidence=CONF_STORE_VERIFIED,
                 contradicting_fact_id=cf.id,
                 correction={
-                    "original_object": claim["object"],
-                    "corrected_object": cf.object,
-                    "original_polarity": int(claim["polarity"]),
-                    "corrected_polarity": cf.polarity,
+                    "original_object": claim.get("slots"),
+                    "corrected_object": cf.slots,
                     "explanation": (
                         f"the user previously asserted "
-                        f"({cf.subject}, {cf.predicate}, {cf.object}, "
+                        f"({cf.pattern}, {cf.predicate}, {cf.slots}, "
                         f"polarity={cf.polarity})"
                     ),
                     "source_text": claim.get("source_text", ""),
                 },
             )
-
-        # MISS: the user hasn't said this. Mark as pending — we'd verify if we
-        # had ground truth, we just don't yet.
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
             verification_status="unverifiable_pending_implementation",
             confidence=CONF_PENDING_IMPLEMENTATION,
-            stored_fact_id=self._store_model_fact(
-                claim,
-                source_turn_id,
+            stored_fact_id=self._store(
+                claim, source_turn_id, asserted_by="model",
                 confidence=CONF_PENDING_IMPLEMENTATION,
                 verification_status="unverifiable_pending_implementation",
             ),
             notes=[
-                "model asserted a user-authoritative fact the user hasn't stated; "
-                "stored low-confidence pending user assertion"
+                "model asserted what would be a user-authoritative fact, "
+                "but the user hasn't stated it"
             ],
         )
 
     def _route_retrieval(self, claim: dict, source_turn_id: int) -> Decision:
         if self.retrieval_verifier is None:
-            # No verifier configured — treat as pending until one is wired in.
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
-                verification_status="unverifiable_pending_implementation",
-                confidence=CONF_PENDING_IMPLEMENTATION,
-                stored_fact_id=self._store_model_fact(
-                    claim,
-                    source_turn_id,
-                    confidence=CONF_PENDING_IMPLEMENTATION,
-                    verification_status="unverifiable_pending_implementation",
+                verification_status="retrieval_failed",
+                confidence=CONF_RETRIEVAL_FAILED,
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
+                    confidence=CONF_RETRIEVAL_FAILED,
+                    verification_status="retrieval_failed",
                 ),
                 notes=["no RetrievalVerifier configured on Router"],
             )
@@ -408,62 +413,58 @@ class Router:
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
                 verification_status="verified",
-                confidence=CONF_STORE_VERIFIED,
-                stored_fact_id=self._store_model_fact(
-                    claim,
-                    source_turn_id,
-                    confidence=CONF_STORE_VERIFIED,
-                    verification_status="verified",
+                confidence=CONF_RETRIEVAL_VERIFIED,
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
+                    confidence=CONF_RETRIEVAL_VERIFIED, verification_status="verified",
                 ),
                 retrieval_result=result,
             )
-
         if result.outcome is VerificationOutcome.CONTRADICTED:
-            # We don't necessarily have a clean "corrected_object" — the judge
-            # only confirmed the claim is wrong. Surface the verdict text as
-            # the correction explanation.
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
-                confidence=CONF_PYTHON_CORRECTION,
-                stored_fact_id=self._store_model_fact(
-                    claim,
-                    source_turn_id,
-                    confidence=CONF_PYTHON_CORRECTION,
+                confidence=CONF_RETRIEVAL_CORRECTION,
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
+                    confidence=CONF_RETRIEVAL_CORRECTION,
                     verification_status="contradicted",
                 ),
                 retrieval_result=result,
                 correction={
-                    "original_object": claim["object"],
-                    "corrected_object": (
-                        result.actual_value
-                        if result.actual_value is not None
-                        else "(see judge justification)"
-                    ),
+                    "original_object": claim.get("slots"),
+                    "corrected_object": result.actual_value,
                     "explanation": result.explanation
                     or (result.verdict.justification if result.verdict else ""),
                     "source_text": claim.get("source_text", ""),
                 },
             )
 
-        # INCONCLUSIVE — retrieval errored, returned nothing, judge said
-        # insufficient_evidence, or judge output couldn't be parsed. All of
-        # these are "verifiable in principle, just not by this run".
+        # INCONCLUSIVE — split per Section 6 (handled fully there).
+        # If the verifier got snippets and the judge said insufficient, that's
+        # `retrieval_inconclusive`. If anything earlier failed, it's
+        # `retrieval_failed`. We use error_flag to discriminate.
+        is_failed = (
+            result.error_flag in {"retrieval_error", "no_results", "judge_error",
+                                  "judge_parse_error", "retrieval_not_configured"}
+        )
+        status = "retrieval_failed" if is_failed else "retrieval_inconclusive"
+        confidence = CONF_RETRIEVAL_FAILED if is_failed else CONF_RETRIEVAL_INCONCLUSIVE
+
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
-            verification_status="unverifiable_pending_implementation",
-            confidence=CONF_PENDING_IMPLEMENTATION,
-            stored_fact_id=self._store_model_fact(
-                claim,
-                source_turn_id,
-                confidence=CONF_PENDING_IMPLEMENTATION,
-                verification_status="unverifiable_pending_implementation",
+            verification_status=status,
+            confidence=confidence,
+            stored_fact_id=self._store(
+                claim, source_turn_id, asserted_by="model",
+                confidence=confidence, verification_status=status,
             ),
             retrieval_result=result,
             notes=[
-                f"retrieval inconclusive: {result.error_flag or 'insufficient_evidence'}: "
+                f"retrieval {status}: "
+                f"{result.error_flag or 'insufficient_evidence'} — "
                 f"{result.explanation}"
             ],
         )
@@ -474,30 +475,63 @@ class Router:
             outcome=RoutingOutcome.UNVERIFIABLE_IN_PRINCIPLE,
             verification_status="unverifiable_in_principle",
             confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
-            stored_fact_id=self._store_model_fact(
-                claim,
-                source_turn_id,
+            stored_fact_id=self._store(
+                claim, source_turn_id, asserted_by="model",
                 confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
                 verification_status="unverifiable_in_principle",
             ),
-            notes=["predicate is unverifiable by design"],
+            notes=["pattern is unverifiable by design for this slot configuration"],
+        )
+
+    def _route_routing_anomaly(
+        self, claim: dict, source_turn_id: int, anomaly: dict
+    ) -> Decision:
+        return Decision(
+            claim=claim,
+            outcome=RoutingOutcome.ROUTING_ANOMALY,
+            verification_status="routing_anomaly",
+            confidence=CONF_ROUTING_ANOMALY,
+            stored_fact_id=self._store(
+                claim, source_turn_id, asserted_by="model",
+                confidence=CONF_ROUTING_ANOMALY, verification_status="routing_anomaly",
+            ),
+            anomaly_slot=anomaly,
+            notes=[
+                f"routing anomaly: pattern {claim['pattern']!r} expects "
+                f"slot {anomaly['slot']!r}={anomaly['expected']!r} for the "
+                f"user-authoritative branch, but got {anomaly['actual']!r}; "
+                "this almost always indicates an upstream extractor error"
+            ],
         )
 
     # ---- helpers --------------------------------------------------------
 
-    def _store_model_fact(
-        self, claim: dict, source_turn_id: int, confidence: float, verification_status: str
+    def _key_slots(self, pattern: Pattern, slots: dict) -> dict:
+        names = KEY_SLOTS_BY_PATTERN.get(pattern.name, [])
+        return {k: slots[k] for k in names if k in slots}
+
+    def _store(
+        self,
+        claim: dict,
+        source_turn_id: int,
+        *,
+        asserted_by: str,
+        confidence: float,
+        verification_status: str,
     ) -> int:
+        slots = claim.get("slots") or {}
         return self.store.insert_fact(
             Fact(
-                subject=claim["subject"],
+                pattern=claim["pattern"],
                 predicate=claim["predicate"],
-                object=claim["object"],
-                object_type=claim["object_type"],
+                slots=dict(slots),
                 polarity=int(claim["polarity"]),
                 confidence=confidence,
-                asserted_by="model",
+                asserted_by=asserted_by,
                 verification_status=verification_status,
+                # Lift slot temporal scope onto the fact's columns when present.
+                valid_from=str(slots["valid_from"]) if slots.get("valid_from") else None,
+                valid_until=str(slots["valid_until"]) if slots.get("valid_until") else None,
                 source_turn_id=source_turn_id,
                 source_text=claim.get("source_text"),
             )

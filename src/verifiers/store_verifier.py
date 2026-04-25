@@ -1,24 +1,24 @@
-"""Store-backed verification.
+"""Store-backed verification (v0.3 — pattern + slots).
 
-When a model asserts a fact whose verification method is ``store_lookup`` or
-``user_authoritative``, we check the fact store — the user is the ground
-truth for their own preferences/identity, and anything they previously
-asserted sits in the store as ``user_asserted``.
+When the router needs to check whether a model-asserted claim matches
+something the user previously said, it queries by ``(pattern, predicate,
+key_slots)`` and looks for an exact polarity match (verified) or an
+opposite-polarity match (contradicted).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from src.fact_store import Fact, FactStore
 
 
 class StoreLookupOutcome(str, Enum):
-    MATCH = "match"  # an existing currently-valid fact matches exactly
-    CONTRADICTION = "contradiction"  # existing fact has opposite polarity
-    MISS = "miss"  # nothing on record
+    MATCH = "match"
+    CONTRADICTION = "contradiction"
+    MISS = "miss"
 
 
 @dataclass
@@ -37,25 +37,33 @@ class StoreLookupResult:
         }
 
 
-def store_lookup_verify(claim: dict, store: FactStore) -> StoreLookupResult:
-    """Look for facts that match or contradict ``claim``.
+def store_lookup_verify(
+    claim: dict,
+    store: FactStore,
+    *,
+    key_slot_names: list[str],
+) -> StoreLookupResult:
+    """Look for matching or contradicting prior facts.
 
-    A ``match`` means same subject+predicate+object+polarity and currently valid.
-    A ``contradiction`` means same subject+predicate+object but opposite polarity.
+    ``key_slot_names`` lists which slots define identity. For
+    ``preference`` that's [agent, object]; for ``spatial_temporal`` it's
+    [entity, location]; etc. The router supplies these from the pattern.
     """
-    subject = claim["subject"]
-    predicate = claim["predicate"]
-    obj = claim["object"]
+    slots = claim.get("slots", {})
+    key_slots = {k: slots[k] for k in key_slot_names if k in slots}
     polarity = int(claim["polarity"])
+    pattern = claim["pattern"]
+    predicate = claim["predicate"]
 
-    same = store.find_currently_valid(subject, predicate, obj, polarity)
+    same = store.find_currently_valid(
+        pattern, predicate=predicate, slot_match=key_slots, polarity=polarity
+    )
     if same:
         return StoreLookupResult(StoreLookupOutcome.MATCH, matching_fact=same[0])
 
-    opposite = store.find_contradictions(subject, predicate, obj, polarity)
+    opposite = store.find_contradictions(pattern, predicate, key_slots, polarity)
     if opposite:
         return StoreLookupResult(
             StoreLookupOutcome.CONTRADICTION, contradicting_fact=opposite[0]
         )
-
     return StoreLookupResult(StoreLookupOutcome.MISS)
