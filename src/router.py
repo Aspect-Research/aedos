@@ -17,7 +17,7 @@ from enum import Enum
 from typing import Optional
 
 from src.fact_store import Fact, FactStore
-from src.predicate_registry import PredicateRegistry
+from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias; renamed in §4
 from src.verifiers.python_verifiers import (
     VerificationOutcome,
     VerificationResult,

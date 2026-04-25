@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.llm_client import LLMClient
-from src.predicate_registry import OBJECT_TYPES, PredicateRegistry
+from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias; renamed in §3
+OBJECT_TYPES = {"int", "string", "bool", "entity", "count"}  # v0.2 leftover; replaced in §3
 
 
 @dataclass

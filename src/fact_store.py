@@ -1,11 +1,13 @@
-"""SQLite-backed fact store.
+"""SQLite-backed fact store (v0.3 — pattern + slots schema).
 
-Single source of truth for facts, turns, and pipeline events. The schema is
-deliberately minimal — one primary facts table, one predicate metadata table
-(maintained elsewhere), one turns table, one pipeline_events table.
+A fact is stored as ``(pattern, predicate, slots_json)`` where ``slots`` is
+a JSON object whose keys come from the pattern's slot schema. The
+flexible slots column replaces the rigid (subject, predicate, object,
+object_type) layout from v0.1/v0.2.
 
-Operations are plain parameterized SQL; there is no ORM. Every non-trivial
-method takes explicit arguments so callers don't have to construct dicts.
+The ``facts_flat`` view exposes a denormalized subject/object projection
+for the UI. It uses pattern-aware coalescing of the canonical "subject"
+and "object" slots — see SCHEMA below.
 """
 
 from __future__ import annotations
@@ -15,28 +17,20 @@ import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-# Valid enumerations — mirrors the schema CHECKs we'd add in production.
-OBJECT_TYPES = {"int", "string", "bool", "entity", "count"}
+# Valid enumerations.
 POLARITIES = {0, 1}
 ASSERTED_BY = {"user", "model", "python_verifier", "external"}
 VERIFICATION_STATUSES = {
-    # Actively verified by python, retrieval, or store match.
     "verified",
-    # A verifier returned a contradiction.
     "contradicted",
-    # User stated this fact directly; ground truth for user-authoritative predicates.
     "user_asserted",
-    # Predicate's verification_method is `unverifiable` (will_happen, might, ...).
     "unverifiable_in_principle",
-    # Verification *could* succeed in principle but didn't:
-    #   - retrieval verifier returned error / no_results / insufficient_evidence
-    #   - python verifier inconclusive (couldn't parse the input shape)
-    #   - user_authoritative store lookup miss on a user subject
-    "unverifiable_pending_implementation",
-    # User-authoritative predicate asserted by the model about a non-user subject.
-    # Strong signal of upstream extractor error, not a content-level problem.
+    # v0.3 split: see ARCHITECTURE.md "Verification status semantics"
+    "retrieval_inconclusive",  # verifier ran, judge said insufficient evidence
+    "retrieval_failed",        # verifier didn't get useful signal at all
+    "unverifiable_pending_implementation",  # python verifier inconclusive / lookup miss
     "routing_anomaly",
 }
 PIPELINE_STAGES = {
@@ -47,8 +41,10 @@ PIPELINE_STAGES = {
     "verification",
     "correction",
     "final",
-    # New in v0.2: emitted whenever the router detects a routing anomaly.
     "routing_anomaly_detected",
+    # v0.3 additions
+    "retrieval_query_attempt",  # one event per query attempt; trace shows the strategy
+    "verifier_failure",         # the verifier didn't produce useful signal
 }
 
 # Confidence adjustments
@@ -64,10 +60,9 @@ def _now_iso() -> str:
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject TEXT NOT NULL,
+    pattern TEXT NOT NULL,
     predicate TEXT NOT NULL,
-    object TEXT NOT NULL,
-    object_type TEXT NOT NULL,
+    slots TEXT NOT NULL,                -- JSON object keyed by slot name
     polarity INTEGER NOT NULL,
     confidence REAL NOT NULL,
     asserted_by TEXT NOT NULL,
@@ -79,10 +74,9 @@ CREATE TABLE IF NOT EXISTS facts (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_facts_subject_predicate
-    ON facts(subject, predicate);
-CREATE INDEX IF NOT EXISTS idx_facts_valid_until
-    ON facts(valid_until);
+CREATE INDEX IF NOT EXISTS idx_facts_pattern ON facts(pattern);
+CREATE INDEX IF NOT EXISTS idx_facts_predicate ON facts(predicate);
+CREATE INDEX IF NOT EXISTS idx_facts_valid_until ON facts(valid_until);
 
 CREATE TABLE IF NOT EXISTS turns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,17 +101,50 @@ CREATE TABLE IF NOT EXISTS retrieval_cache (
     snippets TEXT NOT NULL,
     fetched_at TEXT NOT NULL
 );
+
+-- A flat projection of facts for the UI / quick inspection. The pattern
+-- determines which slot fills "subject" and "object" semantically.
+CREATE VIEW IF NOT EXISTS facts_flat AS
+SELECT
+    id,
+    pattern,
+    predicate,
+    COALESCE(
+        json_extract(slots, '$.agent'),
+        json_extract(slots, '$.subject'),
+        json_extract(slots, '$.entity'),
+        json_extract(slots, '$.event_type')
+    ) AS subject,
+    COALESCE(
+        json_extract(slots, '$.role'),
+        json_extract(slots, '$.object'),
+        json_extract(slots, '$.category'),
+        json_extract(slots, '$.location'),
+        json_extract(slots, '$.proposition'),
+        json_extract(slots, '$.value'),
+        json_extract(slots, '$.relation')
+    ) AS object,
+    polarity,
+    confidence,
+    asserted_by,
+    verification_status,
+    valid_from,
+    valid_until,
+    source_turn_id,
+    source_text,
+    created_at,
+    slots
+FROM facts;
 """
 
 
 @dataclass
 class Fact:
-    """A single stored fact. Mirrors the facts table row structure."""
+    """A single stored fact under the v0.3 pattern/slots schema."""
 
-    subject: str
+    pattern: str
     predicate: str
-    object: str
-    object_type: str
+    slots: dict[str, Any]
     polarity: int
     confidence: float
     asserted_by: str
@@ -132,14 +159,20 @@ class Fact:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+    # Convenience accessors mirroring the pattern catalog's canonical slots.
+    @property
+    def agent_or_subject(self) -> Any:
+        for k in ("agent", "subject", "entity", "event_type"):
+            if k in self.slots:
+                return self.slots[k]
+        return None
+
 
 class FactStore:
     """Thin SQLite wrapper. One instance per database file."""
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
-        # check_same_thread=False because FastAPI shares the store across
-        # request-handler coroutines; we serialize writes with a simple lock.
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
@@ -153,16 +186,15 @@ class FactStore:
         cur = self._conn.execute(
             """
             INSERT INTO facts (
-                subject, predicate, object, object_type, polarity,
-                confidence, asserted_by, verification_status,
-                valid_from, valid_until, source_turn_id, source_text, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pattern, predicate, slots, polarity, confidence,
+                asserted_by, verification_status, valid_from, valid_until,
+                source_turn_id, source_text, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                fact.subject,
+                fact.pattern,
                 fact.predicate,
-                fact.object,
-                fact.object_type,
+                json.dumps(fact.slots, default=str),
                 fact.polarity,
                 fact.confidence,
                 fact.asserted_by,
@@ -183,20 +215,27 @@ class FactStore:
 
     def find_currently_valid(
         self,
-        subject: str,
-        predicate: str,
-        object: str | None = None,
+        pattern: str,
+        predicate: str | None = None,
+        slot_match: dict[str, Any] | None = None,
         polarity: int | None = None,
     ) -> list[Fact]:
-        """Return currently valid facts matching the filters. Case-insensitive on subject/object."""
-        clauses = ["LOWER(subject) = LOWER(?)", "predicate = ?", "valid_until IS NULL"]
-        params: list[Any] = [subject, predicate]
-        if object is not None:
-            clauses.append("LOWER(object) = LOWER(?)")
-            params.append(object)
+        """Currently-valid facts matching pattern + optional predicate + slot subset.
+
+        ``slot_match`` is ANDed against ``slots`` JSON via case-insensitive
+        equality. The match values are stringified before comparison.
+        """
+        clauses = ["pattern = ?", "valid_until IS NULL"]
+        params: list[Any] = [pattern]
+        if predicate is not None:
+            clauses.append("predicate = ?")
+            params.append(predicate)
         if polarity is not None:
             clauses.append("polarity = ?")
             params.append(polarity)
+        for k, v in (slot_match or {}).items():
+            clauses.append(f"LOWER(json_extract(slots, '$.{_safe_key(k)}')) = LOWER(?)")
+            params.append(str(v))
         rows = self._conn.execute(
             f"SELECT * FROM facts WHERE {' AND '.join(clauses)} ORDER BY id",
             params,
@@ -204,14 +243,18 @@ class FactStore:
         return [_row_to_fact(r) for r in rows]
 
     def find_contradictions(
-        self, subject: str, predicate: str, object: str, polarity: int
+        self,
+        pattern: str,
+        predicate: str,
+        slot_match: dict[str, Any],
+        polarity: int,
     ) -> list[Fact]:
-        """Find currently-valid facts on the same (subject, predicate, object) with opposite polarity."""
         opposite = 0 if polarity == 1 else 1
-        return self.find_currently_valid(subject, predicate, object, opposite)
+        return self.find_currently_valid(
+            pattern, predicate=predicate, slot_match=slot_match, polarity=opposite
+        )
 
     def boost_confidence(self, fact_id: int, amount: float = _CONFIDENCE_BOOST) -> float:
-        """Increase a fact's confidence, capped at 0.99. Returns the new value."""
         row = self._conn.execute(
             "SELECT confidence FROM facts WHERE id = ?", (fact_id,)
         ).fetchone()
@@ -228,7 +271,6 @@ class FactStore:
         valid_until: str | None = None,
         new_confidence: float | None = _CONFIDENCE_FLOOR_ON_CLOSE,
     ) -> None:
-        """Close a fact temporally. Optionally lower its confidence (None to leave it alone)."""
         valid_until = valid_until or _now_iso()
         if new_confidence is None:
             self._conn.execute(
@@ -244,18 +286,17 @@ class FactStore:
 
     def query_facts(
         self,
-        subject: str | None = None,
+        pattern: str | None = None,
         predicate: str | None = None,
         asserted_by: str | None = None,
         verification_status: str | None = None,
         only_valid: bool = False,
     ) -> list[Fact]:
-        """General-purpose filter for UI/inspector views."""
         clauses: list[str] = []
         params: list[Any] = []
-        if subject is not None:
-            clauses.append("LOWER(subject) = LOWER(?)")
-            params.append(subject)
+        if pattern is not None:
+            clauses.append("pattern = ?")
+            params.append(pattern)
         if predicate is not None:
             clauses.append("predicate = ?")
             params.append(predicate)
@@ -276,7 +317,6 @@ class FactStore:
         return [_row_to_fact(r) for r in rows]
 
     def all_user_facts(self) -> list[Fact]:
-        """All currently-valid, user-asserted facts. Used to build context for the chat model."""
         rows = self._conn.execute(
             """
             SELECT * FROM facts
@@ -338,23 +378,20 @@ class FactStore:
             "SELECT * FROM pipeline_events WHERE turn_id = ? ORDER BY id",
             (turn_id,),
         ).fetchall()
-        out: list[dict[str, Any]] = []
-        for r in rows:
-            out.append(
-                {
-                    "id": r["id"],
-                    "turn_id": r["turn_id"],
-                    "stage": r["stage"],
-                    "data": json.loads(r["data"]),
-                    "created_at": r["created_at"],
-                }
-            )
-        return out
+        return [
+            {
+                "id": r["id"],
+                "turn_id": r["turn_id"],
+                "stage": r["stage"],
+                "data": json.loads(r["data"]),
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
 
     # ---- retrieval cache --------------------------------------------------
 
     def cache_retrieval(self, query: str, snippets: list[dict[str, Any]]) -> None:
-        """Store retrieval snippets keyed by search query."""
         self._conn.execute(
             "INSERT OR REPLACE INTO retrieval_cache (query, snippets, fetched_at) "
             "VALUES (?, ?, ?)",
@@ -365,7 +402,6 @@ class FactStore:
     def get_cached_retrieval(
         self, query: str, ttl_seconds: int
     ) -> list[dict[str, Any]] | None:
-        """Return cached snippets if present and within TTL, else None."""
         row = self._conn.execute(
             "SELECT snippets, fetched_at FROM retrieval_cache WHERE query = ?",
             (query,),
@@ -384,8 +420,8 @@ class FactStore:
         self._conn.close()
 
     def reset(self) -> None:
-        """DROP and recreate everything. Used by scripts/reset_db.py and tests."""
         self._conn.executescript(
+            "DROP VIEW IF EXISTS facts_flat;"
             "DROP TABLE IF EXISTS facts;"
             "DROP TABLE IF EXISTS turns;"
             "DROP TABLE IF EXISTS pipeline_events;"
@@ -395,16 +431,28 @@ class FactStore:
         self._conn.commit()
 
 
+def _safe_key(k: str) -> str:
+    """JSON path keys can't contain ' or special chars. Whitelist alnum + underscore."""
+    if not k.replace("_", "").isalnum():
+        raise ValueError(f"slot key not safe for SQL json_extract: {k!r}")
+    return k
+
+
 def _validate_fact(fact: Fact) -> None:
-    if fact.object_type not in OBJECT_TYPES:
-        raise ValueError(f"object_type {fact.object_type!r} not in {sorted(OBJECT_TYPES)}")
+    if not fact.pattern:
+        raise ValueError("fact.pattern must be non-empty")
+    if not fact.predicate:
+        raise ValueError("fact.predicate must be non-empty")
+    if not isinstance(fact.slots, dict):
+        raise ValueError(f"fact.slots must be a dict, got {type(fact.slots).__name__}")
     if fact.polarity not in POLARITIES:
         raise ValueError(f"polarity must be 0 or 1, got {fact.polarity!r}")
     if fact.asserted_by not in ASSERTED_BY:
         raise ValueError(f"asserted_by {fact.asserted_by!r} not in {sorted(ASSERTED_BY)}")
     if fact.verification_status not in VERIFICATION_STATUSES:
         raise ValueError(
-            f"verification_status {fact.verification_status!r} not in {sorted(VERIFICATION_STATUSES)}"
+            f"verification_status {fact.verification_status!r} "
+            f"not in {sorted(VERIFICATION_STATUSES)}"
         )
     if not (0.0 <= fact.confidence <= 1.0):
         raise ValueError(f"confidence must be in [0.0, 1.0], got {fact.confidence}")
@@ -413,10 +461,9 @@ def _validate_fact(fact: Fact) -> None:
 def _row_to_fact(row: sqlite3.Row) -> Fact:
     return Fact(
         id=row["id"],
-        subject=row["subject"],
+        pattern=row["pattern"],
         predicate=row["predicate"],
-        object=row["object"],
-        object_type=row["object_type"],
+        slots=json.loads(row["slots"]),
         polarity=row["polarity"],
         confidence=row["confidence"],
         asserted_by=row["asserted_by"],

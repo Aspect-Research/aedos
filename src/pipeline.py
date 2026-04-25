@@ -29,7 +29,7 @@ from src.corrector import Corrector, Intervention
 from src.extractor import ClaimExtractor
 from src.fact_store import Fact, FactStore
 from src.llm_client import ChatMessage, LLMClient
-from src.predicate_registry import PredicateRegistry
+from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias
 from src.router import Decision, Router, RoutingOutcome
 
 
@@ -233,7 +233,7 @@ def build_pipeline(
     registry: PredicateRegistry | None = None,
 ) -> Pipeline:
     """Convenience constructor used by app.py and integration tests."""
-    from src.predicate_registry import load_default_registry
+    from src.pattern_registry import load_default_registry
     from src.verifiers.retrieval_verifier import RetrievalVerifier
 
     store = FactStore(db_path)

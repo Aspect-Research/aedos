@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.pipeline import Pipeline, build_pipeline
-from src.predicate_registry import load_default_registry
+from src.pattern_registry import load_default_registry
 
 load_dotenv()
 
