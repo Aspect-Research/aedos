@@ -226,6 +226,64 @@ def test_system_prompt_includes_every_predicate():
         assert name in extractor._system_prompt
 
 
+# ---------- abstention behavior (Section 1) ----------
+
+
+def test_extractor_abstains_on_out_of_vocabulary_claim():
+    """Photosynthesis sentence must extract zero claims when the LLM abstains."""
+    extractor = _mk_extractor({"claims": []})
+    result = extractor.extract(
+        "Photosynthesis converts sunlight into chemical energy.", role="user"
+    )
+    assert result.valid_claims == []
+    assert result.rejected_claims == []
+
+
+def test_copula_sentence_does_not_route_to_believes():
+    """A copula statement with a specific predicate must use that predicate, not believes.
+
+    The point of the new abstention prompt is that `believes` is reserved
+    for explicit user beliefs. A factual copula like "Paris is the capital
+    of France" should route to `capital_of`, never `believes`, even when
+    no first-person speaker is stating it.
+    """
+    extractor = _mk_extractor(
+        {
+            "claims": [
+                {
+                    "subject": "Paris",
+                    "predicate": "capital_of",
+                    "object": "France",
+                    "object_type": "entity",
+                    "polarity": 1,
+                    "source_text": "Paris is the capital of France",
+                }
+            ]
+        }
+    )
+    result = extractor.extract("Paris is the capital of France.", role="user")
+    assert len(result.valid_claims) == 1
+    c = result.valid_claims[0]
+    assert c["predicate"] == "capital_of"
+    assert c["predicate"] != "believes"
+
+
+def test_abstention_prompt_includes_explicit_guidance():
+    """The system prompt must contain the abstention guidance and few-shot examples."""
+    extractor = _mk_extractor({"claims": []})
+    sys = extractor._system_prompt
+    assert "abstention is the default" in sys.lower()
+    assert "believes" in sys
+    # Use a substring that doesn't cross a paragraph break.
+    assert "preferred over forcing a poor fit" in sys
+    # Reserved-for-user-belief guidance.
+    assert "reserved for explicit user beliefs" in sys
+    # Few-shot examples must include abstention + the believes-vs-fact discriminator.
+    assert "Photosynthesis" in sys
+    assert "Fed will cut rates" in sys
+    assert "Paris is the capital of France" in sys
+
+
 @pytest.mark.skipif(
     os.getenv("RUN_API_TESTS") != "1", reason="real API test gated behind RUN_API_TESTS=1"
 )
