@@ -122,7 +122,81 @@ There's exactly one way to run a turn through the pipeline. No
 configuration options, no mode flags, no alternate code paths. Tests
 exercise that one path thoroughly. When something changes, it's visible.
 
-## Verification status semantics (v0.2)
+## Representation: patterns vs predicates (v0.3)
+
+Aedos's earlier releases used a closed predicate vocabulary. v0.3 moves
+to a pattern-based representation. The motivation is straightforward.
+
+### The two failure modes we wanted to avoid
+
+**Closed vocabulary doesn't scale.** Every conversation introduces
+relations that don't fit the existing list. Adding predicates is human
+work; the rate of new conversational claim-types vastly exceeds the rate
+at which a curated vocabulary can grow. v0.2 had ~37 predicates and
+already routinely encountered claims with no good fit, leading to one of
+two bad outcomes: forcing a poor fit (the `(Donald Trump, believes,
+"is the U.S. president")` case from the v0.2 trace) or abstaining when a
+real fact was being stated.
+
+**Open vocabulary doesn't work either.** Letting the extractor invent
+predicates reproduces the canonicalization problem that broke the
+semantic web — three conversations later you have `likes`, `loves`,
+`enjoys`, `is_fond_of`, and `has_positive_attitude_toward` all
+representing the same relation, none of which can be queried as a unit
+or routed consistently.
+
+### Why patterns are the middle path
+
+A **pattern** is a bounded structural type with declared verification
+semantics. There are eight: `role_assignment`, `preference`,
+`quantitative`, `spatial_temporal`, `categorical`, `relational`,
+`event`, `propositional_attitude`. A fact is a pattern instance
+populated with slot values, plus a free-form predicate label that names
+the relation descriptively.
+
+The verification method comes from the pattern, not the predicate. So
+`adores`, `is_obsessed_with`, and `tolerates` are all preference
+predicates and inherit preference's semantics — user-authoritative when
+the agent is the user, unverifiable otherwise. No code change is needed
+to support a new predicate; the structural type carries the meaning.
+
+This lets vocabulary grow organically per conversation while keeping
+verification predictable.
+
+### Domains covered
+
+| Pattern | Domain | Example |
+|---|---|---|
+| `role_assignment` | named offices/positions, time-bounded | "Trump is the 47th President" |
+| `preference` | user affinities | "I love peanut butter" |
+| `quantitative` | numeric measurements | "Strawberry has 3 r's" |
+| `spatial_temporal` | location, residence, employment | "I live in Williamstown" |
+| `categorical` | profession / kind / class | "Marie Curie was a physicist" |
+| `relational` | binary directed relations | "Trump defeated Harris in 2024" |
+| `event` | discrete occurrences | "Trump was inaugurated on Jan 20, 2025" |
+| `propositional_attitude` | beliefs, plans, hopes, feelings | "I think the Fed will cut rates" |
+
+### Known scope limits
+
+The pattern set is deliberately bounded. It represents factual claims
+with well-defined verification procedures. Things outside that scope
+are flagged as out-of-scope by the extractor, not represented:
+
+- **Aesthetic judgments** ("the sunset was beautiful"). Not verifiable,
+  not a preference of a specific agent, not a category. Abstained.
+- **Counterfactuals** ("if Biden had run, he would have lost"). No
+  pattern represents counterfactual conditionals; out of scope for v0.3.
+- **Complex causal claims** ("X caused Y because of Z"). Multi-step
+  causation isn't captured. Such claims abstain unless they reduce
+  cleanly to one of the eight patterns.
+- **Process descriptions** ("photosynthesis converts sunlight"). Generic
+  scientific process descriptions don't fit the patterns; abstained.
+
+This is a defensible scope. We are not trying to represent everything
+sayable — we are representing the kinds of claims for which an
+automated verification procedure makes sense.
+
+## Verification status semantics (v0.2/v0.3)
 
 Every stored fact and every routing `Decision` carries one of these
 verification statuses. The corrector reads the status to decide what
@@ -131,34 +205,39 @@ intervention (if any) to apply.
 | Status | Assigned when | Typical confidence | Corrector behavior |
 |---|---|---|---|
 | `verified` | Python verifier said VERIFIED, retrieval judge said SUPPORTED, or store lookup matched a user-asserted fact | 0.95–0.99 | noop |
-| `contradicted` | A verifier returned CONTRADICTED (python, retrieval, or store) | 0.95–0.99 | **replace**: rewrite using the verified value |
-| `user_asserted` | User stated this directly; ground truth for `user_authoritative` predicates | 0.95+ | noop |
-| `unverifiable_in_principle` | Predicate's `verification_method` is `unverifiable` (`will_happen`, `might`, `believed_by_many`) | 0.3 | **soften**: use hedging language for definite framing |
-| `unverifiable_pending_implementation` | Retrieval errored / returned no results / judge said INSUFFICIENT_EVIDENCE; or a python verifier was inconclusive; or a user-authoritative store lookup missed | 0.4 | **hedge** when confidence < 0.5: insert a verification disclaimer near the claim |
-| `routing_anomaly` | A `user_authoritative` predicate was asserted by the model about a non-user subject (e.g. `(Donald Trump, likes, peanut butter)`) | 0.2 | noop **at the content level** — but the pipeline emits a `routing_anomaly_detected` event so the trace UI shows a prominent banner, since this almost always indicates an extractor bug |
+| `contradicted` | A verifier returned CONTRADICTED | 0.95–0.99 | **replace**: rewrite using the verified value |
+| `user_asserted` | User stated this directly | 0.95+ | noop |
+| `unverifiable_in_principle` | Pattern's resolved method is `unverifiable` (e.g. `propositional_attitude` for non-user agent) | 0.3 | **soften** definite framing |
+| `retrieval_inconclusive` | **v0.3 split:** verifier RAN, search returned snippets, judge said INSUFFICIENT_EVIDENCE | 0.4 | **hedge** — there's positive evidence of uncertainty |
+| `retrieval_failed` | **v0.3 split:** verifier didn't get useful signal — network error, no results, judge unparseable | 0.4 | **noop** — verifier failure is not evidence of uncertainty about the *claim*; the pipeline emits a `verifier_failure` event instead |
+| `unverifiable_pending_implementation` | Python verifier inconclusive, store-lookup miss, etc. | 0.4 | **hedge** when confidence < 0.5 |
+| `routing_anomaly` | Pattern with `flag_non_user_as_anomaly` got a non-user agent | 0.2 | noop **at content level** — pipeline emits a `routing_anomaly_detected` event with the offending slot |
 
-The point of distinguishing `unverifiable_in_principle` from
-`unverifiable_pending_implementation` is that the first is a property of
-the predicate itself (we cannot ever verify a future-tense claim), while
-the second is a property of *this run* (the search was rate-limited, the
-snippets were thin, the verifier hasn't been written yet). The corrector
-applies different prose treatments to each.
+The `retrieval_inconclusive` / `retrieval_failed` split is the v0.3 fix
+for a v0.2 bug: hedging on retrieval failure was making the system more
+wrong. Adding "I think" to a possibly-true claim is worse than leaving
+it as-is.
+
+_(Verification status semantics moved to the v0.3 section above.)_
 
 ## Known limitations
 
 - **Retrieval is v1 — snippet-based, judge-LLM only.** The retrieval
-  verifier issues one search (DuckDuckGo, Tavily, or SerpAPI), takes the
-  top 1–3 result snippets, and asks an LLM to judge support. It does not
-  fetch full pages, does not cross-corroborate across multiple sources,
-  and does not pull from structured sources (Wikidata, Wikipedia
-  infoboxes). DDG scraping in particular is rate-limited and flaky.
-  Failures surface as `unverifiable_pending_implementation` with an
-  explicit `error_flag` (`retrieval_error`, `no_results`,
-  `judge_parse_error`, `judge_error`) so they're visible in the trace,
-  not silently passed through. v2 would add full-page fetch where
-  needed, a structured-fact path for high-confidence claims (Wikidata
-  for capitals, founders, birth years), and source-ranking + multi-snippet
-  corroboration before invoking the LLM judge.
+  verifier issues one or more searches (DuckDuckGo, Tavily, or SerpAPI),
+  takes the top 1–3 result snippets, and asks an LLM to judge support.
+  It does not fetch full pages, does not cross-corroborate across
+  multiple sources, and does not pull from structured sources (Wikidata,
+  Wikipedia infoboxes). v0.3 added a multi-attempt query strategy and the
+  `retrieval_inconclusive` / `retrieval_failed` split, but the underlying
+  retrieval pipeline is still snippet-based. v2 would add full-page fetch
+  where needed, a structured-fact path for high-confidence claims, and
+  source-ranking + multi-snippet corroboration before the judge.
+
+- **Scope of representation.** The eight patterns capture factual claims
+  with well-defined verification procedures. Aesthetic judgments,
+  counterfactuals, and complex causal claims are out of scope and will
+  abstain (see "Representation: patterns vs predicates" → Known scope
+  limits above). This is a deliberate design decision, not a TODO.
 
 - **Python verifiers are narrow.** `verify_has_count` works only when the
   extractor successfully encodes the count claim as JSON. Natural

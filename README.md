@@ -9,24 +9,45 @@ This is a research prototype — clarity, observability, and ease of
 modification matter more than performance. See `ARCHITECTURE.md` for the
 design rationale.
 
+## What's new in v0.3
+
+- **Pattern-based representation.** Closed predicate vocabulary is gone.
+  Facts are now `(pattern, predicate, slots)` where pattern is one of
+  eight bounded structural types and predicate labels are free-form
+  within a pattern. New relations like `is_obsessed_with` or
+  `was_succeeded_by_in_office` work without code changes — they inherit
+  the pattern's verification semantics.
+- **Slots-aware retrieval queries.** Multi-attempt query strategies per
+  pattern, with explicit fallbacks. The verifier never prepends "current"
+  to queries — temporal scope comes from `valid_from` / `valid_until`
+  slots. Each attempt logs to `pipeline_events` for visibility.
+- **Verifier-failure vs verifier-inconclusive split.** The v0.2 corrector
+  hedged true claims when retrieval failed. v0.3 distinguishes
+  `retrieval_inconclusive` (judge said insufficient evidence — hedge) from
+  `retrieval_failed` (search errored or returned nothing — do NOT hedge,
+  just log a warning). Verifier failure is not evidence of uncertainty.
+- **Schema change.** `facts.subject/predicate/object/object_type` →
+  `facts.pattern/predicate/slots(JSON)`. Plus a `facts_flat` view that
+  projects subject/object for the UI.
+
+> **v0.3 requires a fresh DB.** The schema changed — old SQLite files are
+> not compatible. Run `python scripts/reset_db.py` (or click "Reset DB"
+> in the UI) before first use.
+
 ## What's new in v0.2
 
 - **Real retrieval verifier.** The retrieval stub is replaced with a
   working DuckDuckGo / Tavily / SerpAPI backed verifier that fetches
   search snippets, asks an LLM judge, and caches results in SQLite.
 - **Role predicates.** `holds_role`, `is_a`, `headed_by`, `member_of`,
-  `succeeded_by`, `preceded_by` cover the role-claim gap that previously
-  caused the extractor to misuse `believes`.
+  `succeeded_by`, `preceded_by` covered the role-claim gap. (In v0.3
+  these are now expressed via the `role_assignment`, `categorical`,
+  and `relational` patterns.)
 - **Granular `verification_status`.** Distinguishes
   `unverifiable_in_principle` from `unverifiable_pending_implementation`,
   and adds `routing_anomaly` for caught extractor errors.
 - **Aggressive corrector.** Hedges unverified claims, softens unverifiable
-  predictions, and replaces contradicted facts. Decides per claim;
-  batches all interventions into one rewrite call.
-
-> **v0.2 requires a fresh DB.** The schema enum widened — old SQLite
-> files are not compatible. Run `python scripts/reset_db.py` (or click
-> "Reset DB" in the UI) before first use.
+  predictions, and replaces contradicted facts.
 
 ## Setup
 
