@@ -239,6 +239,50 @@ def test_extractor_abstains_on_out_of_vocabulary_claim():
     assert result.rejected_claims == []
 
 
+def test_marie_curie_routes_to_is_a_not_believes():
+    """Section 2 discrimination: profession noun → is_a."""
+    extractor = _mk_extractor(
+        {
+            "claims": [
+                {
+                    "subject": "Marie Curie",
+                    "predicate": "is_a",
+                    "object": "physicist",
+                    "object_type": "string",
+                    "polarity": 1,
+                    "source_text": "Marie Curie was a physicist",
+                }
+            ]
+        }
+    )
+    result = extractor.extract("Marie Curie was a physicist.", role="user")
+    assert len(result.valid_claims) == 1
+    assert result.valid_claims[0]["predicate"] == "is_a"
+
+
+def test_donald_trump_routes_to_holds_role_not_is_a_or_believes():
+    """Section 2 discrimination: named role → holds_role, never is_a/believes."""
+    extractor = _mk_extractor(
+        {
+            "claims": [
+                {
+                    "subject": "Donald Trump",
+                    "predicate": "holds_role",
+                    "object": "US President",
+                    "object_type": "string",
+                    "polarity": 1,
+                    "source_text": "Donald Trump is the US President",
+                }
+            ]
+        }
+    )
+    result = extractor.extract("Donald Trump is the US President.", role="user")
+    assert len(result.valid_claims) == 1
+    c = result.valid_claims[0]
+    assert c["predicate"] == "holds_role"
+    assert c["predicate"] not in ("is_a", "believes")
+
+
 def test_copula_sentence_does_not_route_to_believes():
     """A copula statement with a specific predicate must use that predicate, not believes.
 

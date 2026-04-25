@@ -34,6 +34,7 @@ class Predicate:
     description: str
     example: str
     python_verifier: str | None = None
+    retrieval_query_template: str | None = None
 
 
 class PredicateRegistryError(ValueError):
@@ -130,6 +131,13 @@ def _build_predicate(name: str, body: object) -> Predicate:
             f"{name}: 'python_verifier' is only valid when verification_method=python"
         )
 
+    retrieval_query_template = body.get("retrieval_query_template")
+    if retrieval_query_template is not None and method != "retrieval":
+        raise PredicateRegistryError(
+            f"{name}: 'retrieval_query_template' is only valid when "
+            f"verification_method=retrieval"
+        )
+
     return Predicate(
         name=name,
         object_type=object_type,
@@ -137,6 +145,9 @@ def _build_predicate(name: str, body: object) -> Predicate:
         description=str(body["description"]),
         example=str(body["example"]),
         python_verifier=python_verifier,
+        retrieval_query_template=(
+            str(retrieval_query_template) if retrieval_query_template else None
+        ),
     )
 
 

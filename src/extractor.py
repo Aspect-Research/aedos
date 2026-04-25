@@ -115,6 +115,12 @@ it wasn't designed for. Specifically:
   X is true", "in my view Y"). It is NOT a fallback for arbitrary
   propositions about the world. If someone says "Paris is the capital of
   France", that is a `capital_of` claim — never a `believes` claim.
+- `is_a` is for general category/profession membership ("a physicist",
+  "a bird"), NOT for specific named roles. "Donald Trump is the US
+  President" is `holds_role`, not `is_a`.
+- `holds_role` is for specific named offices/positions; `is_a` is for
+  general category membership; `headed_by` flips the relation when the
+  sentence's subject is the institution.
 - If no predicate fits, return [].
 
 {registry.describe_for_prompt()}
@@ -171,6 +177,24 @@ Input: "Paris is the capital of France."
 Output: claims=[(Paris, capital_of, "France", entity, polarity=1)]
 Reasoning: a specific factual relation that has its own predicate. Never
 route this to `believes` just because no first-person speaker stated it.
+
+Input: "Marie Curie was a physicist."
+Output: claims=[(Marie Curie, is_a, "physicist", string, polarity=1)]
+Reasoning: copula + general profession noun → `is_a`. Never `believes`.
+Not `holds_role` because "physicist" is a general category, not a
+specific named position.
+
+Input: "Donald Trump is the US President."
+Output: claims=[(Donald Trump, holds_role, "US President", string, polarity=1)]
+Reasoning: copula + named role/position → `holds_role`. Not `is_a`
+("US President" is a specific position, not a category). Not `believes`
+(no explicit belief marker). Not `headed_by` (the subject is the
+role-holder, not the organization).
+
+Input: "The United States is headed by Donald Trump."
+Output: claims=[(United States, headed_by, "Donald Trump", entity, polarity=1)]
+Reasoning: institution-framed sentence → `headed_by`. The same fact
+re-expressed as person-first would route to `holds_role`.
 
 Input: "I like peanut butter."
 Output: claims=[(user, likes, "peanut butter", entity, polarity=1)]
