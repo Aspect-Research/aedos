@@ -1,15 +1,9 @@
-"""Tests for src.verifiers.retrieval_verifier."""
+"""Tests for src.verifiers.retrieval_verifier (v0.3 — slots-aware, multi-attempt)."""
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(
-    reason="v0.3 migration: retrieval verifier rewritten in Section 5; tests there"
-)
-
 import os
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 import pytest
@@ -19,9 +13,11 @@ from src.pattern_registry import load_default_registry, reset_cache
 from src.verifiers.python_verifiers import VerificationOutcome
 from src.verifiers.retrieval_verifier import (
     JudgeVerdict,
+    QueryAttempt,
     RetrievalResult,
     RetrievalVerifier,
     Snippet,
+    build_queries,
     parse_judge_response,
 )
 
@@ -42,8 +38,6 @@ def store(tmp_path):
 
 @dataclass
 class FakeLLM:
-    """Stand-in for LLMClient. The judge always uses .rewrite()."""
-
     rewrite_responses: list[str] = field(default_factory=list)
     rewrite_calls: list[dict] = field(default_factory=list)
 
@@ -52,306 +46,353 @@ class FakeLLM:
         return self.rewrite_responses.pop(0)
 
 
-def _claim(predicate="capital_of", subject="Paris", object="France"):
+_DEFAULT_SLOTS = {"agent": "Donald Trump", "role": "47th President", "org": "United States"}
+
+
+def _claim(
+    pattern="role_assignment",
+    predicate="holds_role",
+    slots=None,
+    polarity=1,
+):
+    # Use `is None` so callers can pass {} explicitly to test empty-slot cases.
     return {
-        "subject": subject,
+        "pattern": pattern,
         "predicate": predicate,
-        "object": object,
-        "object_type": "entity",
-        "polarity": 1,
-        "source_text": f"{subject} ... {object}",
+        "slots": _DEFAULT_SLOTS if slots is None else slots,
+        "polarity": polarity,
+        "source_text": "<src>",
     }
 
 
-# ---------- judge response parser ----------
-
-
-def test_parse_supported():
-    v = parse_judge_response("SUPPORTED\nJustification: it matches")
-    assert v.verdict == "SUPPORTED"
-    assert "matches" in v.justification
-
-
-def test_parse_contradicted():
-    v = parse_judge_response("CONTRADICTED\nJustification: snippets disagree")
-    assert v.verdict == "CONTRADICTED"
-
-
-def test_parse_insufficient():
-    v = parse_judge_response("INSUFFICIENT_EVIDENCE\nJustification: snippets are silent")
-    assert v.verdict == "INSUFFICIENT_EVIDENCE"
-
-
-def test_parse_no_justification_token():
-    v = parse_judge_response("SUPPORTED\nLooks right based on snippet 1")
-    assert v.verdict == "SUPPORTED"
-    assert "snippet 1" in v.justification
-
-
-def test_parse_malformed_returns_none():
-    assert parse_judge_response("totally not the right format") is None
-    assert parse_judge_response("") is None
-    assert parse_judge_response("MAYBE\nJustification: x") is None
-
-
-# ---------- happy paths ----------
-
-
-def _verifier(store, llm, search_results: list[Snippet]):
+def _verifier(store, llm, fake_search):
     return RetrievalVerifier(
         store=store,
         llm=llm,
         registry=load_default_registry(),
-        search_fn=lambda q: search_results,
+        search_fn=fake_search,
         ttl_hours=1,
     )
 
 
-def test_supported_path_returns_verified(store):
-    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJustification: snippet 1 confirms it."])
-    snippets = [Snippet("Paris - Wikipedia", "Paris is the capital of France.", "https://en.wikipedia.org/Paris")]
-    v = _verifier(store, llm, snippets)
+# ---------- judge response parsing ----------
+
+
+def test_parse_supported():
+    v = parse_judge_response("SUPPORTED\nJustification: ok")
+    assert v.verdict == "SUPPORTED"
+
+
+def test_parse_contradicted():
+    v = parse_judge_response("CONTRADICTED\nJustification: snippet 2 disagrees")
+    assert v.verdict == "CONTRADICTED"
+
+
+def test_parse_insufficient():
+    v = parse_judge_response("INSUFFICIENT_EVIDENCE\nJustification: silent")
+    assert v.verdict == "INSUFFICIENT_EVIDENCE"
+
+
+def test_parse_malformed_returns_none():
+    assert parse_judge_response("MAYBE") is None
+    assert parse_judge_response("") is None
+
+
+# ---------- build_queries ----------
+
+
+def test_build_queries_role_assignment_three_attempts():
+    """Spec: queries try most-specific to least-specific, in order."""
+    reg = load_default_registry()
+    queries = build_queries(
+        reg.get("role_assignment"),
+        {"agent": "Donald Trump", "role": "47th President", "org": "United States"},
+    )
+    assert queries == [
+        "Donald Trump 47th President",
+        "Donald Trump United States 47th President",
+        "Donald Trump",
+    ]
+
+
+def test_build_queries_skips_template_with_missing_slot():
+    """If 'org' is missing, the {agent} {org} {role} template is skipped."""
+    reg = load_default_registry()
+    queries = build_queries(
+        reg.get("role_assignment"),
+        {"agent": "Tim Cook", "role": "CEO"},
+    )
+    # Skipped: "{agent} {org} {role}". Remaining: "{agent} {role}", "{agent}".
+    assert queries == ["Tim Cook CEO", "Tim Cook"]
+
+
+def test_build_queries_never_prepends_current():
+    """Spec: 'do not prepend current' to any query."""
+    reg = load_default_registry()
+    queries = build_queries(
+        reg.get("role_assignment"),
+        {"agent": "Donald Trump", "role": "47th President", "org": "United States"},
+    )
+    for q in queries:
+        assert "current" not in q.lower(), q
+
+
+def test_build_queries_event_handles_participant_list():
+    reg = load_default_registry()
+    queries = build_queries(
+        reg.get("event"),
+        {"event_type": "inauguration", "participants": ["Donald Trump"]},
+    )
+    assert any("inauguration" in q and "Donald Trump" in q for q in queries)
+
+
+# ---------- multi-attempt strategy ----------
+
+
+def test_first_attempt_with_two_results_is_used(store):
+    """If attempt 1 returns >= 2 results, attempt 2 should not run."""
+    call_log: list[str] = []
+
+    def fake_search(q):
+        call_log.append(q)
+        # First query returns 2 results, second should never be called
+        return [
+            Snippet("t1", "sn1", "u1"),
+            Snippet("t2", "sn2", "u2"),
+        ]
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
     r = v.verify(_claim())
+    assert call_log == ["Donald Trump 47th President"]
     assert r.outcome is VerificationOutcome.VERIFIED
-    assert r.verdict.verdict == "SUPPORTED"
-    assert r.snippets == snippets
-    assert r.error_flag is None
+    used = [a for a in r.attempts if a.used]
+    assert len(used) == 1
+    assert used[0].query == "Donald Trump 47th President"
 
 
-def test_contradicted_path_returns_contradicted(store):
-    llm = FakeLLM(rewrite_responses=["CONTRADICTED\nJustification: snippet says otherwise."])
-    snippets = [Snippet("Paris", "Lyon is the capital of France (joke).", "https://x")]
-    v = _verifier(store, llm, snippets)
+def test_falls_through_to_next_attempt_when_first_returns_zero(store):
+    """Section 9 #5: attempt 1 returns 0; attempt 2 returns 3; attempt 2 wins."""
+    call_log: list[str] = []
+    results = {
+        "Donald Trump 47th President": [],
+        "Donald Trump United States 47th President": [
+            Snippet("t1", "sn1", "u1"),
+            Snippet("t2", "sn2", "u2"),
+            Snippet("t3", "sn3", "u3"),
+        ],
+    }
+
+    def fake_search(q):
+        call_log.append(q)
+        return results.get(q, [])
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: snippet 1"])
+    v = _verifier(store, llm, fake_search)
     r = v.verify(_claim())
-    assert r.outcome is VerificationOutcome.CONTRADICTED
-    assert r.verdict.verdict == "CONTRADICTED"
+    assert call_log == [
+        "Donald Trump 47th President",
+        "Donald Trump United States 47th President",
+    ]
+    assert r.outcome is VerificationOutcome.VERIFIED
+    # Trace records BOTH attempts; second one is .used=True.
+    assert len(r.attempts) == 2
+    assert r.attempts[0].used is False
+    assert r.attempts[0].result_count == 0
+    assert r.attempts[1].used is True
+    assert r.attempts[1].result_count == 3
 
 
-def test_insufficient_returns_inconclusive(store):
-    llm = FakeLLM(
-        rewrite_responses=["INSUFFICIENT_EVIDENCE\nJustification: nothing relevant."]
-    )
-    snippets = [Snippet("Lyon", "Lyon is a city.", "https://x")]
-    v = _verifier(store, llm, snippets)
+def test_falls_through_when_first_returns_only_one_result(store):
+    """A single result isn't enough — < 2 → continue."""
+    call_log: list[str] = []
+    results = {
+        "Donald Trump 47th President": [Snippet("t", "s", "u")],
+        "Donald Trump United States 47th President": [
+            Snippet("t1", "s1", "u1"),
+            Snippet("t2", "s2", "u2"),
+        ],
+    }
+
+    def fake_search(q):
+        call_log.append(q)
+        return results.get(q, [])
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
     r = v.verify(_claim())
-    assert r.outcome is VerificationOutcome.INCONCLUSIVE
-    assert r.error_flag is None  # judge replied cleanly
-    assert r.verdict.verdict == "INSUFFICIENT_EVIDENCE"
+    assert len(call_log) == 2
+    assert r.attempts[0].result_count == 1
+    assert r.attempts[0].used is False
 
 
-# ---------- failure modes ----------
+def test_all_attempts_return_zero_yields_no_results_flag(store):
+    def fake_search(q):
+        return []
 
-
-def test_network_error_returns_retrieval_error(store):
-    def raises(_q):
-        raise httpx.ConnectError("network down")
-
-    v = RetrievalVerifier(
-        store=store,
-        llm=FakeLLM(),
-        registry=load_default_registry(),
-        search_fn=raises,
-        ttl_hours=1,
-    )
-    r = v.verify(_claim())
-    assert r.outcome is VerificationOutcome.INCONCLUSIVE
-    assert r.error_flag == "retrieval_error"
-    assert "network down" in r.explanation
-
-
-def test_no_results_returns_no_results_flag(store):
-    v = _verifier(store, FakeLLM(), [])
+    llm = FakeLLM()
+    v = _verifier(store, llm, fake_search)
     r = v.verify(_claim())
     assert r.outcome is VerificationOutcome.INCONCLUSIVE
     assert r.error_flag == "no_results"
 
 
-def test_malformed_judge_output_returns_judge_parse_error(store):
-    llm = FakeLLM(rewrite_responses=["uhhhh I dunno"])
-    snippets = [Snippet("x", "y", "z")]
-    v = _verifier(store, llm, snippets)
+def test_network_error_on_one_attempt_continues_to_next(store):
+    """An error on attempt 1 should not abort the strategy."""
+    call_log: list[str] = []
+
+    def fake_search(q):
+        call_log.append(q)
+        if q == "Donald Trump 47th President":
+            raise httpx.ConnectError("flake")
+        return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
+    r = v.verify(_claim())
+    assert r.outcome is VerificationOutcome.VERIFIED
+    assert r.attempts[0].error is not None
+    assert r.attempts[1].used is True
+
+
+# ---------- pipeline_events logging ----------
+
+
+def test_attempts_logged_to_pipeline_events(store):
+    """Section 5 spec: each attempt gets a retrieval_query_attempt event."""
+    def fake_search(q):
+        if q == "Donald Trump 47th President":
+            return []
+        return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
+    tid = store.insert_turn("assistant", "draft")
+    v.verify(_claim(), source_turn_id=tid)
+    events = store.get_pipeline_events(tid)
+    attempts_logged = [e for e in events if e["stage"] == "retrieval_query_attempt"]
+    assert len(attempts_logged) == 2
+    assert attempts_logged[0]["data"]["query"] == "Donald Trump 47th President"
+    assert attempts_logged[0]["data"]["result_count"] == 0
+
+
+# ---------- current vs historical judge prompts ----------
+
+
+def test_current_claim_uses_current_judge_prompt(store):
+    """A claim with no valid_until should use the CURRENT judge prompt."""
+    def fake_search(q):
+        return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
+    v.verify(_claim())  # no valid_until
+    sys = llm.rewrite_calls[0]["system"]
+    assert "CURRENT-TENSE" in sys
+    assert "HISTORICAL" not in sys
+
+
+def test_historical_claim_uses_historical_judge_prompt(store):
+    """A claim with valid_until set should use the HISTORICAL prompt and pass dates."""
+    def fake_search(q):
+        return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
+    v.verify(_claim(slots={
+        "agent": "Donald Trump", "role": "45th President", "org": "United States",
+        "valid_from": "2017-01-20", "valid_until": "2021-01-20",
+    }))
+    sys = llm.rewrite_calls[0]["system"]
+    user = llm.rewrite_calls[0]["user_message"]
+    assert "HISTORICAL" in sys
+    assert "2017-01-20" in user
+    assert "2021-01-20" in user
+
+
+# ---------- caching is per-query attempt ----------
+
+
+def test_each_attempt_caches_independently(store):
+    """Cache is keyed by the actual query string, so each attempt caches separately."""
+    call_log: list[str] = []
+    results = {
+        "Donald Trump 47th President": [],
+        "Donald Trump United States 47th President": [
+            Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2"),
+        ],
+    }
+
+    def fake_search(q):
+        call_log.append(q)
+        return list(results.get(q, []))
+
+    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok", "SUPPORTED\nJ: ok"])
+    v = _verifier(store, llm, fake_search)
+    v.verify(_claim())
+    v.verify(_claim())
+    # First call: 2 search calls. Second call: ZERO (both cached).
+    assert call_log == [
+        "Donald Trump 47th President",
+        "Donald Trump United States 47th President",
+    ]
+
+
+# ---------- failure modes ----------
+
+
+def test_judge_parse_error(store):
+    def fake_search(q):
+        return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
+
+    llm = FakeLLM(rewrite_responses=["uhh"])
+    v = _verifier(store, llm, fake_search)
     r = v.verify(_claim())
     assert r.outcome is VerificationOutcome.INCONCLUSIVE
     assert r.error_flag == "judge_parse_error"
-    assert r.snippets == snippets
 
 
 def test_judge_call_failure_returns_judge_error(store):
     @dataclass
     class CrashLLM:
         def rewrite(self, *args, **kwargs):
-            raise RuntimeError("anthropic exploded")
+            raise RuntimeError("boom")
 
-    snippets = [Snippet("x", "y", "z")]
+    def fake_search(q):
+        return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
+
     v = RetrievalVerifier(
-        store=store,
-        llm=CrashLLM(),
-        registry=load_default_registry(),
-        search_fn=lambda q: snippets,
-        ttl_hours=1,
+        store=store, llm=CrashLLM(), registry=load_default_registry(),
+        search_fn=fake_search, ttl_hours=1,
     )
     r = v.verify(_claim())
     assert r.outcome is VerificationOutcome.INCONCLUSIVE
     assert r.error_flag == "judge_error"
 
 
-# ---------- caching ----------
+def test_no_query_constructible_for_pattern(store):
+    """If no template can be filled, return early with a specific error_flag."""
+    def fake_search(q):
+        return []
+
+    llm = FakeLLM()
+    v = _verifier(store, llm, fake_search)
+    # role_assignment requires agent + role; both missing.
+    r = v.verify(_claim(slots={}))
+    # This will actually fail at extractor's required-slot validation in the
+    # real pipeline; but the verifier itself must also be defensive.
+    assert r.outcome is VerificationOutcome.INCONCLUSIVE
+    assert r.error_flag == "no_query_constructible"
 
 
-def test_cache_hit_skips_network_on_repeat(store):
-    call_count = {"n": 0}
-    snippets = [Snippet("Paris", "Paris is the capital of France.", "https://x")]
-
-    def search(_q):
-        call_count["n"] += 1
-        return snippets
-
-    llm = FakeLLM(
-        rewrite_responses=[
-            "SUPPORTED\nJustification: yes.",
-            "SUPPORTED\nJustification: yes again.",
-        ]
-    )
-    v = RetrievalVerifier(
-        store=store,
-        llm=llm,
-        registry=load_default_registry(),
-        search_fn=search,
-        ttl_hours=1,
-    )
-    r1 = v.verify(_claim())
-    r2 = v.verify(_claim())
-    assert call_count["n"] == 1, "second call must hit cache, not search"
-    assert r1.from_cache is False
-    assert r2.from_cache is True
-
-
-def test_cache_expires_after_ttl(store):
-    snippets = [Snippet("x", "y", "z")]
-    call_count = {"n": 0}
-
-    def search(_q):
-        call_count["n"] += 1
-        return snippets
-
-    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"] * 2)
-    # ttl_hours=0 means every entry is expired immediately
-    v = RetrievalVerifier(
-        store=store,
-        llm=llm,
-        registry=load_default_registry(),
-        search_fn=search,
-        ttl_hours=0,
-    )
-    v.verify(_claim())
-    v.verify(_claim())
-    assert call_count["n"] == 2
-
-
-# ---------- query template ----------
-
-
-def test_query_uses_predicate_template():
-    reg = load_default_registry()
-
-    @dataclass
-    class Recorder:
-        queries: list[str] = field(default_factory=list)
-
-        def __call__(self, q):
-            self.queries.append(q)
-            return [Snippet("t", "s", "u")]
-
-    rec = Recorder()
-    llm = FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"])
-    # Use a real store fixture-style by hand
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as td:
-        s = FactStore(os.path.join(td, "x.db"))
-        try:
-            v = RetrievalVerifier(store=s, llm=llm, registry=reg, search_fn=rec, ttl_hours=1)
-            v.verify(
-                {
-                    "subject": "Donald Trump",
-                    "predicate": "holds_role",
-                    "object": "US President",
-                    "object_type": "string",
-                    "polarity": 1,
-                    "source_text": "...",
-                }
-            )
-        finally:
-            s.close()
-    assert rec.queries == ["current US President"]
-
-
-def test_query_falls_back_when_no_template(tmp_path):
-    """A retrieval predicate without a template uses '{subject} {object}'."""
-    import yaml
-
-    yaml_path = tmp_path / "p.yaml"
-    yaml_path.write_text(
-        yaml.safe_dump(
-            {
-                "no_template_pred": {
-                    "object_type": "entity",
-                    "verification_method": "retrieval",
-                    "description": "x",
-                    "example": "x",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    from src.pattern_registry import PredicateRegistry
-
-    reg = PredicateRegistry.from_yaml(yaml_path)
-
-    captured: list[str] = []
-
-    def search(q):
-        captured.append(q)
-        return [Snippet("t", "s", "u")]
-
-    s = FactStore(tmp_path / "x.db")
-    try:
-        v = RetrievalVerifier(
-            store=s,
-            llm=FakeLLM(rewrite_responses=["SUPPORTED\nJ: ok"]),
-            registry=reg,
-            search_fn=search,
-            ttl_hours=1,
-        )
-        v.verify(
-            {
-                "subject": "Foo",
-                "predicate": "no_template_pred",
-                "object": "Bar",
-                "object_type": "entity",
-                "polarity": 1,
-                "source_text": "x",
-            }
-        )
-    finally:
-        s.close()
-    assert captured == ["Foo Bar"]
-
-
-# ---------- real API (gated) ----------
+# ---------- real API gated test ----------
 
 
 @pytest.mark.skipif(
     os.getenv("RUN_API_TESTS") != "1",
     reason="real network + LLM gated behind RUN_API_TESTS=1",
 )
-def test_real_retrieval_marie_curie_supported(tmp_path):
-    """Live retrieval — DuckDuckGo + Anthropic judge. Flaky by design.
-
-    Asserts that for a well-known fact, the verifier returns either
-    VERIFIED or INCONCLUSIVE — both are acceptable here, since DDG can
-    return thin results. CONTRADICTED would be a real bug.
-    """
+def test_real_retrieval_marie_curie(tmp_path):
     from src.llm_client import LLMClient
 
     s = FactStore(tmp_path / "real.db")
@@ -359,16 +400,13 @@ def test_real_retrieval_marie_curie_supported(tmp_path):
         v = RetrievalVerifier(
             store=s, llm=LLMClient(), registry=load_default_registry(), ttl_hours=1
         )
-        r = v.verify(
-            {
-                "subject": "Marie Curie",
-                "predicate": "is_a",
-                "object": "physicist",
-                "object_type": "string",
-                "polarity": 1,
-                "source_text": "Marie Curie was a physicist",
-            }
-        )
+        r = v.verify({
+            "pattern": "categorical",
+            "predicate": "is_a",
+            "slots": {"entity": "Marie Curie", "category": "physicist"},
+            "polarity": 1,
+            "source_text": "Marie Curie was a physicist",
+        })
         assert r.outcome is not VerificationOutcome.CONTRADICTED, r.to_dict()
     finally:
         s.close()

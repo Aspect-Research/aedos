@@ -1,38 +1,33 @@
-"""Real retrieval-based claim verification.
+"""Retrieval verifier (v0.3 — slots-aware multi-attempt query strategy).
 
-Pipeline per claim:
+Per the v0.2 dogfooding traces, query construction was the main retrieval
+failure mode. v0.3 changes:
 
-    1. Build a search query from the claim using the predicate's
-       ``retrieval_query_template`` (or a "{subject} {object}" fallback).
-    2. Look up the query in the retrieval cache. If hit and within TTL,
-       skip the network call.
-    3. Otherwise, search via Tavily (preferred), SerpAPI, or DuckDuckGo
-       (default, no API key required).
-    4. Cache the result.
-    5. Send the claim + top snippets to the LLM judge.
-    6. Map the verdict to a VerificationOutcome and return a
-       ``RetrievalResult`` carrying enough metadata for the trace UI.
-
-Failure modes are explicit and never crash the pipeline:
-    - Network/HTTP error  → INCONCLUSIVE, error_flag='retrieval_error'
-    - Zero snippets       → INCONCLUSIVE, error_flag='no_results'
-    - Malformed verdict   → INCONCLUSIVE, error_flag='judge_parse_error'
+- Queries come from the PATTERN's ``query_strategy`` list, not from a
+  per-predicate template. Slots fill in the placeholders.
+- The verifier tries each attempt in order. The first attempt with ≥ 2
+  results is used. Failed/empty attempts continue.
+- Each attempt is cached independently so retries are cheap.
+- We never inject "current" into a query — temporal scope comes from the
+  slots, not from query string manipulation. The judge prompt asks
+  current-vs-historical using the slot values.
+- Each attempt is logged as a ``retrieval_query_attempt`` pipeline_event
+  so the trace UI shows the strategy.
 """
 
 from __future__ import annotations
 
-import json
 import os
+import re
 from dataclasses import dataclass, field
-from typing import Any, Callable
-from urllib.parse import quote_plus, urlencode
+from typing import Any, Callable, Optional
 
 import httpx
 from bs4 import BeautifulSoup
 
 from src.fact_store import FactStore
 from src.llm_client import LLMClient
-from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias; rewritten §5
+from src.pattern_registry import PatternRegistry, Pattern
 from src.verifiers.python_verifiers import VerificationOutcome, VerificationResult
 
 
@@ -45,6 +40,7 @@ _TAVILY_URL = "https://api.tavily.com/search"
 _SERPAPI_URL = "https://serpapi.com/search.json"
 _REQUEST_TIMEOUT = 10.0
 _TOP_N = 3
+_MIN_RESULTS_TO_USE = 2  # spec: "If a query returns ≥ 2 results, use those"
 _DEFAULT_TTL_HOURS = 24
 
 
@@ -60,7 +56,7 @@ class Snippet:
 
 @dataclass
 class JudgeVerdict:
-    verdict: str  # 'SUPPORTED' | 'CONTRADICTED' | 'INSUFFICIENT_EVIDENCE'
+    verdict: str
     justification: str
 
     def to_dict(self) -> dict[str, str]:
@@ -68,21 +64,55 @@ class JudgeVerdict:
 
 
 @dataclass
+class QueryAttempt:
+    query: str
+    result_count: int
+    used: bool
+    from_cache: bool = False
+    error: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "result_count": self.result_count,
+            "used": self.used,
+            "from_cache": self.from_cache,
+            "error": self.error,
+        }
+
+
+@dataclass
 class RetrievalResult:
     """Returned by RetrievalVerifier.verify().
 
-    Mirrors the shape of VerificationResult so the router can treat it
-    uniformly, and adds query/snippets/verdict/error_flag for the trace UI.
+    Carries enough metadata to render a full debugging view: every query
+    attempt, the snippets used, the judge's verdict and justification,
+    and the temporal scope used by the judge.
     """
 
     outcome: VerificationOutcome
-    query: str
+    attempts: list[QueryAttempt] = field(default_factory=list)
     snippets: list[Snippet] = field(default_factory=list)
-    verdict: JudgeVerdict | None = None
-    error_flag: str | None = None
+    verdict: Optional[JudgeVerdict] = None
+    error_flag: Optional[str] = None
     explanation: str = ""
-    actual_value: Any | None = None  # for CONTRADICTED — what the evidence said
-    from_cache: bool = False
+    actual_value: Any | None = None
+    historical: bool = False  # True if judge used the historical-claim prompt
+
+    @property
+    def query(self) -> str:
+        """Return the query attempt that was actually used (for back-compat)."""
+        for a in self.attempts:
+            if a.used:
+                return a.query
+        return self.attempts[-1].query if self.attempts else ""
+
+    @property
+    def from_cache(self) -> bool:
+        for a in self.attempts:
+            if a.used:
+                return a.from_cache
+        return False
 
     @property
     def verified(self) -> bool:
@@ -99,21 +129,22 @@ class RetrievalResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "outcome": self.outcome.value,
+            "attempts": [a.to_dict() for a in self.attempts],
             "query": self.query,
+            "from_cache": self.from_cache,
             "snippets": [s.to_dict() for s in self.snippets],
             "verdict": self.verdict.to_dict() if self.verdict else None,
             "error_flag": self.error_flag,
             "explanation": self.explanation,
             "actual_value": self.actual_value,
-            "from_cache": self.from_cache,
+            "historical": self.historical,
         }
 
 
-# ---- search providers ------------------------------------------------
+# ---- search providers (unchanged from v0.2) -------------------------
 
 
 def search_duckduckgo(query: str, *, top_n: int = _TOP_N) -> list[Snippet]:
-    """Scrape DuckDuckGo's HTML endpoint. No API key, but flaky in practice."""
     resp = httpx.post(
         _DDG_URL,
         data={"q": query},
@@ -123,7 +154,6 @@ def search_duckduckgo(query: str, *, top_n: int = _TOP_N) -> list[Snippet]:
     )
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
-
     out: list[Snippet] = []
     for result in soup.select("div.result, div.web-result")[: top_n * 3]:
         title_el = result.select_one("a.result__a, h2 a")
@@ -155,11 +185,8 @@ def search_tavily(query: str, api_key: str, *, top_n: int = _TOP_N) -> list[Snip
     resp.raise_for_status()
     payload = resp.json()
     return [
-        Snippet(
-            title=str(r.get("title", "")),
-            snippet=str(r.get("content", "")),
-            url=str(r.get("url", "")),
-        )
+        Snippet(title=str(r.get("title", "")), snippet=str(r.get("content", "")),
+                url=str(r.get("url", "")))
         for r in payload.get("results", [])[:top_n]
     ]
 
@@ -173,17 +200,13 @@ def search_serpapi(query: str, api_key: str, *, top_n: int = _TOP_N) -> list[Sni
     resp.raise_for_status()
     payload = resp.json()
     return [
-        Snippet(
-            title=str(r.get("title", "")),
-            snippet=str(r.get("snippet", "")),
-            url=str(r.get("link", "")),
-        )
+        Snippet(title=str(r.get("title", "")), snippet=str(r.get("snippet", "")),
+                url=str(r.get("link", "")))
         for r in payload.get("organic_results", [])[:top_n]
     ]
 
 
 def default_search(query: str) -> list[Snippet]:
-    """Provider dispatch. Tavily > SerpAPI > DuckDuckGo (free fallback)."""
     if (key := os.getenv("TAVILY_API_KEY")):
         return search_tavily(query, key)
     if (key := os.getenv("SERPAPI_KEY")):
@@ -191,25 +214,41 @@ def default_search(query: str) -> list[Snippet]:
     return search_duckduckgo(query)
 
 
-# ---- judge ----------------------------------------------------------
+# ---- judge — current vs historical ----------------------------------
 
-_JUDGE_SYSTEM = """You are a strict, evidence-bounded judge.
+_JUDGE_SYSTEM_CURRENT = """You are a strict, evidence-bounded judge.
 
-You receive a structured claim and a small set of search-result snippets.
+You receive a structured CURRENT-TENSE claim and a small set of search
+result snippets. Decide whether the snippets SUPPORT, CONTRADICT, or are
+INSUFFICIENT_EVIDENCE for the claim. Use only the snippets — never your
+prior knowledge.
+
+A claim is SUPPORTED only if the snippets clearly state or directly
+imply it as currently true. CONTRADICTED only if they clearly state the
+opposite. Otherwise INSUFFICIENT_EVIDENCE.
+
+Output exactly two lines, no preamble:
+VERDICT
+Justification: <one sentence>"""
+
+_JUDGE_SYSTEM_HISTORICAL = """You are a strict, evidence-bounded judge.
+
+You receive a structured HISTORICAL claim with an explicit time period
+(valid_from / valid_until) and a small set of search result snippets.
 Decide whether the snippets SUPPORT, CONTRADICT, or are INSUFFICIENT_EVIDENCE
-for the claim. Use only the snippets — never your prior knowledge.
+for the claim FOR THAT SPECIFIC PERIOD.
 
-A claim is SUPPORTED only if the snippets clearly state or directly imply
-the claim. It is CONTRADICTED only if the snippets directly state the
-opposite. Otherwise return INSUFFICIENT_EVIDENCE.
+Pay attention to dates. A snippet describing a different time period is
+NOT support — it's INSUFFICIENT_EVIDENCE. A snippet stating a different
+time-bounded fact is CONTRADICTION only if it directly conflicts with
+the claim's period.
 
-Output format (exactly two lines, no preamble):
+Output exactly two lines, no preamble:
 VERDICT
 Justification: <one sentence>"""
 
 
 def parse_judge_response(text: str) -> JudgeVerdict | None:
-    """Parse the judge LLM's response. Returns None on malformed output."""
     if not text:
         return None
     lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
@@ -224,35 +263,101 @@ def parse_judge_response(text: str) -> JudgeVerdict | None:
     return JudgeVerdict(verdict=first, justification=rest or "(no justification)")
 
 
-def _format_judge_user_message(claim: dict[str, Any], snippets: list[Snippet]) -> str:
+def _is_historical(claim: dict) -> bool:
+    """A claim is historical if its slots specify a valid_until."""
+    slots = claim.get("slots") or {}
+    return bool(slots.get("valid_until"))
+
+
+def _format_judge_user_message(claim: dict, snippets: list[Snippet], historical: bool) -> str:
+    slots = claim.get("slots") or {}
     polarity_word = "asserts" if int(claim.get("polarity", 1)) == 1 else "denies"
     snippets_block = "\n\n".join(
         f"[{i + 1}] {s.title}\n{s.snippet}\nSource: {s.url}"
         for i, s in enumerate(snippets)
     )
+
+    slot_lines = "\n".join(f"  {k}: {v!r}" for k, v in slots.items())
+    if historical:
+        period = f"{slots.get('valid_from') or 'unspecified'} to {slots.get('valid_until')}"
+        framing = (
+            f"Time period: {period}\n"
+            f"The speaker {polarity_word} that this relation held during that period."
+        )
+    else:
+        framing = (
+            f"The speaker {polarity_word} this relation as currently true "
+            "(no end date specified)."
+        )
+
     return (
-        f"Claim: subject={claim['subject']!r}, predicate={claim['predicate']!r}, "
-        f"object={claim['object']!r}; the speaker {polarity_word} this relation.\n\n"
+        f"Claim:\n"
+        f"  pattern: {claim.get('pattern')!r}\n"
+        f"  predicate: {claim.get('predicate')!r}\n"
+        f"  slots:\n{slot_lines}\n\n"
+        f"{framing}\n\n"
         f"Snippets:\n{snippets_block}\n\n"
         "Respond with the required two-line format."
     )
+
+
+# ---- query construction --------------------------------------------
+
+
+_SLOT_REF_RE = re.compile(r"\{(\w+)\}")
+
+
+def _slot_refs(template: str) -> list[str]:
+    return _SLOT_REF_RE.findall(template)
+
+
+def _enrich_slots(slots: dict[str, Any]) -> dict[str, Any]:
+    """Add derived keys for query templates that need them.
+
+    Currently: ``participants_joined`` for the event pattern's list slot.
+    """
+    out = dict(slots)
+    parts = slots.get("participants")
+    if isinstance(parts, list):
+        out["participants_joined"] = " ".join(str(p) for p in parts)
+    return out
+
+
+def build_queries(pattern: Pattern, slots: dict[str, Any]) -> list[str]:
+    """Return the ordered list of query attempts for these slots.
+
+    Templates that reference missing slots are skipped silently; we'd
+    rather skip an over-specified template than emit a query with empty
+    placeholders.
+    """
+    enriched = _enrich_slots(slots)
+    queries: list[str] = []
+    for template in pattern.query_strategy:
+        refs = _slot_refs(template)
+        if not all(refs and r in enriched and str(enriched[r]).strip() for r in refs):
+            continue
+        # Spec: never prepend "current" — the temporal context comes from
+        # slots. Defensive guard:
+        assert "current" not in template.lower(), (
+            f"query_strategy template {template!r} contains 'current'; "
+            "remove it — temporal scope is determined by slots"
+        )
+        formatted = template.format_map(enriched).strip()
+        formatted = " ".join(formatted.split())  # collapse whitespace
+        if formatted and formatted not in queries:
+            queries.append(formatted)
+    return queries
 
 
 # ---- verifier -------------------------------------------------------
 
 
 class RetrievalVerifier:
-    """Composable retrieval verifier.
-
-    Inject ``search_fn`` to mock search behavior in tests; inject ``llm`` to
-    mock the judge call. The cache lives in the FactStore.
-    """
-
     def __init__(
         self,
         store: FactStore,
         llm: LLMClient,
-        registry: PredicateRegistry,
+        registry: PatternRegistry,
         search_fn: Callable[[str], list[Snippet]] | None = None,
         ttl_hours: int | None = None,
     ):
@@ -266,117 +371,156 @@ class RetrievalVerifier:
             )
         self.ttl_seconds = max(0, ttl_hours) * 3600
 
-    def build_query(self, claim: dict[str, Any]) -> str:
-        pred = self.registry.get(claim["predicate"])
-        template = pred.retrieval_query_template or "{subject} {object}"
-        return template.format(
-            subject=str(claim["subject"]), object=str(claim["object"])
-        )
+    def verify(
+        self, claim: dict, *, source_turn_id: int | None = None
+    ) -> RetrievalResult:
+        pattern = self.registry.get(claim["pattern"])
+        slots = claim.get("slots") or {}
+        queries = build_queries(pattern, slots)
+        historical = _is_historical(claim)
 
-    def verify(self, claim: dict[str, Any]) -> RetrievalResult:
-        query = self.build_query(claim)
+        if not queries:
+            return RetrievalResult(
+                outcome=VerificationOutcome.INCONCLUSIVE,
+                error_flag="no_query_constructible",
+                explanation=(
+                    f"could not construct any query for pattern {pattern.name!r} "
+                    f"from slots {slots!r}"
+                ),
+                historical=historical,
+            )
 
-        # 1. Cache lookup
-        cached = self.store.get_cached_retrieval(query, self.ttl_seconds)
-        if cached is not None:
-            snippets = [Snippet(**s) for s in cached]
-            from_cache = True
-        else:
-            # 2. Network search, with explicit failure handling
-            try:
-                snippets = list(self._search(query))
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                return RetrievalResult(
-                    outcome=VerificationOutcome.INCONCLUSIVE,
-                    query=query,
-                    error_flag="retrieval_error",
-                    explanation=f"search failed: {type(e).__name__}: {e}",
-                )
-            except Exception as e:  # provider returned malformed JSON, etc.
-                return RetrievalResult(
-                    outcome=VerificationOutcome.INCONCLUSIVE,
-                    query=query,
-                    error_flag="retrieval_error",
-                    explanation=f"search raised: {type(e).__name__}: {e}",
-                )
-            if not snippets:
-                return RetrievalResult(
-                    outcome=VerificationOutcome.INCONCLUSIVE,
-                    query=query,
-                    error_flag="no_results",
-                    explanation=f"search returned 0 results for {query!r}",
-                )
-            self.store.cache_retrieval(query, [s.to_dict() for s in snippets])
-            from_cache = False
+        attempts: list[QueryAttempt] = []
+        chosen_snippets: list[Snippet] = []
 
-        # 3. Judge
+        for q in queries:
+            cached = self.store.get_cached_retrieval(q, self.ttl_seconds)
+            if cached is not None:
+                sn = [Snippet(**s) for s in cached]
+                attempt = QueryAttempt(
+                    query=q, result_count=len(sn), used=False, from_cache=True
+                )
+            else:
+                try:
+                    sn = list(self._search(q))
+                    attempt = QueryAttempt(
+                        query=q, result_count=len(sn), used=False, from_cache=False
+                    )
+                    # Cache every attempt (including empty) so retries don't
+                    # re-hit the same flaky endpoint. TTL handles staleness.
+                    self.store.cache_retrieval(q, [s.to_dict() for s in sn])
+                except (httpx.HTTPError, httpx.TimeoutException) as e:
+                    attempt = QueryAttempt(
+                        query=q, result_count=0, used=False, from_cache=False,
+                        error=f"{type(e).__name__}: {e}",
+                    )
+                    sn = []
+                except Exception as e:
+                    attempt = QueryAttempt(
+                        query=q, result_count=0, used=False, from_cache=False,
+                        error=f"{type(e).__name__}: {e}",
+                    )
+                    sn = []
+
+            attempts.append(attempt)
+            self._log_attempt(source_turn_id, attempt)
+
+            if attempt.result_count >= _MIN_RESULTS_TO_USE:
+                attempt.used = True
+                chosen_snippets = sn
+                # re-log the attempt now that 'used' is True so the trace shows it
+                self._log_attempt(source_turn_id, attempt, is_decision=True)
+                break
+
+        if not chosen_snippets:
+            # All attempts returned 0 results or errored.
+            any_error = any(a.error for a in attempts)
+            flag = "retrieval_error" if any_error else "no_results"
+            err_summary = next((a.error for a in attempts if a.error), None)
+            return RetrievalResult(
+                outcome=VerificationOutcome.INCONCLUSIVE,
+                attempts=attempts,
+                error_flag=flag,
+                explanation=(
+                    err_summary
+                    or f"all {len(attempts)} query attempt(s) returned < "
+                    f"{_MIN_RESULTS_TO_USE} results"
+                ),
+                historical=historical,
+            )
+
+        # Judge step
         try:
+            system = _JUDGE_SYSTEM_HISTORICAL if historical else _JUDGE_SYSTEM_CURRENT
             judge_text = self.llm.rewrite(
-                _JUDGE_SYSTEM, _format_judge_user_message(claim, snippets)
+                system, _format_judge_user_message(claim, chosen_snippets, historical)
             )
         except Exception as e:
             return RetrievalResult(
                 outcome=VerificationOutcome.INCONCLUSIVE,
-                query=query,
-                snippets=snippets,
+                attempts=attempts,
+                snippets=chosen_snippets,
                 error_flag="judge_error",
                 explanation=f"judge call failed: {type(e).__name__}: {e}",
-                from_cache=from_cache,
+                historical=historical,
             )
 
         verdict = parse_judge_response(judge_text)
         if verdict is None:
             return RetrievalResult(
                 outcome=VerificationOutcome.INCONCLUSIVE,
-                query=query,
-                snippets=snippets,
+                attempts=attempts,
+                snippets=chosen_snippets,
                 error_flag="judge_parse_error",
                 explanation=f"judge returned malformed output: {judge_text!r}",
-                from_cache=from_cache,
+                historical=historical,
             )
 
         if verdict.verdict == "SUPPORTED":
             outcome = VerificationOutcome.VERIFIED
         elif verdict.verdict == "CONTRADICTED":
             outcome = VerificationOutcome.CONTRADICTED
-        else:  # INSUFFICIENT_EVIDENCE
+        else:
             outcome = VerificationOutcome.INCONCLUSIVE
 
         return RetrievalResult(
             outcome=outcome,
-            query=query,
-            snippets=snippets,
+            attempts=attempts,
+            snippets=chosen_snippets,
             verdict=verdict,
             explanation=verdict.justification,
-            from_cache=from_cache,
+            historical=historical,
         )
 
+    def _log_attempt(
+        self,
+        source_turn_id: int | None,
+        attempt: QueryAttempt,
+        *,
+        is_decision: bool = False,
+    ) -> None:
+        if source_turn_id is None:
+            return
+        # We log twice in the "used" case: once when discovered, once when
+        # marked used. Keep it simple — only emit on the discovery side.
+        if is_decision:
+            return
+        try:
+            self.store.insert_pipeline_event(
+                source_turn_id, "retrieval_query_attempt", attempt.to_dict()
+            )
+        except Exception:
+            # Logging must never crash verification.
+            pass
 
-def to_verification_result(r: RetrievalResult) -> VerificationResult:
-    """Adapter for code that consumes the python-verifier shape."""
-    return VerificationResult(
-        outcome=r.outcome,
-        actual_value=r.actual_value,
-        explanation=r.explanation or (r.verdict.justification if r.verdict else ""),
-    )
 
-
-# ---- back-compat surface --------------------------------------------
+# ---- back-compat ---------------------------------------------------
 
 
 def retrieval_verify(claim: dict[str, Any]) -> RetrievalResult:
-    """Stub-compatible function for callers that don't have a configured verifier.
-
-    Returns INCONCLUSIVE with explanation=retrieval_not_configured. The router
-    constructs a real verifier via build_pipeline; this only fires if someone
-    imports the function directly without a verifier instance.
-    """
+    """Stub for callers without a configured verifier."""
     return RetrievalResult(
         outcome=VerificationOutcome.INCONCLUSIVE,
-        query="",
         error_flag="retrieval_not_configured",
-        explanation=(
-            "RetrievalVerifier was not constructed; pass one to Router or call "
-            "RetrievalVerifier(...).verify(claim) directly."
-        ),
+        explanation="RetrievalVerifier was not constructed",
     )
