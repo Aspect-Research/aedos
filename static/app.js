@@ -294,16 +294,16 @@ function renderStage(event) {
 }
 
 function renderExtraction(body, data) {
-  if (data.valid_claims && data.valid_claims.length) {
+  if (data.valid_facts && data.valid_facts.length) {
     body.appendChild(el("div", { textContent: "Valid claims:" }));
-    data.valid_claims.forEach((c) => body.appendChild(triplify(c)));
+    data.valid_facts.forEach((c) => body.appendChild(triplify(c)));
   } else {
     body.appendChild(el("div", { className: "hint", textContent: "(no valid claims extracted)" }));
   }
-  if (data.rejected_claims && data.rejected_claims.length) {
+  if (data.rejected_facts && data.rejected_facts.length) {
     const rej = el("div", { className: "rejected-claims" });
     rej.appendChild(el("strong", { textContent: "Rejected:" }));
-    data.rejected_claims.forEach((r) => {
+    data.rejected_facts.forEach((r) => {
       rej.appendChild(
         el("div", { textContent: `• ${r.reason} — ${JSON.stringify(r.claim)}` }),
       );

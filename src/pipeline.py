@@ -99,7 +99,7 @@ class Pipeline:
         # Stage 3 — route each user claim (store / boost / close-and-reopen).
         user_decisions: list[Decision] = [
             self.router.route(c, origin="user", source_turn_id=user_turn_id)
-            for c in user_extraction.valid_claims
+            for c in user_extraction.valid_facts
         ]
         self.store.insert_pipeline_event(
             user_turn_id,
@@ -128,7 +128,7 @@ class Pipeline:
         # Stage 6 — route each assistant claim through the appropriate verifier.
         verification_decisions: list[Decision] = [
             self.router.route(c, origin="model", source_turn_id=assistant_turn_id)
-            for c in asst_extraction.valid_claims
+            for c in asst_extraction.valid_facts
         ]
         self.store.insert_pipeline_event(
             assistant_turn_id,
@@ -242,10 +242,10 @@ class Pipeline:
         else:
             lines = []
             for f in user_facts:
-                # Emit a compact typed-triple form the model can read directly.
                 pol = "+" if f.polarity == 1 else "-"
+                slot_str = ", ".join(f"{k}={v!r}" for k, v in f.slots.items())
                 lines.append(
-                    f"- ({f.subject}, {f.predicate}, {f.object}) "
+                    f"- [{f.pattern}] {f.predicate}({slot_str}) "
                     f"[polarity={pol}, confidence={f.confidence:.2f}]"
                 )
             facts_block = "\n".join(lines)
