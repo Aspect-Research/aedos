@@ -88,14 +88,14 @@ def get_trace(turn_id: int) -> list[dict[str, Any]]:
 
 @app.get("/api/facts")
 def list_facts(
-    subject: str | None = None,
+    pattern: str | None = None,
     predicate: str | None = None,
     asserted_by: str | None = None,
     verification_status: str | None = None,
     only_valid: bool = False,
 ) -> list[dict[str, Any]]:
     facts = _pipeline(app).store.query_facts(
-        subject=subject,
+        pattern=pattern,
         predicate=predicate,
         asserted_by=asserted_by,
         verification_status=verification_status,
@@ -104,21 +104,34 @@ def list_facts(
     return [f.to_dict() for f in facts]
 
 
-@app.get("/api/predicates")
-def list_predicates() -> list[dict[str, Any]]:
+@app.get("/api/patterns")
+def list_patterns() -> list[dict[str, Any]]:
     reg = load_default_registry()
     return [
         {
             "name": p.name,
-            "object_type": p.object_type,
-            "verification_method": p.verification_method,
-            "python_verifier": p.python_verifier,
-            "retrieval_query_template": p.retrieval_query_template,
             "description": p.description,
-            "example": p.example,
+            "slots": [
+                {"name": s.name, "type": s.type, "required": s.required}
+                for s in p.slots
+            ],
+            "verification_rules": [
+                {"when": r.when, "method": r.method} for r in p.verification_rules
+            ],
+            "example_predicates": list(p.example_predicates),
+            "query_strategy": list(p.query_strategy),
+            "flag_non_user_as_anomaly": p.flag_non_user_as_anomaly,
+            "disambiguation_notes": p.disambiguation_notes,
         }
         for p in reg.all()
     ]
+
+
+# v0.2 alias kept so the old UI path still resolves; remove once the UI
+# stops fetching it.
+@app.get("/api/predicates")
+def list_predicates_v02_compat() -> list[dict[str, Any]]:
+    return list_patterns()
 
 
 @app.post("/api/reset")

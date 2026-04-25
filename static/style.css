@@ -229,6 +229,56 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .status-unverifiable_pending_implementation::before { content: "⚙"; }
 .status-routing_anomaly                   { background: #ffe1e1; color: #7a0e0e; border-color: var(--bad); }
 .status-routing_anomaly::before           { content: "▲"; }
+/* v0.3 split between retrieval_inconclusive (positive uncertainty) and
+   retrieval_failed (no signal). Different icons + colors so the trace
+   makes the difference legible. */
+.status-retrieval_inconclusive            { background: #fef3c7; color: #92400e; }
+.status-retrieval_inconclusive::before    { content: "?"; }
+.status-retrieval_failed                  { background: #efefef; color: #555; border: 1px dashed #999; }
+.status-retrieval_failed::before          { content: "⚡"; }
+
+/* Pattern badge — shown on every fact so the trace makes the structural
+   pattern visible, not just the predicate. */
+.pattern-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: #ece6f5;
+  color: #463a64;
+  border: 1px solid #ccbfe6;
+}
+
+/* Slot key-value table inside a fact display. */
+.slots-table {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.1rem 0.5rem;
+  margin-top: 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.slots-table .slot-name  { color: var(--muted); white-space: nowrap; }
+.slots-table .slot-value { color: var(--ink); word-break: break-word; }
+
+/* Query attempts list inside a retrieval block. */
+.query-attempts { margin-top: 0.3rem; }
+.query-attempts table {
+  width: 100%;
+  font-size: 0.75rem;
+  margin: 0;
+  background: white;
+}
+.query-attempts th, .query-attempts td {
+  padding: 0.15rem 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+.query-attempts tr.attempt-used   td { background: #d6f0df; font-weight: 600; }
+.query-attempts tr.attempt-error  td { background: #fadada; }
+.query-attempts .att-q { font-family: var(--mono); }
 
 /* Routing anomaly banner */
 .anomaly-banner {

@@ -12,7 +12,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="chat">Chat + Trace</button>
     <button class="tab" data-tab="facts">Fact Store</button>
-    <button class="tab" data-tab="predicates">Predicates</button>
+    <button class="tab" data-tab="predicates">Patterns</button>
   </nav>
   <div class="header-actions">
     <button id="reset-btn" title="Wipe the database">Reset DB</button>
@@ -42,7 +42,19 @@
   <!-- Fact Store tab ------------------------------------------------ -->
   <section id="tab-facts" class="tab-panel">
     <div class="toolbar">
-      <label>Subject <input id="f-subject" placeholder="e.g. user"></label>
+      <label>Pattern
+        <select id="f-pattern">
+          <option value="">(any)</option>
+          <option value="role_assignment">role_assignment</option>
+          <option value="preference">preference</option>
+          <option value="quantitative">quantitative</option>
+          <option value="spatial_temporal">spatial_temporal</option>
+          <option value="categorical">categorical</option>
+          <option value="relational">relational</option>
+          <option value="event">event</option>
+          <option value="propositional_attitude">propositional_attitude</option>
+        </select>
+      </label>
       <label>Predicate <input id="f-predicate" placeholder="e.g. likes"></label>
       <label>Asserted by
         <select id="f-asserted-by">
@@ -60,6 +72,8 @@
           <option value="contradicted">contradicted</option>
           <option value="user_asserted">user_asserted</option>
           <option value="unverifiable_in_principle">unverifiable_in_principle</option>
+          <option value="retrieval_inconclusive">retrieval_inconclusive</option>
+          <option value="retrieval_failed">retrieval_failed</option>
           <option value="unverifiable_pending_implementation">unverifiable_pending_implementation</option>
           <option value="routing_anomaly">routing_anomaly</option>
         </select>
