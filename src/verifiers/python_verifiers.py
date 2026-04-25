@@ -1,18 +1,12 @@
-"""Deterministic python verifiers for claims where a simple function suffices.
+"""Python verifiers (v0.3 — slot-based).
 
-Each verifier takes a ``claim`` dict with keys (subject, predicate, object,
-object_type, polarity, source_text) and returns a ``VerificationResult``.
+Each verifier reads its inputs from ``claim["slots"]`` rather than the
+flat (subject, object) shape of v0.2. The dispatch table is keyed by
+PREDICATE name, not function name — free-form predicates within a
+pattern can land here whenever a function is registered for them.
 
-Design notes:
-- Verifiers are deliberately narrow. When input shape doesn't match, return
-  INCONCLUSIVE rather than guessing. The router treats INCONCLUSIVE as
-  "unverified, low confidence".
-- Polarity is factored in uniformly via ``_apply_polarity``: compute whether
-  the positive-polarity form of the claim is true, then XOR with the claim's
-  actual polarity.
-- Several verifiers accept JSON-encoded structure in the object or subject
-  (documented per-predicate in predicates.yaml) so the extractor can pass
-  along the operands the verifier needs without each one re-parsing prose.
+Predicates without a python verifier fall through to the pattern's
+default verification method (typically retrieval).
 """
 
 from __future__ import annotations
@@ -32,7 +26,7 @@ class VerificationOutcome(str, Enum):
 @dataclass
 class VerificationResult:
     outcome: VerificationOutcome
-    actual_value: Any | None = None  # what the verifier found; used to build corrections
+    actual_value: Any | None = None
     explanation: str = ""
 
     @property
@@ -58,8 +52,12 @@ class VerificationResult:
 Claim = dict[str, Any]
 
 
+def _slots(claim: Claim) -> dict[str, Any]:
+    s = claim.get("slots")
+    return s if isinstance(s, dict) else {}
+
+
 def _apply_polarity(positive_is_true: bool, polarity: int) -> VerificationOutcome:
-    """If the claim's polarity aligns with reality, VERIFIED; otherwise CONTRADICTED."""
     return (
         VerificationOutcome.VERIFIED
         if positive_is_true == bool(polarity)
@@ -71,27 +69,45 @@ def _inconclusive(reason: str) -> VerificationResult:
     return VerificationResult(VerificationOutcome.INCONCLUSIVE, explanation=reason)
 
 
-# ---- individual verifiers ------------------------------------------------
+def _normalize_count_property(prop: str) -> str:
+    """`letter_p` and `letters_p` → `p`. Bare items pass through."""
+    p = str(prop).strip().lower()
+    for prefix in ("letters_", "letter_", "char_", "chars_"):
+        if p.startswith(prefix):
+            return p[len(prefix):]
+    return p
+
+
+# ---- count / length / spelling --------------------------------------
 
 
 def verify_has_count(claim: Claim) -> VerificationResult:
-    """Subject contains N occurrences of item. object is JSON: {item, count}."""
+    """quantitative: subject contains N occurrences of property item.
+
+    Slot shape: {subject: container_string, property: item, value: count_int}.
+    Property may be encoded as "letter_p" or just "p"; both resolve to "p".
+    """
+    s = _slots(claim)
+    container = s.get("subject")
+    prop = s.get("property")
+    value = s.get("value")
+    if not isinstance(container, str) or not container:
+        return _inconclusive("has_count: subject must be a non-empty string")
+    if not isinstance(prop, str) or not prop:
+        return _inconclusive("has_count: property must be a non-empty string")
     try:
-        data = json.loads(claim["object"])
-        item = str(data["item"])
-        claimed = int(data["count"])
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-        return _inconclusive(f"has_count: could not parse object JSON ({e})")
+        claimed = int(value)
+    except (TypeError, ValueError):
+        return _inconclusive(f"has_count: value not an int (got {value!r})")
 
+    item = _normalize_count_property(prop)
     if not item:
-        return _inconclusive("has_count: empty 'item'")
-
-    container = str(claim["subject"])
+        return _inconclusive("has_count: empty normalized property")
     actual = container.lower().count(item.lower())
     outcome = _apply_polarity(actual == claimed, int(claim["polarity"]))
     return VerificationResult(
         outcome,
-        actual_value=json.dumps({"item": item, "count": actual}),
+        actual_value=actual,
         explanation=(
             f"'{container}' contains {actual} occurrence(s) of '{item}'; "
             f"claim said {claimed}"
@@ -99,29 +115,17 @@ def verify_has_count(claim: Claim) -> VerificationResult:
     )
 
 
-def verify_spelled_as(claim: Claim) -> VerificationResult:
-    """Subject word is spelled as object (letters, optionally hyphen/space-separated)."""
-    subject = str(claim["subject"]).strip().lower()
-    raw = str(claim["object"]).strip().lower()
-    # Accept "s-t-r-a-w-b-e-r-r-y", "s t r a w b e r r y", "strawberry"
-    spelling = "".join(ch for ch in raw if ch.isalnum())
-    if not subject or not spelling:
-        return _inconclusive("spelled_as: empty subject or object")
-    outcome = _apply_polarity(subject == spelling, int(claim["polarity"]))
-    return VerificationResult(
-        outcome,
-        actual_value="-".join(subject),
-        explanation=f"'{subject}' is spelled {'-'.join(subject)}; claim gave {raw!r}",
-    )
-
-
 def verify_has_length(claim: Claim) -> VerificationResult:
-    """len(subject) == object."""
+    """quantitative: len(subject) == value."""
+    s = _slots(claim)
+    subject = s.get("subject")
+    value = s.get("value")
+    if not isinstance(subject, str):
+        return _inconclusive("has_length: subject must be a string")
     try:
-        claimed = int(claim["object"])
-    except (TypeError, ValueError) as e:
-        return _inconclusive(f"has_length: object not an int ({e})")
-    subject = str(claim["subject"])
+        claimed = int(value)
+    except (TypeError, ValueError):
+        return _inconclusive(f"has_length: value not an int (got {value!r})")
     actual = len(subject)
     outcome = _apply_polarity(actual == claimed, int(claim["polarity"]))
     return VerificationResult(
@@ -131,16 +135,71 @@ def verify_has_length(claim: Claim) -> VerificationResult:
     )
 
 
-def verify_equals(claim: Claim) -> VerificationResult:
-    """Case-insensitive, whitespace-trimmed string equality."""
-    s = str(claim["subject"]).strip().lower()
-    o = str(claim["object"]).strip().lower()
-    outcome = _apply_polarity(s == o, int(claim["polarity"]))
+# ---- relational verifiers -------------------------------------------
+
+
+def verify_contains_substring(claim: Claim) -> VerificationResult:
+    """relational: subject string contains object string (case-insensitive)."""
+    s = _slots(claim)
+    subj = s.get("subject")
+    obj = s.get("object")
+    if not isinstance(subj, str) or not isinstance(obj, str):
+        return _inconclusive("contains_substring: subject and object must be strings")
+    if not obj:
+        return _inconclusive("contains_substring: empty needle")
+    positive_is_true = obj.lower() in subj.lower()
+    outcome = _apply_polarity(positive_is_true, int(claim["polarity"]))
     return VerificationResult(
         outcome,
-        actual_value=s,
-        explanation=f"{s!r} == {o!r}? {s == o}",
+        actual_value=positive_is_true,
+        explanation=f"{obj!r} in {subj!r}? {positive_is_true}",
     )
+
+
+def verify_is_anagram_of(claim: Claim) -> VerificationResult:
+    """relational: subject and object share the same multiset of letters."""
+    s = _slots(claim)
+    subj = s.get("subject")
+    obj = s.get("object")
+    if not isinstance(subj, str) or not isinstance(obj, str):
+        return _inconclusive("is_anagram_of: subject and object must be strings")
+
+    def norm(x: str) -> list[str]:
+        return sorted(c for c in x.lower() if c.isalpha())
+
+    a, b = norm(subj), norm(obj)
+    if not a or not b:
+        return _inconclusive("is_anagram_of: empty alphabetic content")
+    outcome = _apply_polarity(a == b, int(claim["polarity"]))
+    return VerificationResult(
+        outcome,
+        actual_value="".join(a),
+        explanation=f"sorted letters: {''.join(a)!r} vs {''.join(b)!r}",
+    )
+
+
+# ---- arithmetic -----------------------------------------------------
+
+
+def _parse_number_list(raw: Any) -> list[float] | None:
+    """Accept JSON-string list or actual list."""
+    if isinstance(raw, list):
+        try:
+            return [float(x) for x in raw]
+        except (TypeError, ValueError):
+            return None
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(parsed, list):
+            return None
+        try:
+            return [float(x) for x in parsed]
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _parse_number(x: Any) -> float | None:
@@ -150,84 +209,11 @@ def _parse_number(x: Any) -> float | None:
         return None
 
 
-def verify_greater_than(claim: Claim) -> VerificationResult:
-    s = _parse_number(claim["subject"])
-    o = _parse_number(claim["object"])
-    if s is None or o is None:
-        return _inconclusive("greater_than: non-numeric operand")
-    outcome = _apply_polarity(s > o, int(claim["polarity"]))
-    return VerificationResult(
-        outcome,
-        actual_value=s,
-        explanation=f"{s} > {o}? {s > o}",
-    )
-
-
-def verify_less_than(claim: Claim) -> VerificationResult:
-    s = _parse_number(claim["subject"])
-    o = _parse_number(claim["object"])
-    if s is None or o is None:
-        return _inconclusive("less_than: non-numeric operand")
-    outcome = _apply_polarity(s < o, int(claim["polarity"]))
-    return VerificationResult(
-        outcome,
-        actual_value=s,
-        explanation=f"{s} < {o}? {s < o}",
-    )
-
-
-def verify_contains_substring(claim: Claim) -> VerificationResult:
-    """Case-insensitive substring check."""
-    s = str(claim["subject"]).lower()
-    o = str(claim["object"]).lower()
-    if not o:
-        return _inconclusive("contains_substring: empty needle")
-    outcome = _apply_polarity(o in s, int(claim["polarity"]))
-    return VerificationResult(
-        outcome,
-        actual_value=o in s,
-        explanation=f"{o!r} in {s!r}? {o in s}",
-    )
-
-
-def verify_is_anagram_of(claim: Claim) -> VerificationResult:
-    """Same multiset of alphabetic characters (case-insensitive)."""
-
-    def norm(x: str) -> list[str]:
-        return sorted(c for c in x.lower() if c.isalpha())
-
-    s_norm = norm(str(claim["subject"]))
-    o_norm = norm(str(claim["object"]))
-    if not s_norm or not o_norm:
-        return _inconclusive("is_anagram_of: empty alphabetic content")
-    outcome = _apply_polarity(s_norm == o_norm, int(claim["polarity"]))
-    return VerificationResult(
-        outcome,
-        actual_value="".join(s_norm),
-        explanation=(
-            f"sorted letters of subject={''.join(s_norm)!r}, "
-            f"object={''.join(o_norm)!r}"
-        ),
-    )
-
-
-def _parse_number_list(raw: Any) -> list[float] | None:
-    try:
-        parsed = json.loads(raw) if isinstance(raw, str) else raw
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, list):
-        return None
-    try:
-        return [float(x) for x in parsed]
-    except (TypeError, ValueError):
-        return None
-
-
 def verify_sum_equals(claim: Claim) -> VerificationResult:
-    """Sum of JSON-list operands in subject equals object."""
-    operands = _parse_number_list(claim["subject"])
-    claimed = _parse_number(claim["object"])
+    """quantitative: sum of subject's numeric operands == value."""
+    s = _slots(claim)
+    operands = _parse_number_list(s.get("subject"))
+    claimed = _parse_number(s.get("value"))
     if operands is None or claimed is None:
         return _inconclusive("sum_equals: bad operands")
     actual = sum(operands)
@@ -240,9 +226,10 @@ def verify_sum_equals(claim: Claim) -> VerificationResult:
 
 
 def verify_product_equals(claim: Claim) -> VerificationResult:
-    """Product of JSON-list operands in subject equals object."""
-    operands = _parse_number_list(claim["subject"])
-    claimed = _parse_number(claim["object"])
+    """quantitative: product of subject's numeric operands == value."""
+    s = _slots(claim)
+    operands = _parse_number_list(s.get("subject"))
+    claimed = _parse_number(s.get("value"))
     if operands is None or claimed is None:
         return _inconclusive("product_equals: bad operands")
     actual = 1.0
@@ -256,21 +243,19 @@ def verify_product_equals(claim: Claim) -> VerificationResult:
     )
 
 
+# ---- registry — keyed by PREDICATE name, not function name ----------
+
+
 VERIFIERS: dict[str, Callable[[Claim], VerificationResult]] = {
-    "verify_has_count": verify_has_count,
-    "verify_spelled_as": verify_spelled_as,
-    "verify_has_length": verify_has_length,
-    "verify_equals": verify_equals,
-    "verify_greater_than": verify_greater_than,
-    "verify_less_than": verify_less_than,
-    "verify_contains_substring": verify_contains_substring,
-    "verify_is_anagram_of": verify_is_anagram_of,
-    "verify_sum_equals": verify_sum_equals,
-    "verify_product_equals": verify_product_equals,
+    "has_count": verify_has_count,
+    "has_length": verify_has_length,
+    "contains_substring": verify_contains_substring,
+    "is_anagram_of": verify_is_anagram_of,
+    "sum_equals": verify_sum_equals,
+    "product_equals": verify_product_equals,
 }
 
 
-def get_verifier(name: str) -> Callable[[Claim], VerificationResult]:
-    if name not in VERIFIERS:
-        raise KeyError(f"no python verifier named {name!r}")
-    return VERIFIERS[name]
+def get_verifier(predicate: str) -> Callable[[Claim], VerificationResult] | None:
+    """Look up a python verifier by predicate name. Returns None if not registered."""
+    return VERIFIERS.get(predicate)
