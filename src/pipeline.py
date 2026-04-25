@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.corrector import Corrector
+from src.corrector import Corrector, Intervention
 from src.extractor import ClaimExtractor
 from src.fact_store import Fact, FactStore
 from src.llm_client import ChatMessage, LLMClient
@@ -51,7 +51,8 @@ class TurnTrace:
     user_decisions: list[dict]
     assistant_extraction: dict
     verification_decisions: list[dict]
-    corrections: list[dict]  # may be empty
+    interventions: list[dict]  # what the corrector planned (may be empty)
+    routing_anomalies: list[dict]  # decisions flagged as anomalies
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -63,7 +64,8 @@ class TurnTrace:
             "user_decisions": self.user_decisions,
             "assistant_extraction": self.assistant_extraction,
             "verification_decisions": self.verification_decisions,
-            "corrections": self.corrections,
+            "interventions": self.interventions,
+            "routing_anomalies": self.routing_anomalies,
         }
 
 
@@ -134,25 +136,51 @@ class Pipeline:
             {"decisions": [d.to_dict() for d in verification_decisions]},
         )
 
-        # Stage 7 — apply corrections if any claim was contradicted.
-        corrections = [
-            d.correction for d in verification_decisions if d.correction is not None
+        # Stage 7a — log routing anomalies as their own prominent event.
+        # These signal extractor errors and don't trigger a content-level
+        # rewrite (the corrector skips them).
+        routing_anomaly_decisions = [
+            d for d in verification_decisions
+            if d.outcome is RoutingOutcome.ROUTING_ANOMALY
         ]
+        for d in routing_anomaly_decisions:
+            self.store.insert_pipeline_event(
+                assistant_turn_id,
+                "routing_anomaly_detected",
+                {
+                    "claim": d.claim,
+                    "stored_fact_id": d.stored_fact_id,
+                    "warning": (
+                        "user-authoritative predicate "
+                        f"{d.claim['predicate']!r} was asserted about non-user "
+                        f"subject {d.claim['subject']!r}; this almost always "
+                        "indicates an extractor error rather than a wrong fact"
+                    ),
+                    "notes": d.notes,
+                },
+            )
+
+        # Stage 7b — plan and apply interventions on the assistant draft.
+        interventions: list[Intervention] = self.corrector.plan_interventions(
+            verification_decisions
+        )
         original_content: str | None = None
         final_content = draft
-        if corrections:
-            final_content = self.corrector.correct(draft, corrections)
-            original_content = draft
-            self.store.update_turn_content(
-                assistant_turn_id, final_content, original_content=draft
-            )
+        if interventions:
+            rewritten = self.corrector.apply(draft, interventions)
+            if rewritten and rewritten != draft:
+                final_content = rewritten
+                original_content = draft
+                self.store.update_turn_content(
+                    assistant_turn_id, final_content, original_content=draft
+                )
             self.store.insert_pipeline_event(
                 assistant_turn_id,
                 "correction",
                 {
                     "original": draft,
                     "corrected": final_content,
-                    "corrections": corrections,
+                    "interventions": [i.to_dict() for i in interventions],
                 },
             )
 
@@ -169,7 +197,8 @@ class Pipeline:
             user_decisions=[d.to_dict() for d in user_decisions],
             assistant_extraction=asst_extraction.to_dict(),
             verification_decisions=[d.to_dict() for d in verification_decisions],
-            corrections=corrections,
+            interventions=[i.to_dict() for i in interventions],
+            routing_anomalies=[d.to_dict() for d in routing_anomaly_decisions],
         )
 
     # ---- internal helpers -----------------------------------------------

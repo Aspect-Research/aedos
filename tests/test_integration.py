@@ -124,9 +124,10 @@ def test_model_hallucinated_count_gets_corrected(tmp_path):
 
     assert trace.original_content == "There are 3 p's in strawberry."
     assert trace.final_content == "There are 0 p's in strawberry."
-    assert len(trace.corrections) == 1
-    corr = trace.corrections[0]
-    assert json.loads(corr["corrected_object"]) == {"item": "p", "count": 0}
+    assert len(trace.interventions) == 1
+    iv = trace.interventions[0]
+    assert iv["intervention_type"] == "replace"
+    assert json.loads(iv["verified_value"]) == {"item": "p", "count": 0}
 
     # A corrected fact (not the wrong claim) is stored as verified.
     corrections_in_store = p.store.query_facts(asserted_by="python_verifier")
@@ -183,13 +184,15 @@ def test_model_contradicts_prior_user_fact_gets_corrected(tmp_path):
 
     assert trace.original_content == "No, you don't like peanut butter."
     assert trace.final_content == "Yes, you like peanut butter."
-    assert len(trace.corrections) == 1
+    assert len(trace.interventions) == 1
+    assert trace.interventions[0]["intervention_type"] == "replace"
 
 
 # ---- scenario 4: model makes an unverifiable claim ------------------
 
 
-def test_model_unverifiable_is_flagged_not_corrected(tmp_path):
+def test_model_unverifiable_in_principle_is_softened(tmp_path):
+    """v0.2: a definite-future-fact unverifiable claim now gets a soften intervention."""
     mock = MockLLM(
         chats=["It will rain tomorrow."],
         extracts=[
@@ -207,17 +210,23 @@ def test_model_unverifiable_is_flagged_not_corrected(tmp_path):
                 ]
             },
         ],
+        rewrites=["It might rain tomorrow."],
     )
     p = _make_pipeline(tmp_path, mock)
     trace = p.run_turn("What's the weather?")
 
-    assert trace.original_content is None  # no correction
-    assert trace.final_content == "It will rain tomorrow."
-
+    # The fact is still stored as unverifiable_in_principle.
     flagged = p.store.query_facts(predicate="will_happen")
     assert len(flagged) == 1
     assert flagged[0].verification_status == "unverifiable_in_principle"
     assert flagged[0].confidence == pytest.approx(0.3)
+
+    # And the corrector planned a SOFTEN intervention.
+    assert len(trace.interventions) == 1
+    assert trace.interventions[0]["intervention_type"] == "soften"
+    # The rewrite reflects the softened version.
+    assert trace.original_content == "It will rain tomorrow."
+    assert trace.final_content == "It might rain tomorrow."
 
 
 # ---- scenario 5: model correctly verifiable -------------------------
