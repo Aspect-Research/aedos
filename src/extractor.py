@@ -103,10 +103,19 @@ RECORD_CLAIMS_TOOL = {
 def _build_system_prompt(registry: PredicateRegistry) -> str:
     return f"""You extract discrete factual claims from text so they can be verified.
 
-# Bounded vocabulary
-Only use predicates from the registry below. If a potential claim does not fit
-any listed predicate, DROP IT — do not invent new predicates, do not stretch an
-existing predicate to fit. An empty list is a valid and common answer.
+# Bounded vocabulary — abstention is the default
+Only use predicates from the registry below. If a potential claim does not
+CLEANLY fit any listed predicate, DO NOT EXTRACT IT. Returning an empty list
+is correct and preferred over forcing a poor fit.
+
+Never invent predicates. Never stretch an existing predicate to cover a claim
+it wasn't designed for. Specifically:
+
+- `believes` is reserved for explicit user beliefs ("I believe X", "I think
+  X is true", "in my view Y"). It is NOT a fallback for arbitrary
+  propositions about the world. If someone says "Paris is the capital of
+  France", that is a `capital_of` claim — never a `believes` claim.
+- If no predicate fits, return [].
 
 {registry.describe_for_prompt()}
 
@@ -126,6 +135,9 @@ Do NOT extract:
 - Speculation with hedging the model is merely entertaining.
 - Vague feelings without a concrete predicate ("I'm feeling reflective" —
   unless 'feels' applies cleanly).
+- Claims about scientific processes, mechanisms, or general world knowledge
+  with no matching registry predicate (e.g. "photosynthesis converts
+  sunlight into chemical energy" — no predicate captures this; abstain).
 
 # Binding
 - In USER text: 'I', 'me', 'my', 'myself' → subject 'user'.
@@ -138,6 +150,30 @@ Do NOT extract:
   object is the numeric result.
 - spelled_as: object may be dashed or plain (e.g. 's-t-r-a-w-b-e-r-r-y' or 'strawberry').
 - For user-authoritative predicates, keep object_type consistent with the registry.
+
+# Few-shot examples
+
+Input: "Photosynthesis converts sunlight into chemical energy."
+Output: claims=[]
+Reasoning: no predicate in the registry captures the chemical-process
+relation. Do not force-fit. Abstain.
+
+Input: "Quantum entanglement is faster than light."
+Output: claims=[]
+Reasoning: physics claim with no matching registry predicate. Abstain.
+
+Input: "I think the Fed will cut rates next month."
+Output: claims=[(user, believes, "Fed will cut rates next month", string, polarity=1)]
+Reasoning: explicit first-person belief marker ("I think") plus a
+proposition. This is exactly what `believes` is for.
+
+Input: "Paris is the capital of France."
+Output: claims=[(Paris, capital_of, "France", entity, polarity=1)]
+Reasoning: a specific factual relation that has its own predicate. Never
+route this to `believes` just because no first-person speaker stated it.
+
+Input: "I like peanut butter."
+Output: claims=[(user, likes, "peanut butter", entity, polarity=1)]
 
 # Output
 Always call the `record_claims` tool exactly once. Never respond with prose."""
