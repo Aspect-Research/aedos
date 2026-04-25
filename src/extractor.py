@@ -1,14 +1,23 @@
-"""Claim extractor.
+"""Claim extractor (v0.3 — pattern-based).
 
-One LLM call per message, driven by a forced tool-use schema so the response
-is always structured JSON (never free-form prose we'd have to parse).
+The extractor sees the full pattern catalog with descriptions, slots,
+verification methods, and disambiguation notes. Per source-text it:
 
-The extractor is role-aware: the same text can produce different subject
-bindings depending on whether it came from the user or the assistant.
+    1. Decides whether the text contains any fact-stating clause.
+    2. For each one, picks the BEST-FIT pattern.
+    3. Fills in the pattern's slots from the text.
+    4. Picks a predicate label (preferred from example_predicates, but
+       free to invent — predicates are descriptive, not authoritative).
+    5. Sets polarity (1 normally, 0 for explicit negation).
+    6. Returns each as a structured pattern instance.
 
-Claims whose predicate is not in the registry are dropped and logged, never
-stored. The registry is the authoritative vocabulary — the LLM doesn't get
-to invent new predicates.
+Predicates are NOT validated against a closed list — verification
+semantics belong to the pattern, not the predicate. Within a pattern,
+adding a new predicate is a no-op.
+
+Abstention is preferred over poor fits. The pattern set is broad; if
+nothing fits, the claim is probably outside scope (aesthetic judgments,
+counterfactuals, complex causal claims).
 """
 
 from __future__ import annotations
@@ -17,198 +26,185 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.llm_client import LLMClient
-from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias; renamed in §3
-OBJECT_TYPES = {"int", "string", "bool", "entity", "count"}  # v0.2 leftover; replaced in §3
+from src.pattern_registry import PatternRegistry
 
 
 @dataclass
 class ExtractionResult:
-    valid_claims: list[dict[str, Any]] = field(default_factory=list)
-    rejected_claims: list[dict[str, Any]] = field(default_factory=list)  # each: {claim, reason}
+    valid_facts: list[dict[str, Any]] = field(default_factory=list)
+    rejected_facts: list[dict[str, Any]] = field(default_factory=list)  # each: {fact, reason}
     raw_tool_input: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "valid_claims": self.valid_claims,
-            "rejected_claims": self.rejected_claims,
+            "valid_facts": self.valid_facts,
+            "rejected_facts": self.rejected_facts,
         }
 
 
-RECORD_CLAIMS_TOOL = {
-    "name": "record_claims",
-    "description": (
-        "Record the list of typed factual claims extracted from the text. "
-        "Pass an empty array if there are no factual claims."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "claims": {
-                "type": "array",
-                "description": "One entry per discrete claim.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "subject": {
-                            "type": "string",
-                            "description": (
-                                "Canonical entity the claim is about. "
-                                "'user' for first-person references."
-                            ),
+def _build_record_tool(registry: PatternRegistry) -> dict[str, Any]:
+    """Tool spec for forced extraction. Pattern names are enumerated."""
+    return {
+        "name": "record_facts",
+        "description": (
+            "Record the list of structured facts extracted from the text. "
+            "Pass an empty list if the text states no fact in any of the "
+            "available patterns."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "facts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "pattern": {
+                                "type": "string",
+                                "enum": registry.names(),
+                                "description": (
+                                    "The structural pattern this fact belongs to."
+                                ),
+                            },
+                            "predicate": {
+                                "type": "string",
+                                "description": (
+                                    "A descriptive label for the relation. "
+                                    "Prefer the pattern's example_predicates "
+                                    "but free to invent a more precise label."
+                                ),
+                            },
+                            "slots": {
+                                "type": "object",
+                                "description": (
+                                    "Object whose keys come from the chosen "
+                                    "pattern's slot list. Required slots must "
+                                    "be populated."
+                                ),
+                                "additionalProperties": True,
+                            },
+                            "polarity": {
+                                "type": "integer",
+                                "enum": [0, 1],
+                                "description": "1 = positive; 0 = explicit negation.",
+                            },
+                            "source_text": {
+                                "type": "string",
+                                "description": "The exact span the fact came from.",
+                            },
                         },
-                        "predicate": {
-                            "type": "string",
-                            "description": "Must be a name from the predicate registry.",
-                        },
-                        "object": {
-                            "type": "string",
-                            "description": (
-                                "The object/value of the claim. For object_type='count', "
-                                'encode as JSON: {"item": ..., "count": ...}. For '
-                                "sum_equals/product_equals, the SUBJECT is a JSON list "
-                                "of numbers."
-                            ),
-                        },
-                        "object_type": {
-                            "type": "string",
-                            "enum": sorted(OBJECT_TYPES),
-                        },
-                        "polarity": {
-                            "type": "integer",
-                            "enum": [0, 1],
-                            "description": "1 = positive claim, 0 = explicit negation.",
-                        },
-                        "source_text": {
-                            "type": "string",
-                            "description": "The exact span the claim was extracted from.",
-                        },
+                        "required": [
+                            "pattern", "predicate", "slots", "polarity", "source_text",
+                        ],
                     },
-                    "required": [
-                        "subject",
-                        "predicate",
-                        "object",
-                        "object_type",
-                        "polarity",
-                        "source_text",
-                    ],
-                    "additionalProperties": False,
-                },
-            }
+                }
+            },
+            "required": ["facts"],
         },
-        "required": ["claims"],
-        "additionalProperties": False,
-    },
-}
+    }
 
 
-def _build_system_prompt(registry: PredicateRegistry) -> str:
-    return f"""You extract discrete factual claims from text so they can be verified.
+SYSTEM_PROMPT_TEMPLATE = """You extract structured facts from text by mapping each fact-stating clause to one of a fixed set of structural PATTERNS.
 
-# Bounded vocabulary — abstention is the default
-Only use predicates from the registry below. If a potential claim does not
-CLEANLY fit any listed predicate, DO NOT EXTRACT IT. Returning an empty list
-is correct and preferred over forcing a poor fit.
+# Patterns
+{patterns}
 
-Never invent predicates. Never stretch an existing predicate to cover a claim
-it wasn't designed for. Specifically:
+# Rules
 
-- `believes` is reserved for explicit user beliefs ("I believe X", "I think
-  X is true", "in my view Y"). It is NOT a fallback for arbitrary
-  propositions about the world. If someone says "Paris is the capital of
-  France", that is a `capital_of` claim — never a `believes` claim.
-- `is_a` is for general category/profession membership ("a physicist",
-  "a bird"), NOT for specific named roles. "Donald Trump is the US
-  President" is `holds_role`, not `is_a`.
-- `holds_role` is for specific named offices/positions; `is_a` is for
-  general category membership; `headed_by` flips the relation when the
-  sentence's subject is the institution.
-- If no predicate fits, return [].
+- The pattern set is closed. PREDICATE labels within a pattern are FREE-FORM —
+  prefer the example_predicates listed in each pattern, but invent a more
+  specific label when none of the examples capture the relation precisely
+  (e.g. `is_obsessed_with` for an extreme `preference`).
+- If a clause does not fit any pattern, do NOT extract it. An empty list is
+  a valid and common answer. The pattern set covers role assignment,
+  preferences, quantitative facts, spatial/temporal facts, categorical
+  membership, binary relations, events, and propositional attitudes — claims
+  outside this scope (aesthetic judgments, counterfactuals, complex causal
+  claims, scientific process descriptions) are out of scope.
+- Pattern decision aids:
+    * preference vs propositional_attitude: object vs proposition.
+    * categorical vs role_assignment: intrinsic vs conferrable.
+    * relational vs role_assignment: relation between entities vs binding to a role.
+    * event vs role_assignment: discrete moment vs ongoing tenure.
+- One sentence can yield MULTIPLE facts. Extract them all
+  (e.g. "Tokyo is a city in Japan" → categorical AND spatial_temporal).
 
-{registry.describe_for_prompt()}
+# Slot rules
 
-# What counts as a claim
-A claim is an assertion about the world or about the user's state (likes,
-plans, beliefs, identity, count of something, spelling of something, etc.).
+- Required slots must be populated from the source text or from
+  unambiguous inference (e.g. "I" → agent="user").
+- Optional slots — populate when the source text supplies them. Do NOT
+  invent values. Especially: never leave a temporal scope implicit if
+  the text contains it. "from 2017 to 2021" → valid_from, valid_until.
+- For role_assignment claims that are CURRENTLY HELD, leave valid_until
+  null (do not write "present" or "now"). The downstream verifier
+  treats null valid_until as currently held.
+- For preference / propositional_attitude with first-person "I", set
+  agent="user".
 
-DO extract:
-- Preferences, opinions, identity stated as assertions ("I like X", "I'm 34").
-- Negations stated explicitly ("I don't like X" → polarity=0, or use 'dislikes').
-- Factual claims about the external world ("Paris is the capital of France").
-- Mathematical/structural claims ("strawberry has 3 p's", "2+3 = 5").
+# Polarity
 
-Do NOT extract:
-- Questions ("Do I like peanut butter?" — no claim).
-- Pleasantries / meta-conversation ("Thanks!", "Got it", "Let me check").
-- Speculation with hedging the model is merely entertaining.
-- Vague feelings without a concrete predicate ("I'm feeling reflective" —
-  unless 'feels' applies cleanly).
-- Claims about scientific processes, mechanisms, or general world knowledge
-  with no matching registry predicate (e.g. "photosynthesis converts
-  sunlight into chemical energy" — no predicate captures this; abstain).
-
-# Binding
-- In USER text: 'I', 'me', 'my', 'myself' → subject 'user'.
-- In ASSISTANT text addressing the user: 'you', 'your' → subject 'user'.
-
-# Encoding rules
-- has_count: object is JSON '{{"item": "<thing being counted>", "count": <int>}}';
-  subject is the container (word / phrase).
-- sum_equals / product_equals: subject is a JSON list of numbers (e.g. '[2,3,4]');
-  object is the numeric result.
-- spelled_as: object may be dashed or plain (e.g. 's-t-r-a-w-b-e-r-r-y' or 'strawberry').
-- For user-authoritative predicates, keep object_type consistent with the registry.
+- 1 = positive ("I like X", "Trump is the president").
+- 0 = explicit negation ("I don't like X", "Trump was NOT the 45th").
+- Implicit negations or absences do NOT extract.
 
 # Few-shot examples
 
 Input: "Photosynthesis converts sunlight into chemical energy."
-Output: claims=[]
-Reasoning: no predicate in the registry captures the chemical-process
-relation. Do not force-fit. Abstain.
-
-Input: "Quantum entanglement is faster than light."
-Output: claims=[]
-Reasoning: physics claim with no matching registry predicate. Abstain.
-
-Input: "I think the Fed will cut rates next month."
-Output: claims=[(user, believes, "Fed will cut rates next month", string, polarity=1)]
-Reasoning: explicit first-person belief marker ("I think") plus a
-proposition. This is exactly what `believes` is for.
-
-Input: "Paris is the capital of France."
-Output: claims=[(Paris, capital_of, "France", entity, polarity=1)]
-Reasoning: a specific factual relation that has its own predicate. Never
-route this to `believes` just because no first-person speaker stated it.
+Output: facts=[]
+Reasoning: scientific process. None of the eight patterns capture
+chemical conversion. Abstain.
 
 Input: "Marie Curie was a physicist."
-Output: claims=[(Marie Curie, is_a, "physicist", string, polarity=1)]
-Reasoning: copula + general profession noun → `is_a`. Never `believes`.
-Not `holds_role` because "physicist" is a general category, not a
-specific named position.
+Output: facts=[{{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"Marie Curie","category":"physicist"}},"polarity":1,"source_text":"Marie Curie was a physicist"}}]
+Reasoning: profession noun → categorical, NOT role_assignment.
 
-Input: "Donald Trump is the US President."
-Output: claims=[(Donald Trump, holds_role, "US President", string, polarity=1)]
-Reasoning: copula + named role/position → `holds_role`. Not `is_a`
-("US President" is a specific position, not a category). Not `believes`
-(no explicit belief marker). Not `headed_by` (the subject is the
-role-holder, not the organization).
+Input: "Donald Trump is the 47th President"
+Output: facts=[{{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"Donald Trump","role":"47th President","org":"United States"}},"polarity":1,"source_text":"Donald Trump is the 47th President"}}]
+Reasoning: named office → role_assignment. valid_until omitted (currently held).
 
-Input: "The United States is headed by Donald Trump."
-Output: claims=[(United States, headed_by, "Donald Trump", entity, polarity=1)]
-Reasoning: institution-framed sentence → `headed_by`. The same fact
-re-expressed as person-first would route to `holds_role`.
+Input: "Trump served as the 45th president from 2017 to 2021"
+Output: facts=[{{"pattern":"role_assignment","predicate":"served_as","slots":{{"agent":"Donald Trump","role":"45th President","org":"United States","valid_from":"2017-01-20","valid_until":"2021-01-20"}},"polarity":1,"source_text":"Trump served as the 45th president from 2017 to 2021"}}]
+Reasoning: explicit time-bounded tenure. Populate valid_from and valid_until.
 
-Input: "I like peanut butter."
-Output: claims=[(user, likes, "peanut butter", entity, polarity=1)]
+Input: "Trump defeated Kamala Harris in the 2024 election"
+Output: facts=[{{"pattern":"relational","predicate":"defeated_in_election","slots":{{"subject":"Donald Trump","relation":"defeated_in_election","object":"Kamala Harris","valid_from":"2024"}},"polarity":1,"source_text":"Trump defeated Kamala Harris in the 2024 election"}}]
+Reasoning: election outcome is a relation, NOT succession. Do not use succeeded_by here.
+
+Input: "I think the Fed will cut rates"
+Output: facts=[{{"pattern":"propositional_attitude","predicate":"believes","slots":{{"agent":"user","attitude":"thinks","proposition":"Fed will cut rates"}},"polarity":1,"source_text":"I think the Fed will cut rates"}}]
+
+Input: "I love peanut butter"
+Output: facts=[{{"pattern":"preference","predicate":"loves","slots":{{"agent":"user","object":"peanut butter","intensity":"strong"}},"polarity":1,"source_text":"I love peanut butter"}}]
+
+Input: "Strawberry has 2 p's"
+Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"strawberry","property":"letter_p","value":2}},"polarity":1,"source_text":"Strawberry has 2 p's"}}]
+Reasoning: structural extraction only. The verifier checks correctness.
+
+Input: "Tokyo is a city in Japan"
+Output: facts=[
+  {{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"Tokyo","category":"city"}},"polarity":1,"source_text":"Tokyo is a city"}},
+  {{"pattern":"spatial_temporal","predicate":"located_in","slots":{{"entity":"Tokyo","location":"Japan","relation_kind":"containment"}},"polarity":1,"source_text":"Tokyo is a city in Japan"}}
+]
+Reasoning: one sentence yields two facts in two different patterns.
+
+Input: "The sunset was beautiful"
+Output: facts=[]
+Reasoning: aesthetic judgment, no pattern fits.
 
 # Output
-Always call the `record_claims` tool exactly once. Never respond with prose."""
+
+Always call the `record_facts` tool exactly once. Never reply with prose."""
 
 
 class ClaimExtractor:
-    def __init__(self, llm: LLMClient, registry: PredicateRegistry):
+    def __init__(self, llm: LLMClient, registry: PatternRegistry):
         self.llm = llm
         self.registry = registry
-        self._system_prompt = _build_system_prompt(registry)
+        self._record_tool = _build_record_tool(registry)
+        self._system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+            patterns=registry.describe_for_prompt(),
+        )
 
     def extract(self, text: str, role: str) -> ExtractionResult:
         if role not in ("user", "assistant"):
@@ -216,74 +212,66 @@ class ClaimExtractor:
         user_message = (
             f"Role of speaker: {role}\n"
             f"Text:\n{text}\n\n"
-            "Extract all claims via the record_claims tool."
+            "Extract all facts via the record_facts tool. Return [] if none fit."
         )
         raw = self.llm.extract_with_tool(
             system=self._system_prompt,
             user_message=user_message,
-            tool=RECORD_CLAIMS_TOOL,
+            tool=self._record_tool,
         )
         return self._validate(raw)
 
+    # ---- validation -----------------------------------------------------
+
     def _validate(self, raw: dict[str, Any]) -> ExtractionResult:
         out = ExtractionResult(raw_tool_input=raw)
-        claims = raw.get("claims") if isinstance(raw, dict) else None
-        if not isinstance(claims, list):
+        facts = raw.get("facts") if isinstance(raw, dict) else None
+        if not isinstance(facts, list):
             return out
 
-        for c in claims:
-            if not isinstance(c, dict):
-                out.rejected_claims.append({"claim": c, "reason": "not a dict"})
-                continue
-            missing = {
-                "subject",
-                "predicate",
-                "object",
-                "object_type",
-                "polarity",
-                "source_text",
-            } - c.keys()
-            if missing:
-                out.rejected_claims.append(
-                    {"claim": c, "reason": f"missing fields: {sorted(missing)}"}
-                )
-                continue
-            pred = c["predicate"]
-            if not self.registry.has(pred):
-                out.rejected_claims.append(
-                    {"claim": c, "reason": f"predicate {pred!r} not in registry"}
-                )
-                continue
-            expected_type = self.registry.get(pred).object_type
-            if c["object_type"] != expected_type:
-                out.rejected_claims.append(
-                    {
-                        "claim": c,
-                        "reason": (
-                            f"object_type {c['object_type']!r} doesn't match "
-                            f"registry ({pred} expects {expected_type!r})"
-                        ),
-                    }
-                )
-                continue
-            try:
-                pol = int(c["polarity"])
-            except (TypeError, ValueError):
-                out.rejected_claims.append({"claim": c, "reason": "polarity not an int"})
-                continue
-            if pol not in (0, 1):
-                out.rejected_claims.append(
-                    {"claim": c, "reason": f"polarity must be 0 or 1, got {pol}"}
-                )
-                continue
-            out.valid_claims.append(
-                {
-                    "subject": str(c["subject"]),
-                    "predicate": pred,
-                    "object": str(c["object"]),
-                    "object_type": c["object_type"],
-                    "polarity": pol,
-                    "source_text": str(c["source_text"]),
-                }
-            )
+        for f in facts:
+            err = self._reject_reason(f)
+            if err is None:
+                out.valid_facts.append(self._normalize(f))
+            else:
+                out.rejected_facts.append({"fact": f, "reason": err})
         return out
+
+    def _reject_reason(self, f: Any) -> str | None:
+        if not isinstance(f, dict):
+            return f"not a dict (got {type(f).__name__})"
+        for k in ("pattern", "predicate", "slots", "polarity", "source_text"):
+            if k not in f:
+                return f"missing field {k!r}"
+        pattern_name = f["pattern"]
+        if not self.registry.has(pattern_name):
+            return f"unknown pattern {pattern_name!r}"
+        if not isinstance(f["slots"], dict):
+            return f"slots must be a dict, got {type(f['slots']).__name__}"
+        try:
+            pol = int(f["polarity"])
+        except (TypeError, ValueError):
+            return "polarity must be an int"
+        if pol not in (0, 1):
+            return f"polarity must be 0 or 1, got {pol}"
+        if not isinstance(f["predicate"], str) or not f["predicate"].strip():
+            return "predicate must be a non-empty string"
+
+        # Required-slot enforcement
+        pattern = self.registry.get(pattern_name)
+        present_slots = set(f["slots"].keys())
+        missing_required = [
+            s.name for s in pattern.slots if s.required and s.name not in present_slots
+        ]
+        if missing_required:
+            return f"missing required slots {missing_required} for pattern {pattern_name!r}"
+        return None
+
+    def _normalize(self, f: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "pattern": str(f["pattern"]),
+            "predicate": str(f["predicate"]),
+            "slots": dict(f["slots"]),
+            "polarity": int(f["polarity"]),
+            "source_text": str(f["source_text"]),
+        }
