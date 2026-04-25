@@ -122,12 +122,43 @@ There's exactly one way to run a turn through the pipeline. No
 configuration options, no mode flags, no alternate code paths. Tests
 exercise that one path thoroughly. When something changes, it's visible.
 
+## Verification status semantics (v0.2)
+
+Every stored fact and every routing `Decision` carries one of these
+verification statuses. The corrector reads the status to decide what
+intervention (if any) to apply.
+
+| Status | Assigned when | Typical confidence | Corrector behavior |
+|---|---|---|---|
+| `verified` | Python verifier said VERIFIED, retrieval judge said SUPPORTED, or store lookup matched a user-asserted fact | 0.95–0.99 | noop |
+| `contradicted` | A verifier returned CONTRADICTED (python, retrieval, or store) | 0.95–0.99 | **replace**: rewrite using the verified value |
+| `user_asserted` | User stated this directly; ground truth for `user_authoritative` predicates | 0.95+ | noop |
+| `unverifiable_in_principle` | Predicate's `verification_method` is `unverifiable` (`will_happen`, `might`, `believed_by_many`) | 0.3 | **soften**: use hedging language for definite framing |
+| `unverifiable_pending_implementation` | Retrieval errored / returned no results / judge said INSUFFICIENT_EVIDENCE; or a python verifier was inconclusive; or a user-authoritative store lookup missed | 0.4 | **hedge** when confidence < 0.5: insert a verification disclaimer near the claim |
+| `routing_anomaly` | A `user_authoritative` predicate was asserted by the model about a non-user subject (e.g. `(Donald Trump, likes, peanut butter)`) | 0.2 | noop **at the content level** — but the pipeline emits a `routing_anomaly_detected` event so the trace UI shows a prominent banner, since this almost always indicates an extractor bug |
+
+The point of distinguishing `unverifiable_in_principle` from
+`unverifiable_pending_implementation` is that the first is a property of
+the predicate itself (we cannot ever verify a future-tense claim), while
+the second is a property of *this run* (the search was rate-limited, the
+snippets were thin, the verifier hasn't been written yet). The corrector
+applies different prose treatments to each.
+
 ## Known limitations
 
-- **Retrieval is a stub.** Five predicates (`capital_of`, `born_in_year`,
-  `located_in`, `authored_by`, `founded_in`) always return inconclusive.
-  v2 would wire up a retrieval layer (Wikipedia, a knowledge graph, or
-  an LLM-with-search tool) behind `retrieval_verify`.
+- **Retrieval is v1 — snippet-based, judge-LLM only.** The retrieval
+  verifier issues one search (DuckDuckGo, Tavily, or SerpAPI), takes the
+  top 1–3 result snippets, and asks an LLM to judge support. It does not
+  fetch full pages, does not cross-corroborate across multiple sources,
+  and does not pull from structured sources (Wikidata, Wikipedia
+  infoboxes). DDG scraping in particular is rate-limited and flaky.
+  Failures surface as `unverifiable_pending_implementation` with an
+  explicit `error_flag` (`retrieval_error`, `no_results`,
+  `judge_parse_error`, `judge_error`) so they're visible in the trace,
+  not silently passed through. v2 would add full-page fetch where
+  needed, a structured-fact path for high-confidence claims (Wikidata
+  for capitals, founders, birth years), and source-ranking + multi-snippet
+  corroboration before invoking the LLM judge.
 
 - **Python verifiers are narrow.** `verify_has_count` works only when the
   extractor successfully encodes the count claim as JSON. Natural
@@ -149,7 +180,11 @@ exercise that one path thoroughly. When something changes, it's visible.
 
 ## What v2 would add
 
-- Real retrieval verification (replace `retrieval_stub.py`).
+- A retrieval layer that fetches full pages on demand, ranks sources,
+  and corroborates across at least two sources before judging
+  (replacing the snippet-only v1 path).
+- Structured-fact retrieval against Wikidata / Wikipedia infoboxes for
+  predicates with stable answers (capitals, birth years, founders).
 - Multi-conversation scoping on the core tables.
 - Streaming assistant responses with incremental trace updates.
 - A policy layer that decides *when* to correct silently vs surface the

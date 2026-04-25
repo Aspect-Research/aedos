@@ -10,6 +10,57 @@ rejected, or flagged. User-stated facts are stored as ground truth.
 
 See `ARCHITECTURE.md` for the design rationale and a full data-flow diagram.
 
+## v0.2 changes (read before touching anything)
+
+> **The schema enum widened.** Old `aedos.db` files are incompatible
+> with v0.2 — run `python scripts/reset_db.py` (or click "Reset DB" in
+> the UI) before first use.
+
+- **New role predicates** in `predicates.yaml`: `holds_role`, `is_a`,
+  `headed_by`, `member_of`, `succeeded_by`, `preceded_by`. All retrieval-
+  verifiable. They close the role-claim gap that previously caused the
+  extractor to misuse `believes` for sentences like "Donald Trump is
+  the US President".
+- **`retrieval_query_template`** is a new optional field on retrieval
+  predicates. The retrieval verifier formats it with `{subject}` and
+  `{object}` to build a search query. Without one, the verifier falls
+  back to `"{subject} {object}"`.
+- **`verification_status` enum** expanded:
+  - `verified`, `contradicted`, `user_asserted` — same as v0.1
+  - `unverifiable_in_principle` — predicate's `verification_method` is
+    `unverifiable` (`will_happen`, `might`, `believed_by_many`)
+  - `unverifiable_pending_implementation` — retrieval failed, judge said
+    insufficient evidence, python verifier inconclusive, or store lookup
+    missed for a user-authoritative predicate. Indicates the run failed
+    rather than the claim being unfalsifiable
+  - `routing_anomaly` — model asserted a `user_authoritative` predicate
+    about a non-user subject. Strong signal of upstream extractor error
+  - The full mapping (status → confidence → corrector action) lives in
+    `ARCHITECTURE.md` under "Verification status semantics"
+- **Real retrieval verifier** (`src/verifiers/retrieval_verifier.py`).
+  Uses Tavily / SerpAPI / DuckDuckGo (in that preference order) to
+  fetch snippets, then an LLM judge for SUPPORTED / CONTRADICTED /
+  INSUFFICIENT_EVIDENCE. Results cache in a new `retrieval_cache` table
+  with a default TTL of 24 hours (configurable via
+  `AEDOS_RETRIEVAL_CACHE_TTL_HOURS`). All failure modes
+  (`retrieval_error`, `no_results`, `judge_parse_error`, `judge_error`)
+  are explicit and surface in `pipeline_events` plus the trace UI.
+- **Aggressive corrector** (`src/corrector.py`). Now plans interventions
+  per claim:
+  - `verified` / `user_asserted` → noop
+  - `contradicted` → REPLACE with the verified value
+  - `unverifiable_pending_implementation` (conf < 0.5) → HEDGE
+  - `unverifiable_in_principle` → SOFTEN
+  - `routing_anomaly` → noop at content level; logged separately as a
+    `routing_anomaly_detected` pipeline event
+  Multiple interventions in one response are batched into a single LLM
+  rewrite call.
+- **Updated guidance for adding predicates**: now requires considering
+  `verification_method` (especially for new role-type or world-fact
+  predicates that should go to retrieval) and supplying a
+  `retrieval_query_template` if the verification method is `retrieval`.
+  See "How to add a new predicate" below for the step-by-step.
+
 ## Priorities
 
 In this order:
@@ -75,6 +126,7 @@ These are load-bearing invariants:
      object_type: int           # int | string | bool | entity | count
      verification_method: python  # user_authoritative | python | store_lookup | retrieval | unverifiable
      python_verifier: verify_my_new_predicate  # required iff verification_method == python
+     retrieval_query_template: "{subject} {object}"  # only when verification_method == retrieval; optional
      description: One-sentence description for the extractor LLM.
      example: "Natural language example → (subject, my_new_predicate, object)"
    ```

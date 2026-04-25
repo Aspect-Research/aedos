@@ -9,6 +9,25 @@ This is a research prototype — clarity, observability, and ease of
 modification matter more than performance. See `ARCHITECTURE.md` for the
 design rationale.
 
+## What's new in v0.2
+
+- **Real retrieval verifier.** The retrieval stub is replaced with a
+  working DuckDuckGo / Tavily / SerpAPI backed verifier that fetches
+  search snippets, asks an LLM judge, and caches results in SQLite.
+- **Role predicates.** `holds_role`, `is_a`, `headed_by`, `member_of`,
+  `succeeded_by`, `preceded_by` cover the role-claim gap that previously
+  caused the extractor to misuse `believes`.
+- **Granular `verification_status`.** Distinguishes
+  `unverifiable_in_principle` from `unverifiable_pending_implementation`,
+  and adds `routing_anomaly` for caught extractor errors.
+- **Aggressive corrector.** Hedges unverified claims, softens unverifiable
+  predictions, and replaces contradicted facts. Decides per claim;
+  batches all interventions into one rewrite call.
+
+> **v0.2 requires a fresh DB.** The schema enum widened — old SQLite
+> files are not compatible. Run `python scripts/reset_db.py` (or click
+> "Reset DB" in the UI) before first use.
+
 ## Setup
 
 ```bash
@@ -50,6 +69,25 @@ RUN_API_TESTS=1 pytest         # also hit the real Anthropic API once
    predicate.
 
 See `CLAUDE.md` for step-by-step guidance.
+
+## Optional environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | (required) | Anthropic API key for chat / extraction / corrector / judge calls |
+| `AEDOS_DB_PATH` | `aedos.db` | SQLite file location |
+| `AEDOS_EXTRACTOR_MODEL` | `claude-opus-4-7` | Model for the claim extractor |
+| `AEDOS_CHAT_MODEL` | `claude-opus-4-7` | Model that generates assistant drafts |
+| `AEDOS_CORRECTOR_MODEL` | `claude-opus-4-7` | Model for both corrector rewrites and the retrieval judge. Haiku 4.5 is a good cost-saver here |
+| `TAVILY_API_KEY` | (none) | If set, retrieval uses Tavily — usually higher-quality results than the DDG fallback |
+| `SERPAPI_KEY` | (none) | If set and Tavily isn't, retrieval uses SerpAPI |
+| `AEDOS_RETRIEVAL_CACHE_TTL_HOURS` | `24` | TTL for the SQLite-backed retrieval cache. Set to `0` to disable caching |
+
+When neither `TAVILY_API_KEY` nor `SERPAPI_KEY` is set, retrieval scrapes
+DuckDuckGo's HTML endpoint. This works without keys but is rate-limited
+and historically flaky — failures surface as
+`unverifiable_pending_implementation` with a `retrieval_error` flag in
+the trace.
 
 ## Resetting state
 
