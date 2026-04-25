@@ -136,11 +136,40 @@ function renderTrace(events) {
     traceEl.appendChild(el("p", { className: "hint", textContent: "No trace for this turn." }));
     return;
   }
-  // Also render the preceding user turn if its id is events[0].turn_id - 1.
-  // Simpler: group events by their actual turn_id (we only query one turn here,
-  // so there's typically a single turn_id — display each event as a stage).
+  // Promote routing-anomaly events to a banner at the top of the trace
+  // so they are impossible to miss.
+  const anomalies = events.filter((e) => e.stage === "routing_anomaly_detected");
+  anomalies.forEach((ev) => traceEl.appendChild(renderAnomalyBanner(ev)));
 
-  events.forEach((ev) => traceEl.appendChild(renderStage(ev)));
+  events
+    .filter((e) => e.stage !== "routing_anomaly_detected")
+    .forEach((ev) => traceEl.appendChild(renderStage(ev)));
+}
+
+function renderAnomalyBanner(event) {
+  const d = event.data || {};
+  const claim = d.claim || {};
+  const banner = el("div", { className: "anomaly-banner" });
+  banner.appendChild(el("strong", {
+    textContent: "⚠ Routing anomaly detected — likely extractor error",
+  }));
+  const body = el("div");
+  body.appendChild(document.createTextNode("Predicate "));
+  body.appendChild(el("code", { textContent: claim.predicate || "?" }));
+  body.appendChild(document.createTextNode(" was asserted about non-user subject "));
+  body.appendChild(el("code", { textContent: claim.subject || "?" }));
+  body.appendChild(document.createTextNode(
+    ". This usually means the extractor chose the wrong predicate. " +
+    "Consider whether the source phrasing should map to a different predicate.",
+  ));
+  banner.appendChild(body);
+  if (d.warning) {
+    banner.appendChild(el("div", {
+      className: "decision-meta",
+      textContent: d.warning,
+    }));
+  }
+  return banner;
 }
 
 function renderStage(event) {
@@ -166,21 +195,45 @@ function renderStage(event) {
     case "assistant_draft":
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
-    case "correction":
-      body.appendChild(el("h4", { textContent: "Original" }));
-      body.appendChild(el("div", { className: "draft-box", textContent: d.original || "" }));
-      body.appendChild(el("h4", { textContent: "Corrected" }));
-      body.appendChild(el("div", { className: "draft-box", textContent: d.corrected || "" }));
-      if (d.corrections && d.corrections.length) {
-        body.appendChild(el("h4", { textContent: "Corrections applied" }));
-        d.corrections.forEach((c) => {
-          body.appendChild(el("div", { className: "correction-block" }, [
-            document.createTextNode(`${c.original_object} → ${c.corrected_object}`),
-            el("div", { className: "verifier-explanation", textContent: c.explanation || "" }),
-          ]));
+    case "correction": {
+      const diff = el("div", { className: "diff-view" });
+      const left = el("div");
+      left.appendChild(el("h4", { textContent: "Original" }));
+      left.appendChild(el("div", {
+        className: "diff-pane diff-original",
+        textContent: d.original || "",
+      }));
+      const right = el("div");
+      right.appendChild(el("h4", { textContent: "Corrected" }));
+      right.appendChild(el("div", {
+        className: "diff-pane diff-corrected",
+        textContent: d.corrected || "",
+      }));
+      diff.appendChild(left);
+      diff.appendChild(right);
+      const interventions = d.interventions || [];
+      if (interventions.length) {
+        const list = el("div", { className: "intervention-list" });
+        list.appendChild(el("strong", { textContent: "Interventions:" }));
+        const ul = el("ul");
+        interventions.forEach((iv) => {
+          const li = el("li");
+          li.appendChild(el("span", {
+            className: `intervention-type intervention-type-${iv.intervention_type}`,
+            textContent: iv.intervention_type,
+          }));
+          const claim = iv.claim || {};
+          li.appendChild(document.createTextNode(
+            `${claim.subject || "?"} · ${claim.predicate || "?"} · ${claim.object || "?"} — ${iv.reason || ""}`,
+          ));
+          ul.appendChild(li);
         });
+        list.appendChild(ul);
+        diff.appendChild(list);
       }
+      body.appendChild(diff);
       break;
+    }
     case "final":
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
@@ -209,6 +262,51 @@ function renderExtraction(body, data) {
   }
 }
 
+function statusBadge(status) {
+  if (!status) return el("span");
+  return el("span", {
+    className: `status-badge status-${status}`,
+    textContent: status,
+    title: `verification_status = ${status}`,
+  });
+}
+
+function renderRetrievalBlock(rr) {
+  const node = el("div", { className: "retrieval-block" });
+  if (rr.query) {
+    node.appendChild(el("div", { className: "query", textContent: `query: ${rr.query}` }));
+  }
+  if (rr.verdict) {
+    const v = rr.verdict;
+    const verdictEl = el("div", { className: `verdict verdict-${v.verdict}` });
+    verdictEl.textContent = `judge: ${v.verdict}`;
+    node.appendChild(verdictEl);
+    if (v.justification) {
+      node.appendChild(el("div", {
+        className: "verifier-explanation",
+        textContent: v.justification,
+      }));
+    }
+  }
+  if (rr.error_flag) {
+    node.appendChild(el("span", { className: "error-flag", textContent: rr.error_flag }));
+  }
+  if (rr.from_cache) {
+    node.appendChild(el("span", {
+      className: "decision-meta",
+      textContent: " (cached)",
+    }));
+  }
+  (rr.snippets || []).forEach((s) => {
+    const sn = el("div", { className: "snippet" });
+    if (s.title) sn.appendChild(el("div", { className: "snippet-title", textContent: s.title }));
+    if (s.snippet) sn.appendChild(el("div", { textContent: s.snippet }));
+    if (s.url) sn.appendChild(el("div", { className: "snippet-url", textContent: s.url }));
+    node.appendChild(sn);
+  });
+  return node;
+}
+
 function renderDecisions(body, data) {
   const decisions = data.decisions || [];
   if (!decisions.length) {
@@ -219,10 +317,12 @@ function renderDecisions(body, data) {
     const node = el("div", { className: "decision" });
     const header = el("div", { className: "decision-header" }, [
       el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
+      statusBadge(d.verification_status),
       triplify(d.claim),
     ]);
     node.appendChild(header);
     const meta = [];
+    if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
     if (d.stored_fact_id != null) meta.push(`stored fact id=${d.stored_fact_id}`);
     if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
     if (d.closed_fact_ids && d.closed_fact_ids.length) meta.push(`closed=${d.closed_fact_ids.join(",")}`);
@@ -237,6 +337,9 @@ function renderDecisions(body, data) {
           textContent: `verifier: ${d.verifier_result.outcome} — ${d.verifier_result.explanation}`,
         }),
       );
+    }
+    if (d.retrieval_result) {
+      node.appendChild(renderRetrievalBlock(d.retrieval_result));
     }
     if (d.correction) {
       node.appendChild(
@@ -277,7 +380,7 @@ async function refreshFacts() {
   }
   const table = el("table");
   const head = el("tr", {}, [
-    "id", "subject", "predicate", "object", "pol", "conf", "asserted_by", "status", "valid_until", "turn", "src",
+    "id", "subject", "predicate", "object", "pol", "confidence", "asserted_by", "status", "valid_until", "turn", "src",
   ].map((h) => el("th", { textContent: h })));
   table.appendChild(head);
   facts.forEach((f) => {
@@ -285,23 +388,37 @@ async function refreshFacts() {
     if (f.valid_until) tr.classList.add("closed");
     if (f.verification_status === "contradicted") tr.classList.add("contradicted");
     if (f.verification_status === "verified") tr.classList.add("verified");
-    [
-      f.id,
-      f.subject,
-      f.predicate,
-      f.object,
-      f.polarity,
-      (typeof f.confidence === "number") ? f.confidence.toFixed(2) : f.confidence,
-      f.asserted_by,
-      f.verification_status,
-      f.valid_until || "—",
-      f.source_turn_id ?? "",
-      f.source_text ?? "",
-    ].forEach((v, i) => {
-      const td = el("td", { textContent: String(v) });
-      if (i === 3 || i === 10) td.classList.add("mono");
-      tr.appendChild(td);
-    });
+
+    const cells = [
+      el("td", { textContent: String(f.id) }),
+      el("td", { textContent: String(f.subject) }),
+      el("td", { textContent: String(f.predicate) }),
+      el("td", { className: "mono", textContent: String(f.object) }),
+      el("td", { textContent: String(f.polarity) }),
+      el("td"),                   // confidence (rendered below)
+      el("td", { textContent: String(f.asserted_by) }),
+      el("td"),                   // status badge (below)
+      el("td", { textContent: f.valid_until || "—" }),
+      el("td", { textContent: String(f.source_turn_id ?? "") }),
+      el("td", { className: "mono", textContent: String(f.source_text ?? "") }),
+    ];
+    // Confidence: render as a colored bar plus numeric.
+    if (typeof f.confidence === "number") {
+      const bar = el("span", { className: "confidence-bar" });
+      const overlay = el("span");
+      overlay.style.width = `${Math.max(0, (1 - f.confidence) * 100)}%`;
+      bar.appendChild(overlay);
+      cells[5].appendChild(bar);
+      cells[5].appendChild(el("span", {
+        className: "confidence-text",
+        textContent: f.confidence.toFixed(2),
+      }));
+    } else {
+      cells[5].textContent = String(f.confidence);
+    }
+    cells[7].appendChild(statusBadge(f.verification_status));
+
+    cells.forEach((c) => tr.appendChild(c));
     table.appendChild(tr);
   });
   container.appendChild(table);
@@ -325,15 +442,21 @@ async function refreshPredicates() {
   preds.forEach((p) => {
     (byMethod[p.verification_method] = byMethod[p.verification_method] || []).push(p);
   });
-  Object.entries(byMethod).forEach(([method, entries]) => {
+  // Group order: user_authoritative → python → retrieval → unverifiable
+  const ORDER = ["user_authoritative", "python", "retrieval", "unverifiable"];
+  ORDER.forEach((method) => {
+    const entries = byMethod[method];
+    if (!entries) return;
     container.appendChild(el("h3", { textContent: `verification_method: ${method}` }));
     const table = el("table");
-    table.appendChild(el("tr", {}, ["name", "object_type", "python_verifier", "description", "example"].map((h) => el("th", { textContent: h }))));
+    const headers = ["name", "object_type", "python_verifier", "retrieval_query_template", "description", "example"];
+    table.appendChild(el("tr", {}, headers.map((h) => el("th", { textContent: h }))));
     entries.forEach((p) => {
       const tr = el("tr", {}, [
         el("td", { textContent: p.name }),
         el("td", { textContent: p.object_type }),
-        el("td", { textContent: p.python_verifier || "—" }),
+        el("td", { className: "mono", textContent: p.python_verifier || "—" }),
+        el("td", { className: "mono", textContent: p.retrieval_query_template || "—" }),
         el("td", { textContent: p.description }),
         el("td", { textContent: p.example }),
       ]);
