@@ -1,18 +1,9 @@
-"""Tests for src.extractor.
-
-LLM calls are mocked by default. A single end-to-end test is gated behind
-RUN_API_TESTS=1 for occasional real-API sanity checks.
-"""
+"""Tests for src.extractor (v0.3 — pattern-based)."""
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(
-    reason="v0.3 migration: extractor rewritten in Section 3; tests rewritten there"
-)
-
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -30,13 +21,8 @@ def _reset_registry():
 
 @dataclass
 class FakeLLM:
-    """Stand-in for LLMClient — records args and returns a canned tool input."""
-
     return_value: dict[str, Any]
-    calls: list[dict[str, Any]] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        self.calls = []
+    calls: list[dict[str, Any]] = field(default_factory=list)
 
     def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
         self.calls.append(
@@ -45,305 +31,392 @@ class FakeLLM:
         return self.return_value
 
 
-def _mk_extractor(return_value):
+def _mk(return_value):
     return ClaimExtractor(FakeLLM(return_value=return_value), load_default_registry())
 
 
-def test_valid_user_fact_passes_through():
-    llm_out = {
-        "claims": [
+# ---------- abstention ----------
+
+
+def test_empty_facts_list_is_fine():
+    result = _mk({"facts": []}).extract("Hello!", role="user")
+    assert result.valid_facts == []
+    assert result.rejected_facts == []
+
+
+def test_photosynthesis_abstention():
+    """Spec scenario A: out-of-vocabulary, must abstain."""
+    result = _mk({"facts": []}).extract(
+        "Photosynthesis converts sunlight into chemical energy.", role="user"
+    )
+    assert result.valid_facts == []
+
+
+def test_aesthetic_judgment_abstention():
+    """The sunset was beautiful — no pattern fits."""
+    result = _mk({"facts": []}).extract("The sunset was beautiful.", role="user")
+    assert result.valid_facts == []
+
+
+# ---------- per-pattern happy paths ----------
+
+
+def test_categorical_extraction():
+    payload = {
+        "facts": [
             {
-                "subject": "user",
-                "predicate": "likes",
-                "object": "peanut butter",
-                "object_type": "entity",
+                "pattern": "categorical",
+                "predicate": "is_a",
+                "slots": {"entity": "Marie Curie", "category": "physicist"},
                 "polarity": 1,
-                "source_text": "I like peanut butter",
+                "source_text": "Marie Curie was a physicist",
             }
         ]
     }
-    result = _mk_extractor(llm_out).extract("I like peanut butter", role="user")
-    assert len(result.valid_claims) == 1
-    assert result.rejected_claims == []
-    assert result.valid_claims[0]["predicate"] == "likes"
+    result = _mk(payload).extract("Marie Curie was a physicist.", role="user")
+    assert len(result.valid_facts) == 1
+    f = result.valid_facts[0]
+    assert f["pattern"] == "categorical"
+    assert f["predicate"] == "is_a"
+    assert f["slots"]["category"] == "physicist"
 
 
-def test_unknown_predicate_dropped():
-    llm_out = {
-        "claims": [
+def test_role_assignment_with_temporal_scope():
+    """The Trump-trace fix: extractor must populate valid_from / valid_until."""
+    payload = {
+        "facts": [
             {
-                "subject": "user",
-                "predicate": "teleports_to",  # not in registry
-                "object": "Mars",
-                "object_type": "entity",
+                "pattern": "role_assignment",
+                "predicate": "served_as",
+                "slots": {
+                    "agent": "Donald Trump",
+                    "role": "45th President",
+                    "org": "United States",
+                    "valid_from": "2017-01-20",
+                    "valid_until": "2021-01-20",
+                },
                 "polarity": 1,
-                "source_text": "I teleport to Mars",
+                "source_text": "Trump served as the 45th president from 2017 to 2021",
             }
         ]
     }
-    result = _mk_extractor(llm_out).extract("I teleport to Mars", role="user")
-    assert result.valid_claims == []
-    assert len(result.rejected_claims) == 1
-    assert "not in registry" in result.rejected_claims[0]["reason"]
+    result = _mk(payload).extract(
+        "Trump served as the 45th president from 2017 to 2021.", role="user"
+    )
+    assert len(result.valid_facts) == 1
+    slots = result.valid_facts[0]["slots"]
+    assert slots["valid_from"] == "2017-01-20"
+    assert slots["valid_until"] == "2021-01-20"
 
 
-def test_object_type_mismatch_dropped():
-    llm_out = {
-        "claims": [
+def test_role_assignment_currently_held_omits_valid_until():
+    payload = {
+        "facts": [
             {
-                "subject": "user",
-                "predicate": "likes",
-                "object": "42",
-                "object_type": "int",  # likes expects 'entity'
+                "pattern": "role_assignment",
+                "predicate": "holds_role",
+                "slots": {"agent": "Donald Trump", "role": "47th President"},
                 "polarity": 1,
-                "source_text": "x",
+                "source_text": "Donald Trump is the 47th President",
             }
         ]
     }
-    result = _mk_extractor(llm_out).extract("x", role="user")
-    assert result.valid_claims == []
-    assert len(result.rejected_claims) == 1
-    assert "object_type" in result.rejected_claims[0]["reason"]
+    result = _mk(payload).extract("Donald Trump is the 47th President.", role="user")
+    assert len(result.valid_facts) == 1
+    assert "valid_until" not in result.valid_facts[0]["slots"]
 
 
-def test_missing_field_dropped():
-    llm_out = {
-        "claims": [
+def test_relational_election_outcome_not_succession():
+    """Trump-defeated-Harris is relational, not succeeded_by."""
+    payload = {
+        "facts": [
             {
-                "subject": "user",
-                "predicate": "likes",
-                "object": "pb",
-                # missing object_type, polarity, source_text
+                "pattern": "relational",
+                "predicate": "defeated_in_election",
+                "slots": {
+                    "subject": "Donald Trump",
+                    "relation": "defeated_in_election",
+                    "object": "Kamala Harris",
+                    "valid_from": "2024",
+                },
+                "polarity": 1,
+                "source_text": "Trump defeated Kamala Harris in the 2024 election",
             }
         ]
     }
-    result = _mk_extractor(llm_out).extract("x", role="user")
-    assert result.valid_claims == []
-    assert "missing fields" in result.rejected_claims[0]["reason"]
+    result = _mk(payload).extract(
+        "Trump defeated Kamala Harris in the 2024 election.", role="user"
+    )
+    f = result.valid_facts[0]
+    assert f["predicate"] == "defeated_in_election"
+    assert f["predicate"] != "succeeded_by"
 
 
-def test_empty_claims_list_is_fine():
-    result = _mk_extractor({"claims": []}).extract("Hi!", role="user")
-    assert result.valid_claims == []
-    assert result.rejected_claims == []
-
-
-def test_non_list_claims_returns_empty():
-    result = _mk_extractor({"claims": "not a list"}).extract("x", role="user")
-    assert result.valid_claims == []
-
-
-def test_malformed_claim_entry_rejected():
-    result = _mk_extractor({"claims": [42, "string"]}).extract("x", role="user")
-    assert result.valid_claims == []
-    assert len(result.rejected_claims) == 2
-
-
-def test_polarity_is_coerced_to_int():
-    llm_out = {
-        "claims": [
+def test_propositional_attitude_user_belief():
+    payload = {
+        "facts": [
             {
-                "subject": "user",
-                "predicate": "likes",
-                "object": "pb",
-                "object_type": "entity",
-                "polarity": "1",  # stringly-typed
-                "source_text": "x",
+                "pattern": "propositional_attitude",
+                "predicate": "believes",
+                "slots": {
+                    "agent": "user",
+                    "attitude": "thinks",
+                    "proposition": "Fed will cut rates",
+                },
+                "polarity": 1,
+                "source_text": "I think the Fed will cut rates",
             }
         ]
     }
-    result = _mk_extractor(llm_out).extract("x", role="user")
-    assert result.valid_claims[0]["polarity"] == 1
+    result = _mk(payload).extract("I think the Fed will cut rates.", role="user")
+    f = result.valid_facts[0]
+    assert f["pattern"] == "propositional_attitude"
+    assert f["slots"]["agent"] == "user"
+
+
+def test_preference_user_love():
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "loves",
+                "slots": {"agent": "user", "object": "peanut butter"},
+                "polarity": 1,
+                "source_text": "I love peanut butter",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I love peanut butter.", role="user")
+    assert result.valid_facts[0]["pattern"] == "preference"
+    assert result.valid_facts[0]["predicate"] == "loves"
+
+
+def test_quantitative_count():
+    payload = {
+        "facts": [
+            {
+                "pattern": "quantitative",
+                "predicate": "has_count",
+                "slots": {"subject": "strawberry", "property": "letter_p", "value": 2},
+                "polarity": 1,
+                "source_text": "Strawberry has 2 p's",
+            }
+        ]
+    }
+    result = _mk(payload).extract("Strawberry has 2 p's.", role="user")
+    assert result.valid_facts[0]["pattern"] == "quantitative"
+
+
+def test_spatial_temporal_user():
+    payload = {
+        "facts": [
+            {
+                "pattern": "spatial_temporal",
+                "predicate": "lives_in",
+                "slots": {
+                    "entity": "user",
+                    "location": "Williamstown",
+                    "relation_kind": "residence",
+                },
+                "polarity": 1,
+                "source_text": "I live in Williamstown",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I live in Williamstown.", role="user")
+    assert result.valid_facts[0]["pattern"] == "spatial_temporal"
+    assert result.valid_facts[0]["slots"]["entity"] == "user"
+
+
+def test_event_pattern():
+    payload = {
+        "facts": [
+            {
+                "pattern": "event",
+                "predicate": "was_inaugurated",
+                "slots": {
+                    "event_type": "inauguration",
+                    "participants": ["Donald Trump"],
+                    "occurred_at": "2025-01-20",
+                },
+                "polarity": 1,
+                "source_text": "Trump was inaugurated on January 20, 2025",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "Trump was inaugurated on January 20, 2025.", role="user"
+    )
+    assert result.valid_facts[0]["pattern"] == "event"
+
+
+# ---------- multi-pattern from one sentence ----------
+
+
+def test_one_sentence_two_facts_two_patterns():
+    """Section 9 #3: 'Tokyo is a city in Japan' → categorical + spatial_temporal."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "categorical",
+                "predicate": "is_a",
+                "slots": {"entity": "Tokyo", "category": "city"},
+                "polarity": 1,
+                "source_text": "Tokyo is a city",
+            },
+            {
+                "pattern": "spatial_temporal",
+                "predicate": "located_in",
+                "slots": {
+                    "entity": "Tokyo",
+                    "location": "Japan",
+                    "relation_kind": "containment",
+                },
+                "polarity": 1,
+                "source_text": "Tokyo is a city in Japan",
+            },
+        ]
+    }
+    result = _mk(payload).extract("Tokyo is a city in Japan.", role="user")
+    assert len(result.valid_facts) == 2
+    patterns = sorted(f["pattern"] for f in result.valid_facts)
+    assert patterns == ["categorical", "spatial_temporal"]
+
+
+# ---------- free-form predicates within a pattern ----------
+
+
+def test_freeform_predicate_within_preference_accepted():
+    """is_obsessed_with isn't in example_predicates but is valid within preference."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "is_obsessed_with",
+                "slots": {"agent": "user", "object": "sourdough"},
+                "polarity": 1,
+                "source_text": "I'm obsessed with sourdough",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I'm obsessed with sourdough.", role="user")
+    assert len(result.valid_facts) == 1
+    assert result.valid_facts[0]["predicate"] == "is_obsessed_with"
+
+
+# ---------- validation rejection paths ----------
+
+
+def test_unknown_pattern_rejected():
+    payload = {
+        "facts": [
+            {
+                "pattern": "telepathy",
+                "predicate": "x",
+                "slots": {},
+                "polarity": 1,
+                "source_text": "...",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "unknown pattern" in result.rejected_facts[0]["reason"]
+
+
+def test_missing_required_slot_rejected():
+    payload = {
+        "facts": [
+            {
+                "pattern": "categorical",
+                "predicate": "is_a",
+                "slots": {"entity": "Marie Curie"},  # missing 'category'
+                "polarity": 1,
+                "source_text": "...",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "missing required slots" in result.rejected_facts[0]["reason"]
+
+
+def test_missing_top_level_field_rejected():
+    payload = {
+        "facts": [
+            {"pattern": "preference", "predicate": "likes", "polarity": 1}
+            # missing slots, source_text
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "missing field" in result.rejected_facts[0]["reason"]
 
 
 def test_polarity_out_of_range_rejected():
-    llm_out = {
-        "claims": [
+    payload = {
+        "facts": [
             {
-                "subject": "user",
+                "pattern": "preference",
                 "predicate": "likes",
-                "object": "pb",
-                "object_type": "entity",
+                "slots": {"agent": "user", "object": "x"},
                 "polarity": 2,
                 "source_text": "x",
             }
         ]
     }
-    result = _mk_extractor(llm_out).extract("x", role="user")
-    assert result.valid_claims == []
-    assert "polarity must be 0 or 1" in result.rejected_claims[0]["reason"]
-
-
-def test_multiple_mixed_claims_split_valid_and_rejected():
-    llm_out = {
-        "claims": [
-            {
-                "subject": "user",
-                "predicate": "likes",
-                "object": "pb",
-                "object_type": "entity",
-                "polarity": 1,
-                "source_text": "a",
-            },
-            {
-                "subject": "user",
-                "predicate": "teleports",  # unknown
-                "object": "Mars",
-                "object_type": "entity",
-                "polarity": 1,
-                "source_text": "b",
-            },
-            {
-                "subject": "strawberry",
-                "predicate": "has_count",
-                "object": '{"item": "p", "count": 3}',
-                "object_type": "count",
-                "polarity": 1,
-                "source_text": "c",
-            },
-        ]
-    }
-    result = _mk_extractor(llm_out).extract("x", role="assistant")
-    assert len(result.valid_claims) == 2
-    assert len(result.rejected_claims) == 1
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "polarity must be 0 or 1" in result.rejected_facts[0]["reason"]
 
 
 def test_role_validation():
-    extractor = _mk_extractor({"claims": []})
+    extractor = _mk({"facts": []})
     with pytest.raises(ValueError, match="role"):
         extractor.extract("x", role="system")
 
 
-def test_tool_schema_enumerates_object_types():
-    """The tool schema is what the LLM sees; it must list every object_type."""
-    from src.extractor import RECORD_CLAIMS_TOOL
-    from src.pattern_registry import OBJECT_TYPES
+def test_tool_schema_lists_all_pattern_names():
+    from src.pattern_registry import load_default_registry as _load
 
-    enum = RECORD_CLAIMS_TOOL["input_schema"]["properties"]["claims"]["items"][
+    reg = _load()
+    extractor = _mk({"facts": []})
+    enum = extractor._record_tool["input_schema"]["properties"]["facts"]["items"][
         "properties"
-    ]["object_type"]["enum"]
-    assert set(enum) == OBJECT_TYPES
+    ]["pattern"]["enum"]
+    assert set(enum) == set(reg.names())
 
 
-def test_system_prompt_includes_every_predicate():
-    extractor = _mk_extractor({"claims": []})
-    for name in extractor.registry.names():
-        assert name in extractor._system_prompt
-
-
-# ---------- abstention behavior (Section 1) ----------
-
-
-def test_extractor_abstains_on_out_of_vocabulary_claim():
-    """Photosynthesis sentence must extract zero claims when the LLM abstains."""
-    extractor = _mk_extractor({"claims": []})
-    result = extractor.extract(
-        "Photosynthesis converts sunlight into chemical energy.", role="user"
-    )
-    assert result.valid_claims == []
-    assert result.rejected_claims == []
-
-
-def test_marie_curie_routes_to_is_a_not_believes():
-    """Section 2 discrimination: profession noun → is_a."""
-    extractor = _mk_extractor(
-        {
-            "claims": [
-                {
-                    "subject": "Marie Curie",
-                    "predicate": "is_a",
-                    "object": "physicist",
-                    "object_type": "string",
-                    "polarity": 1,
-                    "source_text": "Marie Curie was a physicist",
-                }
-            ]
-        }
-    )
-    result = extractor.extract("Marie Curie was a physicist.", role="user")
-    assert len(result.valid_claims) == 1
-    assert result.valid_claims[0]["predicate"] == "is_a"
-
-
-def test_donald_trump_routes_to_holds_role_not_is_a_or_believes():
-    """Section 2 discrimination: named role → holds_role, never is_a/believes."""
-    extractor = _mk_extractor(
-        {
-            "claims": [
-                {
-                    "subject": "Donald Trump",
-                    "predicate": "holds_role",
-                    "object": "US President",
-                    "object_type": "string",
-                    "polarity": 1,
-                    "source_text": "Donald Trump is the US President",
-                }
-            ]
-        }
-    )
-    result = extractor.extract("Donald Trump is the US President.", role="user")
-    assert len(result.valid_claims) == 1
-    c = result.valid_claims[0]
-    assert c["predicate"] == "holds_role"
-    assert c["predicate"] not in ("is_a", "believes")
-
-
-def test_copula_sentence_does_not_route_to_believes():
-    """A copula statement with a specific predicate must use that predicate, not believes.
-
-    The point of the new abstention prompt is that `believes` is reserved
-    for explicit user beliefs. A factual copula like "Paris is the capital
-    of France" should route to `capital_of`, never `believes`, even when
-    no first-person speaker is stating it.
-    """
-    extractor = _mk_extractor(
-        {
-            "claims": [
-                {
-                    "subject": "Paris",
-                    "predicate": "capital_of",
-                    "object": "France",
-                    "object_type": "entity",
-                    "polarity": 1,
-                    "source_text": "Paris is the capital of France",
-                }
-            ]
-        }
-    )
-    result = extractor.extract("Paris is the capital of France.", role="user")
-    assert len(result.valid_claims) == 1
-    c = result.valid_claims[0]
-    assert c["predicate"] == "capital_of"
-    assert c["predicate"] != "believes"
-
-
-def test_abstention_prompt_includes_explicit_guidance():
-    """The system prompt must contain the abstention guidance and few-shot examples."""
-    extractor = _mk_extractor({"claims": []})
+def test_system_prompt_includes_every_pattern():
+    extractor = _mk({"facts": []})
     sys = extractor._system_prompt
-    assert "abstention is the default" in sys.lower()
-    assert "believes" in sys
-    # Use a substring that doesn't cross a paragraph break.
-    assert "preferred over forcing a poor fit" in sys
-    # Reserved-for-user-belief guidance.
-    assert "reserved for explicit user beliefs" in sys
-    # Few-shot examples must include abstention + the believes-vs-fact discriminator.
-    assert "Photosynthesis" in sys
-    assert "Fed will cut rates" in sys
-    assert "Paris is the capital of France" in sys
+    for name in extractor.registry.names():
+        assert name in sys, f"pattern {name!r} missing from prompt"
+
+
+def test_system_prompt_includes_temporal_few_shot():
+    """The Trump-trace fix: prompt must show the example with valid_from/valid_until."""
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    assert "valid_from" in sys
+    assert "valid_until" in sys
+    assert "2017" in sys
+
+
+# ---------- real API gated test ----------
 
 
 @pytest.mark.skipif(
-    os.getenv("RUN_API_TESTS") != "1", reason="real API test gated behind RUN_API_TESTS=1"
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
 )
 def test_real_api_roundtrip_user_likes():
-    """Hit the real API once to sanity-check the full extractor path."""
     from src.llm_client import LLMClient
 
     llm = LLMClient()
     extractor = ClaimExtractor(llm, load_default_registry())
     result = extractor.extract("I like peanut butter.", role="user")
     assert any(
-        c["predicate"] == "likes" and "peanut butter" in c["object"].lower()
-        for c in result.valid_claims
+        f["pattern"] == "preference" and "peanut butter" in str(f["slots"]).lower()
+        for f in result.valid_facts
     ), result.to_dict()
