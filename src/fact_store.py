@@ -82,6 +82,12 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
     FOREIGN KEY (turn_id) REFERENCES turns(id)
 );
 CREATE INDEX IF NOT EXISTS idx_events_turn ON pipeline_events(turn_id);
+
+CREATE TABLE IF NOT EXISTS retrieval_cache (
+    query TEXT PRIMARY KEY,
+    snippets TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
 """
 
 
@@ -326,6 +332,33 @@ class FactStore:
             )
         return out
 
+    # ---- retrieval cache --------------------------------------------------
+
+    def cache_retrieval(self, query: str, snippets: list[dict[str, Any]]) -> None:
+        """Store retrieval snippets keyed by search query."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO retrieval_cache (query, snippets, fetched_at) "
+            "VALUES (?, ?, ?)",
+            (query, json.dumps(snippets), _now_iso()),
+        )
+        self._conn.commit()
+
+    def get_cached_retrieval(
+        self, query: str, ttl_seconds: int
+    ) -> list[dict[str, Any]] | None:
+        """Return cached snippets if present and within TTL, else None."""
+        row = self._conn.execute(
+            "SELECT snippets, fetched_at FROM retrieval_cache WHERE query = ?",
+            (query,),
+        ).fetchone()
+        if not row:
+            return None
+        fetched = datetime.fromisoformat(row["fetched_at"])
+        age = (datetime.now(timezone.utc) - fetched).total_seconds()
+        if age > ttl_seconds:
+            return None
+        return json.loads(row["snippets"])
+
     # ---- lifecycle --------------------------------------------------------
 
     def close(self) -> None:
@@ -337,6 +370,7 @@ class FactStore:
             "DROP TABLE IF EXISTS facts;"
             "DROP TABLE IF EXISTS turns;"
             "DROP TABLE IF EXISTS pipeline_events;"
+            "DROP TABLE IF EXISTS retrieval_cache;"
         )
         self._conn.executescript(SCHEMA)
         self._conn.commit()
