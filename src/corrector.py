@@ -99,10 +99,31 @@ class Corrector:
     def _plan_one(self, d: Decision) -> Intervention | None:
         status = d.verification_status
 
+        # Verified or user-asserted: keep as written.
         if status in ("verified", "user_asserted"):
             return None
+
+        # Routing anomaly: logged separately by the pipeline as a warning.
+        # NOT a content edit — the bug is upstream, not in the response.
         if status == "routing_anomaly":
-            return None  # logged separately; not a content-level edit
+            return None
+
+        # Verifier failure: the verifier did not produce useful signal
+        # (network error, no results, judge couldn't parse). DO NOT hedge —
+        # adding "I think" to a possibly-true claim is worse than leaving
+        # it as-is. The pipeline logs this as a verifier_failure event.
+        if status == "retrieval_failed":
+            return None
+
+        # Genuinely unconfirmed: the verifier RAN, found evidence, and the
+        # judge said "insufficient". This is positive signal of uncertainty.
+        if status == "retrieval_inconclusive":
+            return Intervention(
+                intervention_type=INTERVENTION_HEDGE,
+                claim=d.claim,
+                verification_status=status,
+                reason="retrieval found evidence but judge couldn't confirm; hedge",
+            )
 
         if status == "contradicted":
             corrected = (d.correction or {}).get("corrected_object")
@@ -118,18 +139,14 @@ class Corrector:
             )
 
         if status == "unverifiable_pending_implementation":
-            # The spec ties a hedge to confidence < 0.5; that's how this
-            # status is always stored, but we keep the threshold explicit
-            # so adjusting confidence later doesn't silently change behavior.
+            # Catch-all for python verifier inconclusive / store-lookup miss /
+            # similar runtime failures. Confidence threshold gives us a knob.
             if d.confidence < 0.5:
                 return Intervention(
                     intervention_type=INTERVENTION_HEDGE,
                     claim=d.claim,
                     verification_status=status,
-                    reason=(
-                        "verifier returned no conclusive evidence; "
-                        "the model's claim is unverified"
-                    ),
+                    reason="verifier returned no conclusive evidence",
                 )
             return None
 

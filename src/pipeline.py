@@ -144,17 +144,50 @@ class Pipeline:
             if d.outcome is RoutingOutcome.ROUTING_ANOMALY
         ]
         for d in routing_anomaly_decisions:
+            slot_info = d.anomaly_slot or {}
             self.store.insert_pipeline_event(
                 assistant_turn_id,
                 "routing_anomaly_detected",
                 {
                     "claim": d.claim,
                     "stored_fact_id": d.stored_fact_id,
+                    "anomaly_slot": slot_info,
                     "warning": (
-                        "user-authoritative predicate "
-                        f"{d.claim['predicate']!r} was asserted about non-user "
-                        f"subject {d.claim['subject']!r}; this almost always "
+                        "pattern "
+                        f"{d.claim.get('pattern')!r} expects slot "
+                        f"{slot_info.get('slot')!r} = "
+                        f"{slot_info.get('expected')!r} for the user-"
+                        f"authoritative branch, but got "
+                        f"{slot_info.get('actual')!r}; this almost always "
                         "indicates an extractor error rather than a wrong fact"
+                    ),
+                    "notes": d.notes,
+                },
+            )
+
+        # Stage 7a' — log verifier failures (retrieval_failed) as their own
+        # warning event. The corrector deliberately does NOT hedge these,
+        # because a verifier failure is not evidence of uncertainty about
+        # the claim.
+        verifier_failures = [
+            d for d in verification_decisions
+            if d.verification_status == "retrieval_failed"
+        ]
+        for d in verifier_failures:
+            self.store.insert_pipeline_event(
+                assistant_turn_id,
+                "verifier_failure",
+                {
+                    "claim": d.claim,
+                    "stored_fact_id": d.stored_fact_id,
+                    "warning": (
+                        "the retrieval verifier didn't produce useful signal "
+                        "(network error, no results, or judge couldn't parse); "
+                        "the corrector will NOT hedge this claim — verifier "
+                        "failure is not evidence of uncertainty"
+                    ),
+                    "retrieval_result": (
+                        d.retrieval_result.to_dict() if d.retrieval_result else None
                     ),
                     "notes": d.notes,
                 },
