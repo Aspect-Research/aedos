@@ -1,0 +1,462 @@
+# Aedos pattern catalog.
+#
+# A small fixed set of structural patterns. Predicate labels are free-form
+# WITHIN a pattern — the verification semantics come from the pattern, not
+# the predicate. Adding a new pattern is an architectural decision (rare);
+# adding a new predicate within a pattern is a no-op (just use it).
+#
+# Field shape:
+#   description: what kinds of claims fit; shown to the extractor LLM
+#   slots: each {name, type, required}; the structural payload
+#   verification_method: either a string (e.g. "retrieval") or a list of
+#     conditional rules. A rule has optional {when: {slot: value}} and a
+#     {method: ...}. First match wins; the last rule is the default.
+#   example_predicates: a non-exhaustive list shown to the extractor as
+#     "things people typically say in this pattern"
+#   example_extractions: 3-5 worked examples
+#   disambiguation_notes: how to tell this pattern apart from neighbors
+#   query_strategy: ordered list of query templates (retrieval patterns only).
+#     The verifier tries them in order and uses the first attempt that
+#     returns >= 2 results. Never prepend "current".
+#   flag_non_user_as_anomaly: optional; if true, a non-user agent on this
+#     pattern triggers a routing anomaly (preference / propositional_attitude).
+
+# =====================================================================
+role_assignment:
+  description: |
+    A person (or organization) holds a named role, position, office, or
+    title, optionally within a specific organization, optionally bounded
+    by time. Includes political, corporate, academic, and ceremonial
+    roles. Roles are conferred and time-bounded; that's the test for
+    this pattern vs `categorical`.
+  slots:
+    - { name: agent, type: entity, required: true }
+    - { name: role, type: string, required: true }
+    - { name: org, type: entity_or_string, required: false }
+    - { name: valid_from, type: date, required: false }
+    - { name: valid_until, type: date, required: false }
+  verification_method:
+    - method: retrieval
+  example_predicates:
+    - holds_role
+    - currently_holds
+    - served_as
+    - was_president_of
+    - is_ceo_of
+    - was_inaugurated_as
+  query_strategy:
+    - "{agent} {role}"
+    - "{agent} {org} {role}"
+    - "{agent}"
+  example_extractions:
+    - input: "Donald Trump is the 47th President"
+      output:
+        pattern: role_assignment
+        predicate: holds_role
+        slots: { agent: "Donald Trump", role: "47th President", org: "United States" }
+        polarity: 1
+    - input: "Trump served as the 45th president from 2017 to 2021"
+      output:
+        pattern: role_assignment
+        predicate: served_as
+        slots:
+          agent: "Donald Trump"
+          role: "45th President"
+          org: "United States"
+          valid_from: "2017-01-20"
+          valid_until: "2021-01-20"
+        polarity: 1
+    - input: "Tim Cook is CEO of Apple"
+      output:
+        pattern: role_assignment
+        predicate: is_ceo_of
+        slots: { agent: "Tim Cook", role: "CEO", org: "Apple" }
+        polarity: 1
+  disambiguation_notes: |
+    role_assignment vs categorical: role_assignment is held during a time
+    period and is conferrable (someone became, someone else will become).
+    categorical is intrinsic (Marie Curie WAS a physicist — that's a
+    category, not a tenure).
+    role_assignment vs relational: relational is a relation between two
+    entities (defeated_in_election, married_to). role_assignment binds an
+    entity to a role/office.
+
+# =====================================================================
+preference:
+  description: |
+    An agent has a stated affinity, preference, or aversion toward an
+    object. Includes likes/dislikes/loves/hates/prefers and intensified
+    forms. Subjective by definition; cannot be verified externally.
+  slots:
+    - { name: agent, type: entity, required: true }
+    - { name: attitude, type: string, required: false }   # the verb's flavor
+    - { name: object, type: entity_or_string, required: true }
+    - { name: intensity, type: string, required: false }   # mild / strong / etc.
+  verification_method:
+    - when: { agent: user }
+      method: user_authoritative
+    - method: unverifiable
+  flag_non_user_as_anomaly: true
+  example_predicates:
+    - likes
+    - dislikes
+    - loves
+    - hates
+    - prefers
+    - adores
+    - tolerates
+    - is_obsessed_with
+  example_extractions:
+    - input: "I like peanut butter"
+      output:
+        pattern: preference
+        predicate: likes
+        slots: { agent: user, object: "peanut butter" }
+        polarity: 1
+    - input: "I'm obsessed with sourdough"
+      output:
+        pattern: preference
+        predicate: is_obsessed_with
+        slots: { agent: user, object: "sourdough", intensity: strong }
+        polarity: 1
+    - input: "I don't like olives"
+      output:
+        pattern: preference
+        predicate: likes
+        slots: { agent: user, object: "olives" }
+        polarity: 0
+  disambiguation_notes: |
+    preference vs propositional_attitude: preference takes an OBJECT (a
+    thing or person liked/disliked); propositional_attitude takes a
+    PROPOSITION (a sentence-like thing — "I believe Fed will cut rates").
+    "I think peanut butter is the best" is a preference, not a belief.
+
+# =====================================================================
+quantitative:
+  description: |
+    A subject has a numeric (or string-valued) measurable property.
+    Counts, lengths, weights, prices, years. Verification routes to a
+    python function when the property is computable from the subject
+    (e.g. counting letters, string length); to retrieval when it's a
+    fact about the world (e.g. weight of an animal, founding year).
+  slots:
+    - { name: subject, type: entity, required: true }
+    - { name: property, type: string, required: true }
+    - { name: value, type: any, required: true }   # numeric usually, occasionally string
+    - { name: unit, type: string, required: false }
+  verification_method:
+    - method: python_when_predicate_supported
+    - method: retrieval
+  example_predicates:
+    - has_count
+    - has_length
+    - weighs
+    - costs
+    - born_in_year
+    - founded_in_year
+    - sum_equals
+    - product_equals
+  query_strategy:
+    - "{subject} {property}"
+    - "{subject} {property} {value}"
+    - "{subject}"
+  example_extractions:
+    - input: "Strawberry has 2 p's"
+      output:
+        pattern: quantitative
+        predicate: has_count
+        slots: { subject: "strawberry", property: "letter_p", value: 2 }
+        polarity: 1
+    - input: "Einstein was born in 1879"
+      output:
+        pattern: quantitative
+        predicate: born_in_year
+        slots: { subject: "Einstein", property: "birth_year", value: 1879 }
+        polarity: 1
+    - input: "A blue whale weighs about 150 tons"
+      output:
+        pattern: quantitative
+        predicate: weighs
+        slots: { subject: "blue whale", property: "weight", value: 150, unit: tons }
+        polarity: 1
+  disambiguation_notes: |
+    quantitative vs role_assignment: founding YEAR is quantitative
+    (founded_in_year, value=int); founding the org as an event is
+    `event` pattern. "Anthropic was founded in 2021" is quantitative.
+    "Anthropic was founded by Dario Amodei" is relational (subject:
+    Anthropic, relation: founded_by, object: Dario Amodei).
+
+# =====================================================================
+spatial_temporal:
+  description: |
+    An entity is located in or associated with a place, optionally
+    bounded by time. Covers residence, employment, education, and
+    presence-at. The user's own location is user-authoritative; everyone
+    else's goes to retrieval.
+  slots:
+    - { name: entity, type: entity, required: true }
+    - { name: location, type: entity_or_string, required: true }
+    - { name: relation_kind, type: string, required: false }  # lives_in / works_at / studies_at
+    - { name: valid_from, type: date, required: false }
+    - { name: valid_until, type: date, required: false }
+  verification_method:
+    - when: { entity: user }
+      method: user_authoritative
+    - method: retrieval
+  example_predicates:
+    - lives_in
+    - located_in
+    - works_at
+    - studies_at
+    - visited
+    - was_born_in
+  query_strategy:
+    - "{entity} {relation_kind} {location}"
+    - "{entity} {location}"
+    - "{entity}"
+  example_extractions:
+    - input: "I live in Williamstown"
+      output:
+        pattern: spatial_temporal
+        predicate: lives_in
+        slots: { entity: user, location: "Williamstown", relation_kind: residence }
+        polarity: 1
+    - input: "Tokyo is in Japan"
+      output:
+        pattern: spatial_temporal
+        predicate: located_in
+        slots: { entity: "Tokyo", location: "Japan", relation_kind: containment }
+        polarity: 1
+    - input: "Marie Curie worked at the Sorbonne"
+      output:
+        pattern: spatial_temporal
+        predicate: works_at
+        slots: { entity: "Marie Curie", location: "Sorbonne", relation_kind: employment }
+        polarity: 1
+  disambiguation_notes: |
+    spatial_temporal vs categorical: "Tokyo is a city" is categorical
+    (an intrinsic kind). "Tokyo is in Japan" is spatial_temporal (a
+    containment relation). One sentence can yield BOTH ("Tokyo is a city
+    in Japan" → two extractions).
+
+# =====================================================================
+categorical:
+  description: |
+    An entity belongs to a general category, kind, or class. Profession
+    membership, taxonomic classification, type-of-thing claims. Intrinsic
+    to the entity rather than conferred (vs role_assignment).
+  slots:
+    - { name: entity, type: entity, required: true }
+    - { name: category, type: string, required: true }
+  verification_method:
+    - method: retrieval
+  example_predicates:
+    - is_a
+    - is_kind_of
+    - member_of
+    - instance_of
+  query_strategy:
+    - "{entity} {category}"
+    - "what is {entity}"
+    - "{entity}"
+  example_extractions:
+    - input: "Marie Curie was a physicist"
+      output:
+        pattern: categorical
+        predicate: is_a
+        slots: { entity: "Marie Curie", category: "physicist" }
+        polarity: 1
+    - input: "The kakapo is a bird"
+      output:
+        pattern: categorical
+        predicate: is_a
+        slots: { entity: "kakapo", category: "bird" }
+        polarity: 1
+    - input: "Tokyo is a city"
+      output:
+        pattern: categorical
+        predicate: is_a
+        slots: { entity: "Tokyo", category: "city" }
+        polarity: 1
+  disambiguation_notes: |
+    categorical vs role_assignment: physicist is a profession (a kind);
+    47th President is a role (a tenure). If the noun could plausibly be
+    held during a fixed time period and conferred to someone else, it's
+    role_assignment. If it's intrinsic, it's categorical.
+
+# =====================================================================
+relational:
+  description: |
+    A directed relation between two entities, optionally time-bounded.
+    Election outcomes, marriages, founder-of-org, predecessor/successor,
+    alliances. Distinct from role_assignment (binds entity to a role)
+    and event (a discrete occurrence).
+  slots:
+    - { name: subject, type: entity, required: true }
+    - { name: relation, type: string, required: false }   # may mirror predicate
+    - { name: object, type: entity, required: true }
+    - { name: valid_from, type: date, required: false }
+    - { name: valid_until, type: date, required: false }
+  verification_method:
+    - method: retrieval
+  example_predicates:
+    - succeeded_by
+    - preceded_by
+    - married_to
+    - defeated_in_election
+    - defeated_by
+    - founded_by
+    - allied_with
+    - capital_of
+    - authored_by
+    - contains_substring
+    - is_anagram_of
+  query_strategy:
+    - "{subject} {relation} {object}"
+    - "{subject} {object}"
+    - "{subject}"
+  example_extractions:
+    - input: "Trump defeated Kamala Harris in the 2024 election"
+      output:
+        pattern: relational
+        predicate: defeated_in_election
+        slots:
+          subject: "Donald Trump"
+          relation: defeated_in_election
+          object: "Kamala Harris"
+          valid_from: "2024"
+        polarity: 1
+    - input: "Paris is the capital of France"
+      output:
+        pattern: relational
+        predicate: capital_of
+        slots: { subject: "Paris", relation: capital_of, object: "France" }
+        polarity: 1
+    - input: "Anthropic was founded by Dario Amodei"
+      output:
+        pattern: relational
+        predicate: founded_by
+        slots: { subject: "Anthropic", relation: founded_by, object: "Dario Amodei" }
+        polarity: 1
+  disambiguation_notes: |
+    relational vs role_assignment: succession is relational ("Biden was
+    succeeded by Trump" is the relation); but "Trump was inaugurated as
+    47th President" is role_assignment (binds person to office).
+    Election outcomes are NOT succession — Trump defeated Harris in the
+    2024 election is `defeated_in_election`, not `succeeded_by`.
+
+# =====================================================================
+event:
+  description: |
+    A discrete occurrence with one or more participants, optionally
+    located and timed. Inaugurations, founding events, attendances,
+    elections-as-events. Often goes to retrieval and often returns
+    insufficient evidence — that's expected.
+  slots:
+    - { name: event_type, type: string, required: true }
+    - { name: participants, type: list, required: true }
+    - { name: location, type: entity_or_string, required: false }
+    - { name: occurred_at, type: date, required: false }
+  verification_method:
+    - method: retrieval
+  example_predicates:
+    - won_election
+    - was_inaugurated
+    - founded
+    - attended
+    - launched
+  query_strategy:
+    - "{event_type} {participants_joined}"
+    - "{event_type} {occurred_at}"
+    - "{event_type}"
+  example_extractions:
+    - input: "Trump was inaugurated on January 20, 2025"
+      output:
+        pattern: event
+        predicate: was_inaugurated
+        slots:
+          event_type: inauguration
+          participants: ["Donald Trump"]
+          occurred_at: "2025-01-20"
+        polarity: 1
+    - input: "Anthropic was founded in 2021 by Dario and Daniela Amodei"
+      output:
+        pattern: event
+        predicate: founded
+        slots:
+          event_type: company_founding
+          participants: ["Dario Amodei", "Daniela Amodei", "Anthropic"]
+          occurred_at: "2021"
+        polarity: 1
+  disambiguation_notes: |
+    event vs role_assignment: inauguration is an event (a moment in
+    time); the resulting tenure is role_assignment.
+    event vs relational: "Anthropic was founded by Dario" can be either:
+    relational (subject: Anthropic, relation: founded_by, object: Dario)
+    OR event (event_type: company_founding, participants: [Dario,
+    Anthropic], occurred_at: 2021). Both are valid; extract relational
+    when the time isn't named, event when it is.
+
+# =====================================================================
+propositional_attitude:
+  description: |
+    An agent has a mental attitude (belief, knowledge, hope, doubt,
+    plan, feeling, intention) toward a proposition — a sentence-like
+    thing rather than an object. The user's own attitudes are
+    user-authoritative; anyone else's are unverifiable (we can't
+    inspect their head).
+  slots:
+    - { name: agent, type: entity, required: true }
+    - { name: attitude, type: string, required: true }   # believes / hopes / plans
+    - { name: proposition, type: string, required: true }
+  verification_method:
+    - when: { agent: user }
+      method: user_authoritative
+    - method: unverifiable
+  flag_non_user_as_anomaly: true
+  example_predicates:
+    - believes
+    - knows
+    - thinks
+    - doubts
+    - hopes
+    - plans
+    - feels
+    - intends
+  example_extractions:
+    - input: "I think the Fed will cut rates"
+      output:
+        pattern: propositional_attitude
+        predicate: believes
+        slots: { agent: user, attitude: thinks, proposition: "Fed will cut rates" }
+        polarity: 1
+    - input: "I feel tired"
+      output:
+        pattern: propositional_attitude
+        predicate: feels
+        slots: { agent: user, attitude: feels, proposition: "tired" }
+        polarity: 1
+    - input: "I plan to move next month"
+      output:
+        pattern: propositional_attitude
+        predicate: plans
+        slots: { agent: user, attitude: plans, proposition: "move next month" }
+        polarity: 1
+  disambiguation_notes: |
+    propositional_attitude vs preference: preference takes an OBJECT
+    ("I like peanut butter" → object: peanut butter). propositional_
+    attitude takes a PROPOSITION ("I believe peanut butter is the best
+    food" → proposition: "peanut butter is the best food"). The test
+    is: can the object be replaced by a complete sentence? If yes,
+    propositional_attitude.
+
+# =====================================================================
+# Out of scope (intentionally)
+# =====================================================================
+# Aesthetic judgments ("the sunset was beautiful"): no pattern fits.
+#   Beauty isn't verifiable, isn't a preference of a specific agent, and
+#   isn't a category we can check. Extractor must abstain.
+# Counterfactuals ("if Biden had run, he would have lost"): out of scope
+#   for v0.3. Extractor must abstain.
+# Complex causal claims ("X caused Y because of Z"): out of scope.
+#   Abstain unless the claim reduces to one of the patterns above.
