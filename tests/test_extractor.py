@@ -403,6 +403,93 @@ def test_system_prompt_includes_temporal_few_shot():
     assert "2017" in sys
 
 
+# ---------- context for self-reference resolution (v0.4 bugfix) ----------
+
+
+def test_context_passed_in_user_message_when_provided():
+    """When extracting from an assistant draft, the preceding user message
+    is bundled in as context so 'this sentence' can resolve to literal text.
+    """
+    payload = {
+        "facts": [
+            {
+                "pattern": "quantitative",
+                "predicate": "has_count",
+                "slots": {
+                    "subject": "How many words in 'the quick brown fox' contain 'o'?",
+                    "property": "words_containing_letter_o",
+                    "value": 2,
+                },
+                "polarity": 1,
+                "source_text": "Two words contain 'o'.",
+            }
+        ]
+    }
+    extractor = _mk(payload)
+    extractor.extract(
+        "Two words contain 'o'.",
+        role="assistant",
+        context="How many words in 'the quick brown fox' contain 'o'?",
+    )
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "Preceding speaker's message" in msg
+    assert "the quick brown fox" in msg
+    # The instruction to resolve self-references must be present.
+    assert "this sentence" in msg or "self-references" in msg
+
+
+def test_no_context_when_omitted():
+    """Backward compatibility: extract(text, role) still works."""
+    extractor = _mk({"facts": []})
+    extractor.extract("Hello.", role="user")
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "Preceding speaker's message" not in msg
+
+
+def test_self_referential_count_few_shot_in_prompt():
+    """The extractor's system prompt teaches resolving 'this sentence'."""
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    # A few-shot example with literal-sentence-as-subject must appear.
+    assert "this sentence" in sys
+    assert "words_containing_letter" in sys
+
+
+def test_hedged_count_few_shot_in_prompt():
+    """Prompt teaches extraction of conditional/hedged count claims.
+
+    Regression for: assistant says 'N if X, else M' and extractor returns []
+    instead of extracting the primary value N.
+    """
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    # The hedged example must appear so the LLM learns to handle it.
+    assert "PRIMARY" in sys or "primary" in sys
+    assert "If counting all instances" in sys or "interpretation" in sys
+    assert "three free trees" in sys
+
+
+def test_context_block_does_not_use_alarming_negation():
+    """The 'do NOT extract' phrasing was over-discouraging extraction in
+    edge cases. The new phrasing is positive: 'extract from speaker's text'.
+    """
+    extractor = _mk({"facts": []})
+    extractor.extract("Two words.", role="assistant", context="anything")
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "do NOT extract" not in msg
+    # Positive instruction is present.
+    assert "Extract every fact-stating clause" in msg
+
+
+def test_context_user_message_mentions_hedged_extraction_rule():
+    """The per-call instructions mention hedged-claim handling."""
+    extractor = _mk({"facts": []})
+    extractor.extract("Two.", role="assistant", context="ctx")
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "hedged" in msg or "conditional" in msg
+    assert "PRIMARY" in msg or "primary" in msg
+
+
 # ---------- real API gated test ----------
 
 

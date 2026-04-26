@@ -21,7 +21,6 @@ import yaml
 VERIFICATION_METHODS = {
     "user_authoritative",
     "python",
-    "python_when_predicate_supported",
     "store_lookup",
     "retrieval",
     "unverifiable",
@@ -82,6 +81,10 @@ class Pattern:
     disambiguation_notes: str = ""
     query_strategy: tuple[str, ...] = field(default_factory=tuple)
     flag_non_user_as_anomaly: bool = False
+    # v0.4: per-predicate verification_method overrides. Maps a specific
+    # predicate label to a method that supersedes the rule list. The
+    # router checks this BEFORE walking ``verification_rules``.
+    predicate_overrides: dict[str, str] = field(default_factory=dict)
 
     def slot(self, name: str) -> Slot | None:
         for s in self.slots:
@@ -92,8 +95,15 @@ class Pattern:
     def required_slot_names(self) -> list[str]:
         return [s.name for s in self.slots if s.required]
 
-    def resolve_method(self, slots: dict[str, Any]) -> str:
-        """Pick the verification_method for this fact's slots."""
+    def resolve_method(self, slots: dict[str, Any], *, predicate: str | None = None) -> str:
+        """Pick the verification_method for this fact's slots.
+
+        ``predicate`` is consulted against ``predicate_overrides`` before
+        the rule list. v0.4: routes ``relational.reverse_of`` etc. to
+        python without changing the pattern's default retrieval rule.
+        """
+        if predicate is not None and predicate in self.predicate_overrides:
+            return self.predicate_overrides[predicate]
         for rule in self.verification_rules:
             if rule.matches(slots):
                 return rule.method
@@ -101,6 +111,19 @@ class Pattern:
         raise PatternRegistryError(
             f"pattern {self.name!r} has no matching verification rule for slots={slots!r}"
         )
+
+    def fallback_method(self, slots: dict[str, Any]) -> str:
+        """Pick the next non-python rule that matches.
+
+        Used by the router when a python verification stage returns
+        ``not_python_verifiable`` and we need to fall through.
+        """
+        for rule in self.verification_rules:
+            if rule.method == "python":
+                continue
+            if rule.matches(slots):
+                return rule.method
+        return "unverifiable"
 
     def has_user_authoritative_branch(self) -> bool:
         """True if any rule resolves to user_authoritative for some slot value."""
@@ -219,6 +242,21 @@ def _build_pattern(name: str, body: object) -> Pattern:
 
     flag = bool(body.get("flag_non_user_as_anomaly", False))
 
+    overrides_raw = body.get("predicate_overrides") or {}
+    if not isinstance(overrides_raw, dict):
+        raise PatternRegistryError(
+            f"{name}: predicate_overrides must be a mapping, "
+            f"got {type(overrides_raw).__name__}"
+        )
+    overrides: dict[str, str] = {}
+    for predicate, method in overrides_raw.items():
+        if method not in VERIFICATION_METHODS:
+            raise PatternRegistryError(
+                f"{name}: predicate_overrides[{predicate!r}] = {method!r} "
+                f"not in {sorted(VERIFICATION_METHODS)}"
+            )
+        overrides[str(predicate)] = str(method)
+
     return Pattern(
         name=name,
         description=str(body["description"]),
@@ -229,6 +267,7 @@ def _build_pattern(name: str, body: object) -> Pattern:
         disambiguation_notes=str(body.get("disambiguation_notes", "") or ""),
         query_strategy=query_strategy,
         flag_non_user_as_anomaly=flag,
+        predicate_overrides=overrides,
     )
 
 

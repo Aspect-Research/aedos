@@ -28,7 +28,7 @@ from bs4 import BeautifulSoup
 from src.fact_store import FactStore
 from src.llm_client import LLMClient
 from src.pattern_registry import PatternRegistry, Pattern
-from src.verifiers.python_verifiers import VerificationOutcome, VerificationResult
+from src.verifiers.types import VerificationOutcome, VerificationResult
 
 
 _USER_AGENT = (

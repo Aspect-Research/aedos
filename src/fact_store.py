@@ -45,6 +45,14 @@ PIPELINE_STAGES = {
     # v0.3 additions
     "retrieval_query_attempt",  # one event per query attempt; trace shows the strategy
     "verifier_failure",         # the verifier didn't produce useful signal
+    # v0.4 additions — code-generated verification stages
+    "code_triage",
+    "code_prompt_built",
+    "code_prompt_leakage_detected",
+    "code_generated",
+    "code_executed",
+    "code_unusual_behavior",
+    "code_comparison",
 }
 
 # Confidence adjustments

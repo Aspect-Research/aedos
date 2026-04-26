@@ -1,14 +1,7 @@
-"""End-to-end pipeline tests with a mocked LLM (v0.3 — pattern-based).
+"""End-to-end pipeline tests with a mocked LLM (v0.3 / v0.4).
 
-Seven canonical v0.3 scenarios:
-
-1. Pattern dispatch — one claim of each pattern type routes correctly.
-2. Free-form predicate within an existing pattern — `adores` works.
-3. Multi-pattern single sentence — "Tokyo is a city in Japan" yields two facts.
-4. Temporal scoping — valid_from / valid_until populate the fact's columns.
-5. Query strategy fallback — attempt 2 wins when attempt 1 returns 0.
-6. Verifier failure does NOT trigger hedge — the v0.2 bug fix.
-7. Pattern abstention — "the sunset was beautiful" stores nothing.
+Seven canonical v0.3 scenarios plus v0.4 code-generation scenarios at
+the end of the file.
 """
 
 from __future__ import annotations
@@ -25,6 +18,7 @@ from src.fact_store import FactStore
 from src.pattern_registry import load_default_registry, reset_cache
 from src.pipeline import Pipeline
 from src.router import Router
+from src.verifiers.code_generation.pipeline import CodeGenVerificationResult
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +33,7 @@ class MockLLM:
     chats: list[str] = field(default_factory=list)
     extracts: list[dict[str, Any]] = field(default_factory=list)
     rewrites: list[str] = field(default_factory=list)
+    corrector_model: str = "mock-corrector"
 
     def chat(self, system, messages, max_tokens=4096):
         return self.chats.pop(0)
@@ -50,7 +45,26 @@ class MockLLM:
         return self.rewrites.pop(0)
 
 
-def _make_pipeline(tmp_path, mock: MockLLM, search_fn=None) -> Pipeline:
+@dataclass
+class StubCodeGenVerifier:
+    """Test double — returns queued CodeGenVerificationResults."""
+
+    results: list[CodeGenVerificationResult] = field(default_factory=list)
+    calls: list[dict] = field(default_factory=list)
+
+    def verify(self, claim, *, source_turn_id=None):
+        self.calls.append({"claim": claim, "source_turn_id": source_turn_id})
+        if not self.results:
+            raise RuntimeError("StubCodeGenVerifier has no queued result")
+        return self.results.pop(0)
+
+
+def _make_pipeline(
+    tmp_path,
+    mock: MockLLM,
+    search_fn=None,
+    code_gen_results: list | None = None,
+) -> Pipeline:
     store = FactStore(tmp_path / "int.db")
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
@@ -62,7 +76,14 @@ def _make_pipeline(tmp_path, mock: MockLLM, search_fn=None) -> Pipeline:
             store=store, llm=mock, registry=registry,
             search_fn=search_fn, ttl_hours=1,
         )
-    router = Router(store, registry, retrieval_verifier=retrieval_verifier)
+    code_gen_verifier = None
+    if code_gen_results is not None:
+        code_gen_verifier = StubCodeGenVerifier(results=list(code_gen_results))
+    router = Router(
+        store, registry,
+        retrieval_verifier=retrieval_verifier,
+        code_gen_verifier=code_gen_verifier,
+    )
     corrector = Corrector(mock)
     return Pipeline(store, registry, mock, extractor, router, corrector)
 
@@ -75,13 +96,9 @@ def _make_pipeline(tmp_path, mock: MockLLM, search_fn=None) -> Pipeline:
 def test_pattern_dispatch_each_pattern_routes_correctly(tmp_path):
     """A response with claims under multiple patterns. Each routes to the
     pattern's appropriate verifier and gets a coherent verification_status."""
-    from src.verifiers.retrieval_verifier import Snippet
 
-    # Three claims: a python-verifiable quantitative, a user-authoritative
-    # preference (model asserts it about the user — store-lookup miss),
-    # and an unverifiable propositional_attitude (non-user agent).
     facts = [
-        # python verifier path
+        # python (code-gen) path
         {
             "pattern": "quantitative", "predicate": "has_count",
             "slots": {"subject": "strawberry", "property": "letter_r", "value": 3},
@@ -101,7 +118,13 @@ def test_pattern_dispatch_each_pattern_routes_correctly(tmp_path):
         # unverifiable_pending_implementation (conf 0.4 < 0.5) → corrector hedges.
         rewrites=["strawberry has 3 r's; I think you might like lavender."],
     )
-    p = _make_pipeline(tmp_path, mock)
+    code_gen_results = [
+        CodeGenVerificationResult(
+            status="verified", confidence=0.99, actual_value=3,
+            explanation="claimed 3; computed 3",
+        ),
+    ]
+    p = _make_pipeline(tmp_path, mock, code_gen_results=code_gen_results)
     trace = p.run_turn("dispatch test")
 
     statuses = sorted(d["verification_status"] for d in trace.verification_decisions)
@@ -423,3 +446,454 @@ def test_every_turn_logs_expected_stages(tmp_path):
     )
     # Section 5: retrieval_query_attempt logged for the retrieval call.
     assert "retrieval_query_attempt" in asst_stages
+
+
+# =====================================================================
+# v0.4 — Code-generated verification scenarios (Section 10)
+# =====================================================================
+
+
+def _scripted_codegen_llm(extracts, rewrites):
+    """Build a MockLLM that scripts the code-generation stages alongside
+    the rest of the pipeline. The integration tests exercise the full
+    verify_via_code_generation flow against a real subprocess sandbox."""
+    return MockLLM(extracts=list(extracts), rewrites=list(rewrites))
+
+
+def _make_pipeline_with_code_gen(tmp_path, mock):
+    """A pipeline whose Router has a real CodeGenerationVerifier wired to
+    the same mock LLM. The mock must script triage + prompt + code (in
+    order) for every python-routed claim."""
+    from src.verifiers.code_generation import CodeGenerationVerifier
+
+    store = FactStore(tmp_path / "int.db")
+    registry = load_default_registry()
+    extractor = ClaimExtractor(mock, registry)
+    code_gen_verifier = CodeGenerationVerifier(store=store, llm=mock)
+    router = Router(store, registry, code_gen_verifier=code_gen_verifier)
+    corrector = Corrector(mock)
+    return Pipeline(store, registry, mock, extractor, router, corrector)
+
+
+def test_strawperpy_count_verified_end_to_end(tmp_path):
+    """The flagship case: 'How many r's in strawperpy?' verified by code gen.
+
+    'strawperpy'.count('r') == 2.
+    """
+    fact = {
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"subject": "strawperpy", "property": "letter_r", "value": 2},
+        "polarity": 1, "source_text": "2 r's in strawperpy",
+    }
+    mock = MockLLM(
+        chats=["There are 2 r's in strawperpy."],
+        extracts=[
+            {"facts": []},                         # user message extraction
+            {"facts": [fact]},                     # assistant draft extraction
+            {"verifiable": True, "reason": "char counting is deterministic"},
+            {"prompt": "Count occurrences of the lowercase letter 'r' in 'strawperpy'. Print only the integer.",
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "print('strawperpy'.count('r'))",      # code writer
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("How many r's in strawperpy?")
+
+    assert len(trace.verification_decisions) == 1
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "verified"
+    cg = d["code_gen_result"]
+    assert cg["status"] == "verified"
+    assert cg["actual_value"] == 2
+    # Trace artifacts present.
+    trace_d = cg["trace"]
+    assert "triage" in trace_d
+    assert "prompt" in trace_d
+    assert "code" in trace_d
+    assert "execution" in trace_d
+    assert "comparison" in trace_d
+    # Pipeline events.
+    asst_events = p.store.get_pipeline_events(trace.assistant_turn_id)
+    asst_stages = {e["stage"] for e in asst_events}
+    assert {"code_triage", "code_prompt_built", "code_generated",
+            "code_executed", "code_comparison"} <= asst_stages
+
+
+def test_strawperpy_wrong_count_contradicted_end_to_end(tmp_path):
+    """Same setup, but the assistant claimed 3 — corrector should replace with 2."""
+    fact = {
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"subject": "strawperpy", "property": "letter_r", "value": 3},
+        "polarity": 1, "source_text": "3 r's in strawperpy",
+    }
+    mock = MockLLM(
+        chats=["There are 3 r's in strawperpy."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"verifiable": True, "reason": "char counting"},
+            {"prompt": "Count occurrences of 'r' in 'strawperpy'. Print only the integer.",
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "print('strawperpy'.count('r'))",
+            "There are 2 r's in strawperpy.",  # corrector rewrite
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("How many r's in strawperpy?")
+
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "contradicted"
+    assert d["correction"]["corrected_object"] == 2
+    assert trace.original_content == "There are 3 r's in strawperpy."
+    assert trace.final_content == "There are 2 r's in strawperpy."
+
+
+def test_reverse_of_routes_through_predicate_override(tmp_path):
+    """relational.reverse_of is python via override even though the pattern default is retrieval."""
+    fact = {
+        "pattern": "relational", "predicate": "reverse_of",
+        "slots": {"subject": "nairatilage", "object": "egalitarian"},
+        "polarity": 1, "source_text": "egalitarian backwards is nairatilage",
+    }
+    mock = MockLLM(
+        chats=["egalitarian backwards is nairatilage"],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"verifiable": True, "reason": "string reversal"},
+            {"prompt": "Compute the reverse of the string 'egalitarian'. Print only the result.",
+             "expected_output_type": "string"},
+        ],
+        rewrites=["print('egalitarian'[::-1])"],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("spell egalitarian backwards")
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "verified"
+    assert d["code_gen_result"]["status"] == "verified"
+
+
+def test_primes_count_verified_end_to_end(tmp_path):
+    """quantitative claim with code generation computes prime count."""
+    fact = {
+        "pattern": "quantitative", "predicate": "prime_count",
+        "slots": {"subject": "primes 1-100", "property": "count", "value": 25},
+        "polarity": 1, "source_text": "25 primes between 1 and 100",
+    }
+    mock = MockLLM(
+        chats=["There are 25 primes between 1 and 100."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"verifiable": True, "reason": "prime sieve is deterministic"},
+            {"prompt": "Compute the count of prime numbers strictly greater than 1 and strictly less than 100. Print only the integer.",
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "n = 100\nprint(sum(1 for i in range(2, n) if all(i % j for j in range(2, int(i**0.5) + 1))))",
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("how many primes between 1 and 100?")
+
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "verified"
+    assert d["code_gen_result"]["actual_value"] == 25
+
+
+def test_primes_count_contradicted_end_to_end(tmp_path):
+    """Same setup with value=0; comparator should mark contradicted with computed=25."""
+    fact = {
+        "pattern": "quantitative", "predicate": "prime_count",
+        "slots": {"subject": "primes 1-100", "property": "count", "value": 0},
+        "polarity": 1, "source_text": "0 primes",
+    }
+    mock = MockLLM(
+        chats=["There are 0 primes between 1 and 100."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"verifiable": True, "reason": "prime sieve"},
+            {"prompt": "Compute the count of primes between 1 and 100. Print only the integer.",
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "n = 100\nprint(sum(1 for i in range(2, n) if all(i % j for j in range(2, int(i**0.5) + 1))))",
+            "There are 25 primes between 1 and 100.",  # corrector
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("how many primes between 1 and 100?")
+
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "contradicted"
+    assert d["code_gen_result"]["actual_value"] == 25
+
+
+def test_not_python_verifiable_falls_back_to_retrieval(tmp_path):
+    """Triage rejects the claim; router falls back to the pattern's retrieval rule."""
+    from src.verifiers.retrieval_verifier import RetrievalVerifier, Snippet
+    from src.verifiers.code_generation import CodeGenerationVerifier
+
+    fact = {
+        "pattern": "role_assignment", "predicate": "holds_role",
+        "slots": {"agent": "Donald Trump", "role": "47th President", "org": "United States"},
+        "polarity": 1, "source_text": "Donald Trump is the 47th President",
+    }
+    # Wait — role_assignment doesn't currently route to python. Use a
+    # quantitative claim that triage will reject. born_in_year is the
+    # canonical example: external biographical data.
+    fact = {
+        "pattern": "quantitative", "predicate": "born_in_year",
+        "slots": {"subject": "Donald Trump", "property": "birth_year", "value": 1946},
+        "polarity": 1, "source_text": "Trump was born in 1946",
+    }
+    snippets = [
+        Snippet("Trump", "Donald J. Trump (born 1946)", "u1"),
+        Snippet("Trump bio", "Born June 14, 1946 in Queens.", "u2"),
+    ]
+    mock = MockLLM(
+        chats=["Donald Trump was born in 1946."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            # Triage rejects — external biographical data.
+            {"verifiable": False, "reason": "requires external biographical data"},
+        ],
+        rewrites=[
+            # Retrieval judge call (after fallback).
+            "SUPPORTED\nJustification: snippets confirm 1946.",
+        ],
+    )
+    # Build a pipeline with both verifiers wired.
+    store = FactStore(tmp_path / "int.db")
+    registry = load_default_registry()
+    extractor = ClaimExtractor(mock, registry)
+    retrieval_verifier = RetrievalVerifier(
+        store=store, llm=mock, registry=registry,
+        search_fn=lambda q: snippets, ttl_hours=1,
+    )
+    code_gen_verifier = CodeGenerationVerifier(store=store, llm=mock)
+    router = Router(
+        store, registry,
+        retrieval_verifier=retrieval_verifier,
+        code_gen_verifier=code_gen_verifier,
+    )
+    corrector = Corrector(mock)
+    p = Pipeline(store, registry, mock, extractor, router, corrector)
+
+    trace = p.run_turn("when was trump born?")
+
+    d = trace.verification_decisions[0]
+    # Triage rejected → fell back to retrieval → SUPPORTED → verified.
+    assert d["verification_status"] == "verified"
+    # The code-gen trace is preserved on the decision.
+    assert d["code_gen_result"]["status"] == "not_python_verifiable"
+    # And the retrieval result is also there.
+    assert d["retrieval_result"] is not None
+    assert d["retrieval_result"]["outcome"] == "verified"
+
+
+def test_prompt_leakage_detected_emits_warning_event(tmp_path):
+    """Stage 2 retry path: first attempt leaks, second is clean."""
+    fact = {
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"subject": "strawperpy", "property": "letter_r", "value": 7},
+        "polarity": 1, "source_text": "7 r's",
+    }
+    mock = MockLLM(
+        chats=["strawperpy has 7 r's."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"verifiable": True, "reason": "char counting"},
+            # Leaky first prompt (contains "7")
+            {"prompt": "Verify that strawperpy has 7 r's. Print int.",
+             "expected_output_type": "int"},
+            # Clean retry
+            {"prompt": "Compute the count of 'r' in 'strawperpy'. Print int.",
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "print('strawperpy'.count('r'))",
+            # Corrector rewrite (claim was 7, actual 2 → contradicted).
+            "strawperpy has 2 r's.",
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("how many r's in strawperpy?")
+
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "contradicted"
+    asst_events = p.store.get_pipeline_events(trace.assistant_turn_id)
+    leakage = [e for e in asst_events if e["stage"] == "code_prompt_leakage_detected"]
+    assert len(leakage) == 1
+
+
+def test_hedged_count_still_extracts_primary_value(tmp_path):
+    """Regression: an assistant draft like 'N if X, else M' with an
+    enumerated list should still produce a single quantitative claim
+    (value = primary count), not an empty extraction.
+
+    Before this fix, the prompt's 'do NOT extract from context' language
+    plus the conditional structure caused the extractor to return [].
+    """
+    user_msg = (
+        "List all words in this extra super long sentence that contain "
+        "the letter e and count them all up expeditiously, expeditiouslee."
+    )
+    draft = (
+        "Here are the words containing the letter e:\n"
+        "1. sentence\n2. letter\n3. e\n4. expeditiously\n5. expeditiouslee\n\n"
+        "If you count the standalone 'e': 5 words. "
+        "If you don't count it: 4 words."
+    )
+    # The extractor — given context + the new prompt rules — should extract
+    # the PRIMARY count value (5, matching the enumerated list).
+    primary_fact = {
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {
+            "subject": user_msg,
+            "property": "words_containing_letter_e",
+            "value": 5,
+        },
+        "polarity": 1, "source_text": "5 words",
+    }
+    mock = MockLLM(
+        chats=[draft],
+        extracts=[
+            {"facts": []},                    # user message (imperative, no claim)
+            {"facts": [primary_fact]},        # assistant draft — extracts primary value
+            {"verifiable": True,
+             "reason": "literal subject; counting words is deterministic"},
+            {"prompt": (
+                "Split the following string by whitespace and count tokens "
+                "containing the lowercase letter 'e'. String: "
+                + repr(user_msg) + ". Print the integer."),
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "s = " + repr(user_msg) + "\n"
+            "print(sum(1 for w in s.split() if 'e' in w.lower()))",
+            "Total count: 9.",            # corrector
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn(user_msg)
+
+    assert len(trace.verification_decisions) == 1, (
+        "extractor must produce a claim from a hedged count statement"
+    )
+    d = trace.verification_decisions[0]
+    assert d["claim"]["slots"]["value"] == 5
+    assert d["code_gen_result"]["status"] == "contradicted"
+    assert d["code_gen_result"]["actual_value"] == 9
+
+
+def test_self_referential_count_routes_through_python_end_to_end(tmp_path):
+    """Regression test: 'how many words containing e in this sentence' must
+    extract WITH the user's literal sentence as subject, then verify via
+    code generation. Before the fix, the extractor produced an abstract
+    subject ('sentence words containing letter e') and triage correctly
+    rejected it as not_python_verifiable, falling back to retrieval.
+    """
+    user_msg = (
+        "List all words in this extra super long sentence that contain "
+        "the letter e and count them all up expeditiously, expeditiouslee."
+    )
+    # Assistant claims 7, real count is higher (extra and super both have 'e').
+    fact = {
+        "pattern": "quantitative", "predicate": "has_count",
+        # The extractor (with context) embeds the user's sentence as subject.
+        "slots": {
+            "subject": user_msg,
+            "property": "words_containing_letter_e",
+            "value": 7,
+        },
+        "polarity": 1, "source_text": "Total count: 7",
+    }
+    mock = MockLLM(
+        chats=[
+            "Words with 'e': sentence, the, letter, e, them, expeditiously, "
+            "expeditiouslee. Total count: 7."
+        ],
+        extracts=[
+            {"facts": []},                                      # user extraction
+            {"facts": [fact]},                                  # assistant extraction
+            {"verifiable": True,                                # triage: yes
+             "reason": "subject is a literal string; counting words is deterministic"},
+            # Prompt builder produces a leak-free prompt.
+            {"prompt": (
+                "Split the following string by whitespace and count how many "
+                "tokens contain the lowercase letter 'e' (case-insensitive). "
+                "String: " + repr(user_msg) + ". Print only the integer."),
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            # Code writer.
+            "s = " + repr(user_msg) + "\n"
+            "print(sum(1 for w in s.split() if 'e' in w.lower()))",
+            # Corrector rewrites 7 → actual.
+            "Words with 'e': ... Total count: 9.",
+        ],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn(user_msg)
+
+    # The single fact was extracted with the literal sentence as subject.
+    assert len(trace.verification_decisions) == 1
+    d = trace.verification_decisions[0]
+    assert d["claim"]["slots"]["subject"] == user_msg
+    # Triage said yes; code ran; comparator said contradicted (claim was 7,
+    # actual count of words with 'e' in the literal sentence is 9).
+    cg = d["code_gen_result"]
+    assert cg["status"] == "contradicted"
+    assert cg["actual_value"] == 9
+    assert d["verification_status"] == "contradicted"
+    # And the corrector ran.
+    assert trace.original_content is not None
+
+
+def test_code_execution_timeout_marks_pending(tmp_path):
+    """If the generated code times out, status is unverifiable_pending_implementation."""
+    fact = {
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"subject": "x", "property": "y", "value": 3},
+        "polarity": 1, "source_text": "3",
+    }
+    mock = MockLLM(
+        chats=["x has 3 y."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"verifiable": True, "reason": "ok"},
+            {"prompt": "Compute count.", "expected_output_type": "int"},
+        ],
+        rewrites=[
+            "import time; time.sleep(60); print(3)",
+            # Corrector hedges (pending + low confidence).
+            "x might have 3 y.",
+        ],
+    )
+    # Tighten the timeout so the test runs fast.
+    from src.verifiers.code_generation import CodeGenerationVerifier
+
+    store = FactStore(tmp_path / "int.db")
+    registry = load_default_registry()
+    extractor = ClaimExtractor(mock, registry)
+    cg = CodeGenerationVerifier(store=store, llm=mock, sandbox_timeout_seconds=1)
+    router = Router(store, registry, code_gen_verifier=cg)
+    corrector = Corrector(mock)
+    p = Pipeline(store, registry, mock, extractor, router, corrector)
+
+    trace = p.run_turn("how many y's in x?")
+
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "unverifiable_pending_implementation"
+    cg_result = d["code_gen_result"]
+    assert cg_result["status"] == "code_execution_failed"
+    assert "timed out" in cg_result["explanation"].lower() or "1s" in cg_result["explanation"]

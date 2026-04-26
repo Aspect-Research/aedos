@@ -165,10 +165,22 @@ function renderTrace(events) {
   events
     .filter((e) => e.stage === "verifier_failure")
     .forEach((ev) => traceEl.appendChild(renderVerifierFailureBanner(ev)));
-  // Bury per-attempt retrieval logs inside their decisions, not as standalone stages.
+  // Bury per-attempt retrieval logs and code-gen sub-stages inside their
+  // decisions, not as standalone stages.
+  const buriedStages = new Set([
+    "routing_anomaly_detected",
+    "verifier_failure",
+    "retrieval_query_attempt",
+    "code_triage",
+    "code_prompt_built",
+    "code_prompt_leakage_detected",
+    "code_generated",
+    "code_executed",
+    "code_unusual_behavior",
+    "code_comparison",
+  ]);
   events
-    .filter((e) => !["routing_anomaly_detected", "verifier_failure",
-                     "retrieval_query_attempt"].includes(e.stage))
+    .filter((e) => !buriedStages.has(e.stage))
     .forEach((ev) => traceEl.appendChild(renderStage(ev)));
 }
 
@@ -321,6 +333,167 @@ function statusBadge(status) {
   });
 }
 
+function renderCodeGenBlock(result) {
+  // result has: status, confidence, explanation, actual_value, trace
+  // trace has: triage, prompt (with attempts), code, execution, comparison
+  const block = el("div", { className: "codegen-block" });
+
+  // Header — verdict + computed/claimed values, always visible.
+  const header = el("div", { className: "codegen-header" });
+  header.appendChild(el("span", {
+    className: `codegen-status codegen-status-${result.status}`,
+    textContent: `code-gen: ${result.status}`,
+  }));
+  if (result.explanation) {
+    header.appendChild(el("span", {
+      className: "codegen-explanation",
+      textContent: result.explanation,
+    }));
+  }
+  block.appendChild(header);
+
+  const trace = result.trace || {};
+
+  // Warnings — prompt leakage, slow run, stderr.
+  const warnings = [];
+  const promptInfo = trace.prompt || {};
+  const attempts = promptInfo.attempts || [];
+  const leakAttempts = attempts.filter((a) => a.leak_detected);
+  if (leakAttempts.length > 0) {
+    warnings.push(
+      promptInfo.compromised
+        ? "⚠ leak detected on every attempt — verification compromised"
+        : `⚠ leak detected on ${leakAttempts.length} attempt(s); retried successfully`,
+    );
+  }
+  const exec = trace.execution || {};
+  if (exec.slow) warnings.push(`⏱ slow run (${exec.duration_ms} ms)`);
+  if (exec.stderr) warnings.push("⚠ stderr output (see below)");
+  if (exec.timed_out) warnings.push("⛔ sandbox timed out");
+  warnings.forEach((w) => {
+    block.appendChild(el("div", { className: "codegen-warning", textContent: w }));
+  });
+
+  // Expandable details.
+  const details = el("details", { className: "codegen-details" });
+  const summary = el("summary", { textContent: "show pipeline (triage → prompt → code → execution → comparison)" });
+  details.appendChild(summary);
+
+  // Triage
+  if (trace.triage) {
+    const sec = el("div", { className: "codegen-section" });
+    sec.appendChild(el("h4", { textContent: "1. Triage" }));
+    sec.appendChild(el("div", {
+      textContent: `verifiable: ${trace.triage.verifiable}`,
+    }));
+    if (trace.triage.reason) {
+      sec.appendChild(el("div", {
+        className: "codegen-reason",
+        textContent: trace.triage.reason,
+      }));
+    }
+    details.appendChild(sec);
+  }
+
+  // Prompt + attempts
+  if (trace.prompt) {
+    const sec = el("div", { className: "codegen-section" });
+    sec.appendChild(el("h4", { textContent: "2. Neutral prompt" }));
+    sec.appendChild(el("div", {
+      className: "codegen-readonly",
+      textContent: trace.prompt.prompt || "",
+    }));
+    sec.appendChild(el("div", {
+      className: "codegen-meta",
+      textContent: `expected_output_type: ${trace.prompt.expected_output_type}`,
+    }));
+    if (attempts.length > 1) {
+      const attempts_block = el("div", { className: "codegen-attempts" });
+      attempts_block.appendChild(el("strong", { textContent: "attempts:" }));
+      attempts.forEach((a, i) => {
+        const row = el("div", { className: "codegen-attempt" });
+        row.appendChild(el("span", {
+          className: a.leak_detected ? "codegen-attempt-leak" : "codegen-attempt-ok",
+          textContent: a.leak_detected ? `[${i + 1}] LEAK` : `[${i + 1}] ok`,
+        }));
+        row.appendChild(document.createTextNode(" "));
+        row.appendChild(el("code", { textContent: a.prompt }));
+        attempts_block.appendChild(row);
+      });
+      sec.appendChild(attempts_block);
+    }
+    details.appendChild(sec);
+  }
+
+  // Code
+  if (trace.code) {
+    const sec = el("div", { className: "codegen-section" });
+    sec.appendChild(el("h4", { textContent: "3. Generated code" }));
+    sec.appendChild(el("div", {
+      className: "codegen-meta",
+      textContent: `model: ${trace.code.model || ""}`,
+    }));
+    const pre = el("pre", { className: "codegen-code" });
+    pre.textContent = trace.code.code || "";
+    sec.appendChild(pre);
+    details.appendChild(sec);
+  }
+
+  // Execution
+  if (trace.execution) {
+    const sec = el("div", { className: "codegen-section" });
+    sec.appendChild(el("h4", { textContent: "4. Execution" }));
+    sec.appendChild(el("div", {
+      className: "codegen-meta",
+      textContent: (
+        `success=${trace.execution.success} · `
+        + `exit_code=${trace.execution.exit_code} · `
+        + `duration_ms=${trace.execution.duration_ms} · `
+        + `timed_out=${trace.execution.timed_out}`
+      ),
+    }));
+    if (trace.execution.stdout) {
+      sec.appendChild(el("h5", { textContent: "stdout" }));
+      const pre = el("pre", { className: "codegen-stdout" });
+      pre.textContent = trace.execution.stdout;
+      sec.appendChild(pre);
+    }
+    if (trace.execution.stderr) {
+      sec.appendChild(el("h5", { textContent: "stderr" }));
+      const pre = el("pre", { className: "codegen-stderr" });
+      pre.textContent = trace.execution.stderr;
+      sec.appendChild(pre);
+    }
+    details.appendChild(sec);
+  }
+
+  // Comparison
+  if (trace.comparison) {
+    const sec = el("div", { className: "codegen-section" });
+    sec.appendChild(el("h4", { textContent: "5. Comparison" }));
+    sec.appendChild(el("div", {
+      textContent: `verdict: ${trace.comparison.verdict}`,
+    }));
+    sec.appendChild(el("div", {
+      className: "codegen-meta",
+      textContent: (
+        `claimed=${JSON.stringify(trace.comparison.claimed_value)} · `
+        + `computed=${JSON.stringify(trace.comparison.computed_value)}`
+      ),
+    }));
+    if (trace.comparison.explanation) {
+      sec.appendChild(el("div", {
+        className: "codegen-reason",
+        textContent: trace.comparison.explanation,
+      }));
+    }
+    details.appendChild(sec);
+  }
+
+  block.appendChild(details);
+  return block;
+}
+
 function renderRetrievalBlock(rr) {
   const node = el("div", { className: "retrieval-block" });
 
@@ -404,13 +577,8 @@ function renderDecisions(body, data) {
     if (d.matching_fact_id != null) meta.push(`matching id=${d.matching_fact_id}`);
     if (meta.length) node.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
 
-    if (d.verifier_result) {
-      node.appendChild(
-        el("div", {
-          className: "verifier-explanation",
-          textContent: `verifier: ${d.verifier_result.outcome} — ${d.verifier_result.explanation}`,
-        }),
-      );
+    if (d.code_gen_result) {
+      node.appendChild(renderCodeGenBlock(d.code_gen_result));
     }
     if (d.retrieval_result) {
       node.appendChild(renderRetrievalBlock(d.retrieval_result));

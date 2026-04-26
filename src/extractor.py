@@ -181,6 +181,21 @@ Input: "Strawberry has 2 p's"
 Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"strawberry","property":"letter_p","value":2}},"polarity":1,"source_text":"Strawberry has 2 p's"}}]
 Reasoning: structural extraction only. The verifier checks correctness.
 
+Preceding context: "How many words in 'the quick brown fox' have the letter o?"
+Input (assistant's text): "Two words contain the letter 'o'."
+Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"the quick brown fox","property":"words_containing_letter_o","value":2}},"polarity":1,"source_text":"Two words contain the letter 'o'"}}]
+Reasoning: 'words' here refers to words in the user's literal sentence. Embed the literal sentence ('the quick brown fox') as the subject so the verifier has the data needed to count. Property names the predicate-shaped operation precisely.
+
+Preceding context: "List the words in this sentence that contain 'e' and count them."
+Input (assistant's text): "Total count: 7"
+Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"List the words in this sentence that contain 'e' and count them.","property":"words_containing_letter_e","value":7}},"polarity":1,"source_text":"Total count: 7"}}]
+Reasoning: 'this sentence' resolves to the user's preceding message in full. Embed the entire user sentence as subject, even if long, so the verifier can split-and-count.
+
+Preceding context: "How many words in 'three free trees' contain 'e'?"
+Input (assistant's text): "Words containing 'e' in order:\\n1. three\\n2. free\\n3. trees\\n\\nIf counting all instances: 3 words. If you exclude duplicates: 2 words."
+Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"three free trees","property":"words_containing_letter_e","value":3}},"polarity":1,"source_text":"3 words"}}]
+Reasoning: The speaker hedges between 3 and 2 depending on interpretation. Extract the PRIMARY value — the one matching the enumerated list (3 items listed → value=3). The "or 2 if duplicates" alternative is the speaker's hedge, not a separate fact. Always extract a fact when a count is asserted with an enumerated list, even if the speaker wraps it in conditional language.
+
 Input: "Tokyo is a city in Japan"
 Output: facts=[
   {{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"Tokyo","category":"city"}},"polarity":1,"source_text":"Tokyo is a city"}},
@@ -206,14 +221,51 @@ class ClaimExtractor:
             patterns=registry.describe_for_prompt(),
         )
 
-    def extract(self, text: str, role: str) -> ExtractionResult:
+    def extract(
+        self, text: str, role: str, *, context: str | None = None,
+    ) -> ExtractionResult:
+        """Extract facts from ``text``.
+
+        ``context`` is an optional preceding turn used ONLY for reference
+        resolution — when the speaker says "this sentence" / "the word
+        you gave me", the extractor needs to know what those phrases
+        point to so it can embed the literal referent as a slot value.
+        Used by the pipeline when extracting from an assistant draft, so
+        claims like "the sentence has 7 words with 'e'" get a useful
+        ``subject`` (the literal sentence) instead of a description.
+
+        ``context`` is for reference only — facts must NOT be extracted
+        from it. The system prompt enforces this.
+        """
         if role not in ("user", "assistant"):
             raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
-        user_message = (
-            f"Role of speaker: {role}\n"
-            f"Text:\n{text}\n\n"
-            "Extract all facts via the record_facts tool. Return [] if none fit."
-        )
+        if context:
+            user_message = (
+                f"Role of speaker: {role}\n"
+                "Preceding speaker's message (use only to resolve "
+                "self-references like 'this sentence', 'this word', or "
+                "'the word you gave me' to literal text):\n"
+                f"{context}\n\n"
+                f"Speaker's text:\n{text}\n\n"
+                "Extract every fact-stating clause from the speaker's text "
+                "via the record_facts tool. When the speaker references "
+                "'this sentence', 'this word', or similar, resolve to the "
+                "literal text from the preceding message and embed it as "
+                "the appropriate slot value (typically `subject` for "
+                "quantitative claims). For hedged or conditional count "
+                "claims (e.g. 'N if X, else M'; 'N — or M depending on "
+                "interpretation'), extract the PRIMARY value — the one "
+                "stated first, listed most prominently, or supported by an "
+                "enumerated list — as a single fact. The hedge is the "
+                "speaker's interpretive uncertainty, not a separate claim. "
+                "Return [] only when no fact-stating clause appears."
+            )
+        else:
+            user_message = (
+                f"Role of speaker: {role}\n"
+                f"Text:\n{text}\n\n"
+                "Extract all facts via the record_facts tool. Return [] if none fit."
+            )
         raw = self.llm.extract_with_tool(
             system=self._system_prompt,
             user_message=user_message,

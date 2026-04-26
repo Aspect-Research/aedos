@@ -338,6 +338,137 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   font-family: var(--mono);
 }
 
+/* Code-generated verification block (v0.4) -------------------- */
+.codegen-block {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  background: #f5f0fa;
+  border-left: 3px solid #6b3fa0;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+.codegen-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.codegen-status {
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.codegen-status-verified              { background: #d6f0df; color: var(--ok); }
+.codegen-status-contradicted          { background: #fadada; color: var(--bad); }
+.codegen-status-not_python_verifiable { background: #ffeede; color: var(--warn); }
+.codegen-status-code_execution_failed { background: #fadada; color: var(--bad); }
+.codegen-status-comparison_error      { background: #fef3c7; color: #92400e; }
+.codegen-explanation {
+  font-style: italic;
+  color: var(--muted);
+}
+.codegen-warning {
+  margin-top: 0.25rem;
+  padding: 0.2rem 0.4rem;
+  background: #fff3e6;
+  border-left: 3px solid var(--warn);
+  border-radius: 2px;
+  color: var(--warn);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.codegen-details {
+  margin-top: 0.4rem;
+}
+.codegen-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.78rem;
+  user-select: none;
+}
+.codegen-details[open] summary {
+  margin-bottom: 0.3rem;
+}
+.codegen-section {
+  margin: 0.4rem 0;
+  padding: 0.3rem 0.4rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.codegen-section h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b3fa0;
+}
+.codegen-section h5 {
+  margin: 0.3rem 0 0.15rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.codegen-meta {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.codegen-reason {
+  font-style: italic;
+  color: var(--ink);
+  margin-top: 0.15rem;
+}
+.codegen-readonly {
+  padding: 0.3rem 0.45rem;
+  background: #faf9f5;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+.codegen-code, .codegen-stdout, .codegen-stderr {
+  padding: 0.4rem 0.5rem;
+  background: #1d1d1b;
+  color: #f4f4ef;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  margin: 0.2rem 0;
+}
+.codegen-stdout { background: #f4f8f1; color: var(--ink); }
+.codegen-stderr { background: #faeaea; color: var(--bad); }
+.codegen-attempts {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+}
+.codegen-attempt {
+  margin: 0.15rem 0;
+}
+.codegen-attempt-leak {
+  background: #fadada;
+  color: var(--bad);
+  padding: 0 0.3rem;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.codegen-attempt-ok {
+  background: #d6f0df;
+  color: var(--ok);
+  padding: 0 0.3rem;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
 /* Confidence bar (fact inspector) ------------------------------ */
 .confidence-bar {
   display: inline-block;
