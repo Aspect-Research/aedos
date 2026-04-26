@@ -20,6 +20,12 @@
 #     returns >= 2 results. Never prepend "current".
 #   flag_non_user_as_anomaly: optional; if true, a non-user agent on this
 #     pattern triggers a routing anomaly (preference / propositional_attitude).
+#   predicate_overrides: optional; map of predicate -> verification_method.
+#     Routes specific predicates within the pattern through a different
+#     method than the pattern's default rules. Used by `relational` to
+#     send computable predicates (reverse_of, is_anagram_of, etc.) to
+#     code-generated python verification while keeping retrieval as the
+#     pattern default.
 
 # =====================================================================
 role_assignment:
@@ -145,7 +151,7 @@ quantitative:
     - { name: value, type: any, required: true }   # numeric usually, occasionally string
     - { name: unit, type: string, required: false }
   verification_method:
-    - method: python_when_predicate_supported
+    - method: python
     - method: retrieval
   example_predicates:
     - has_count
@@ -156,6 +162,7 @@ quantitative:
     - founded_in_year
     - sum_equals
     - product_equals
+    - prime_count
   query_strategy:
     - "{subject} {property}"
     - "{subject} {property} {value}"
@@ -299,6 +306,17 @@ relational:
     - { name: valid_until, type: date, required: false }
   verification_method:
     - method: retrieval
+  predicate_overrides:
+    # Computable string/number relations route through code-generated
+    # python verification regardless of the retrieval default.
+    reverse_of: python
+    is_anagram_of: python
+    contains_substring: python
+    equals: python
+    greater_than: python
+    less_than: python
+    starts_with: python
+    ends_with: python
   example_predicates:
     - succeeded_by
     - preceded_by
@@ -311,6 +329,7 @@ relational:
     - authored_by
     - contains_substring
     - is_anagram_of
+    - reverse_of
   query_strategy:
     - "{subject} {relation} {object}"
     - "{subject} {object}"

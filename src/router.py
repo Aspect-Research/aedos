@@ -1,19 +1,19 @@
-"""Verification router (v0.3 — pattern-based).
+"""Verification router (v0.4 — code-generated python).
 
 Dispatches each extracted fact (pattern + predicate + slots) to the
 correct verifier. The verification method comes from the PATTERN, with
-optional conditional rules evaluated against the slot values.
+two routing details:
 
-Key v0.3 changes:
-- Decision dispatches on pattern, not predicate.
-- Routing anomaly: a pattern's `flag_non_user_as_anomaly` opt-in fires
-  when agent is non-user. Used by `preference` and `propositional_attitude`
-  where non-user agents almost always indicate extractor error. Patterns
-  like `spatial_temporal` (where non-user agents are normal) opt out.
-- Python verifier dispatch is keyed by predicate name; new predicates
-  within a pattern fall through to the pattern's default method.
-- Retrieval failures get split status (`retrieval_inconclusive` vs
-  `retrieval_failed`) per Section 6.
+  - ``predicate_overrides`` on a pattern can pin specific predicates to
+    a non-default method (e.g. ``relational.reverse_of`` → python).
+  - ``python`` invokes the v0.4 code-generation pipeline (triage →
+    neutral prompt → code → sandbox → comparator). When triage decides
+    the claim isn't python-resolvable, the router falls back to the
+    pattern's first non-python rule that matches.
+
+Other v0.3 behavior (routing anomaly opt-in, retrieval inconclusive vs
+failed split, store_lookup for user-authoritative claims by the model)
+is unchanged.
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ from enum import Enum
 from typing import Any, Optional
 
 from src.fact_store import Fact, FactStore
+from src.llm_client import LLMClient
 from src.pattern_registry import Pattern, PatternRegistry
-from src.verifiers.python_verifiers import (
-    VerificationOutcome,
-    VerificationResult,
-    get_verifier,
+from src.verifiers.code_generation import (
+    CodeGenerationVerifier,
+    CodeGenVerificationResult,
 )
 from src.verifiers.retrieval_verifier import RetrievalResult, RetrievalVerifier
 from src.verifiers.store_verifier import (
@@ -91,7 +91,10 @@ class Decision:
     closed_fact_ids: list[int] = field(default_factory=list)
     contradicting_fact_id: Optional[int] = None
     matching_fact_id: Optional[int] = None
-    verifier_result: Optional[VerificationResult] = None
+    # v0.4: ``code_gen_result`` carries the full code-generation trace
+    # (triage, prompt, code, execution, comparison). The legacy
+    # ``verifier_result`` field is kept None.
+    code_gen_result: Optional[dict] = None
     retrieval_result: Optional[RetrievalResult] = None
     correction: Optional[dict] = None
     notes: list[str] = field(default_factory=list)
@@ -108,9 +111,7 @@ class Decision:
             "closed_fact_ids": self.closed_fact_ids,
             "contradicting_fact_id": self.contradicting_fact_id,
             "matching_fact_id": self.matching_fact_id,
-            "verifier_result": (
-                self.verifier_result.to_dict() if self.verifier_result else None
-            ),
+            "code_gen_result": self.code_gen_result,
             "retrieval_result": (
                 self.retrieval_result.to_dict() if self.retrieval_result else None
             ),
@@ -126,10 +127,19 @@ class Router:
         store: FactStore,
         registry: PatternRegistry,
         retrieval_verifier: RetrievalVerifier | None = None,
+        code_gen_verifier: CodeGenerationVerifier | None = None,
+        llm: LLMClient | None = None,
     ):
         self.store = store
         self.registry = registry
         self.retrieval_verifier = retrieval_verifier
+        # If no code_gen_verifier was supplied but an LLM was, build one
+        # automatically. Tests that don't need code generation can leave
+        # both None — patterns that require python will surface a clear
+        # error instead of silently misbehaving.
+        if code_gen_verifier is None and llm is not None:
+            code_gen_verifier = CodeGenerationVerifier(store=store, llm=llm)
+        self.code_gen_verifier = code_gen_verifier
 
     # ---- entry point ---------------------------------------------------
 
@@ -212,14 +222,15 @@ class Router:
         if anomaly is not None:
             return self._route_routing_anomaly(claim, source_turn_id, anomaly)
 
-        # Resolve the verification method, with python-fallback handling.
-        method = self._resolve_method(pattern, slots, predicate=claim["predicate"])
+        method = pattern.resolve_method(slots, predicate=claim["predicate"])
+        return self._dispatch_method(claim, pattern, source_turn_id, method)
 
+    def _dispatch_method(
+        self, claim: dict, pattern: Pattern, source_turn_id: int, method: str,
+    ) -> Decision:
         if method == "python":
-            return self._route_python(claim, source_turn_id)
+            return self._route_python(claim, pattern, source_turn_id)
         if method == "user_authoritative":
-            # Model asserted what would be a user-authoritative claim — verify
-            # against what the user has previously said.
             return self._route_store(claim, pattern, source_turn_id)
         if method == "store_lookup":
             return self._route_store(claim, pattern, source_turn_id)
@@ -227,28 +238,7 @@ class Router:
             return self._route_retrieval(claim, source_turn_id)
         if method == "unverifiable":
             return self._route_unverifiable(claim, source_turn_id)
-
         raise RuntimeError(f"router has no handler for verification_method={method!r}")
-
-    # ---- method resolution ---------------------------------------------
-
-    def _resolve_method(self, pattern: Pattern, slots: dict, *, predicate: str) -> str:
-        """Walk the pattern's rules, handling python_when_predicate_supported.
-
-        That pseudo-method means "use python if a verifier exists for this
-        predicate; otherwise advance to the next rule".
-        """
-        for i, rule in enumerate(pattern.verification_rules):
-            if not rule.matches(slots):
-                continue
-            if rule.method == "python_when_predicate_supported":
-                if get_verifier(predicate) is not None:
-                    return "python"
-                continue  # advance to the next rule
-            return rule.method
-        # If we exhausted all rules (shouldn't happen — registry validates a
-        # default), fall back to unverifiable.
-        return "unverifiable"
 
     def _maybe_anomaly(self, pattern: Pattern, slots: dict) -> dict | None:
         """Return {slot, expected, actual} if this is a routing anomaly, else None."""
@@ -268,12 +258,10 @@ class Router:
 
     # ---- per-method handlers -------------------------------------------
 
-    def _route_python(self, claim: dict, source_turn_id: int) -> Decision:
-        verifier = get_verifier(claim["predicate"])
-        assert verifier is not None, "_resolve_method should have ensured this"
-        try:
-            result = verifier(claim)
-        except Exception as e:
+    def _route_python(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+        if self.code_gen_verifier is None:
+            # No code-gen verifier configured — surface as pending so the
+            # trace shows the misconfiguration rather than crashing.
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
@@ -284,10 +272,24 @@ class Router:
                     confidence=CONF_PENDING_IMPLEMENTATION,
                     verification_status="unverifiable_pending_implementation",
                 ),
-                notes=[f"python verifier raised {type(e).__name__}: {e}"],
+                notes=["python method routed but no CodeGenerationVerifier configured"],
             )
 
-        if result.outcome is VerificationOutcome.VERIFIED:
+        result = self.code_gen_verifier.verify(claim, source_turn_id=source_turn_id)
+
+        if result.status == "not_python_verifiable":
+            # Triage said deterministic python can't resolve this. Fall
+            # through to the pattern's first non-python rule that matches.
+            fallback = pattern.fallback_method(claim.get("slots", {}))
+            decision = self._dispatch_method(claim, pattern, source_turn_id, fallback)
+            decision.code_gen_result = result.to_dict()
+            decision.notes.append(
+                f"python triage said not verifiable: {result.explanation}; "
+                f"fell back to {fallback}"
+            )
+            return decision
+
+        if result.status == "verified":
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
@@ -297,34 +299,37 @@ class Router:
                     claim, source_turn_id, asserted_by="model",
                     confidence=CONF_PYTHON_VERIFIED, verification_status="verified",
                 ),
-                verifier_result=result,
+                code_gen_result=result.to_dict(),
             )
 
-        if result.outcome is VerificationOutcome.CONTRADICTED:
-            corrected_slots = dict(claim.get("slots") or {})
-            if result.actual_value is not None:
-                corrected_slots["value"] = result.actual_value
+        if result.status == "contradicted":
+            corrected_slots = self._apply_correction_to_slots(claim, result)
             corrected_claim = dict(claim)
             corrected_claim["slots"] = corrected_slots
             corrected_id = self._store(
                 corrected_claim, source_turn_id, asserted_by="python_verifier",
                 confidence=CONF_PYTHON_CORRECTION, verification_status="verified",
             )
+            original_value = self._extract_displayed_claim_value(claim)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
                 confidence=CONF_PYTHON_CORRECTION,
                 stored_fact_id=corrected_id,
-                verifier_result=result,
+                code_gen_result=result.to_dict(),
                 correction={
-                    "original_object": claim.get("slots", {}).get("value"),
+                    "original_object": original_value,
                     "corrected_object": result.actual_value,
                     "explanation": result.explanation,
                     "source_text": claim.get("source_text", ""),
                 },
             )
 
+        # comparison_error / code_execution_failed → pending
+        notes = [
+            f"code generation produced status {result.status!r}: {result.explanation}"
+        ]
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
@@ -335,8 +340,8 @@ class Router:
                 confidence=CONF_PENDING_IMPLEMENTATION,
                 verification_status="unverifiable_pending_implementation",
             ),
-            verifier_result=result,
-            notes=[f"python verifier inconclusive: {result.explanation}"],
+            code_gen_result=result.to_dict(),
+            notes=notes,
         )
 
     def _route_store(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
@@ -406,6 +411,8 @@ class Router:
                 notes=["no RetrievalVerifier configured on Router"],
             )
 
+        from src.verifiers.types import VerificationOutcome
+
         result = self.retrieval_verifier.verify(claim, source_turn_id=source_turn_id)
 
         if result.outcome is VerificationOutcome.VERIFIED:
@@ -442,9 +449,6 @@ class Router:
             )
 
         # INCONCLUSIVE — split per Section 6 (handled fully there).
-        # If the verifier got snippets and the judge said insufficient, that's
-        # `retrieval_inconclusive`. If anything earlier failed, it's
-        # `retrieval_failed`. We use error_flag to discriminate.
         is_failed = (
             result.error_flag in {"retrieval_error", "no_results", "judge_error",
                                   "judge_parse_error", "retrieval_not_configured"}
@@ -503,6 +507,37 @@ class Router:
                 "this almost always indicates an upstream extractor error"
             ],
         )
+
+    # ---- correction helpers --------------------------------------------
+
+    def _apply_correction_to_slots(
+        self, claim: dict, result: CodeGenVerificationResult
+    ) -> dict:
+        """Project the computed value into the right slot for a contradiction.
+
+        Mirrors the per-pattern claim_value extractor. The router writes
+        the corrected fact to the store, so it needs to know which slot
+        to overwrite with ``result.actual_value``.
+        """
+        slots = dict(claim.get("slots") or {})
+        pattern = claim.get("pattern")
+        predicate = claim.get("predicate") or ""
+        if pattern == "quantitative":
+            slots["value"] = result.actual_value
+        elif pattern == "relational" and predicate == "reverse_of":
+            slots["subject"] = result.actual_value
+        return slots
+
+    def _extract_displayed_claim_value(self, claim: dict) -> Any:
+        """Pull the slot value most useful for the correction payload UI."""
+        slots = claim.get("slots") or {}
+        pattern = claim.get("pattern")
+        predicate = claim.get("predicate") or ""
+        if pattern == "quantitative":
+            return slots.get("value")
+        if pattern == "relational" and predicate == "reverse_of":
+            return slots.get("subject")
+        return slots
 
     # ---- helpers --------------------------------------------------------
 

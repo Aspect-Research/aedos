@@ -10,7 +10,7 @@ import pytest
 
 from src.fact_store import FactStore
 from src.pattern_registry import load_default_registry, reset_cache
-from src.verifiers.python_verifiers import VerificationOutcome
+from src.verifiers.types import VerificationOutcome
 from src.verifiers.retrieval_verifier import (
     JudgeVerdict,
     QueryAttempt,

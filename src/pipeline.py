@@ -118,7 +118,15 @@ class Pipeline:
         )
 
         # Stage 5 — extract claims from the assistant draft.
-        asst_extraction = self.extractor.extract(draft, role="assistant")
+        # The user's preceding message is passed as context so the
+        # extractor can resolve self-references like "this sentence" to
+        # the literal text and embed it as a slot value. Without this,
+        # claims like "this sentence has 7 words with 'e'" lose the
+        # actual sentence and triage correctly rejects them as
+        # not_python_verifiable for lack of data.
+        asst_extraction = self.extractor.extract(
+            draft, role="assistant", context=user_message,
+        )
         self.store.insert_pipeline_event(
             assistant_turn_id,
             "assistant_extraction",
@@ -267,6 +275,7 @@ def build_pipeline(
 ) -> Pipeline:
     """Convenience constructor used by app.py and integration tests."""
     from src.pattern_registry import load_default_registry
+    from src.verifiers.code_generation import CodeGenerationVerifier
     from src.verifiers.retrieval_verifier import RetrievalVerifier
 
     store = FactStore(db_path)
@@ -274,6 +283,11 @@ def build_pipeline(
     llm = llm or LLMClient()
     extractor = ClaimExtractor(llm, registry)
     retrieval_verifier = RetrievalVerifier(store=store, llm=llm, registry=registry)
-    router = Router(store, registry, retrieval_verifier=retrieval_verifier)
+    code_gen_verifier = CodeGenerationVerifier(store=store, llm=llm)
+    router = Router(
+        store, registry,
+        retrieval_verifier=retrieval_verifier,
+        code_gen_verifier=code_gen_verifier,
+    )
     corrector = Corrector(llm)
     return Pipeline(store, registry, llm, extractor, router, corrector)

@@ -60,8 +60,7 @@ def test_retrieval_patterns_have_query_strategy():
     reg = load_default_registry()
     for p in reg.all():
         # If any rule resolves to retrieval, we need a strategy.
-        uses_retrieval = any(r.method in ("retrieval", "python_when_predicate_supported")
-                             for r in p.verification_rules)
+        uses_retrieval = any(r.method == "retrieval" for r in p.verification_rules)
         if uses_retrieval:
             assert p.query_strategy, f"{p.name} needs a query_strategy"
 
