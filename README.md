@@ -9,6 +9,33 @@ This is a research prototype — clarity, observability, and ease of
 modification matter more than performance. See `ARCHITECTURE.md` for the
 design rationale.
 
+## What's new in v0.4
+
+- **Code-generated python verification.** The hand-written verifier
+  registry (`has_count`, `is_anagram_of`, etc.) is gone. When a claim
+  is python-routed, three LLM calls produce code that resolves it: a
+  triage call decides if it's resolvable, a prompt-builder articulates
+  a NEUTRAL question (omitting the asserted value), and a code-writer
+  generates a python script that the sandbox runs and the comparator
+  evaluates. The firewall — separating the LLM that decides what to
+  verify, the LLM that articulates the question, and the LLM that
+  writes the code — keeps confirmation bias out of code generation.
+- **Predicate overrides on patterns.** `relational.reverse_of`,
+  `is_anagram_of`, `contains_substring`, `equals`, `greater_than` now
+  route to python via `predicate_overrides` while the rest of
+  `relational` keeps its retrieval default.
+- **`patterns.yaml` simplification.** `python_when_predicate_supported`
+  is gone; patterns just use `python` (with the triage stage as the
+  gate).
+- **New trace UI block.** Per python-routed claim, a code-generation
+  block shows triage → prompt → code → execution → comparison, with a
+  collapsed-by-default details panel and warnings for prompt leakage,
+  slow runs, and stderr.
+
+> **v0.4 is schema-compatible with v0.3.** No DB reset is required.
+> Code that imported from `src.verifiers.python_verifiers` will need
+> updating — that module is removed.
+
 ## What's new in v0.3
 
 - **Pattern-based representation.** Closed predicate vocabulary is gone.
@@ -80,16 +107,20 @@ RUN_API_TESTS=1 pytest         # also hit the real Anthropic API once
 
 ## Adding a new predicate
 
-1. Append an entry to `predicates.yaml` (see existing entries for the
-   field shape).
-2. If the new predicate is python-verifiable, add a `verify_<name>`
-   function in `src/verifiers/python_verifiers.py`, register it in the
-   `VERIFIERS` dict, and add tests in `tests/test_verifiers.py`.
-3. Restart the app. The extractor's tool schema is rebuilt from the
-   registry at startup, so the LLM will immediately know about the new
-   predicate.
+In v0.4, predicates are free-form within a pattern. There's no per-
+predicate code to write:
 
-See `CLAUDE.md` for step-by-step guidance.
+- **Inside a pattern that already routes to python** (e.g.
+  `quantitative` for new properties like `prime_count` or
+  `digit_sum`): just use the predicate label. Triage decides if the
+  claim is python-resolvable; if yes, code generation runs; if no, it
+  falls back per the pattern's rules.
+- **A computable relational predicate** (e.g. `palindrome_of`): add it
+  to `relational.predicate_overrides` in `patterns.yaml` with `python`
+  as the value. The rest of `relational` keeps retrieval as default.
+
+For new patterns (rare), see `CLAUDE.md` — that requires more changes
+than just YAML.
 
 ## Optional environment variables
 
@@ -121,13 +152,17 @@ Or click **Reset DB** in the UI header.
 ## Layout
 
 ```
-predicates.yaml     — human-editable vocabulary of ~30 predicates
+patterns.yaml       — eight structural patterns; predicates free-form within each
 src/
   fact_store.py     — SQLite wrapper (facts, turns, pipeline_events)
-  predicate_registry.py
+  pattern_registry.py
   extractor.py      — LLM claim extraction via forced tool use
   router.py         — dispatches claims to verifiers; writes to store
-  verifiers/        — python verifiers, store lookup, retrieval stub
+  verifiers/
+    types.py            — shared VerificationOutcome / VerificationResult
+    store_verifier.py   — matches model claims against user-asserted facts
+    retrieval_verifier.py
+    code_generation/    — v0.4 triage → prompt → code → sandbox → compare
   corrector.py      — rewrites assistant responses to reflect corrections
   pipeline.py       — orchestrates a full turn; logs pipeline_events
   llm_client.py     — Anthropic SDK wrapper with prompt caching

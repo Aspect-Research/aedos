@@ -66,7 +66,7 @@ of predicates is a small, human-editable file.
 | `predicate_registry` | Loads and validates `predicates.yaml`. Exposes lookups and a prompt-formatted dump. The extractor tool schema enumerates these names. | `predicates.yaml` | `Predicate` objects |
 | `extractor` | Single LLM call per message, forced tool use for structured output. Validates each returned claim against the registry; drops ones that don't fit. | text, role | `ExtractionResult` |
 | `router` | One code path, one decision table. Dispatches claims to the verifier named by the registry. Writes facts to the store. Emits a `Decision` per claim for logging. | claim, origin | `Decision` |
-| `verifiers/python_verifiers` | Deterministic, narrow functions. Each handles exactly one predicate. Returns VERIFIED / CONTRADICTED / INCONCLUSIVE. | claim | `VerificationResult` |
+| `verifiers/code_generation` | (v0.4) Three-stage firewall: triage → neutral prompt → code writer → sandbox → comparator. Replaces hand-written python verifiers. | claim | `CodeGenVerificationResult` |
 | `verifiers/store_verifier` | Matches a model claim against currently-valid facts in the store. Match / contradiction / miss. | claim, store | `StoreLookupResult` |
 | `verifiers/retrieval_stub` | Placeholder for v2. Always inconclusive. | claim | explanation |
 | `corrector` | Single LLM call that rewrites the assistant draft given a list of corrections. | draft + corrections | rewritten text |
@@ -220,6 +220,124 @@ it as-is.
 
 _(Verification status semantics moved to the v0.3 section above.)_
 
+## Code-generated verification (v0.4)
+
+The python verification path used to be a hand-written registry: one
+function per predicate in `src/verifiers/python_verifiers.py`, dispatched
+by predicate name. That worked for the small set of predicates we
+seeded, but it didn't scale. Every new property a model invents
+(`prime_count_in_range`, `words_containing_letter_e`, sum of digits,
+…) needed a new hand-written function. The cost wasn't the function
+itself — it was the long tail. Predicates we hadn't anticipated fell
+through to the registered `has_count` and silently returned 0, which
+the comparator then accepted as "verified" against any claim of 0.
+
+v0.4 replaces the registry with code generation. A python-routed claim
+is resolved by three LLM calls plus a sandbox execution and a
+deterministic comparator:
+
+```
+            claim
+              │
+              ▼
+        ┌──────────┐
+        │ Stage 1  │  triage: can deterministic python answer this?
+        │ extractor│  sees: full claim
+        │   model  │  returns: {verifiable: bool, reason: str}
+        └────┬─────┘
+             │  if not verifiable: return "not_python_verifiable"
+             │
+             ▼
+        ┌──────────┐
+        │ Stage 2  │  build a NEUTRAL question
+        │ extractor│  sees: full claim INCLUDING asserted value
+        │   model  │  returns: {prompt, expected_output_type}
+        └────┬─────┘  prompt MUST NOT contain asserted value
+             │
+             │  leak detector scans prompt for stringifications
+             │  of the asserted value; retries once on detection
+             │
+             ▼
+        ┌──────────┐
+        │ Stage 3  │  write python script
+        │ corrector│  sees: ONLY the neutral prompt + expected_type
+        │   model  │  returns: source code
+        └────┬─────┘
+             │
+             ▼
+        ┌──────────┐
+        │ sandbox  │  subprocess, strict limits, no env, empty cwd
+        └────┬─────┘
+             │  stdout / stderr / duration / timed_out
+             ▼
+        ┌──────────┐
+        │comparator│  parse stdout per expected_type;
+        │ (python) │  apply polarity; equal vs not equal
+        └────┬─────┘
+             │
+             ▼
+   verified | contradicted | comparison_error | code_execution_failed
+```
+
+### The firewall
+
+The system avoids confirmation bias in code-generated verification by
+separating the LLM that decides what to verify, the LLM that
+articulates the question, and the LLM that writes the code. The
+code-writing LLM never sees the model's claimed answer; it only sees
+a neutral question. This means the code is written to compute a
+value, not to validate a hypothesis. Comparison happens
+deterministically outside the LLM, in `comparator.py`.
+
+The firewall is enforced structurally, not by convention:
+
+- `write_code()`'s function signature takes only `(neutral_prompt,
+  expected_output_type, llm)`. It cannot accept the original claim;
+  passing one is a `TypeError`.
+- `compare()` is a pure-python function, not an LLM call. It cannot
+  rationalize.
+
+### Known limitation: leak detection is heuristic
+
+The firewall depends on Stage 2 producing a leak-free prompt. Stage 2
+is constrained by its prompt and few-shot examples to omit the
+asserted value, and a substring-based leak detector retries once on
+detection. But sophisticated leakage — the asserted value reformulated
+semantically ("the answer is the same as the number of fingers on a
+typical hand"), or as a synonym, or in a different base — can slip
+through. Hardening this is a target for future work; the current
+heuristic catches the obvious cases (the literal value as a digit
+string or as a substring of the claim's distinctive subject).
+
+### Predicate overrides
+
+Patterns can pin specific predicates to a non-default verification
+method via `predicate_overrides` in `patterns.yaml`. The `relational`
+pattern uses this for computable predicates (`reverse_of`,
+`is_anagram_of`, `contains_substring`, `equals`, `greater_than`, …) —
+these route to python while the rest of `relational` stays on
+retrieval. The router checks `predicate_overrides` BEFORE walking
+`verification_rules`, so the override always wins.
+
+### Triage as a fall-through gate
+
+When triage says `not_python_verifiable` (e.g. "Trump was born in
+1946" — quantitative pattern but requires external data), the router
+falls back to the pattern's first non-python rule that matches. For
+`quantitative` that's retrieval; for `relational` predicates with
+overrides, the pattern's default rule (retrieval) is the fallback. If
+no fallback applies, the claim becomes `unverifiable_in_principle`.
+
+### What this is NOT
+
+- **Not a security sandbox.** The code runs in our own environment;
+  the limits in `sandbox.py` keep accidental interactions away from
+  AEDOS state. They do not stop a determined attacker.
+- **Not a fallback for unfamiliar predicates.** If triage says no, the
+  router falls back per the pattern's rules; we don't keep a
+  hand-written verifier registry as a backup. The whole point of v0.4
+  is to stop maintaining that registry.
+
 ## Known limitations
 
 - **Retrieval is v1 — snippet-based, judge-LLM only.** The retrieval
@@ -239,10 +357,13 @@ _(Verification status semantics moved to the v0.3 section above.)_
   abstain (see "Representation: patterns vs predicates" → Known scope
   limits above). This is a deliberate design decision, not a TODO.
 
-- **Python verifiers are narrow.** `verify_has_count` works only when the
-  extractor successfully encodes the count claim as JSON. Natural
-  variations ("there are three p-sounds in strawberry") will fall through
-  to INCONCLUSIVE. That's acceptable — the system fails loud, not silent.
+- **Python verification depends on triage + leak detection.** v0.4
+  generates python on demand, but every step has limits: triage may
+  occasionally over- or under-reject; the leak detector is heuristic
+  (literal substrings only); the sandbox runs in a subprocess so
+  startup cost is non-trivial (~tens to hundreds of ms per claim).
+  The system fails loud — `comparison_error`, `code_execution_failed`,
+  `not_python_verifiable` — rather than silently passing.
 
 - **Single conversation.** The `facts`, `turns`, and `pipeline_events`
   tables have no conversation id. Everything is one long conversation

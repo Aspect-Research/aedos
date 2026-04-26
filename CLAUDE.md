@@ -10,6 +10,104 @@ rejected, or flagged. User-stated facts are stored as ground truth.
 
 See `ARCHITECTURE.md` for the design rationale and a full data-flow diagram.
 
+## v0.4 changes (read before touching anything)
+
+> **The hand-written python verifier registry is gone.** Old `aedos.db`
+> files from v0.3 are still compatible (the schema didn't change), but
+> any code referencing `src.verifiers.python_verifiers` will fail —
+> that module is deleted.
+
+### The big shift: hand-written verifiers → code-generated verification
+
+v0.3's python path called a per-predicate hand-written function:
+`verify_has_count`, `verify_is_anagram_of`, etc. That doesn't scale —
+every new property the model invents (prime counts, words containing
+specific letters, anything you didn't anticipate) silently returned
+wrong-but-conveniently-zero results because `has_count` only knew how
+to count single characters.
+
+v0.4 replaces that with a four-stage code-generation pipeline. When a
+claim is python-routed:
+
+1. **Triage** decides if the claim is python-resolvable from its slots
+   alone (no external data, no human judgment).
+2. **Prompt builder** articulates a NEUTRAL question about the claim
+   that does NOT reveal the asserted answer.
+3. **Code writer** receives ONLY the neutral prompt — never the claim,
+   never the asserted value — and writes a python script.
+4. **Sandbox** runs the script in a subprocess with strict limits.
+5. **Comparator** parses stdout and compares to the asserted value.
+
+The deliberate firewall (Stages 1, 2, 3 are separate LLM calls; Stage
+3 sees only the neutral prompt) exists to keep confirmation bias out
+of code generation. If the code writer saw "the model claimed 25,
+write code to check 25", it would be biased toward producing code
+that confirms 25. Stripping the asserted value before code generation
+forces code that answers the question, not validates a hypothesis.
+
+### Verification statuses (v0.4 additions)
+
+`unverifiable_pending_implementation` now covers:
+
+- `comparison_error` from the comparator (couldn't parse stdout, or
+  couldn't extract a claimed value for this pattern/predicate).
+- `code_execution_failed` from the sandbox (timeout, exit non-zero).
+
+When triage says **`not_python_verifiable`**, the router falls through
+to the pattern's first non-python rule. So `quantitative.born_in_year`
+(triage will say "external data") falls back to retrieval; predicates
+in `relational.predicate_overrides` whose pattern default is retrieval
+also get the same fallback path.
+
+### Patterns vs predicate_overrides
+
+`patterns.yaml` now supports `predicate_overrides: {predicate: method}`.
+This is how `relational.reverse_of` gets routed to python despite the
+relational pattern's retrieval default. Override values are checked
+BEFORE the verification_method rule list. Use this only for predicates
+where the override is structural — i.e. a computable string/number
+relation that fits the pattern but needs different verification.
+
+### How to add a new python-verifiable predicate (no code change)
+
+You don't write a verifier function — code generation handles it.
+
+- **In an existing pattern that already routes to python** (e.g.
+  `quantitative` with predicates like `has_count`, `prime_count`,
+  `sum_equals`): just use the predicate. Triage decides if it's
+  resolvable; if yes, the pipeline runs.
+- **Inside `relational` for a new computable predicate** (e.g.
+  `palindrome_of`): add it to `predicate_overrides` in `patterns.yaml`
+  with `python` as the value. Done.
+
+If triage occasionally rejects something you expected to be verifiable,
+look at the trace UI — the triage stage emits its `reason` so you can
+see why. Don't add fallback hand-written verifiers; that recreates the
+v0.3 maintenance problem we're solving.
+
+### Where to look in the trace UI
+
+Per python-routed claim, the decision shows a code-generation block
+with a collapsed-by-default details panel. Inside:
+
+- Triage verdict + reason
+- Generated neutral prompt (with all retry attempts; leakage flagged)
+- Generated code (with the model that wrote it)
+- Execution output (stdout, stderr, duration_ms, timed_out)
+- Comparison verdict with claimed_value vs. computed_value
+
+If `code_prompt_leakage_detected` was emitted, the block shows a
+warning. If execution was slow (>1s) or wrote stderr, the block flags
+that too. These warnings don't change the verdict — they're for the
+operator to investigate later.
+
+### Sandbox is for correctness, not security
+
+`src/verifiers/code_generation/sandbox.py` runs generated code in a
+subprocess with closed stdin, empty cwd, and a minimal env. It's not a
+security boundary — the code comes from our own LLM and runs locally.
+The limits keep accidental interactions out, not malicious ones.
+
 ## v0.3 changes (read before touching anything)
 
 > **The schema and representation changed.** Old `aedos.db` files are
@@ -176,16 +274,23 @@ commonsense reasoning, migration tooling.
 ## Layout
 
 ```
-predicates.yaml              — ~30 typed predicates, human-editable
+patterns.yaml                — 8 structural patterns; free-form predicates within each
 src/
   fact_store.py              — SQLite wrapper, all DB operations
-  predicate_registry.py      — loads predicates.yaml, validates, formats for prompt
+  pattern_registry.py        — loads patterns.yaml, validates, formats for prompt
   extractor.py               — LLM → structured claims via forced tool use
   router.py                  — dispatches claims to verifiers; writes to store
   verifiers/
-    python_verifiers.py      — deterministic python functions, one per predicate
+    types.py                 — shared VerificationOutcome / VerificationResult
     store_verifier.py        — matches model claims against user-asserted facts
-    retrieval_stub.py        — placeholder; returns inconclusive
+    retrieval_verifier.py    — slots-aware multi-attempt retrieval + judge
+    code_generation/         — v0.4: triage → neutral prompt → code → sandbox → compare
+      triage.py              — Stage 1: is this claim python-resolvable?
+      prompt_builder.py      — Stage 2: NEUTRAL prompt + leak detection
+      code_writer.py         — Stage 3: code generated from prompt only
+      sandbox.py             — subprocess execution with strict limits
+      comparator.py          — deterministic stdout vs claim comparison
+      pipeline.py            — orchestrator + CodeGenerationVerifier class
   corrector.py               — rewrites assistant draft given corrections
   pipeline.py                — orchestrator for a full turn
   llm_client.py              — Anthropic SDK wrapper
