@@ -29,15 +29,16 @@ Write a complete, self-contained Python script that resolves the question below.
   - Print exactly ONE value to stdout, of the requested type.
   - Print nothing else: no prefix, no explanation, no trailing whitespace beyond a single newline.
   - Contain no comments and no reasoning.
+  - **Compute the answer through actual python operations.** The python interpreter — not your reasoning — must produce the printed value. Even if the answer seems trivially obvious to you, write the iteration, arithmetic, comparison, or string operation that derives it from the inputs in the question. Hardcoding a literal you arrived at mentally (e.g. `print(0)` instead of actually counting) defeats the purpose of running code and is FORBIDDEN.
 
 Output ONLY the script — no markdown, no fences, no preamble. The first line of your reply must be the first line of the program.
 
 # Format examples
 
-Question: "Compute 2 + 2. Print only the integer result."
+Question: "Compute the number of times the lowercase letter 'a' appears in the string 'banana'. Print only the integer result."
 expected_output_type: int
 Reply:
-print(2 + 2)
+print('banana'.count('a'))
 
 Question: "Compute the lowercase reverse of 'cat'. Print only the resulting string."
 expected_output_type: string
@@ -48,7 +49,22 @@ Question: "Compute whether 7 is prime. Print True or False."
 expected_output_type: bool
 Reply:
 n = 7
-print(n > 1 and all(n % i for i in range(2, int(n**0.5) + 1)))"""
+print(n > 1 and all(n % i for i in range(2, int(n**0.5) + 1)))
+
+Question: "Compute the count of prime numbers strictly greater than -117 and strictly less than 2. Print only the integer result."
+expected_output_type: int
+Reply:
+def is_prime(n):
+    if n < 2:
+        return False
+    return all(n % i for i in range(2, int(n**0.5) + 1))
+print(sum(1 for n in range(-116, 2) if is_prime(n)))
+
+# Forbidden pattern (do NOT do this)
+
+Question: "Compute the count of integers strictly greater than 5 and strictly less than 6. Print only the integer result."
+WRONG reply: print(0)        ← hardcoded; the LM did the work, not python.
+RIGHT reply: print(sum(1 for n in range(6, 6)))"""
 
 
 @dataclass
