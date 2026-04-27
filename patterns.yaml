@@ -1,31 +1,22 @@
 # Aedos pattern catalog.
 #
 # A small fixed set of structural patterns. Predicate labels are free-form
-# WITHIN a pattern — the verification semantics come from the pattern, not
-# the predicate. Adding a new pattern is an architectural decision (rare);
-# adding a new predicate within a pattern is a no-op (just use it).
+# WITHIN a pattern. The pattern classifies a claim's STRUCTURE and
+# informs extraction; verification routing is decided per-claim by the
+# LLM router (src/llm_router.py) — patterns no longer carry a
+# verification_method (v0.5).
 #
 # Field shape:
 #   description: what kinds of claims fit; shown to the extractor LLM
 #   slots: each {name, type, required}; the structural payload
-#   verification_method: either a string (e.g. "retrieval") or a list of
-#     conditional rules. A rule has optional {when: {slot: value}} and a
-#     {method: ...}. First match wins; the last rule is the default.
 #   example_predicates: a non-exhaustive list shown to the extractor as
 #     "things people typically say in this pattern"
 #   example_extractions: 3-5 worked examples
 #   disambiguation_notes: how to tell this pattern apart from neighbors
-#   query_strategy: ordered list of query templates (retrieval patterns only).
-#     The verifier tries them in order and uses the first attempt that
+#   query_strategy: ordered list of query templates used by the retrieval
+#     verifier WHEN the LLM router chooses retrieval for a claim. The
+#     verifier tries them in order and uses the first attempt that
 #     returns >= 2 results. Never prepend "current".
-#   flag_non_user_as_anomaly: optional; if true, a non-user agent on this
-#     pattern triggers a routing anomaly (preference / propositional_attitude).
-#   predicate_overrides: optional; map of predicate -> verification_method.
-#     Routes specific predicates within the pattern through a different
-#     method than the pattern's default rules. Used by `relational` to
-#     send computable predicates (reverse_of, is_anagram_of, etc.) to
-#     code-generated python verification while keeping retrieval as the
-#     pattern default.
 
 # =====================================================================
 role_assignment:
@@ -41,8 +32,6 @@ role_assignment:
     - { name: org, type: entity_or_string, required: false }
     - { name: valid_from, type: date, required: false }
     - { name: valid_until, type: date, required: false }
-  verification_method:
-    - method: retrieval
   example_predicates:
     - holds_role
     - currently_holds
@@ -98,11 +87,6 @@ preference:
     - { name: attitude, type: string, required: false }   # the verb's flavor
     - { name: object, type: entity_or_string, required: true }
     - { name: intensity, type: string, required: false }   # mild / strong / etc.
-  verification_method:
-    - when: { agent: user }
-      method: user_authoritative
-    - method: unverifiable
-  flag_non_user_as_anomaly: true
   example_predicates:
     - likes
     - dislikes
@@ -150,9 +134,6 @@ quantitative:
     - { name: property, type: string, required: true }
     - { name: value, type: any, required: true }   # numeric usually, occasionally string
     - { name: unit, type: string, required: false }
-  verification_method:
-    - method: python
-    - method: retrieval
   example_predicates:
     - has_count
     - has_length
@@ -206,10 +187,6 @@ spatial_temporal:
     - { name: relation_kind, type: string, required: false }  # lives_in / works_at / studies_at
     - { name: valid_from, type: date, required: false }
     - { name: valid_until, type: date, required: false }
-  verification_method:
-    - when: { entity: user }
-      method: user_authoritative
-    - method: retrieval
   example_predicates:
     - lives_in
     - located_in
@@ -255,8 +232,6 @@ categorical:
   slots:
     - { name: entity, type: entity, required: true }
     - { name: category, type: string, required: true }
-  verification_method:
-    - method: retrieval
   example_predicates:
     - is_a
     - is_kind_of
@@ -304,19 +279,6 @@ relational:
     - { name: object, type: entity, required: true }
     - { name: valid_from, type: date, required: false }
     - { name: valid_until, type: date, required: false }
-  verification_method:
-    - method: retrieval
-  predicate_overrides:
-    # Computable string/number relations route through code-generated
-    # python verification regardless of the retrieval default.
-    reverse_of: python
-    is_anagram_of: python
-    contains_substring: python
-    equals: python
-    greater_than: python
-    less_than: python
-    starts_with: python
-    ends_with: python
   example_predicates:
     - succeeded_by
     - preceded_by
@@ -376,8 +338,6 @@ event:
     - { name: participants, type: list, required: true }
     - { name: location, type: entity_or_string, required: false }
     - { name: occurred_at, type: date, required: false }
-  verification_method:
-    - method: retrieval
   example_predicates:
     - won_election
     - was_inaugurated
@@ -428,11 +388,6 @@ propositional_attitude:
     - { name: agent, type: entity, required: true }
     - { name: attitude, type: string, required: true }   # believes / hopes / plans
     - { name: proposition, type: string, required: true }
-  verification_method:
-    - when: { agent: user }
-      method: user_authoritative
-    - method: unverifiable
-  flag_non_user_as_anomaly: true
   example_predicates:
     - believes
     - knows

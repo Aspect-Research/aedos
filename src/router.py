@@ -16,11 +16,12 @@ Methods the LLM router can return:
 User-origin claims still go through the original boost / contradiction /
 store path; the LLM router only runs for model-origin claims.
 
-Routing anomaly: kept for backward compatibility with the v0.4 pattern
-flag ``flag_non_user_as_anomaly`` (e.g. ``preference`` pattern with a
-non-user agent). The LLM router would also route these correctly, but
-the pattern-level sanity check still catches upstream extractor errors
-loudly. The flag is removed in v0.5 §9 cleanup.
+Routing anomaly: a small sanity check that catches upstream EXTRACTOR
+errors. If the extractor binds an attitude- or preference-class claim
+to a non-user agent, that's almost always a slot-binding bug rather
+than a coherent claim about a third party. The LLM router would route
+such claims to ``unverifiable`` anyway, but flagging them prominently
+alerts the operator to fix the extractor.
 """
 
 from __future__ import annotations
@@ -81,6 +82,16 @@ KEY_SLOTS_BY_PATTERN: dict[str, list[str]] = {
     "relational": ["subject", "object"],
     "quantitative": ["subject", "property"],
     "event": ["event_type", "occurred_at"],
+}
+
+
+# Patterns whose subject must be the user. If the extractor produced one
+# of these patterns with a non-user agent, that's almost always an
+# upstream slot-binding error — flag it as a routing anomaly. (v0.4 used
+# a per-pattern YAML flag for this; v0.5 inlines the rule.)
+_USER_SUBJECT_PATTERNS: dict[str, str] = {
+    "preference": "agent",
+    "propositional_attitude": "agent",
 }
 
 
@@ -308,21 +319,17 @@ class Router:
     def _maybe_anomaly(self, pattern: Pattern, slots: dict) -> dict | None:
         """Return {slot, expected, actual} if this is a routing anomaly, else None.
 
-        Driven by the pattern's ``flag_non_user_as_anomaly`` flag (v0.4
-        carryover); removed in v0.5 §9 cleanup.
+        v0.5: applies to the patterns in ``_USER_SUBJECT_PATTERNS``.
+        These patterns are ill-formed when the subject slot is a
+        non-user agent — such claims are almost always extractor errors.
         """
-        if not getattr(pattern, "flag_non_user_as_anomaly", False):
+        slot_name = _USER_SUBJECT_PATTERNS.get(pattern.name)
+        if slot_name is None:
             return None
-        for rule in pattern.verification_rules:
-            if rule.method == "user_authoritative" and rule.when:
-                slot_name, expected = next(iter(rule.when.items()))
-                actual = slots.get(slot_name)
-                if not _is_user(actual) and not (
-                    isinstance(actual, str)
-                    and actual.strip().lower() == str(expected).strip().lower()
-                ):
-                    return {"slot": slot_name, "expected": expected, "actual": actual}
-        return None
+        actual = slots.get(slot_name)
+        if _is_user(actual):
+            return None
+        return {"slot": slot_name, "expected": "user", "actual": actual}
 
     # ---- per-method handlers -------------------------------------------
 
