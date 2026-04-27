@@ -1,7 +1,9 @@
-"""End-to-end pipeline tests with a mocked LLM (v0.3 / v0.4).
+"""End-to-end pipeline tests with a mocked LLM (v0.3 / v0.4 / v0.5).
 
-Seven canonical v0.3 scenarios plus v0.4 code-generation scenarios at
-the end of the file.
+Each model-claim test scripts:
+  - extract_with_tool responses (extractor + prompt builder)
+  - rewrite responses (code writer + corrector + retrieval judge)
+  - routing decisions (one per model-origin claim)
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import pytest
 from src.corrector import Corrector
 from src.extractor import ClaimExtractor
 from src.fact_store import FactStore
+from src.llm_router import RoutingDecision
 from src.pattern_registry import load_default_registry, reset_cache
 from src.pipeline import Pipeline
 from src.router import Router
@@ -33,6 +36,8 @@ class MockLLM:
     chats: list[str] = field(default_factory=list)
     extracts: list[dict[str, Any]] = field(default_factory=list)
     rewrites: list[str] = field(default_factory=list)
+    # v0.5: routing decisions, one per model-origin claim, popped in order.
+    routings: list[RoutingDecision] = field(default_factory=list)
     corrector_model: str = "mock-corrector"
 
     def chat(self, system, messages, max_tokens=4096):
@@ -41,8 +46,56 @@ class MockLLM:
     def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
         return self.extracts.pop(0)
 
-    def rewrite(self, system, user_message, max_tokens=2048):
+    def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
         return self.rewrites.pop(0)
+
+
+def _routing_fn_for(mock: MockLLM):
+    """Build a routing_fn that pops decisions from ``mock.routings``."""
+    def fn(_claim):
+        if not mock.routings:
+            raise RuntimeError(
+                "MockLLM has no queued routing decision; "
+                "test must script one decision per model-origin claim"
+            )
+        return mock.routings.pop(0)
+    return fn
+
+
+# Convenience constructors — concise routing decisions.
+
+def _route_python(reason="pure computation", confidence=0.95):
+    return RoutingDecision(
+        method="python", reason=reason, confidence=confidence,
+        python_inputs_self_contained=True,
+    )
+
+
+def _route_python_canonical(constants, reason="needs canonical reference",
+                             confidence=0.85):
+    return RoutingDecision(
+        method="python_with_canonical_constants",
+        reason=reason, confidence=confidence,
+        python_inputs_self_contained=False,
+        canonical_constants_needed=list(constants),
+    )
+
+
+def _route_retrieval(query="x", reason="external data", confidence=0.9):
+    return RoutingDecision(
+        method="retrieval", reason=reason, confidence=confidence,
+        retrieval_query_hint=query,
+    )
+
+
+def _route_user_auth(reason="claim about user", confidence=0.95):
+    return RoutingDecision(method="user_authoritative",
+                           reason=reason, confidence=confidence)
+
+
+def _route_unverifiable(reason="no method applies", confidence=0.85):
+    return RoutingDecision(method="unverifiable",
+                           reason=reason, confidence=confidence)
 
 
 @dataclass
@@ -57,6 +110,11 @@ class StubCodeGenVerifier:
         if not self.results:
             raise RuntimeError("StubCodeGenVerifier has no queued result")
         return self.results.pop(0)
+
+    def verify_with_cross_check(self, claim, *, source_turn_id=None):
+        # For tests that don't exercise canonical-constants, the cross-check
+        # path falls back to the same queue.
+        return self.verify(claim, source_turn_id=source_turn_id)
 
 
 def _make_pipeline(
@@ -81,6 +139,7 @@ def _make_pipeline(
         code_gen_verifier = StubCodeGenVerifier(results=list(code_gen_results))
     router = Router(
         store, registry,
+        routing_fn=_routing_fn_for(mock),
         retrieval_verifier=retrieval_verifier,
         code_gen_verifier=code_gen_verifier,
     )
@@ -117,6 +176,10 @@ def test_pattern_dispatch_each_pattern_routes_correctly(tmp_path):
         # The 'likes' claim about user with no prior assertion ends up as
         # unverifiable_pending_implementation (conf 0.4 < 0.5) → corrector hedges.
         rewrites=["strawberry has 3 r's; I think you might like lavender."],
+        routings=[
+            _route_python(reason="counting letters in literal word"),
+            _route_user_auth(),
+        ],
     )
     code_gen_results = [
         CodeGenVerificationResult(
@@ -196,6 +259,10 @@ def test_multi_pattern_single_sentence(tmp_path):
             "SUPPORTED\nJustification: snippet 1 confirms.",
             "SUPPORTED\nJustification: snippet 1 confirms.",
         ],
+        routings=[
+            _route_retrieval(query="Tokyo city"),
+            _route_retrieval(query="Tokyo Japan"),
+        ],
     )
     p = _make_pipeline(tmp_path, mock, search_fn=lambda q: snippets)
     trace = p.run_turn("Tell me about Tokyo")
@@ -236,6 +303,7 @@ def test_temporal_scoping_lifts_to_columns(tmp_path):
         chats=["Trump served as the 45th president from 2017 to 2021"],
         extracts=[{"facts": []}, {"facts": [fact]}],
         rewrites=["SUPPORTED\nJ: snippet confirms time period."],
+        routings=[_route_retrieval(query="Donald Trump 45th president")],
     )
     p = _make_pipeline(tmp_path, mock, search_fn=lambda q: snippets)
     trace = p.run_turn("when was trump president before?")
@@ -278,6 +346,7 @@ def test_query_strategy_falls_through_when_first_attempt_returns_zero(tmp_path):
         chats=["Donald Trump is the 47th President"],
         extracts=[{"facts": []}, {"facts": [fact]}],
         rewrites=["SUPPORTED\nJ: snippet 1"],
+        routings=[_route_retrieval(query="Donald Trump 47th President")],
     )
     p = _make_pipeline(tmp_path, mock, search_fn=lambda q: results.get(q, []))
     trace = p.run_turn("who is the current US president?")
@@ -319,6 +388,7 @@ def test_verifier_failure_does_not_hedge_response(tmp_path):
         chats=["Donald Trump is the 47th President."],
         extracts=[{"facts": []}, {"facts": [fact]}],
         # No rewrites — corrector should not be called.
+        routings=[_route_retrieval(query="Donald Trump 47th president")],
     )
 
     def search(_q):
@@ -362,6 +432,7 @@ def test_retrieval_inconclusive_DOES_hedge(tmp_path):
             "INSUFFICIENT_EVIDENCE\nJ: snippets do not address the claim.",
             "I believe X is a Y, though you may want to verify.",
         ],
+        routings=[_route_retrieval(query="X is Y")],
     )
     p = _make_pipeline(tmp_path, mock, search_fn=lambda q: snippets)
     trace = p.run_turn("tell me about X")
@@ -427,6 +498,7 @@ def test_every_turn_logs_expected_stages(tmp_path):
         chats=["Marie Curie was a physicist"],
         extracts=[{"facts": []}, {"facts": [fact]}],
         rewrites=["SUPPORTED\nJ: snippet."],
+        routings=[_route_retrieval(query="Marie Curie physicist")],
     )
     p = _make_pipeline(
         tmp_path, mock,
@@ -462,15 +534,24 @@ def _scripted_codegen_llm(extracts, rewrites):
 
 def _make_pipeline_with_code_gen(tmp_path, mock):
     """A pipeline whose Router has a real CodeGenerationVerifier wired to
-    the same mock LLM. The mock must script triage + prompt + code (in
-    order) for every python-routed claim."""
+    the same mock LLM. The mock must script (in order):
+
+      - extract_with_tool: user extraction → assistant extraction →
+        prompt-builder per claim
+      - rewrite: code writer per claim → corrector (if interventions)
+      - routings: one RoutingDecision per model-origin claim
+    """
     from src.verifiers.code_generation import CodeGenerationVerifier
 
     store = FactStore(tmp_path / "int.db")
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
     code_gen_verifier = CodeGenerationVerifier(store=store, llm=mock)
-    router = Router(store, registry, code_gen_verifier=code_gen_verifier)
+    router = Router(
+        store, registry,
+        routing_fn=_routing_fn_for(mock),
+        code_gen_verifier=code_gen_verifier,
+    )
     corrector = Corrector(mock)
     return Pipeline(store, registry, mock, extractor, router, corrector)
 
@@ -490,13 +571,13 @@ def test_strawperpy_count_verified_end_to_end(tmp_path):
         extracts=[
             {"facts": []},                         # user message extraction
             {"facts": [fact]},                     # assistant draft extraction
-            {"verifiable": True, "reason": "char counting is deterministic"},
             {"prompt": "Count occurrences of the lowercase letter 'r' in 'strawperpy'. Print only the integer.",
              "expected_output_type": "int"},
         ],
         rewrites=[
             "print('strawperpy'.count('r'))",      # code writer
         ],
+        routings=[_route_python(reason="counting letters")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn("How many r's in strawperpy?")
@@ -507,18 +588,19 @@ def test_strawperpy_count_verified_end_to_end(tmp_path):
     cg = d["code_gen_result"]
     assert cg["status"] == "verified"
     assert cg["actual_value"] == 2
-    # Trace artifacts present.
+    # Trace artifacts present (no triage in v0.5).
     trace_d = cg["trace"]
-    assert "triage" in trace_d
     assert "prompt" in trace_d
     assert "code" in trace_d
     assert "execution" in trace_d
     assert "comparison" in trace_d
-    # Pipeline events.
+    assert "triage" not in trace_d
+    # Pipeline events: routing_decision + code stages.
     asst_events = p.store.get_pipeline_events(trace.assistant_turn_id)
     asst_stages = {e["stage"] for e in asst_events}
-    assert {"code_triage", "code_prompt_built", "code_generated",
+    assert {"routing_decision", "code_prompt_built", "code_generated",
             "code_executed", "code_comparison"} <= asst_stages
+    assert "code_triage" not in asst_stages
 
 
 def test_strawperpy_wrong_count_contradicted_end_to_end(tmp_path):
@@ -533,7 +615,6 @@ def test_strawperpy_wrong_count_contradicted_end_to_end(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            {"verifiable": True, "reason": "char counting"},
             {"prompt": "Count occurrences of 'r' in 'strawperpy'. Print only the integer.",
              "expected_output_type": "int"},
         ],
@@ -541,6 +622,7 @@ def test_strawperpy_wrong_count_contradicted_end_to_end(tmp_path):
             "print('strawperpy'.count('r'))",
             "There are 2 r's in strawperpy.",  # corrector rewrite
         ],
+        routings=[_route_python(reason="counting letters")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn("How many r's in strawperpy?")
@@ -552,8 +634,11 @@ def test_strawperpy_wrong_count_contradicted_end_to_end(tmp_path):
     assert trace.final_content == "There are 2 r's in strawperpy."
 
 
-def test_reverse_of_routes_through_predicate_override(tmp_path):
-    """relational.reverse_of is python via override even though the pattern default is retrieval."""
+def test_reverse_of_routes_to_python_via_router(tmp_path):
+    """relational.reverse_of is python because the LLM router classifies
+    string reversal as pure computation — pattern is no longer consulted
+    for routing in v0.5.
+    """
     fact = {
         "pattern": "relational", "predicate": "reverse_of",
         "slots": {"subject": "nairatilage", "object": "egalitarian"},
@@ -564,11 +649,11 @@ def test_reverse_of_routes_through_predicate_override(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            {"verifiable": True, "reason": "string reversal"},
             {"prompt": "Compute the reverse of the string 'egalitarian'. Print only the result.",
              "expected_output_type": "string"},
         ],
         rewrites=["print('egalitarian'[::-1])"],
+        routings=[_route_python(reason="string reversal is deterministic")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn("spell egalitarian backwards")
@@ -589,13 +674,13 @@ def test_primes_count_verified_end_to_end(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            {"verifiable": True, "reason": "prime sieve is deterministic"},
             {"prompt": "Compute the count of prime numbers strictly greater than 1 and strictly less than 100. Print only the integer.",
              "expected_output_type": "int"},
         ],
         rewrites=[
             "n = 100\nprint(sum(1 for i in range(2, n) if all(i % j for j in range(2, int(i**0.5) + 1))))",
         ],
+        routings=[_route_python(reason="prime sieve is deterministic")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn("how many primes between 1 and 100?")
@@ -617,7 +702,6 @@ def test_primes_count_contradicted_end_to_end(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            {"verifiable": True, "reason": "prime sieve"},
             {"prompt": "Compute the count of primes between 1 and 100. Print only the integer.",
              "expected_output_type": "int"},
         ],
@@ -625,6 +709,7 @@ def test_primes_count_contradicted_end_to_end(tmp_path):
             "n = 100\nprint(sum(1 for i in range(2, n) if all(i % j for j in range(2, int(i**0.5) + 1))))",
             "There are 25 primes between 1 and 100.",  # corrector
         ],
+        routings=[_route_python(reason="prime sieve")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn("how many primes between 1 and 100?")
@@ -634,19 +719,13 @@ def test_primes_count_contradicted_end_to_end(tmp_path):
     assert d["code_gen_result"]["actual_value"] == 25
 
 
-def test_not_python_verifiable_falls_back_to_retrieval(tmp_path):
-    """Triage rejects the claim; router falls back to the pattern's retrieval rule."""
+def test_router_routes_external_data_claim_to_retrieval_directly(tmp_path):
+    """v0.5: the LLM router decides retrieval up-front for biographical
+    facts — no triage fall-through is needed.
+    """
     from src.verifiers.retrieval_verifier import RetrievalVerifier, Snippet
     from src.verifiers.code_generation import CodeGenerationVerifier
 
-    fact = {
-        "pattern": "role_assignment", "predicate": "holds_role",
-        "slots": {"agent": "Donald Trump", "role": "47th President", "org": "United States"},
-        "polarity": 1, "source_text": "Donald Trump is the 47th President",
-    }
-    # Wait — role_assignment doesn't currently route to python. Use a
-    # quantitative claim that triage will reject. born_in_year is the
-    # canonical example: external biographical data.
     fact = {
         "pattern": "quantitative", "predicate": "born_in_year",
         "slots": {"subject": "Donald Trump", "property": "birth_year", "value": 1946},
@@ -661,13 +740,13 @@ def test_not_python_verifiable_falls_back_to_retrieval(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            # Triage rejects — external biographical data.
-            {"verifiable": False, "reason": "requires external biographical data"},
         ],
         rewrites=[
-            # Retrieval judge call (after fallback).
+            # Retrieval judge call (the only LLM call after extraction).
             "SUPPORTED\nJustification: snippets confirm 1946.",
         ],
+        routings=[_route_retrieval(query="Donald Trump birth year",
+                                    reason="external biographical data")],
     )
     # Build a pipeline with both verifiers wired.
     store = FactStore(tmp_path / "int.db")
@@ -680,6 +759,7 @@ def test_not_python_verifiable_falls_back_to_retrieval(tmp_path):
     code_gen_verifier = CodeGenerationVerifier(store=store, llm=mock)
     router = Router(
         store, registry,
+        routing_fn=_routing_fn_for(mock),
         retrieval_verifier=retrieval_verifier,
         code_gen_verifier=code_gen_verifier,
     )
@@ -689,13 +769,15 @@ def test_not_python_verifiable_falls_back_to_retrieval(tmp_path):
     trace = p.run_turn("when was trump born?")
 
     d = trace.verification_decisions[0]
-    # Triage rejected → fell back to retrieval → SUPPORTED → verified.
+    # Router said retrieval → snippets fetched → SUPPORTED → verified.
     assert d["verification_status"] == "verified"
-    # The code-gen trace is preserved on the decision.
-    assert d["code_gen_result"]["status"] == "not_python_verifiable"
-    # And the retrieval result is also there.
+    # No code-gen trace — code path was never invoked.
+    assert d["code_gen_result"] is None
+    # And the retrieval result is there.
     assert d["retrieval_result"] is not None
     assert d["retrieval_result"]["outcome"] == "verified"
+    # The routing decision is preserved on the Decision.
+    assert d["routing_decision"]["method"] == "retrieval"
 
 
 def test_prompt_leakage_detected_emits_warning_event(tmp_path):
@@ -710,7 +792,6 @@ def test_prompt_leakage_detected_emits_warning_event(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            {"verifiable": True, "reason": "char counting"},
             # Leaky first prompt (contains "7")
             {"prompt": "Verify that strawperpy has 7 r's. Print int.",
              "expected_output_type": "int"},
@@ -723,6 +804,7 @@ def test_prompt_leakage_detected_emits_warning_event(tmp_path):
             # Corrector rewrite (claim was 7, actual 2 → contradicted).
             "strawperpy has 2 r's.",
         ],
+        routings=[_route_python(reason="char counting")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn("how many r's in strawperpy?")
@@ -768,8 +850,6 @@ def test_hedged_count_still_extracts_primary_value(tmp_path):
         extracts=[
             {"facts": []},                    # user message (imperative, no claim)
             {"facts": [primary_fact]},        # assistant draft — extracts primary value
-            {"verifiable": True,
-             "reason": "literal subject; counting words is deterministic"},
             {"prompt": (
                 "Split the following string by whitespace and count tokens "
                 "containing the lowercase letter 'e'. String: "
@@ -781,6 +861,8 @@ def test_hedged_count_still_extracts_primary_value(tmp_path):
             "print(sum(1 for w in s.split() if 'e' in w.lower()))",
             "Total count: 9.",            # corrector
         ],
+        routings=[_route_python(
+            reason="literal subject; counting words is deterministic")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn(user_msg)
@@ -824,8 +906,6 @@ def test_self_referential_count_routes_through_python_end_to_end(tmp_path):
         extracts=[
             {"facts": []},                                      # user extraction
             {"facts": [fact]},                                  # assistant extraction
-            {"verifiable": True,                                # triage: yes
-             "reason": "subject is a literal string; counting words is deterministic"},
             # Prompt builder produces a leak-free prompt.
             {"prompt": (
                 "Split the following string by whitespace and count how many "
@@ -840,6 +920,8 @@ def test_self_referential_count_routes_through_python_end_to_end(tmp_path):
             # Corrector rewrites 7 → actual.
             "Words with 'e': ... Total count: 9.",
         ],
+        routings=[_route_python(
+            reason="literal subject; counting tokens is deterministic")],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)
     trace = p.run_turn(user_msg)
@@ -870,7 +952,6 @@ def test_code_execution_timeout_marks_pending(tmp_path):
         extracts=[
             {"facts": []},
             {"facts": [fact]},
-            {"verifiable": True, "reason": "ok"},
             {"prompt": "Compute count.", "expected_output_type": "int"},
         ],
         rewrites=[
@@ -878,6 +959,7 @@ def test_code_execution_timeout_marks_pending(tmp_path):
             # Corrector hedges (pending + low confidence).
             "x might have 3 y.",
         ],
+        routings=[_route_python(reason="counting")],
     )
     # Tighten the timeout so the test runs fast.
     from src.verifiers.code_generation import CodeGenerationVerifier
@@ -886,7 +968,11 @@ def test_code_execution_timeout_marks_pending(tmp_path):
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
     cg = CodeGenerationVerifier(store=store, llm=mock, sandbox_timeout_seconds=1)
-    router = Router(store, registry, code_gen_verifier=cg)
+    router = Router(
+        store, registry,
+        routing_fn=_routing_fn_for(mock),
+        code_gen_verifier=cg,
+    )
     corrector = Corrector(mock)
     p = Pipeline(store, registry, mock, extractor, router, corrector)
 

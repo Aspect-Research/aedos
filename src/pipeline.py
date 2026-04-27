@@ -122,8 +122,8 @@ class Pipeline:
         # extractor can resolve self-references like "this sentence" to
         # the literal text and embed it as a slot value. Without this,
         # claims like "this sentence has 7 words with 'e'" lose the
-        # actual sentence and triage correctly rejects them as
-        # not_python_verifiable for lack of data.
+        # actual sentence and the verification pipeline can't compute
+        # an answer.
         asst_extraction = self.extractor.extract(
             draft, role="assistant", context=user_message,
         )
@@ -286,6 +286,7 @@ def build_pipeline(
     code_gen_verifier = CodeGenerationVerifier(store=store, llm=llm)
     router = Router(
         store, registry,
+        llm=llm,
         retrieval_verifier=retrieval_verifier,
         code_gen_verifier=code_gen_verifier,
     )

@@ -111,13 +111,22 @@ class LLMClient:
 
     # ---- rewrite --------------------------------------------------------
 
-    def rewrite(self, system: str, user_message: str, max_tokens: int = 2048) -> str:
-        response = self._client.messages.create(
-            model=self.corrector_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user_message}],
-        )
+    def rewrite(
+        self,
+        system: str,
+        user_message: str,
+        max_tokens: int = 2048,
+        temperature: float | None = None,
+    ) -> str:
+        kwargs: dict[str, Any] = {
+            "model": self.corrector_model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user_message}],
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        response = self._client.messages.create(**kwargs)
         return _first_text(response)
 
 

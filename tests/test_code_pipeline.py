@@ -1,11 +1,9 @@
-"""Tests for src.verifiers.code_generation.pipeline orchestration."""
+"""Tests for src.verifiers.code_generation.pipeline orchestration (v0.5)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
-
-import pytest
 
 from src.fact_store import FactStore
 from src.verifiers.code_generation.pipeline import (
@@ -19,8 +17,10 @@ from src.verifiers.code_generation.pipeline import (
 class ScriptedLLM:
     """Mock LLM that scripts each stage's response in order.
 
-    Stage 1 (triage) and Stage 2 (prompt builder) call extract_with_tool.
-    Stage 3 (code writer) calls rewrite. Pop in the order they're invoked.
+    The prompt builder calls ``extract_with_tool``; the code writer
+    calls ``rewrite``. Pop in the order they're invoked. (v0.5: triage
+    is gone, so the pipeline no longer uses ``extract_with_tool`` for
+    that stage.)
     """
 
     extracts: list[dict[str, Any]] = field(default_factory=list)
@@ -35,8 +35,10 @@ class ScriptedLLM:
         )
         return self.extracts.pop(0)
 
-    def rewrite(self, system, user_message, max_tokens=2048):
-        self.rewrite_calls.append({"user_message": user_message})
+    def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        self.rewrite_calls.append(
+            {"user_message": user_message, "temperature": temperature}
+        )
         return self.rewrites.pop(0)
 
 
@@ -51,14 +53,13 @@ def _claim(pattern, predicate, slots, polarity=1, source_text="<src>"):
 
 
 def test_strawperpy_verified_end_to_end(tmp_path):
-    """Triage→prompt→code→sandbox→compare for a verifiable counting claim.
+    """prompt → code → sandbox → compare for a verifiable counting claim.
 
-    'strawperpy'.count('r') == 2, so value=2 verifies and value=3 contradicts.
+    'strawperpy'.count('r') == 2, so value=2 verifies.
     """
     store = FactStore(tmp_path / "x.db")
     llm = ScriptedLLM(
         extracts=[
-            {"verifiable": True, "reason": "char counting"},
             {"prompt": "Count occurrences of 'r' in 'strawperpy'. Print only int.",
              "expected_output_type": "int"},
         ],
@@ -75,10 +76,10 @@ def test_strawperpy_verified_end_to_end(tmp_path):
     assert result.status == "verified"
     assert result.actual_value == 2
 
-    # Pipeline events for every stage.
+    # Pipeline events for every stage (triage stage is gone in v0.5).
     events = store.get_pipeline_events(user_turn_id)
     stages = {e["stage"] for e in events}
-    assert "code_triage" in stages
+    assert "code_triage" not in stages
     assert "code_prompt_built" in stages
     assert "code_generated" in stages
     assert "code_executed" in stages
@@ -91,7 +92,6 @@ def test_strawperpy_contradicted(tmp_path):
     store = FactStore(tmp_path / "x.db")
     llm = ScriptedLLM(
         extracts=[
-            {"verifiable": True, "reason": "char counting"},
             {"prompt": "Count 'r' in 'strawperpy'. Print int.",
              "expected_output_type": "int"},
         ],
@@ -107,34 +107,6 @@ def test_strawperpy_contradicted(tmp_path):
     store.close()
 
 
-# ---------- triage gates the pipeline ----------
-
-
-def test_not_verifiable_short_circuits(tmp_path):
-    """Triage says NO → no prompt, no code, no sandbox."""
-    store = FactStore(tmp_path / "x.db")
-    llm = ScriptedLLM(
-        extracts=[{"verifiable": False, "reason": "requires biographical data"}],
-    )
-    claim = _claim("quantitative", "born_in_year",
-                   {"subject": "Donald Trump", "property": "birth_year", "value": 1946})
-    turn_id = store.insert_turn("user", "test")
-
-    result = verify_via_code_generation(claim, llm, store=store, source_turn_id=turn_id)
-    assert result.status == "not_python_verifiable"
-    assert "biographical" in result.explanation
-    # No code-writer or comparator events because we short-circuited.
-    events = store.get_pipeline_events(turn_id)
-    stages = {e["stage"] for e in events}
-    assert "code_triage" in stages
-    assert "code_generated" not in stages
-    assert "code_comparison" not in stages
-    # And the LLM was called exactly once (just the triage call).
-    assert len(llm.extract_calls) == 1
-    assert len(llm.rewrite_calls) == 0
-    store.close()
-
-
 # ---------- leak detection logs and retries ----------
 
 
@@ -142,8 +114,6 @@ def test_leak_detected_logs_warning_and_retries(tmp_path):
     store = FactStore(tmp_path / "x.db")
     llm = ScriptedLLM(
         extracts=[
-            # Triage: verifiable
-            {"verifiable": True, "reason": "ok"},
             # Prompt attempt 1 leaks "7"
             {"prompt": "Confirm that count is 7. Print int.",
              "expected_output_type": "int"},
@@ -181,7 +151,6 @@ def test_code_execution_timeout(tmp_path):
     store = FactStore(tmp_path / "x.db")
     llm = ScriptedLLM(
         extracts=[
-            {"verifiable": True, "reason": "ok"},
             # Prompt must not contain the asserted value (98) — that would
             # trip the leak detector and trigger a retry.
             {"prompt": "Compute the count of x. Print only int.",
@@ -209,7 +178,6 @@ def test_verifier_class_delegates_to_pipeline(tmp_path):
     store = FactStore(tmp_path / "x.db")
     llm = ScriptedLLM(
         extracts=[
-            {"verifiable": True, "reason": "ok"},
             # The asserted value is 42; keep it out of the neutral prompt.
             {"prompt": "Compute the literal value below. Print only int.",
              "expected_output_type": "int"},
@@ -223,4 +191,29 @@ def test_verifier_class_delegates_to_pipeline(tmp_path):
     result = verifier.verify(claim, source_turn_id=turn_id)
     assert isinstance(result, CodeGenVerificationResult)
     assert result.status == "verified"
+    store.close()
+
+
+# ---------- temperature is threaded through to the code writer ----------
+
+
+def test_temperature_passes_through_to_rewrite(tmp_path):
+    """v0.5 cross-check needs to call the code writer with explicit
+    temperatures. Verify the parameter is plumbed through.
+    """
+    store = FactStore(tmp_path / "x.db")
+    llm = ScriptedLLM(
+        extracts=[{"prompt": "Print the integer literal one.",
+                   "expected_output_type": "int"}],
+        rewrites=["print(1)"],
+    )
+    claim = _claim("quantitative", "has_count",
+                   {"subject": "x", "property": "y", "value": 1})
+    turn_id = store.insert_turn("user", "test")
+    verify_via_code_generation(
+        claim, llm, store=store, source_turn_id=turn_id,
+        code_writer_temperature=0.3,
+    )
+    assert llm.rewrite_calls
+    assert llm.rewrite_calls[0]["temperature"] == 0.3
     store.close()
