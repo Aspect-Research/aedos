@@ -1,4 +1,8 @@
-"""Tests for src.pattern_registry."""
+"""Tests for src.pattern_registry (v0.5).
+
+Patterns no longer carry verification routing in v0.5. The registry
+just supplies structural metadata (slots, examples, query strategy).
+"""
 
 from __future__ import annotations
 
@@ -11,7 +15,6 @@ from src.pattern_registry import (
     Pattern,
     PatternRegistry,
     PatternRegistryError,
-    VerificationRule,
     load_default_registry,
     reset_cache,
 )
@@ -51,53 +54,51 @@ def test_each_pattern_has_required_metadata():
     for p in reg.all():
         assert p.description, f"{p.name} missing description"
         assert p.slots, f"{p.name} has no slots"
-        assert p.verification_rules, f"{p.name} has no verification rules"
         assert p.example_extractions, f"{p.name} should have at least one worked example"
 
 
-def test_retrieval_patterns_have_query_strategy():
-    """Section 5 needs query_strategy on every retrieval-using pattern."""
+def test_patterns_likely_to_use_retrieval_have_query_strategy():
+    """Patterns that the LLM router will typically route to retrieval
+    (categorical, role_assignment, event, …) need a slot-aware query
+    strategy. quantitative and relational also have one because the
+    router falls back to retrieval for non-computable instances.
+    """
     reg = load_default_registry()
-    for p in reg.all():
-        # If any rule resolves to retrieval, we need a strategy.
-        uses_retrieval = any(r.method == "retrieval" for r in p.verification_rules)
-        if uses_retrieval:
-            assert p.query_strategy, f"{p.name} needs a query_strategy"
+    # Patterns that routinely produce retrieval-routed claims:
+    for name in ("role_assignment", "categorical", "event", "spatial_temporal",
+                 "quantitative", "relational"):
+        p = reg.get(name)
+        assert p.query_strategy, f"{name} should declare a query strategy"
 
 
-def test_user_authoritative_patterns_flag_non_user_anomaly():
+# ---------- v0.5 cleanup: verification routing fields are gone ----------
+
+
+def test_pattern_has_no_verification_routing_fields():
+    """v0.5 §9 cleanup. Patterns should NOT carry verification_rules,
+    predicate_overrides, or flag_non_user_as_anomaly fields.
+    """
     reg = load_default_registry()
-    for name in ("preference", "propositional_attitude"):
-        assert reg.get(name).flag_non_user_as_anomaly, (
-            f"{name} should flag non-user agents as anomalies"
+    p = reg.get("preference")
+    for attr in ("verification_rules", "predicate_overrides",
+                 "flag_non_user_as_anomaly", "resolve_method",
+                 "fallback_method", "has_user_authoritative_branch"):
+        assert not hasattr(p, attr), (
+            f"Pattern.{attr!r} should be gone in v0.5"
         )
-    # spatial_temporal has user_auth branch but non-user agents are normal there.
-    assert reg.get("spatial_temporal").flag_non_user_as_anomaly is False
 
 
-# ---------- conditional verification rules ----------
-
-
-def test_resolve_method_conditional_user_path():
-    reg = load_default_registry()
-    pref = reg.get("preference")
-    assert pref.resolve_method({"agent": "user", "object": "pb"}) == "user_authoritative"
-    assert pref.resolve_method({"agent": "Donald Trump", "object": "pb"}) == "unverifiable"
-
-
-def test_resolve_method_default_string_form():
-    reg = load_default_registry()
-    role = reg.get("role_assignment")
-    assert role.resolve_method({"agent": "x", "role": "y"}) == "retrieval"
-
-
-def test_has_user_authoritative_branch():
-    reg = load_default_registry()
-    assert reg.get("preference").has_user_authoritative_branch()
-    assert reg.get("propositional_attitude").has_user_authoritative_branch()
-    assert reg.get("spatial_temporal").has_user_authoritative_branch()
-    assert not reg.get("categorical").has_user_authoritative_branch()
-    assert not reg.get("role_assignment").has_user_authoritative_branch()
+def test_yaml_does_not_carry_verification_method():
+    """Sanity-check the on-disk patterns.yaml — the cleanup must remove
+    the routing fields for real, not just from the dataclass.
+    """
+    raw = yaml.safe_load((REPO_ROOT / "patterns.yaml").read_text(encoding="utf-8"))
+    for name, body in raw.items():
+        for field_name in ("verification_method", "predicate_overrides",
+                           "flag_non_user_as_anomaly"):
+            assert field_name not in body, (
+                f"patterns.yaml::{name} still carries {field_name!r}"
+            )
 
 
 # ---------- describe_for_prompt ----------
@@ -108,8 +109,14 @@ def test_describe_for_prompt_includes_every_pattern():
     text = reg.describe_for_prompt()
     for name in reg.names():
         assert name in text, f"{name} missing from prompt-formatted registry"
-    assert "Verification:" in text
     assert "Slots:" in text
+
+
+def test_describe_for_prompt_does_not_mention_verification():
+    """The extractor's prompt no longer needs to know about routing."""
+    reg = load_default_registry()
+    text = reg.describe_for_prompt()
+    assert "Verification:" not in text
 
 
 # ---------- error paths ----------
@@ -124,42 +131,9 @@ def _write_yaml(tmp_path: Path, body: dict) -> Path:
 def test_missing_required_field(tmp_path):
     bad = _write_yaml(
         tmp_path,
-        {"foo": {"description": "x", "verification_method": "retrieval"}},
+        {"foo": {"description": "x"}},
     )
     with pytest.raises(PatternRegistryError, match="missing fields"):
-        PatternRegistry.from_yaml(bad)
-
-
-def test_unknown_verification_method(tmp_path):
-    bad = _write_yaml(
-        tmp_path,
-        {
-            "foo": {
-                "description": "x",
-                "slots": [{"name": "s", "type": "entity"}],
-                "verification_method": "telepathy",
-            }
-        },
-    )
-    with pytest.raises(PatternRegistryError, match="verification_method"):
-        PatternRegistry.from_yaml(bad)
-
-
-def test_default_rule_must_be_last(tmp_path):
-    bad = _write_yaml(
-        tmp_path,
-        {
-            "foo": {
-                "description": "x",
-                "slots": [{"name": "s", "type": "entity"}],
-                "verification_method": [
-                    {"method": "retrieval"},  # default
-                    {"when": {"agent": "user"}, "method": "user_authoritative"},
-                ],
-            }
-        },
-    )
-    with pytest.raises(PatternRegistryError, match="last rule must be a default"):
         PatternRegistry.from_yaml(bad)
 
 
@@ -170,7 +144,6 @@ def test_unknown_slot_type(tmp_path):
             "foo": {
                 "description": "x",
                 "slots": [{"name": "s", "type": "molecule"}],
-                "verification_method": "retrieval",
             }
         },
     )
@@ -184,17 +157,20 @@ def test_get_unknown_pattern_raises():
         reg.get("not_a_real_pattern")
 
 
-# ---------- VerificationRule.matches ----------
-
-
-def test_verification_rule_matches_case_insensitive():
-    rule = VerificationRule(method="x", when={"agent": "user"})
-    assert rule.matches({"agent": "User"})
-    assert rule.matches({"agent": " user "})
-    assert not rule.matches({"agent": "Donald"})
-
-
-def test_default_rule_always_matches():
-    rule = VerificationRule(method="retrieval", when=None)
-    assert rule.matches({})
-    assert rule.matches({"agent": "anything"})
+def test_minimal_pattern_loads(tmp_path):
+    """A pattern with just description + slots should load — no
+    verification fields are required in v0.5.
+    """
+    minimal = _write_yaml(
+        tmp_path,
+        {
+            "foo": {
+                "description": "an example pattern",
+                "slots": [{"name": "subject", "type": "entity", "required": True}],
+            }
+        },
+    )
+    reg = PatternRegistry.from_yaml(minimal)
+    p = reg.get("foo")
+    assert isinstance(p, Pattern)
+    assert p.required_slot_names() == ["subject"]
