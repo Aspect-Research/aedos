@@ -1,17 +1,21 @@
-"""Orchestration of the four-stage code-generation verification.
+"""Orchestration of the code-generation verification pipeline.
 
-    triage → prompt builder → code writer → sandbox → comparator
+    prompt builder → code writer → sandbox → comparator
+
+(v0.5) Triage is gone — the LLM router has already decided this claim is
+python-verifiable before we get here. If the code can't actually compute
+the answer, that surfaces at the sandbox stage as a runtime error
+(``code_execution_failed``) or at the comparator as ``comparison_error``.
 
 Each stage emits a pipeline_event so the trace UI can render the full
 flow. The status produced here is one of:
 
     "verified"               — comparator said claim equals computed
     "contradicted"           — comparator said claim != computed
-    "not_python_verifiable"  — triage said the claim isn't python-resolvable
     "code_execution_failed"  — sandbox returned non-zero or timed out
     "comparison_error"       — comparator couldn't parse stdout / extract claim value
 
-The router decides what to do with these statuses (Section 8).
+The router decides what to do with these statuses.
 """
 
 from __future__ import annotations
@@ -25,7 +29,6 @@ from src.verifiers.code_generation.code_writer import write_code
 from src.verifiers.code_generation.comparator import compare
 from src.verifiers.code_generation.prompt_builder import build_code_prompt
 from src.verifiers.code_generation.sandbox import run_code
-from src.verifiers.code_generation.triage import triage_claim
 
 
 CodeGenStatus = str  # Literal so router can string-compare
@@ -81,23 +84,16 @@ def verify_via_code_generation(
     store: FactStore | None = None,
     source_turn_id: int | None = None,
     sandbox_timeout_seconds: int = 5,
+    code_writer_temperature: float | None = None,
 ) -> CodeGenVerificationResult:
-    """Run the four-stage pipeline. Returns a CodeGenVerificationResult."""
+    """Run the pipeline. Returns a CodeGenVerificationResult.
 
-    # ---- Stage 1: triage ------------------------------------------
-    triage = triage_claim(claim, llm)
-    _safe_log(
-        store, source_turn_id, "code_triage",
-        {"verifiable": triage.verifiable, "reason": triage.reason},
-    )
-    if not triage.verifiable:
-        return CodeGenVerificationResult(
-            status="not_python_verifiable",
-            explanation=triage.reason,
-            trace={"triage": triage.to_dict()},
-        )
+    ``code_writer_temperature`` (v0.5) is threaded through to the code
+    writer so the canonical-constants cross-check can run two
+    generations at different temperatures and compare.
+    """
 
-    # ---- Stage 2: neutral prompt ---------------------------------
+    # ---- Stage 1: neutral prompt ---------------------------------
     code_prompt = build_code_prompt(claim, llm)
     # Log every attempt — leaks too, so the trace surfaces them.
     for i, attempt in enumerate(code_prompt.attempts):
@@ -121,16 +117,21 @@ def verify_via_code_generation(
         },
     )
 
-    # ---- Stage 3: code generation --------------------------------
+    # ---- Stage 2: code generation --------------------------------
     generated = write_code(
         code_prompt.prompt, code_prompt.expected_output_type, llm,
+        temperature=code_writer_temperature,
     )
     _safe_log(
         store, source_turn_id, "code_generated",
-        {"code": generated.code, "model": generated.model},
+        {
+            "code": generated.code,
+            "model": generated.model,
+            "temperature": code_writer_temperature,
+        },
     )
 
-    # ---- Stage 4: execute -----------------------------------------
+    # ---- Stage 3: execute -----------------------------------------
     execution = run_code(generated.code, timeout_seconds=sandbox_timeout_seconds)
     _safe_log(
         store, source_turn_id, "code_executed",
@@ -148,7 +149,6 @@ def verify_via_code_generation(
         )
 
     base_trace: dict[str, Any] = {
-        "triage": triage.to_dict(),
         "prompt": code_prompt.to_dict(),
         "code": generated.to_dict(),
         "execution": execution.to_dict(),
@@ -166,7 +166,7 @@ def verify_via_code_generation(
             trace=base_trace,
         )
 
-    # ---- Stage 5: comparator --------------------------------------
+    # ---- Stage 4: comparator --------------------------------------
     comparison = compare(claim, execution.stdout, code_prompt.expected_output_type)
     _safe_log(
         store, source_turn_id, "code_comparison",
@@ -212,4 +212,91 @@ class CodeGenerationVerifier:
             store=self.store,
             source_turn_id=source_turn_id,
             sandbox_timeout_seconds=self.sandbox_timeout_seconds,
+        )
+
+    def verify_with_cross_check(
+        self, claim: dict, *, source_turn_id: int | None = None,
+    ) -> CodeGenVerificationResult:
+        """Run code generation twice at different temperatures and compare.
+
+        Used for ``python_with_canonical_constants`` claims, where the
+        code may emit a small canonical reference (list of US states,
+        primes under 100, etc.). Two independent generations are a cheap
+        guard against the LLM emitting a subtly wrong reference.
+
+        Agreement on the computed value → return one of the results.
+        Disagreement → log ``canonical_constants_disagreement`` and
+        return a result with status ``canonical_constants_disagreement``
+        so the router can fall back to retrieval (or surface the
+        discrepancy in the trace).
+        """
+        result_a = verify_via_code_generation(
+            claim,
+            self.llm,
+            store=self.store,
+            source_turn_id=source_turn_id,
+            sandbox_timeout_seconds=self.sandbox_timeout_seconds,
+            code_writer_temperature=0.0,
+        )
+        result_b = verify_via_code_generation(
+            claim,
+            self.llm,
+            store=self.store,
+            source_turn_id=source_turn_id,
+            sandbox_timeout_seconds=self.sandbox_timeout_seconds,
+            code_writer_temperature=0.3,
+        )
+
+        cross_check_payload = {
+            "a": {
+                "status": result_a.status,
+                "actual_value": result_a.actual_value,
+                "explanation": result_a.explanation,
+                "code": result_a.trace.get("code"),
+                "execution": result_a.trace.get("execution"),
+            },
+            "b": {
+                "status": result_b.status,
+                "actual_value": result_b.actual_value,
+                "explanation": result_b.explanation,
+                "code": result_b.trace.get("code"),
+                "execution": result_b.trace.get("execution"),
+            },
+        }
+        _safe_log(
+            self.store, source_turn_id,
+            "canonical_constants_cross_check", cross_check_payload,
+        )
+
+        agree = (
+            result_a.status == result_b.status
+            and result_a.status in {"verified", "contradicted"}
+            and result_a.actual_value == result_b.actual_value
+        )
+        if agree:
+            # Stash the cross-check trace on the chosen result so the UI
+            # can render both generations side-by-side.
+            chosen = result_a
+            chosen.trace = dict(chosen.trace)
+            chosen.trace["cross_check"] = cross_check_payload
+            return chosen
+
+        _safe_log(
+            self.store, source_turn_id,
+            "canonical_constants_disagreement", cross_check_payload,
+        )
+        return CodeGenVerificationResult(
+            status="canonical_constants_disagreement",
+            confidence=0.4,
+            explanation=(
+                "two independent code generations disagreed: "
+                f"a={result_a.status}({result_a.actual_value!r}), "
+                f"b={result_b.status}({result_b.actual_value!r})"
+            ),
+            actual_value=None,
+            trace={
+                "cross_check": cross_check_payload,
+                "a": result_a.trace,
+                "b": result_b.trace,
+            },
         )

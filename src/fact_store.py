@@ -53,6 +53,10 @@ PIPELINE_STAGES = {
     "code_executed",
     "code_unusual_behavior",
     "code_comparison",
+    # v0.5 additions — LLM-based routing + canonical-constants cross-check
+    "routing_decision",
+    "canonical_constants_cross_check",
+    "canonical_constants_disagreement",
 }
 
 # Confidence adjustments

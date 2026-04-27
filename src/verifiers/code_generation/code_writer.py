@@ -94,18 +94,23 @@ def write_code(
     neutral_prompt: str,
     expected_output_type: str,
     llm: LLMClient,
+    *,
+    temperature: float | None = None,
 ) -> GeneratedCode:
     """Generate python from a neutral prompt.
 
     The signature is the firewall: this function takes ONLY the neutral
     prompt and the expected output type — no claim, no asserted value,
     no conversation context. Do not weaken the signature.
+
+    ``temperature`` (v0.5) lets the canonical-constants cross-check run
+    two generations at different temperatures and compare their outputs.
     """
     user_message = (
         f"Question: {neutral_prompt}\n"
         f"expected_output_type: {expected_output_type}\n\n"
         "Reply with the complete Python script and nothing else."
     )
-    raw = llm.rewrite(_CODE_WRITER_SYSTEM, user_message)
+    raw = llm.rewrite(_CODE_WRITER_SYSTEM, user_message, temperature=temperature)
     code = _strip_markdown_fences(raw)
     return GeneratedCode(code=code, model=llm.corrector_model)

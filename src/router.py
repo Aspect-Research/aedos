@@ -1,29 +1,37 @@
-"""Verification router (v0.4 — code-generated python).
+"""Verification dispatcher (v0.5 — LLM-routed).
 
-Dispatches each extracted fact (pattern + predicate + slots) to the
-correct verifier. The verification method comes from the PATTERN, with
-two routing details:
+The pattern + predicate-override dispatch from v0.4 is gone. A per-claim
+LLM router (``src/llm_router.py``) decides which method to use; this file
+is a thin shim that calls that router, logs the decision, and dispatches
+to the matching verifier.
 
-  - ``predicate_overrides`` on a pattern can pin specific predicates to
-    a non-default method (e.g. ``relational.reverse_of`` → python).
-  - ``python`` invokes the v0.4 code-generation pipeline (triage →
-    neutral prompt → code → sandbox → comparator). When triage decides
-    the claim isn't python-resolvable, the router falls back to the
-    pattern's first non-python rule that matches.
+Methods the LLM router can return:
 
-Other v0.3 behavior (routing anomaly opt-in, retrieval inconclusive vs
-failed split, store_lookup for user-authoritative claims by the model)
-is unchanged.
+  - ``python``                            — code-generation pipeline
+  - ``python_with_canonical_constants``   — code-generation with cross-check
+  - ``retrieval``                         — search + judge
+  - ``user_authoritative`` / ``store_lookup`` — store lookup (user is GT)
+  - ``unverifiable``                      — no method applies
+
+User-origin claims still go through the original boost / contradiction /
+store path; the LLM router only runs for model-origin claims.
+
+Routing anomaly: kept for backward compatibility with the v0.4 pattern
+flag ``flag_non_user_as_anomaly`` (e.g. ``preference`` pattern with a
+non-user agent). The LLM router would also route these correctly, but
+the pattern-level sanity check still catches upstream extractor errors
+loudly. The flag is removed in v0.5 §9 cleanup.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from src.fact_store import Fact, FactStore
 from src.llm_client import LLMClient
+from src.llm_router import RoutingDecision, route_claim
 from src.pattern_registry import Pattern, PatternRegistry
 from src.verifiers.code_generation import (
     CodeGenerationVerifier,
@@ -80,6 +88,9 @@ def _is_user(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() in {"user", "me", "i"}
 
 
+RoutingFn = Callable[[dict], RoutingDecision]
+
+
 @dataclass
 class Decision:
     claim: dict
@@ -91,14 +102,14 @@ class Decision:
     closed_fact_ids: list[int] = field(default_factory=list)
     contradicting_fact_id: Optional[int] = None
     matching_fact_id: Optional[int] = None
-    # v0.4: ``code_gen_result`` carries the full code-generation trace
-    # (triage, prompt, code, execution, comparison). The legacy
-    # ``verifier_result`` field is kept None.
     code_gen_result: Optional[dict] = None
     retrieval_result: Optional[RetrievalResult] = None
     correction: Optional[dict] = None
     notes: list[str] = field(default_factory=list)
     anomaly_slot: Optional[dict] = None  # {slot, expected, actual} for routing anomalies
+    # v0.5: routing decision payload from the LLM router. Surfaces in the
+    # trace UI as the leading section of every model-origin Decision.
+    routing_decision: Optional[dict] = None
 
     def to_dict(self) -> dict:
         return {
@@ -118,6 +129,7 @@ class Decision:
             "correction": self.correction,
             "notes": self.notes,
             "anomaly_slot": self.anomaly_slot,
+            "routing_decision": self.routing_decision,
         }
 
 
@@ -126,17 +138,22 @@ class Router:
         self,
         store: FactStore,
         registry: PatternRegistry,
+        *,
+        llm: LLMClient | None = None,
+        routing_fn: RoutingFn | None = None,
         retrieval_verifier: RetrievalVerifier | None = None,
         code_gen_verifier: CodeGenerationVerifier | None = None,
-        llm: LLMClient | None = None,
     ):
         self.store = store
         self.registry = registry
+        self.llm = llm
+        # If neither a routing_fn nor an llm is provided, model-origin
+        # routing fails loudly. User-origin routing doesn't need either.
+        if routing_fn is None and llm is not None:
+            routing_fn = lambda claim, _llm=llm: route_claim(claim, _llm)
+        self.routing_fn = routing_fn
+
         self.retrieval_verifier = retrieval_verifier
-        # If no code_gen_verifier was supplied but an LLM was, build one
-        # automatically. Tests that don't need code generation can leave
-        # both None — patterns that require python will surface a clear
-        # error instead of silently misbehaving.
         if code_gen_verifier is None and llm is not None:
             code_gen_verifier = CodeGenerationVerifier(store=store, llm=llm)
         self.code_gen_verifier = code_gen_verifier
@@ -215,53 +232,105 @@ class Router:
     # ---- model-origin claims -------------------------------------------
 
     def _route_model(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+        # Routing anomaly check: pattern opted into flagging non-user agents.
+        # Catches upstream extractor errors regardless of how the LLM router
+        # would have routed the claim. Removed in v0.5 §9 cleanup.
         slots = claim.get("slots", {})
-
-        # Routing anomaly: pattern opted in to flag non-user agents.
         anomaly = self._maybe_anomaly(pattern, slots)
         if anomaly is not None:
-            return self._route_routing_anomaly(claim, source_turn_id, anomaly)
+            decision = self._route_routing_anomaly(claim, source_turn_id, anomaly)
+            self._log_routing_decision(decision, source_turn_id, routing=None)
+            return decision
 
-        method = pattern.resolve_method(slots, predicate=claim["predicate"])
-        return self._dispatch_method(claim, pattern, source_turn_id, method)
+        # Ask the LLM router how to verify this claim.
+        if self.routing_fn is None:
+            raise RuntimeError(
+                "Router needs an llm or a routing_fn to handle model-origin claims"
+            )
+        routing = self.routing_fn(claim)
+
+        decision = self._dispatch_method(claim, pattern, source_turn_id, routing)
+        decision.routing_decision = routing.to_dict()
+        self._log_routing_decision(decision, source_turn_id, routing=routing)
+        return decision
+
+    def _log_routing_decision(
+        self, decision: Decision, source_turn_id: int,
+        routing: RoutingDecision | None,
+    ) -> None:
+        """Emit a ``routing_decision`` pipeline event so the trace UI can
+        render the chosen method, reason, and confidence above the
+        verification block.
+        """
+        try:
+            self.store.insert_pipeline_event(
+                source_turn_id,
+                "routing_decision",
+                {
+                    "claim": decision.claim,
+                    "decision": routing.to_dict() if routing else None,
+                    "outcome": decision.outcome.value,
+                    "verification_status": decision.verification_status,
+                    "anomaly_slot": decision.anomaly_slot,
+                },
+            )
+        except Exception:
+            # Logging must never crash routing.
+            pass
 
     def _dispatch_method(
-        self, claim: dict, pattern: Pattern, source_turn_id: int, method: str,
+        self,
+        claim: dict,
+        pattern: Pattern,
+        source_turn_id: int,
+        routing: RoutingDecision,
     ) -> Decision:
+        method = routing.method
         if method == "python":
-            return self._route_python(claim, pattern, source_turn_id)
-        if method == "user_authoritative":
-            return self._route_store(claim, pattern, source_turn_id)
-        if method == "store_lookup":
+            return self._route_python(
+                claim, source_turn_id, use_canonical_constants=False,
+            )
+        if method == "python_with_canonical_constants":
+            return self._route_python(
+                claim, source_turn_id, use_canonical_constants=True,
+            )
+        if method == "user_authoritative" or method == "store_lookup":
             return self._route_store(claim, pattern, source_turn_id)
         if method == "retrieval":
-            return self._route_retrieval(claim, source_turn_id)
+            return self._route_retrieval(
+                claim, source_turn_id, query_hint=routing.retrieval_query_hint,
+            )
         if method == "unverifiable":
             return self._route_unverifiable(claim, source_turn_id)
+        # Coercion in route_claim should prevent this; surface loudly.
         raise RuntimeError(f"router has no handler for verification_method={method!r}")
 
     def _maybe_anomaly(self, pattern: Pattern, slots: dict) -> dict | None:
-        """Return {slot, expected, actual} if this is a routing anomaly, else None."""
-        if not pattern.flag_non_user_as_anomaly:
+        """Return {slot, expected, actual} if this is a routing anomaly, else None.
+
+        Driven by the pattern's ``flag_non_user_as_anomaly`` flag (v0.4
+        carryover); removed in v0.5 §9 cleanup.
+        """
+        if not getattr(pattern, "flag_non_user_as_anomaly", False):
             return None
-        # The anomaly trigger is "the user-authoritative branch's `when`
-        # condition isn't met". Find that branch.
         for rule in pattern.verification_rules:
             if rule.method == "user_authoritative" and rule.when:
                 slot_name, expected = next(iter(rule.when.items()))
                 actual = slots.get(slot_name)
                 if not _is_user(actual) and not (
-                    isinstance(actual, str) and actual.strip().lower() == str(expected).strip().lower()
+                    isinstance(actual, str)
+                    and actual.strip().lower() == str(expected).strip().lower()
                 ):
                     return {"slot": slot_name, "expected": expected, "actual": actual}
         return None
 
     # ---- per-method handlers -------------------------------------------
 
-    def _route_python(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+    def _route_python(
+        self, claim: dict, source_turn_id: int,
+        *, use_canonical_constants: bool,
+    ) -> Decision:
         if self.code_gen_verifier is None:
-            # No code-gen verifier configured — surface as pending so the
-            # trace shows the misconfiguration rather than crashing.
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
@@ -275,20 +344,19 @@ class Router:
                 notes=["python method routed but no CodeGenerationVerifier configured"],
             )
 
-        result = self.code_gen_verifier.verify(claim, source_turn_id=source_turn_id)
-
-        if result.status == "not_python_verifiable":
-            # Triage said deterministic python can't resolve this. Fall
-            # through to the pattern's first non-python rule that matches.
-            fallback = pattern.fallback_method(claim.get("slots", {}))
-            decision = self._dispatch_method(claim, pattern, source_turn_id, fallback)
-            decision.code_gen_result = result.to_dict()
-            decision.notes.append(
-                f"python triage said not verifiable: {result.explanation}; "
-                f"fell back to {fallback}"
+        if use_canonical_constants:
+            result = self.code_gen_verifier.verify_with_cross_check(
+                claim, source_turn_id=source_turn_id,
             )
-            return decision
+        else:
+            result = self.code_gen_verifier.verify(
+                claim, source_turn_id=source_turn_id,
+            )
 
+        # v0.5: triage is gone. The LLM router has already decided this is
+        # python-verifiable; if the code can't actually compute the answer,
+        # surfaces as ``code_execution_failed`` or ``comparison_error`` —
+        # not ``not_python_verifiable``.
         if result.status == "verified":
             return Decision(
                 claim=claim,
@@ -326,7 +394,8 @@ class Router:
                 },
             )
 
-        # comparison_error / code_execution_failed → pending
+        # comparison_error / code_execution_failed / canonical_constants_disagreement
+        # all map to pending. The trace carries the rich diagnostic.
         notes = [
             f"code generation produced status {result.status!r}: {result.explanation}"
         ]
@@ -396,7 +465,10 @@ class Router:
             ],
         )
 
-    def _route_retrieval(self, claim: dict, source_turn_id: int) -> Decision:
+    def _route_retrieval(
+        self, claim: dict, source_turn_id: int,
+        *, query_hint: str | None = None,
+    ) -> Decision:
         if self.retrieval_verifier is None:
             return Decision(
                 claim=claim,
@@ -413,6 +485,10 @@ class Router:
 
         from src.verifiers.types import VerificationOutcome
 
+        # Note: query_hint is logged on the routing_decision event but not
+        # threaded into the retrieval verifier's query plan in v0.5; the
+        # verifier still uses its own slot-aware query strategy. Threading
+        # the hint through is a future improvement.
         result = self.retrieval_verifier.verify(claim, source_turn_id=source_turn_id)
 
         if result.outcome is VerificationOutcome.VERIFIED:
@@ -448,7 +524,6 @@ class Router:
                 },
             )
 
-        # INCONCLUSIVE — split per Section 6 (handled fully there).
         is_failed = (
             result.error_flag in {"retrieval_error", "no_results", "judge_error",
                                   "judge_parse_error", "retrieval_not_configured"}
@@ -484,7 +559,7 @@ class Router:
                 confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
                 verification_status="unverifiable_in_principle",
             ),
-            notes=["pattern is unverifiable by design for this slot configuration"],
+            notes=["LLM router determined no method applies"],
         )
 
     def _route_routing_anomaly(
@@ -513,12 +588,7 @@ class Router:
     def _apply_correction_to_slots(
         self, claim: dict, result: CodeGenVerificationResult
     ) -> dict:
-        """Project the computed value into the right slot for a contradiction.
-
-        Mirrors the per-pattern claim_value extractor. The router writes
-        the corrected fact to the store, so it needs to know which slot
-        to overwrite with ``result.actual_value``.
-        """
+        """Project the computed value into the right slot for a contradiction."""
         slots = dict(claim.get("slots") or {})
         pattern = claim.get("pattern")
         predicate = claim.get("predicate") or ""
@@ -564,7 +634,6 @@ class Router:
                 confidence=confidence,
                 asserted_by=asserted_by,
                 verification_status=verification_status,
-                # Lift slot temporal scope onto the fact's columns when present.
                 valid_from=str(slots["valid_from"]) if slots.get("valid_from") else None,
                 valid_until=str(slots["valid_until"]) if slots.get("valid_until") else None,
                 source_turn_id=source_turn_id,
