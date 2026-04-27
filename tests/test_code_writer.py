@@ -70,6 +70,23 @@ def test_returns_corrector_model_name():
 # ---------- no-hardcoding rule in system prompt ----------
 
 
+def test_system_prompt_has_datetime_examples():
+    """v0.5: the code-writer prompt must include datetime examples so
+    duration / day-of-week / date arithmetic claims are routed to
+    python and produce runnable code.
+    """
+    s = _CODE_WRITER_SYSTEM
+    # Imports the model is most likely to use:
+    assert "from datetime import" in s or "import datetime" in s
+    # The Trump-first-term canonical case:
+    assert "2017" in s and "2021" in s
+    # Day-of-week:
+    assert "weekday" in s.lower() or "%A" in s
+    # And there should be at least three datetime examples (year-diff,
+    # day-of-week, weekday arithmetic).
+    assert s.lower().count("datetime") + s.count("weekdays") >= 3
+
+
 def test_system_prompt_forbids_hardcoded_answers():
     """The system prompt must explicitly forbid printing literals derived
     by mental computation. Without this, models like Opus see a question
