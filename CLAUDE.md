@@ -10,6 +10,95 @@ rejected, or flagged. User-stated facts are stored as ground truth.
 
 See `ARCHITECTURE.md` for the design rationale and a full data-flow diagram.
 
+## v0.5 changes (read before touching anything)
+
+> **The pattern-driven verification dispatch is gone.** Old `aedos.db`
+> files from v0.3/v0.4 are still compatible (the schema didn't change),
+> but `pattern.verification_method`, `predicate_overrides`,
+> `verification_rules`, and `flag_non_user_as_anomaly` no longer exist
+> on patterns. Routing is decided by an LLM call per claim.
+
+### The big shift: pattern-routed → LLM-routed verification
+
+v0.4's router walked `pattern.verification_method` rules plus a
+`predicate_overrides` map to pick a verifier. That didn't scale — every
+new computable claim type required editing YAML, and entire categories
+of python-verifiable claims (date arithmetic, internal consistency
+checks, structural string properties) defaulted to retrieval or
+unverifiable because they didn't match a pre-declared category.
+
+v0.5 replaces the rule walk with `src/llm_router.py`: a single LLM call
+per claim that picks one of:
+
+  - `python`                            — code resolves the claim from its inputs
+  - `python_with_canonical_constants`   — same plus a stable reference (list of US states, primes under 100, etc.); triggers a cross-check
+  - `retrieval`                         — search + judge
+  - `user_authoritative`                — claim is about the user
+  - `unverifiable`                      — no method applies
+
+The router LLM (Sonnet 4.6, via `extract_with_tool`) is prompted with
+worked examples for each method plus boundary cases — most importantly
+the multi-claim convention ("Marie Curie was born in 1867 and died in
+1934, so she lived 67 years" routes to python on the arithmetic, taking
+the dates as given) and the external-string boundary ("the Gettysburg
+Address opens with X" looks like a string operation but actually needs
+retrieval). When in doubt, the router prefers earlier methods —
+python > python_with_canonical_constants > retrieval > user_authoritative
+> unverifiable.
+
+### Triage is gone
+
+`src/verifiers/code_generation/triage.py` is deleted. The LLM router
+has already decided python-verifiability before code generation runs.
+False positives surface as `code_execution_failed` (sandbox
+non-zero / timeout) or `comparison_error` (comparator can't parse) —
+not as a fall-through to retrieval. If you find the router routes
+something to python that the code can't actually answer, the fix is in
+the router prompt or worked examples, not by reinstating triage.
+
+### Canonical-constants cross-check (§5)
+
+`python_with_canonical_constants` is for claims that need a small,
+stable, widely-known reference the code can emit literally — list of
+US states, days of the week, ASCII tables. The cross-check runs the
+code-generation pipeline twice at different temperatures (0.0 and 0.3)
+and compares the two outputs. Agreement → accept. Disagreement → log
+`canonical_constants_disagreement` and return that status (the
+dispatcher treats it as pending). This guards against the LLM emitting
+a subtly wrong canonical reference; pure-python claims don't need this
+because their inputs are all in the claim itself.
+
+### Routing anomaly is now hardcoded
+
+The pattern-level `flag_non_user_as_anomaly` flag is gone. The router's
+sanity check is now a hardcoded map (`_USER_SUBJECT_PATTERNS` in
+`src/router.py`) listing patterns whose subject must be the user
+(preference, propositional_attitude). A non-user agent on those
+patterns flags as `routing_anomaly` — the LLM router would route the
+claim to unverifiable anyway, but the anomaly banner alerts the
+operator that the extractor mis-bound the slot.
+
+### How to add a new computable claim type (no YAML edit)
+
+You don't add anything. Use the predicate label that fits the pattern;
+the router will recognize it as python-verifiable from content. If the
+router occasionally misroutes something you expected to be python:
+
+1. Look at the trace UI — the routing block shows the method and reason.
+2. If it's a calibration drift, add or adjust a worked example in
+   `_ROUTER_SYSTEM` (`src/llm_router.py`).
+3. Run the calibration test: `RUN_API_TESTS=1 pytest tests/test_routing_calibration.py`.
+
+Do NOT add fallback heuristics in `router.py`. The router is the only
+place routing decisions are made.
+
+### Where to look in the trace UI
+
+Per model claim, the verification decision now leads with a routing
+block (method, reason, confidence). Confidence < 0.7 renders a yellow
+warning. For canonical-constants claims, both code generations show
+side-by-side. The triage section in the code-gen block is gone.
+
 ## v0.4 changes (read before touching anything)
 
 > **The hand-written python verifier registry is gone.** Old `aedos.db`
@@ -279,18 +368,20 @@ src/
   fact_store.py              — SQLite wrapper, all DB operations
   pattern_registry.py        — loads patterns.yaml, validates, formats for prompt
   extractor.py               — LLM → structured claims via forced tool use
+  llm_router.py              — v0.5 LLM-based per-claim verification routing
   router.py                  — dispatches claims to verifiers; writes to store
   verifiers/
     types.py                 — shared VerificationOutcome / VerificationResult
     store_verifier.py        — matches model claims against user-asserted facts
     retrieval_verifier.py    — slots-aware multi-attempt retrieval + judge
-    code_generation/         — v0.4: triage → neutral prompt → code → sandbox → compare
-      triage.py              — Stage 1: is this claim python-resolvable?
-      prompt_builder.py      — Stage 2: NEUTRAL prompt + leak detection
-      code_writer.py         — Stage 3: code generated from prompt only
+    code_generation/         — v0.4/v0.5: prompt → code → sandbox → compare
+      prompt_builder.py      — NEUTRAL prompt + leak detection
+      code_writer.py         — code generated from prompt only
       sandbox.py             — subprocess execution with strict limits
       comparator.py          — deterministic stdout vs claim comparison
-      pipeline.py            — orchestrator + CodeGenerationVerifier class
+      pipeline.py            — orchestrator + CodeGenerationVerifier
+                               (with verify_with_cross_check for
+                               python_with_canonical_constants)
   corrector.py               — rewrites assistant draft given corrections
   pipeline.py                — orchestrator for a full turn
   llm_client.py              — Anthropic SDK wrapper
