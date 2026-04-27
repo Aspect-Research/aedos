@@ -220,7 +220,7 @@ it as-is.
 
 _(Verification status semantics moved to the v0.3 section above.)_
 
-## Code-generated verification (v0.4)
+## Code-generated verification (v0.4 / v0.5)
 
 The python verification path used to be a hand-written registry: one
 function per predicate in `src/verifiers/python_verifiers.py`, dispatched
@@ -232,24 +232,17 @@ itself — it was the long tail. Predicates we hadn't anticipated fell
 through to the registered `has_count` and silently returned 0, which
 the comparator then accepted as "verified" against any claim of 0.
 
-v0.4 replaces the registry with code generation. A python-routed claim
-is resolved by three LLM calls plus a sandbox execution and a
-deterministic comparator:
+v0.4 replaced the registry with code generation. v0.5 removed the
+triage stage (the LLM router decides python-verifiability up front).
+A python-routed claim is now resolved by two LLM calls plus a sandbox
+execution and a deterministic comparator:
 
 ```
             claim
               │
               ▼
         ┌──────────┐
-        │ Stage 1  │  triage: can deterministic python answer this?
-        │ extractor│  sees: full claim
-        │   model  │  returns: {verifiable: bool, reason: str}
-        └────┬─────┘
-             │  if not verifiable: return "not_python_verifiable"
-             │
-             ▼
-        ┌──────────┐
-        │ Stage 2  │  build a NEUTRAL question
+        │ Stage 1  │  build a NEUTRAL question
         │ extractor│  sees: full claim INCLUDING asserted value
         │   model  │  returns: {prompt, expected_output_type}
         └────┬─────┘  prompt MUST NOT contain asserted value
@@ -259,7 +252,7 @@ deterministic comparator:
              │
              ▼
         ┌──────────┐
-        │ Stage 3  │  write python script
+        │ Stage 2  │  write python script
         │ corrector│  sees: ONLY the neutral prompt + expected_type
         │   model  │  returns: source code
         └────┬─────┘
@@ -278,6 +271,10 @@ deterministic comparator:
              ▼
    verified | contradicted | comparison_error | code_execution_failed
 ```
+
+For `python_with_canonical_constants` claims the pipeline runs twice
+(temperatures 0.0 and 0.3) and the cross-check compares the computed
+values; disagreement → `canonical_constants_disagreement`.
 
 ### The firewall
 
@@ -309,34 +306,88 @@ through. Hardening this is a target for future work; the current
 heuristic catches the obvious cases (the literal value as a digit
 string or as a substring of the claim's distinctive subject).
 
-### Predicate overrides
-
-Patterns can pin specific predicates to a non-default verification
-method via `predicate_overrides` in `patterns.yaml`. The `relational`
-pattern uses this for computable predicates (`reverse_of`,
-`is_anagram_of`, `contains_substring`, `equals`, `greater_than`, …) —
-these route to python while the rest of `relational` stays on
-retrieval. The router checks `predicate_overrides` BEFORE walking
-`verification_rules`, so the override always wins.
-
-### Triage as a fall-through gate
-
-When triage says `not_python_verifiable` (e.g. "Trump was born in
-1946" — quantitative pattern but requires external data), the router
-falls back to the pattern's first non-python rule that matches. For
-`quantitative` that's retrieval; for `relational` predicates with
-overrides, the pattern's default rule (retrieval) is the fallback. If
-no fallback applies, the claim becomes `unverifiable_in_principle`.
-
 ### What this is NOT
 
 - **Not a security sandbox.** The code runs in our own environment;
   the limits in `sandbox.py` keep accidental interactions away from
   AEDOS state. They do not stop a determined attacker.
-- **Not a fallback for unfamiliar predicates.** If triage says no, the
-  router falls back per the pattern's rules; we don't keep a
-  hand-written verifier registry as a backup. The whole point of v0.4
+- **Not a fallback for unfamiliar predicates.** When the LLM router
+  decides retrieval, the retrieval verifier handles it; when it
+  decides unverifiable, the corrector softens. There is no
+  hand-written verifier registry as a backup. The point of v0.4/v0.5
   is to stop maintaining that registry.
+
+## Verification routing (v0.5)
+
+Verification routing is decided per claim by an LLM-based classifier,
+not by the claim's structural pattern. `src/llm_router.py` makes a
+single call to Sonnet 4.6, which picks one of five methods:
+
+| Method | When |
+|---|---|
+| `python` | The claim's truth value is computable from its own inputs alone — no external data, no canonical reference. Letter counts, arithmetic, string reversal, primality, palindromes, day-of-week from a date in the claim, duration between two dates in the claim, internal consistency. |
+| `python_with_canonical_constants` | Same, but the code may reference small stable canonical references the LLM can emit literally (lists of US states, months, primes under 100, ASCII tables). Triggers a cross-check (two generations at different temperatures). |
+| `retrieval` | External data needed — specific people, places, current world state, populations, geographic facts, historical event dates. Anything not computable from the claim's own slots. |
+| `user_authoritative` | The claim's subject is the user. Verified by store lookup against user-asserted facts. |
+| `unverifiable` | Aesthetic judgments, third-party internal states, future events, model-state claims, probabilistic claims about non-users. |
+
+### Why we removed predicate overrides
+
+v0.4's `predicate_overrides` map (`relational.reverse_of → python`,
+`relational.is_anagram_of → python`, …) didn't scale. Every new
+computable claim type required editing YAML, and entire categories of
+python-verifiable claims (date arithmetic, structural text properties,
+internal consistency checks) silently routed to retrieval or
+unverifiable because they didn't match a pre-declared category.
+
+The LLM router recognizes python-verifiability from the claim's
+content directly. It can route a `quantitative.term_duration` claim
+with `valid_from=2017, valid_until=2021, value=4` to python (it's an
+arithmetic check on stated values), without anyone editing YAML.
+
+### Multi-claim convention
+
+A claim like "Marie Curie was born in 1867 and died in 1934, so she
+lived 67 years" packages an arithmetic check around two retrievable
+dates. The router routes this to **python** — the arithmetic is what's
+being asserted; the dates are inputs the claim takes as given. If the
+dates themselves are wrong, that surfaces as a separate retrieval-class
+claim that the extractor would emit independently. The router doesn't
+try to split a single claim.
+
+### Canonical-constants cross-check
+
+For `python_with_canonical_constants`, the verifier runs the code-
+generation pipeline twice at different temperatures (0.0 and 0.3) and
+compares the two computed values. Agreement → accept. Disagreement →
+log `canonical_constants_disagreement` and return that status (the
+dispatcher treats it as pending). Two generations is a cheap guard
+against the LLM emitting a subtly wrong canonical reference.
+
+A more rigorous version would use two different models. Temperature
+variation is the v0.5 compromise — it surfaces most divergent
+generations without requiring two API surfaces.
+
+### What this routing layer is NOT
+
+- **Not a rule engine.** No pattern→method tables, no predicate
+  overrides, no fallback heuristics. The router decides; if it gets it
+  wrong, fix the prompt or worked examples.
+- **Not heuristic.** The router asks the model to apply judgment, not
+  to match labels. The 15 worked examples in `_ROUTER_SYSTEM` cover
+  the boundary cases we've found; the calibration test
+  (`tests/test_routing_calibration.py`) catches drift.
+
+### Triage is gone
+
+v0.4 had a triage stage as the first call in code generation, deciding
+whether the claim was python-resolvable. v0.5 removed it: the LLM
+router has already decided python-verifiability before code generation
+runs, and a redundant triage call would just risk drift between two
+prompts. False positives surface at the sandbox stage as
+`code_execution_failed` or at the comparator as `comparison_error`,
+which the dispatcher treats as pending (low confidence, hedged by the
+corrector if needed).
 
 ## Known limitations
 

@@ -9,6 +9,38 @@ This is a research prototype — clarity, observability, and ease of
 modification matter more than performance. See `ARCHITECTURE.md` for the
 design rationale.
 
+## What's new in v0.5
+
+- **LLM-based verification routing.** Patterns no longer determine the
+  verification method. A single LLM router (`src/llm_router.py`) decides
+  per-claim which method applies: `python`, `python_with_canonical_constants`,
+  `retrieval`, `user_authoritative`, or `unverifiable`. Date arithmetic,
+  internal-consistency checks, structural string properties, and many
+  other claim types that used to default to retrieval (or be silently
+  unverifiable) now route to python.
+- **Predicate overrides removed.** `relational.predicate_overrides` is
+  gone, along with the `verification_method` field on every pattern.
+  The router reasons about claims directly, not about labels.
+- **Triage merged into routing.** The v0.4 Stage 1 triage is gone — the
+  LLM router has already decided python-verifiability before code
+  generation runs. Code-generation false positives surface as
+  `code_execution_failed` or `comparison_error` rather than triggering
+  a fall-through.
+- **Canonical-constants cross-check.** When the router routes to
+  `python_with_canonical_constants` (the model needs a small stable
+  reference like the list of US states), the code-generation pipeline
+  runs twice at different temperatures and compares. Disagreement
+  surfaces a warning and falls back; agreement carries through.
+- **Trace UI shows the routing decision.** Each verification block now
+  leads with the routing method, reason, and confidence; sub-0.7
+  confidence renders a yellow warning. Cross-check disagreements show
+  both code generations side-by-side.
+
+> **v0.5 is schema-compatible with v0.4 / v0.3.** No DB reset is required.
+> Code that read `pattern.verification_method`, `predicate_overrides`,
+> `verification_rules`, or `flag_non_user_as_anomaly` will need updates —
+> those fields are gone.
+
 ## What's new in v0.4
 
 - **Code-generated python verification.** The hand-written verifier
@@ -107,17 +139,12 @@ RUN_API_TESTS=1 pytest         # also hit the real Anthropic API once
 
 ## Adding a new predicate
 
-In v0.4, predicates are free-form within a pattern. There's no per-
-predicate code to write:
-
-- **Inside a pattern that already routes to python** (e.g.
-  `quantitative` for new properties like `prime_count` or
-  `digit_sum`): just use the predicate label. Triage decides if the
-  claim is python-resolvable; if yes, code generation runs; if no, it
-  falls back per the pattern's rules.
-- **A computable relational predicate** (e.g. `palindrome_of`): add it
-  to `relational.predicate_overrides` in `patterns.yaml` with `python`
-  as the value. The rest of `relational` keeps retrieval as default.
+In v0.5, predicates are free-form within a pattern and the LLM router
+decides verification per claim. There's nothing to add for a new
+predicate — the extractor will produce it under whichever pattern fits,
+and the router will pick a method based on the claim's content. If the
+router doesn't classify the predicate the way you expected, the fix is
+in the router prompt (`src/llm_router.py`), not in YAML.
 
 For new patterns (rare), see `CLAUDE.md` — that requires more changes
 than just YAML.
@@ -157,6 +184,7 @@ src/
   fact_store.py     — SQLite wrapper (facts, turns, pipeline_events)
   pattern_registry.py
   extractor.py      — LLM claim extraction via forced tool use
+  llm_router.py     — v0.5 LLM-based per-claim routing classifier
   router.py         — dispatches claims to verifiers; writes to store
   verifiers/
     types.py            — shared VerificationOutcome / VerificationResult
