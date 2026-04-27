@@ -60,6 +60,28 @@ def is_prime(n):
     return all(n % i for i in range(2, int(n**0.5) + 1))
 print(sum(1 for n in range(-116, 2) if is_prime(n)))
 
+Question: "Compute the number of full years between January 20, 2017 and January 20, 2021. Print only the integer result."
+expected_output_type: int
+Reply:
+from datetime import date
+start = date(2017, 1, 20)
+end = date(2021, 1, 20)
+years = end.year - start.year - ((end.month, end.day) < (start.month, start.day))
+print(years)
+
+Question: "Compute the day of the week for the date January 20, 2025. Print only the resulting weekday name (Monday, Tuesday, ...)."
+expected_output_type: string
+Reply:
+from datetime import date
+print(date(2025, 1, 20).strftime('%A'))
+
+Question: "Compute the date that is exactly three days after Wednesday, given that the input is the weekday name 'Wednesday'. Print only the resulting weekday name."
+expected_output_type: string
+Reply:
+weekdays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+start = weekdays.index('Wednesday')
+print(weekdays[(start + 3) % 7])
+
 # Forbidden pattern (do NOT do this)
 
 Question: "Compute the count of integers strictly greater than 5 and strictly less than 6. Print only the integer result."

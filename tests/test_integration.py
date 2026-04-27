@@ -983,3 +983,61 @@ def test_code_execution_timeout_marks_pending(tmp_path):
     cg_result = d["code_gen_result"]
     assert cg_result["status"] == "code_execution_failed"
     assert "timed out" in cg_result["explanation"].lower() or "1s" in cg_result["explanation"]
+
+
+# =====================================================================
+# v0.5 — date/time arithmetic routes through python (§6)
+# =====================================================================
+
+
+def test_date_arithmetic_routes_to_python(tmp_path):
+    """The flagship v0.5 case: 'Trump's first term lasted 4 years
+    (2017-2021)' is computable from values stated in the claim itself,
+    so the LLM router routes to python and the code writer emits
+    datetime arithmetic.
+    """
+    fact = {
+        "pattern": "quantitative", "predicate": "term_duration",
+        "slots": {
+            "subject": "Trump first term",
+            "property": "years",
+            "value": 4,
+            "valid_from": "2017-01-20",
+            "valid_until": "2021-01-20",
+        },
+        "polarity": 1, "source_text": "Trump's first term lasted 4 years (2017-2021)",
+    }
+    mock = MockLLM(
+        chats=["Trump's first term lasted 4 years (2017-01-20 to 2021-01-20)."],
+        extracts=[
+            {"facts": []},
+            {"facts": [fact]},
+            {"prompt": (
+                "Compute the number of full years between January 20, 2017 "
+                "and January 20, 2021. Print only the integer result."),
+             "expected_output_type": "int"},
+        ],
+        rewrites=[
+            (
+                "from datetime import date\n"
+                "start = date(2017, 1, 20)\n"
+                "end = date(2021, 1, 20)\n"
+                "years = end.year - start.year - "
+                "((end.month, end.day) < (start.month, start.day))\n"
+                "print(years)"
+            ),
+        ],
+        routings=[_route_python(
+            reason="date arithmetic on values stated in the claim's slots",
+            confidence=0.9,
+        )],
+    )
+    p = _make_pipeline_with_code_gen(tmp_path, mock)
+    trace = p.run_turn("how long was Trump's first term?")
+
+    d = trace.verification_decisions[0]
+    assert d["routing_decision"]["method"] == "python"
+    assert d["verification_status"] == "verified"
+    cg = d["code_gen_result"]
+    assert cg["status"] == "verified"
+    assert cg["actual_value"] == 4
