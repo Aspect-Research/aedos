@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from src.verifiers.code_generation.code_writer import GeneratedCode, write_code
+from src.verifiers.code_generation.code_writer import (
+    _CODE_WRITER_SYSTEM,
+    GeneratedCode,
+    write_code,
+)
 
 
 @dataclass
@@ -58,6 +62,23 @@ def test_returns_corrector_model_name():
     llm = FakeLLM(rewrite_response="print(3)")
     out = write_code("Compute 1+1.", "int", llm)
     assert out.model == "claude-haiku-4-5"
+
+
+# ---------- no-hardcoding rule in system prompt ----------
+
+
+def test_system_prompt_forbids_hardcoded_answers():
+    """The system prompt must explicitly forbid printing literals derived
+    by mental computation. Without this, models like Opus see a question
+    whose answer is 'obvious' (e.g. 'count primes < 2') and write
+    `print(0)` instead of running the algorithm — defeating the firewall.
+    """
+    s = _CODE_WRITER_SYSTEM.lower()
+    assert "hardcod" in s or "do not print a hardcoded" in s
+    # Must mention that python (not the model) computes the answer.
+    assert "python" in s and ("interpret" in s or "operations" in s)
+    # Must show a forbidden-pattern counter-example.
+    assert "forbidden" in s or "wrong reply" in s
 
 
 # ---------- markdown fence stripping ----------
