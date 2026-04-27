@@ -338,6 +338,96 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   font-family: var(--mono);
 }
 
+/* Routing decision block (v0.5) ------------------------------- */
+.routing-block {
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  background: #eef4ff;
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+.routing-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.routing-method {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  background: #d6e3ff;
+  color: #143b9a;
+}
+.routing-method-python                              { background: #d6f0df; color: var(--ok); }
+.routing-method-python_with_canonical_constants     { background: #fff3c4; color: #856404; }
+.routing-method-retrieval                           { background: #d6e3ff; color: #143b9a; }
+.routing-method-user_authoritative                  { background: #f0e0fa; color: #6b3fa0; }
+.routing-method-unverifiable                        { background: #eee;    color: var(--muted); }
+.routing-conf {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.routing-conf-low {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--warn);
+  font-weight: 600;
+}
+.routing-warning {
+  font-size: 0.74rem;
+  color: var(--warn);
+  font-weight: 600;
+}
+.routing-reason {
+  margin-top: 0.2rem;
+  font-style: italic;
+  color: var(--ink);
+}
+.routing-meta {
+  margin-top: 0.15rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* Canonical-constants cross-check block (v0.5) ---------------- */
+.crosscheck-block {
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  background: #fff8e6;
+  border-left: 3px solid #d97706;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+.crosscheck-header {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.crosscheck-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.crosscheck-col {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.3rem 0.4rem;
+}
+.crosscheck-col h5 {
+  margin: 0 0 0.2rem;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #d97706;
+}
+
 /* Code-generated verification block (v0.4) -------------------- */
 .codegen-block {
   margin-top: 0.4rem;

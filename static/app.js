@@ -171,13 +171,18 @@ function renderTrace(events) {
     "routing_anomaly_detected",
     "verifier_failure",
     "retrieval_query_attempt",
-    "code_triage",
+    // v0.4 / v0.5 code-gen sub-stages — surfaced inside the verification decision.
+    "code_triage",  // legacy; v0.5 doesn't emit but old DBs may have it
     "code_prompt_built",
     "code_prompt_leakage_detected",
     "code_generated",
     "code_executed",
     "code_unusual_behavior",
     "code_comparison",
+    // v0.5 routing + cross-check stages — surfaced inline on the decision.
+    "routing_decision",
+    "canonical_constants_cross_check",
+    "canonical_constants_disagreement",
   ]);
   events
     .filter((e) => !buriedStages.has(e.stage))
@@ -333,6 +338,95 @@ function statusBadge(status) {
   });
 }
 
+function renderRoutingDecision(rd) {
+  // rd: {method, reason, confidence, python_inputs_self_contained,
+  //      retrieval_query_hint, canonical_constants_needed}
+  const block = el("div", { className: "routing-block" });
+  const header = el("div", { className: "routing-header" });
+  header.appendChild(el("span", {
+    className: `routing-method routing-method-${rd.method}`,
+    textContent: `route → ${rd.method}`,
+  }));
+  if (typeof rd.confidence === "number") {
+    const conf = rd.confidence;
+    const lowConf = conf < 0.7;
+    header.appendChild(el("span", {
+      className: lowConf ? "routing-conf-low" : "routing-conf",
+      textContent: `conf=${conf.toFixed(2)}`,
+      title: lowConf ? "low-confidence routing decision (< 0.7)" : "",
+    }));
+    if (lowConf) {
+      header.appendChild(el("span", {
+        className: "routing-warning",
+        textContent: "⚠ low confidence",
+      }));
+    }
+  }
+  block.appendChild(header);
+  if (rd.reason) {
+    block.appendChild(el("div", {
+      className: "routing-reason",
+      textContent: rd.reason,
+    }));
+  }
+  const meta = [];
+  if (rd.python_inputs_self_contained === true) meta.push("inputs self-contained");
+  if (rd.python_inputs_self_contained === false) meta.push("inputs require external data");
+  if (rd.retrieval_query_hint) meta.push(`query hint: ${rd.retrieval_query_hint}`);
+  if (rd.canonical_constants_needed && rd.canonical_constants_needed.length) {
+    meta.push(`canonical: ${rd.canonical_constants_needed.join(", ")}`);
+  }
+  if (meta.length) {
+    block.appendChild(el("div", {
+      className: "routing-meta",
+      textContent: meta.join(" · "),
+    }));
+  }
+  return block;
+}
+
+
+function renderCrossCheckBlock(cc) {
+  // cc.a, cc.b each have {status, actual_value, code, execution, explanation}.
+  const block = el("div", { className: "crosscheck-block" });
+  const header = el("div", { className: "crosscheck-header" });
+  const agree = (
+    cc.a && cc.b
+    && cc.a.status === cc.b.status
+    && cc.a.actual_value === cc.b.actual_value
+  );
+  header.appendChild(el("strong", {
+    textContent: agree
+      ? "canonical-constants cross-check: AGREE"
+      : "⚠ canonical-constants cross-check: DISAGREE",
+  }));
+  block.appendChild(header);
+
+  const row = el("div", { className: "crosscheck-row" });
+  ["a", "b"].forEach((k) => {
+    const side = cc[k] || {};
+    const col = el("div", { className: "crosscheck-col" });
+    col.appendChild(el("h5", {
+      textContent: `gen ${k.toUpperCase()} — ${side.status || "?"}`,
+    }));
+    if (side.code && side.code.code) {
+      const pre = el("pre", { className: "codegen-code" });
+      pre.textContent = side.code.code;
+      col.appendChild(pre);
+    }
+    if (side.actual_value !== undefined) {
+      col.appendChild(el("div", {
+        className: "codegen-meta",
+        textContent: `computed = ${JSON.stringify(side.actual_value)}`,
+      }));
+    }
+    row.appendChild(col);
+  });
+  block.appendChild(row);
+  return block;
+}
+
+
 function renderCodeGenBlock(result) {
   // result has: status, confidence, explanation, actual_value, trace
   // trace has: triage, prompt (with attempts), code, execution, comparison
@@ -376,13 +470,15 @@ function renderCodeGenBlock(result) {
 
   // Expandable details.
   const details = el("details", { className: "codegen-details" });
-  const summary = el("summary", { textContent: "show pipeline (triage → prompt → code → execution → comparison)" });
+  const summary = el("summary", {
+    textContent: "show pipeline (prompt → code → execution → comparison)",
+  });
   details.appendChild(summary);
 
-  // Triage
+  // Triage (legacy v0.4 traces only — v0.5 doesn't generate this).
   if (trace.triage) {
     const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "1. Triage" }));
+    sec.appendChild(el("h4", { textContent: "0. Triage (v0.4 legacy)" }));
     sec.appendChild(el("div", {
       textContent: `verifiable: ${trace.triage.verifiable}`,
     }));
@@ -398,7 +494,7 @@ function renderCodeGenBlock(result) {
   // Prompt + attempts
   if (trace.prompt) {
     const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "2. Neutral prompt" }));
+    sec.appendChild(el("h4", { textContent: "1. Neutral prompt" }));
     sec.appendChild(el("div", {
       className: "codegen-readonly",
       textContent: trace.prompt.prompt || "",
@@ -428,7 +524,7 @@ function renderCodeGenBlock(result) {
   // Code
   if (trace.code) {
     const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "3. Generated code" }));
+    sec.appendChild(el("h4", { textContent: "2. Generated code" }));
     sec.appendChild(el("div", {
       className: "codegen-meta",
       textContent: `model: ${trace.code.model || ""}`,
@@ -442,7 +538,7 @@ function renderCodeGenBlock(result) {
   // Execution
   if (trace.execution) {
     const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "4. Execution" }));
+    sec.appendChild(el("h4", { textContent: "3. Execution" }));
     sec.appendChild(el("div", {
       className: "codegen-meta",
       textContent: (
@@ -470,7 +566,7 @@ function renderCodeGenBlock(result) {
   // Comparison
   if (trace.comparison) {
     const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "5. Comparison" }));
+    sec.appendChild(el("h4", { textContent: "4. Comparison" }));
     sec.appendChild(el("div", {
       textContent: `verdict: ${trace.comparison.verdict}`,
     }));
@@ -577,8 +673,16 @@ function renderDecisions(body, data) {
     if (d.matching_fact_id != null) meta.push(`matching id=${d.matching_fact_id}`);
     if (meta.length) node.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
 
+    // v0.5: routing decision leads the verification block.
+    if (d.routing_decision) {
+      node.appendChild(renderRoutingDecision(d.routing_decision));
+    }
+
     if (d.code_gen_result) {
       node.appendChild(renderCodeGenBlock(d.code_gen_result));
+      // v0.5: canonical-constants cross-check, when present.
+      const cc = (d.code_gen_result.trace || {}).cross_check;
+      if (cc) node.appendChild(renderCrossCheckBlock(cc));
     }
     if (d.retrieval_result) {
       node.appendChild(renderRetrievalBlock(d.retrieval_result));
