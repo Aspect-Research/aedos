@@ -323,6 +323,23 @@ Implications:
 clean numbers. This is THE most important Phase-2 calibration finding
 of the whole autonomous run so far.
 
+### Cost data point: a single corrected turn costs ~$0.275 on Opus 4.7
+
+Saturn-moons validation turn (corpus turn 11, Anthropic):
+  - 12 LLM calls total (extractor × 2, router × 4, judge × 4,
+    corrector × 1, chat × 1 — 12 total)
+  - 9,699 input tokens, 1,730 output tokens
+  - **$0.275 in API spend per turn**
+
+Useful baseline for cost telemetry: at ~30¢ per "complex" turn against
+Opus, a 100-turn dogfood = ~$30. Switch the extractor + corrector to
+Sonnet (3/15 vs 15/75) and that drops ~5x to ~$6 per 100 turns.
+
+Per-model breakdown was 100% Opus 4.7 because all infra LLMs default
+to opus. Setting AEDOS_EXTRACTOR_MODEL=claude-sonnet-4-6 +
+AEDOS_CORRECTOR_MODEL=claude-haiku-4-5 would slash cost; quality
+trade-off untested.
+
 ### COMPREHENSIVE REAL-API VALIDATION 2026-04-28
 
 All LLM-bound components validated end-to-end against Anthropic Opus
