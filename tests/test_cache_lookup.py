@@ -364,3 +364,82 @@ def test_cache_hit_inconclusive_serves_without_redoing_retrieval(tmp_path):
     assert retrieval.calls == []  # not re-attempted
     d = trace.verification_decisions[0]
     assert d["verification_status"] == "retrieval_inconclusive"
+
+
+# ---- semantic-shape lookup on exact-miss ------------------------------------
+
+
+def test_semantic_hit_skips_retrieval_when_predicate_synonym(tmp_path):
+    """User's reported case: cache contains ``relational/child_of`` for
+    Barron Trump → Donald Trump. A second prompt produces a claim with
+    a slightly-different predicate (e.g. ``descendant_of``, or with a
+    ``child`` short form). Exact-match lookup misses, semantic lookup
+    finds the cached entry by identity-slot anchor + predicate-token
+    Jaccard overlap → skip retrieval, serve cached verdict."""
+    fact_cached = {
+        "pattern": "relational", "predicate": "child_of",
+        "slots": {"subject": "Barron Trump", "object": "Donald Trump",
+                  "relation": "child_of"},
+        "polarity": 1, "source_text": "Barron is Trump's child",
+    }
+    # Build the pipeline with the cached fact PRE-POPULATED.
+    p, store, cache, retrieval = _build(
+        tmp_path, fact_cached, prepopulate_cache=True,
+    )
+    # But run a turn with a slightly different predicate spelling.
+    fact_lookup = {
+        "pattern": "relational", "predicate": "child",
+        "slots": {"subject": "Barron Trump", "object": "Donald Trump",
+                  "relation": "child"},
+        "polarity": 1, "source_text": "Barron is Trump's child",
+    }
+    # Replace the queued extract output with the lookup-shape fact.
+    p.llm.extracts = [{"facts": []}, {"facts": [fact_lookup]}]
+    trace = p.run_turn("test")
+
+    # Retrieval was NOT called — semantic lookup served the cached
+    # verdict.
+    assert retrieval.calls == []
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "verified"
+    assert d["served_from_cache"] is True
+
+    # cache_lookup event has result=semantic_hit and includes both
+    # keys + the score.
+    events = store.get_pipeline_events(trace.assistant_turn_id)
+    lookup_events = [e for e in events if e["stage"] == "cache_lookup"]
+    assert len(lookup_events) == 1
+    data = lookup_events[0]["data"]
+    assert data["result"] == "semantic_hit"
+    assert data["matched_key"] != data["canonical_key"]
+    # Tokens: ``child`` (1) vs ``child of`` (2) → Jaccard 1/2 = 0.5
+    assert 0.4 <= data["score"] <= 0.6
+
+
+def test_semantic_lookup_does_not_match_reversed_relation(tmp_path):
+    """``parent_of(Donald, Barron)`` cached, lookup ``child_of(Barron,
+    Donald)``. SAME relationship, REVERSED arguments. Semantic lookup
+    must NOT match — different identity slot values."""
+    fact_cached = {
+        "pattern": "relational", "predicate": "parent_of",
+        "slots": {"subject": "Donald Trump", "object": "Barron Trump",
+                  "relation": "parent_of"},
+        "polarity": 1, "source_text": "Donald is Barron's parent",
+    }
+    p, store, cache, retrieval = _build(
+        tmp_path, fact_cached, prepopulate_cache=True,
+    )
+    fact_lookup = {
+        "pattern": "relational", "predicate": "child_of",
+        "slots": {"subject": "Barron Trump", "object": "Donald Trump",
+                  "relation": "child_of"},
+        "polarity": 1, "source_text": "Barron is Donald's child",
+    }
+    p.llm.extracts = [{"facts": []}, {"facts": [fact_lookup]}]
+    trace = p.run_turn("test")
+
+    # No semantic match → retrieval was called as normal.
+    assert len(retrieval.calls) == 1
+    events = store.get_pipeline_events(trace.assistant_turn_id)
+    lookup_events = [e for e in events if e["stage"] == "cache_lookup"]
+    assert lookup_events[0]["data"]["result"] == "miss"

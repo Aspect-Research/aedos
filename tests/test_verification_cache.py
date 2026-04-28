@@ -170,6 +170,44 @@ def test_normalize_predicate_helper_directly():
     assert _normalize_predicate("island_of") == "island_of"  # 'is' alone doesn't match
 
 
+# ---- _predicate_tokens + _parse_slots_block helpers ----
+
+
+def test_predicate_tokens_splits_on_underscore():
+    from src.cache.verification_cache import _predicate_tokens
+    assert _predicate_tokens("child_of") == {"child", "of"}
+    assert _predicate_tokens("is_child_of") == {"child", "of"}  # stem stripped first
+    assert _predicate_tokens("son_of") == {"son", "of"}
+    assert _predicate_tokens("") == set()
+
+
+def test_parse_slots_block_round_trip():
+    """The slot-block parser reverses the canonicalize_claim_key
+    encoding so semantic_lookup can filter on identity slots."""
+    from src.cache.verification_cache import _parse_slots_block
+    block = "object=donald trump&relation=child_of&subject=barron trump"
+    parsed = _parse_slots_block(block)
+    assert parsed == {
+        "object": "donald trump",
+        "relation": "child_of",
+        "subject": "barron trump",
+    }
+
+
+def test_parse_slots_block_handles_empty():
+    from src.cache.verification_cache import _parse_slots_block
+    assert _parse_slots_block("") == {}
+
+
+def test_parse_slots_block_handles_value_with_equals():
+    """Values may contain '=' (e.g. JSON-encoded numbers) — split
+    only on the FIRST '=' per pair."""
+    from src.cache.verification_cache import _parse_slots_block
+    parsed = _parse_slots_block("subject=foo&value={\"a\": 1}")
+    assert parsed["subject"] == "foo"
+    assert parsed["value"] == "{\"a\": 1}"
+
+
 # ---- VerificationCache: lookup / write / TTL ---------------------------
 
 
@@ -377,4 +415,201 @@ def test_stats_aggregates_correctly(tmp_path):
     assert s["total_entries"] == 2
     assert s["immutable_entries"] == 1
     assert s["total_hits"] == 3
+    store.close()
+
+
+# ---- VerificationCache.semantic_lookup ----------------------------------
+
+
+def _write_relational(cache, *, predicate, subject, obj, verdict="verified"):
+    """Helper: write a cache entry with a deterministic canonical_key
+    so semantic_lookup can find it in tests below."""
+    claim = {
+        "pattern": "relational", "predicate": predicate,
+        "slots": {"subject": subject, "object": obj, "relation": predicate},
+        "polarity": 1,
+    }
+    key = canonicalize_claim_key(claim)
+    cache.write(
+        canonical_key=key, pattern="relational", predicate=predicate,
+        verdict=verdict, stability_class="immutable", ttl_seconds=None,
+    )
+    return key
+
+
+def test_semantic_lookup_finds_synonymous_predicate(tmp_path):
+    """The user's case beyond stem-stripping: ``son_of`` cached, looking
+    up ``child_of``. Tokens overlap (``of``), Jaccard 1/3 = 0.33 — below
+    the default 0.7 threshold, so this would NOT match. Use a closer
+    pair: ``is_child_of`` already stem-collapses, but ``has_child_of``
+    vs ``child_of`` is a real test of the semantic layer when stem
+    miss occurs."""
+    store = FactStore(tmp_path / "s.db")
+    cache = VerificationCache(store)
+
+    # Cache a fact under ``child_of``.
+    _write_relational(cache, predicate="child_of",
+                      subject="barron trump", obj="donald trump")
+
+    # Lookup with a structurally-equivalent predicate ``begat`` won't
+    # match (no token overlap → Jaccard 0). Lookup with ``child`` (one
+    # token in common with ``child_of``: "child") gets Jaccard 1/2 =
+    # 0.5, still below threshold. Lookup with the same predicate
+    # under a different stem prefix is the realistic case.
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "child",
+        "slots": {"subject": "barron trump", "object": "donald trump",
+                  "relation": "child"},
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.5)
+    assert hit is not None
+    assert hit.verdict.predicate == "child_of"
+    assert hit.score == 0.5  # tokens {child} vs {child, of}
+    store.close()
+
+
+def test_semantic_lookup_anchored_on_identity_slots(tmp_path):
+    """Reversed-relation safety: parent_of(A,B) cached should NOT
+    match child_of(B,A) — different identity-slot values mean
+    different shape, no candidate."""
+    store = FactStore(tmp_path / "s2.db")
+    cache = VerificationCache(store)
+
+    # Cache: Donald Trump parent_of Barron Trump
+    _write_relational(cache, predicate="parent_of",
+                      subject="donald trump", obj="barron trump")
+
+    # Lookup: Barron Trump child_of Donald Trump (same relationship,
+    # different identity slots). Identity-slot anchor MUST prevent
+    # this from matching.
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "child_of",
+        "slots": {"subject": "barron trump", "object": "donald trump",
+                  "relation": "child_of"},
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.5)
+    assert hit is None
+    store.close()
+
+
+def test_semantic_lookup_threshold_excludes_low_overlap(tmp_path):
+    """``founded_by`` cached, lookup ``built_by`` — no token overlap.
+    Jaccard 0 → no match regardless of identity-slot match."""
+    store = FactStore(tmp_path / "s3.db")
+    cache = VerificationCache(store)
+    _write_relational(cache, predicate="founded_by",
+                      subject="apple", obj="steve jobs")
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "built_by",
+        "slots": {"subject": "apple", "object": "steve jobs",
+                  "relation": "built_by"},
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.5)
+    assert hit is None
+    store.close()
+
+
+def test_semantic_lookup_polarity_distinguishes(tmp_path):
+    """polarity=1 cached, polarity=0 lookup — must NOT match. Negation
+    flips meaning entirely."""
+    store = FactStore(tmp_path / "s4.db")
+    cache = VerificationCache(store)
+    _write_relational(cache, predicate="located_in",
+                      subject="tokyo", obj="japan")
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "located_in",
+        "slots": {"subject": "tokyo", "object": "japan",
+                  "relation": "located_in"},
+        "polarity": 0,
+    }, identity_slot_names=["subject", "object"], threshold=0.5)
+    assert hit is None
+    store.close()
+
+
+def test_semantic_lookup_returns_none_with_no_identity_slots(tmp_path):
+    """Without at least one identity slot to anchor, semantic lookup
+    is unsafe (would degrade to whole-cache text similarity). Return
+    None rather than risk a wrong match."""
+    store = FactStore(tmp_path / "s5.db")
+    cache = VerificationCache(store)
+    _write_relational(cache, predicate="x",
+                      subject="a", obj="b")
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "x",
+        "slots": {},  # no identity slot values present
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.0)
+    assert hit is None
+    store.close()
+
+
+def test_semantic_lookup_skips_expired_entries(tmp_path):
+    """Mirrors the lookup() expiry contract — expired entries are not
+    returned even if they'd otherwise be the best semantic match."""
+    from datetime import datetime, timedelta, timezone
+    store = FactStore(tmp_path / "s6.db")
+    cache = VerificationCache(store)
+    key = _write_relational(cache, predicate="X_of",
+                            subject="a", obj="b")
+    # Force expiry.
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    store._conn.execute(
+        "UPDATE verification_cache SET expires_at = ? WHERE canonical_key = ?",
+        (past, key),
+    )
+    store._conn.commit()
+
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "X_of",
+        "slots": {"subject": "a", "object": "b", "relation": "X_of"},
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.0)
+    assert hit is None
+    store.close()
+
+
+def test_semantic_lookup_bumps_hit_count(tmp_path):
+    """Semantic hits count toward the matched entry's lifetime
+    utility — same accounting as exact lookup()."""
+    store = FactStore(tmp_path / "s7.db")
+    cache = VerificationCache(store)
+    _write_relational(cache, predicate="child_of",
+                      subject="x", obj="y")
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "child",
+        "slots": {"subject": "x", "object": "y", "relation": "child"},
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.4)
+    assert hit is not None
+    assert hit.verdict.hit_count == 1  # bumped from 0
+    # Persisted on the row.
+    row = store._conn.execute(
+        "SELECT hit_count FROM verification_cache WHERE canonical_key = ?",
+        (hit.matched_key,),
+    ).fetchone()
+    assert row["hit_count"] == 1
+    store.close()
+
+
+def test_semantic_lookup_picks_best_score_among_candidates(tmp_path):
+    """When multiple candidates exceed threshold, the highest-score
+    one wins. Predicate ``child_of`` is closer to ``child`` than
+    ``descendant`` is."""
+    store = FactStore(tmp_path / "s8.db")
+    cache = VerificationCache(store)
+    _write_relational(cache, predicate="descendant",
+                      subject="x", obj="y")
+    _write_relational(cache, predicate="child_of",
+                      subject="x", obj="y")
+    hit = cache.semantic_lookup({
+        "pattern": "relational", "predicate": "child",
+        "slots": {"subject": "x", "object": "y", "relation": "child"},
+        "polarity": 1,
+    }, identity_slot_names=["subject", "object"], threshold=0.0)
+    # ``child`` vs ``descendant``: 0/2 = 0
+    # ``child`` vs ``child_of``:    1/2 = 0.5
+    # Best is child_of.
+    assert hit is not None
+    assert hit.verdict.predicate == "child_of"
+    assert hit.score == 0.5
     store.close()
