@@ -87,6 +87,89 @@ def test_canonicalize_numeric_value_stable():
     assert a == b
 
 
+# ---- predicate stem normalization (the user's child_of / is_child_of case) ----
+
+
+def test_canonicalize_strips_is_prefix_from_predicate():
+    """User reported two cache entries for the same fact:
+    'relational|child_of|...' and 'relational|is_child_of|...' —
+    different keys for semantically-identical claims. The is_ prefix
+    should be stripped during canonicalization."""
+    a = canonicalize_claim_key({
+        "pattern": "relational", "predicate": "child_of",
+        "slots": {"subject": "Barron Trump", "relation": "child_of",
+                  "object": "Donald Trump"},
+        "polarity": 1,
+    })
+    b = canonicalize_claim_key({
+        "pattern": "relational", "predicate": "is_child_of",
+        "slots": {"subject": "Barron Trump", "relation": "is_child_of",
+                  "object": "Donald Trump"},
+        "polarity": 1,
+    })
+    assert a == b
+
+
+def test_canonicalize_strips_all_common_stems():
+    """Each common stem prefix collapses to the bare core."""
+    bare = canonicalize_claim_key({
+        "pattern": "relational", "predicate": "founded",
+        "slots": {"subject": "Apple", "relation": "founded",
+                  "object": "Steve Jobs"},
+        "polarity": 1,
+    })
+    for stem in ("is_", "was_", "has_", "have_", "are_", "were_",
+                 "does_", "did_", "do_"):
+        prefixed = canonicalize_claim_key({
+            "pattern": "relational", "predicate": stem + "founded",
+            "slots": {"subject": "Apple", "relation": stem + "founded",
+                      "object": "Steve Jobs"},
+            "polarity": 1,
+        })
+        assert prefixed == bare, f"stem {stem!r} did not collapse"
+
+
+def test_canonicalize_does_not_strip_partial_match():
+    """Don't false-strip predicates that happen to start with a stem
+    SUBSTRING. ``island_of`` starts with 'is' but not 'is_'; must
+    keep the whole word."""
+    no_underscore = canonicalize_claim_key({
+        "pattern": "categorical", "predicate": "island_of",
+        "slots": {"entity": "x", "category": "y"},
+        "polarity": 1,
+    })
+    # The control: 'land_of' should NOT match either since it's a
+    # different word from 'island_of'.
+    different = canonicalize_claim_key({
+        "pattern": "categorical", "predicate": "land_of",
+        "slots": {"entity": "x", "category": "y"},
+        "polarity": 1,
+    })
+    assert no_underscore != different
+
+
+def test_canonicalize_does_not_strip_when_only_stem():
+    """A predicate that's literally just 'is_' shouldn't collapse to
+    empty string. Defensive — the extractor should never produce
+    this, but if it does, keep the original."""
+    weird = canonicalize_claim_key({
+        "pattern": "x", "predicate": "is_",
+        "slots": {}, "polarity": 1,
+    })
+    assert "is_" in weird
+
+
+def test_normalize_predicate_helper_directly():
+    """Unit test on the _normalize_predicate helper itself so changes
+    to the stem list are caught without re-deriving via the full key."""
+    from src.cache.verification_cache import _normalize_predicate
+    assert _normalize_predicate("is_child_of") == "child_of"
+    assert _normalize_predicate("WAS_PRESIDENT") == "president"
+    assert _normalize_predicate("child_of") == "child_of"  # unchanged
+    assert _normalize_predicate("") == ""
+    assert _normalize_predicate("island_of") == "island_of"  # 'is' alone doesn't match
+
+
 # ---- VerificationCache: lookup / write / TTL ---------------------------
 
 
