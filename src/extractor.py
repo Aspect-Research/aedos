@@ -203,6 +203,14 @@ Output: facts=[
 ]
 Reasoning: one sentence yields two facts in two different patterns.
 
+Input: "Marie Curie was born in 1867 and died in 1934, so she lived 67 years."
+Output: facts=[
+  {{"pattern":"quantitative","predicate":"born_in_year","slots":{{"subject":"Marie Curie","property":"birth_year","value":1867}},"polarity":1,"source_text":"born in 1867"}},
+  {{"pattern":"quantitative","predicate":"died_in_year","slots":{{"subject":"Marie Curie","property":"death_year","value":1934}},"polarity":1,"source_text":"died in 1934"}},
+  {{"pattern":"quantitative","predicate":"lifespan_years","slots":{{"subject":"Marie Curie","property":"years_lived","value":67,"birth_year":1867,"death_year":1934}},"polarity":1,"source_text":"she lived 67 years"}}
+]
+Reasoning: three independent claims. The lifespan claim takes the dates as INPUTS — embed birth_year and death_year as slots so the LLM router can see the arithmetic is self-contained (1934 - 1867 = 67) and route to python. Without the embedded inputs the router would say "needs external data" and route to retrieval, defeating the multi-claim convention. The same pattern applies to ANY duration / diff / span claim that follows immediately after its inputs in the response (age from birth+now, term length from start+end years, distance from two coordinates).
+
 Input: "The sunset was beautiful"
 Output: facts=[]
 Reasoning: aesthetic judgment, no pattern fits.
