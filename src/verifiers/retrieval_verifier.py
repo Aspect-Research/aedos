@@ -31,10 +31,19 @@ from src.pattern_registry import PatternRegistry, Pattern
 from src.verifiers.types import VerificationOutcome, VerificationResult
 
 
-_USER_AGENT = (
-    "Mozilla/5.0 (Aedos research prototype) "
-    "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+# DDG's HTML endpoint is sensitive to User-Agent fingerprinting and
+# often returns 0 results on the first request. Try a couple of UAs in
+# sequence on empty result before giving up. Order: realistic-Chrome
+# (current), realistic-Firefox (fallback). The "Aedos research
+# prototype" label was getting filtered.
+_USER_AGENTS = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) "
+    "Gecko/20100101 Firefox/121.0",
 )
+# Back-compat name kept for any external imports.
+_USER_AGENT = _USER_AGENTS[0]
 _DDG_URL = "https://html.duckduckgo.com/html/"
 _TAVILY_URL = "https://api.tavily.com/search"
 _SERPAPI_URL = "https://serpapi.com/search.json"
@@ -144,11 +153,12 @@ class RetrievalResult:
 # ---- search providers (unchanged from v0.2) -------------------------
 
 
-def search_duckduckgo(query: str, *, top_n: int = _TOP_N) -> list[Snippet]:
+def _ddg_attempt(query: str, user_agent: str, top_n: int) -> list[Snippet]:
+    """Single DDG request with a specific User-Agent."""
     resp = httpx.post(
         _DDG_URL,
         data={"q": query},
-        headers={"User-Agent": _USER_AGENT},
+        headers={"User-Agent": user_agent},
         timeout=_REQUEST_TIMEOUT,
         follow_redirects=True,
     )
@@ -169,6 +179,24 @@ def search_duckduckgo(query: str, *, top_n: int = _TOP_N) -> list[Snippet]:
         if len(out) >= top_n:
             break
     return out
+
+
+def search_duckduckgo(query: str, *, top_n: int = _TOP_N) -> list[Snippet]:
+    """Try each User-Agent in turn until one returns results.
+
+    DDG's HTML endpoint commonly returns 0 results due to bot
+    fingerprinting (the dogfood corpus turn 9 'denver_elevation' hit
+    this — all queries returned empty for an answer that's literally
+    on every Denver Wikipedia page). Rotating UA usually unblocks it.
+
+    Returns the first attempt's results that are non-empty. If every
+    UA returns 0, returns []. Errors propagate from the first attempt
+    (we don't retry on HTTP error — that's a different failure class)."""
+    for ua in _USER_AGENTS:
+        results = _ddg_attempt(query, ua, top_n)
+        if results:
+            return results
+    return []
 
 
 def search_tavily(query: str, api_key: str, *, top_n: int = _TOP_N) -> list[Snippet]:
