@@ -60,3 +60,6 @@ uv.lock
 
 # Smoke-test / dogfooding diagnostic dumps (operator-local; not in repo).
 diagnostic_output/
+
+# Eval harness output (per-run JSON + summary; operator-local).
+eval_results/
