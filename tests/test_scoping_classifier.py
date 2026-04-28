@@ -173,6 +173,13 @@ def test_pipeline_logs_scoping_decisions_in_observation_mode(tmp_path):
     assert len(scope_events) == 1
     data = scope_events[0]["data"]
     assert data["decision"]["scope"] == "world_fact"
+    # The event payload includes the claim it pertains to so the
+    # trace UI can show "scoping decision FOR which claim". Without
+    # this, cache decisions floated context-free in the trace.
+    assert "claim" in data
+    assert data["claim"]["pattern"] == "spatial_temporal"
+    assert data["claim"]["predicate"] == "located_in"
+    assert data["claim"]["slots"]["entity"] == "Tokyo"
     # Routing/verification still ran (no behavior change).
     assert any(e["stage"] == "verification" for e in events)
 

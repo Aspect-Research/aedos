@@ -244,6 +244,28 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .cache-badge-write { background: var(--accent, #1f5fb8); color: white; }
 .stage.cache-write .stage-header { background: #e6eef9; color: #1f5fb8; }
 .cache-key { font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem; }
+/* Compact claim header on cache_{scoping,stability}_decision events
+   so the operator can see WHICH claim each decision pertains to. */
+.cache-claim-header {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+}
+.cache-claim-header .cache-claim-pred {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--ink);
+  margin-left: 0.15rem;
+}
+.cache-claim-header .cache-claim-slots {
+  font-family: var(--mono);
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.cache-claim-header .cache-claim-missing {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .decision-meta-secondary {
   font-size: 0.7rem;
   color: var(--muted);
