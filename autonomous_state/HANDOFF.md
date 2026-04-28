@@ -23,9 +23,9 @@ in MISSION.md: switch AEDOS_CHAT_MODEL_PROVIDER=anthropic and document.
 Continue work — the chat-model swap is not a hard dependency for most
 improvements.
 
-**As of session 1 wrap-up (2026-04-27 ~22:45 EDT):** Modal endpoint has
-been returning 503 from the upstream for ~30+ min. Status unknown
-when the next session picks up. Quick check:
+**As of session 2 (2026-04-28, ongoing):** Modal endpoint has been
+unreliable throughout this session — alternating between 503,
+ReadTimeout, and 200. Quick check:
 
     py -c "import os; from dotenv import load_dotenv; load_dotenv(); \
     import httpx; r = httpx.post('https://api.us-west-2.modal.direct/v1/chat/completions', \
