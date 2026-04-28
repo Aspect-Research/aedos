@@ -22,3 +22,21 @@ If GLM is unreachable (post-April 30 or otherwise), follow the fallback
 in MISSION.md: switch AEDOS_CHAT_MODEL_PROVIDER=anthropic and document.
 Continue work — the chat-model swap is not a hard dependency for most
 improvements.
+
+**As of session 1 wrap-up (2026-04-27 ~22:45 EDT):** Modal endpoint has
+been returning 503 from the upstream for ~30+ min. Status unknown
+when the next session picks up. Quick check:
+
+    py -c "import os; from dotenv import load_dotenv; load_dotenv(); \
+    import httpx; r = httpx.post('https://api.us-west-2.modal.direct/v1/chat/completions', \
+    headers={'Content-Type':'application/json', \
+             'Authorization':'Bearer '+os.getenv('MODAL_API_KEY')}, \
+    json={'model':'zai-org/GLM-5.1-FP8', \
+          'messages':[{'role':'user','content':'hi'}],'max_tokens':32}, \
+    timeout=300.0); print('status', r.status_code)"
+
+200 → resume `python scripts/dogfood_glm.py --start 6`.
+503 → either wait, or run against Anthropic for now:
+`python scripts/dogfood_glm.py --provider anthropic --start 6`
+(but ask the operator first re: API spend — full 17-prompt run uses
+~50-100 LLM calls).
