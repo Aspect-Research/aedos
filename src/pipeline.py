@@ -428,7 +428,11 @@ class Pipeline:
     # cold-starts in the Phase-2 dogfood timed out for this reason.
     # Lowering the cap to 1024 caps the reasoning chain too, which is
     # the right knob for AEDOS's chat use case.
-    CHAT_MAX_TOKENS = 1024
+    #
+    # Override via AEDOS_CHAT_MAX_TOKENS for prompts that need a longer
+    # answer (e.g. spell-29-letter-word-backwards needs more headroom
+    # for the reasoning chain to finish before the content is emitted).
+    CHAT_MAX_TOKENS = int(os.getenv("AEDOS_CHAT_MAX_TOKENS", "1024"))
 
     def _maybe_write_cache(
         self, verification_decisions: list[Decision], assistant_turn_id: int,
