@@ -103,10 +103,15 @@ def test_parse_malformed_returns_none():
 
 
 def test_default_search_prefers_tavily(monkeypatch):
-    """When TAVILY_API_KEY is set, default_search calls search_tavily,
-    not the others."""
+    """When Wikipedia is empty and TAVILY_API_KEY is set, default_search
+    calls Tavily — not SerpAPI or DDG. (Wikipedia is now the *first*
+    provider; this test exercises the next-tier fall-through.)"""
     monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
     monkeypatch.setenv("SERPAPI_KEY", "serp-key")
+    monkeypatch.setattr(
+        "src.verifiers.scrapers.search_wikipedia",
+        lambda q, **kw: [],
+    )
 
     called: list[str] = []
     def fake_tavily(query, key, *, top_n=3):
@@ -122,8 +127,13 @@ def test_default_search_prefers_tavily(monkeypatch):
 
 
 def test_default_search_falls_to_serpapi_when_no_tavily(monkeypatch):
+    """Wikipedia empty + no Tavily key + SerpAPI key set → SerpAPI."""
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.setenv("SERPAPI_KEY", "serp-key")
+    monkeypatch.setattr(
+        "src.verifiers.scrapers.search_wikipedia",
+        lambda q, **kw: [],
+    )
 
     called: list[str] = []
     def fake_serp(query, key, *, top_n=3):
@@ -138,8 +148,17 @@ def test_default_search_falls_to_serpapi_when_no_tavily(monkeypatch):
 
 
 def test_default_search_falls_to_ddg_when_no_keys(monkeypatch):
+    """When Wikipedia returns nothing and no paid keys are set, fall
+    through to DDG. (Wikipedia is now the primary provider — see
+    test_default_search_prefers_wikipedia for the happy path.)"""
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.delenv("SERPAPI_KEY", raising=False)
+
+    # Stub Wikipedia as empty so we exercise the fall-through.
+    monkeypatch.setattr(
+        "src.verifiers.scrapers.search_wikipedia",
+        lambda q, **kw: [],
+    )
 
     called: list[str] = []
     def fake_ddg(query, *, top_n=3):
@@ -151,6 +170,56 @@ def test_default_search_falls_to_ddg_when_no_keys(monkeypatch):
 
     result = default_search("test")
     assert called == ["ddg('test')"]
+
+
+def test_default_search_prefers_wikipedia_when_results_exist(monkeypatch):
+    """Wikipedia is the first provider in the chain. When it returns
+    results, no paid API or DDG fallback fires — single network call,
+    no key required, no rate-limit risk."""
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_KEY", raising=False)
+
+    wiki_calls: list[str] = []
+    def fake_wiki(query, **kw):
+        wiki_calls.append(query)
+        return [Snippet(title="W", snippet="from wikipedia", url="https://en.wikipedia.org/wiki/W")]
+    monkeypatch.setattr(
+        "src.verifiers.scrapers.search_wikipedia", fake_wiki,
+    )
+
+    ddg_calls: list = []
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.search_duckduckgo",
+        lambda q, **kw: ddg_calls.append(q) or [],
+    )
+
+    result = default_search("Marie Curie Nobel Prize year")
+    assert len(result) == 1 and result[0].title == "W"
+    assert wiki_calls == ["Marie Curie Nobel Prize year"]
+    assert ddg_calls == []  # never reached
+
+
+def test_default_search_falls_through_when_wikipedia_raises(monkeypatch):
+    """If Wikipedia errors (network blip, schema change), the chain
+    silently falls through to the next provider rather than failing
+    the whole turn."""
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_KEY", raising=False)
+
+    def boom_wiki(query, **kw):
+        raise RuntimeError("wikipedia unreachable")
+    monkeypatch.setattr(
+        "src.verifiers.scrapers.search_wikipedia", boom_wiki,
+    )
+
+    def fake_ddg(query, *, top_n=3):
+        return [Snippet(title="d", snippet="x", url="y")]
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.search_duckduckgo", fake_ddg,
+    )
+
+    result = default_search("anything")
+    assert len(result) == 1 and result[0].title == "d"
 
 
 def test_search_tavily_parses_response(monkeypatch):
