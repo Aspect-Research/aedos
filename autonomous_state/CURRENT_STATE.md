@@ -1,16 +1,36 @@
 # Current State
 
-Updated: 2026-04-28T13:00:00-0400
-Updated by: autonomous instance — Session 2 (continuing)
+Updated: 2026-04-28T15:00:00-0400
+Updated by: autonomous instance — Session 2 (continuing — post-context-compaction)
 
 ## Status
 
 - Branch: experiment/autonomous-v0.5.x
-- Last green pytest: 2026-04-28 — 452 passed, 7 skipped (real-API gated)
+- Last green pytest: 2026-04-28 — 464 passed, 8 skipped (real-API gated)
 - Total project coverage: 95%
-- Last commit: [obs] REAL-API VALIDATION: verbatim rule works + AEDOS caught Claude's Saturn hallucination
+- Last commit: [docs] README: catalog analyze_costs.py + analyze_cache.py in scripts/ tree
 - Active work: continuing per-operator instructions to keep producing
-  improvements indefinitely. No stop condition. 100+ commits this session.
+  improvements indefinitely. No stop condition. 120+ commits this session.
+
+## Shipped after context-compaction this session
+
+  - **Per-backend chat max_tokens** — Pipeline._max_tokens_for_chat()
+    picks 4096 for Modal/GLM (reasoning headroom) and 1024 for
+    Anthropic. Legacy AEDOS_CHAT_MAX_TOKENS still wins as global
+    override. Fixes the floccinaucinihilipilification truncation
+    (turn 4 of the corpus). 3 new tests.
+  - **Cleanup: dead back-compat in retrieval_verifier** — dropped
+    _USER_AGENT (singular) alias and RetrievalResult.query property
+    + matching to_dict field, none of which were read anywhere.
+  - **scripts/analyze_cache.py** — hit-rate analyzer modeled on
+    analyze_costs.py; reports lookups/hits/misses, by-stability
+    breakdown, top reused canonical keys. 5 tests. The most-reused-keys
+    list will feed entity-resolution work when sessions accumulate.
+  - **Flow View tooltips** — SVG <title> elements give native browser
+    tooltips on every node so the truncated meta line / claim label
+    is recoverable on hover.
+  - **README scripts/ tree** updated for the two new analysis
+    scripts.
 
 ## 🎯 COMPREHENSIVE REAL-API VALIDATION 2026-04-28
 
