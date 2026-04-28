@@ -56,11 +56,50 @@ class CachedVerdict:
         }
 
 
+# Predicate-prefix stems we strip during canonicalization so semantically-
+# equivalent predicates collide on the same cache key. Order matters
+# only in length — we strip longest match first so "were_" beats "we_"
+# (not in the list, but illustrates the principle).
+_PREDICATE_PREFIX_STEMS = (
+    "were_", "was_", "are_", "has_", "have_", "is_",
+    "does_", "did_", "do_",
+)
+
+# Slot keys whose VALUES are predicate-shaped identifiers (i.e. they
+# carry the relation/predicate name as data) and should be stem-
+# normalized too. Without this, two cache entries with identical
+# predicate fields but ``slots.relation`` differing in is_/has_ prefix
+# still produce different keys — exactly the user's child_of /
+# is_child_of case where the predicate appears both at the top level
+# and inside slots.
+_PREDICATE_SHAPED_SLOTS = ("relation", "predicate", "relation_kind")
+
+
+def _normalize_predicate(p: str) -> str:
+    """Strip common stem prefixes (is_, has_, was_, etc.) from a
+    predicate-shaped string and return the lowercased core. Pure
+    string operation; no LLM, no synonym table.
+
+    Catches the user's reported false-miss: ``is_child_of`` and
+    ``child_of`` both → ``child_of``. Doesn't catch deeper synonymy
+    like ``son_of`` ↔ ``child_of`` (handled by the semantic-shape
+    lookup layer)."""
+    p = (p or "").strip().lower()
+    for stem in _PREDICATE_PREFIX_STEMS:
+        if p.startswith(stem) and len(p) > len(stem):
+            return p[len(stem):]
+    return p
+
+
 def canonicalize_claim_key(claim: dict) -> str:
     """Produce a stable string key for cache lookup.
 
     Rules:
       * pattern + predicate are required and case-folded.
+      * Predicate (and predicate-shaped slot values: ``relation``,
+        ``predicate``, ``relation_kind``) get stem normalization —
+        ``is_child_of`` / ``has_child_of`` → ``child_of`` so
+        equivalent predicates collide on the same key.
       * Slot keys are sorted alphabetically (so {a:1,b:2} == {b:2,a:1}).
       * Slot values are case-folded if string, str()'d otherwise.
       * Whitespace inside string values is collapsed.
@@ -72,9 +111,15 @@ def canonicalize_claim_key(claim: dict) -> str:
          slots:{entity:'Tokyo', location:'Japan'}, polarity:1}
     canonicalizes to:
         'spatial_temporal|located_in|p=1|entity=tokyo&location=japan'
+
+    With stem normalization, both
+        {predicate:'is_child_of', slots:{relation:'is_child_of', ...}}
+    and
+        {predicate:'child_of',    slots:{relation:'child_of',    ...}}
+    canonicalize to the same key.
     """
     pattern = str(claim.get("pattern", "")).strip().lower()
-    predicate = str(claim.get("predicate", "")).strip().lower()
+    predicate = _normalize_predicate(str(claim.get("predicate", "")))
     polarity = int(claim.get("polarity", 1))
     slots = claim.get("slots") or {}
     parts: list[str] = []
@@ -82,6 +127,10 @@ def canonicalize_claim_key(claim: dict) -> str:
         v = slots[k]
         if isinstance(v, str):
             v = " ".join(v.split()).lower()
+            # Stem-normalize predicate-shaped slot values so the slot
+            # block matches the top-level predicate's normalization.
+            if k in _PREDICATE_SHAPED_SLOTS:
+                v = _normalize_predicate(v)
         else:
             v = json.dumps(v, default=str, sort_keys=True)
         parts.append(f"{k}={v}")
