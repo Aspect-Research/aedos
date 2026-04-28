@@ -1376,14 +1376,31 @@ function buildFlowSvg(events, turnId) {
     },
   ];
 
-  // Layout calculation.
+  // Layout: claims wrap into multiple rows so wide-claim turns don't
+  // create a horizontal scrollbar. Per-row count is capped so each
+  // claim node stays at its full readable width; the chart grows
+  // vertically instead.
+  const FLOW_CLAIMS_PER_ROW = 4;
+  const FLOW_CLAIM_GAP_X = 24;
+  const FLOW_CLAIM_GAP_Y = 18;
+  const claimsPerRow = totalClaims > 0
+    ? Math.min(totalClaims, FLOW_CLAIMS_PER_ROW)
+    : 0;
+  const claimRowCount = totalClaims > 0
+    ? Math.ceil(totalClaims / FLOW_CLAIMS_PER_ROW)
+    : 0;
+
   const branchW = Math.max(
     FLOW_NODE_W,
-    totalClaims * FLOW_CLAIM_W + (totalClaims - 1) * 24,
+    claimsPerRow * FLOW_CLAIM_W + Math.max(0, claimsPerRow - 1) * FLOW_CLAIM_GAP_X,
   );
   const totalW = Math.max(FLOW_NODE_W, branchW) + FLOW_MARGIN * 2;
   const linearTopH = linearTop.length * (FLOW_NODE_H + FLOW_GAP);
-  const branchH = totalClaims > 0 ? FLOW_NODE_H + FLOW_GAP : 0;
+  const branchH = claimRowCount > 0
+    ? claimRowCount * FLOW_NODE_H
+      + Math.max(0, claimRowCount - 1) * FLOW_CLAIM_GAP_Y
+      + FLOW_GAP  // gap before corrector
+    : 0;
   const linearBottomH = linearBottom.length * (FLOW_NODE_H + FLOW_GAP);
   const totalH = linearTopH + branchH + linearBottomH + FLOW_MARGIN * 2;
 
@@ -1408,39 +1425,55 @@ function buildFlowSvg(events, turnId) {
     y += FLOW_NODE_H + FLOW_GAP;
   });
 
-  // Branch into claims.
+  // Branch into claim rows. Each row has up to FLOW_CLAIMS_PER_ROW
+  // claims; rows stack vertically. Edges go router → each claim and
+  // each claim → corrector regardless of row, so the operator can
+  // see every claim's lineage even with crossings on tall charts.
   if (totalClaims > 0) {
-    const claimsRowY = y;
-    const totalClaimW = totalClaims * FLOW_CLAIM_W + (totalClaims - 1) * 24;
-    const startX = cx - totalClaimW / 2;
+    const firstClaimRowY = y;
+    const lastClaimRowY = firstClaimRowY
+      + (claimRowCount - 1) * (FLOW_NODE_H + FLOW_CLAIM_GAP_Y);
+    const correctorTopY = lastClaimRowY + FLOW_NODE_H + FLOW_GAP;
+
     claims.forEach((d, idx) => {
-      const x = startX + idx * (FLOW_CLAIM_W + 24);
+      const row = Math.floor(idx / FLOW_CLAIMS_PER_ROW);
+      const col = idx % FLOW_CLAIMS_PER_ROW;
+      // Centre each row independently. Last row may be partial — its
+      // claims still center under the chart's midline.
+      const rowSize = (row < claimRowCount - 1)
+        ? FLOW_CLAIMS_PER_ROW
+        : (totalClaims - row * FLOW_CLAIMS_PER_ROW);
+      const rowWidth = rowSize * FLOW_CLAIM_W
+        + Math.max(0, rowSize - 1) * FLOW_CLAIM_GAP_X;
+      const rowStartX = cx - rowWidth / 2;
+      const x = rowStartX + col * (FLOW_CLAIM_W + FLOW_CLAIM_GAP_X);
+      const claimY = firstClaimRowY + row * (FLOW_NODE_H + FLOW_CLAIM_GAP_Y);
+
       const status = d.verification_status || "?";
       const method = d.routing_decision?.method || "(no routing)";
       const claim = d.claim || {};
       const cached = d.served_from_cache === true;
-      // Mark cached claims with a "↺" prefix so the operator can see
-      // at a glance which verdicts were short-circuited.
       const labelCore = `${claim.predicate || "?"} (${method})`;
       const label = cached ? `↺ ${labelCore}` : labelCore;
       const cls = flowEdgeClass(status);
-      // edge from router-bottom to claim-top
+
+      // Edge from router (above firstClaimRowY) to this claim's top.
       addEdge(svg,
-        cx, claimsRowY - FLOW_GAP,
-        x + FLOW_CLAIM_W / 2, claimsRowY,
+        cx, firstClaimRowY - FLOW_GAP,
+        x + FLOW_CLAIM_W / 2, claimY,
         cls,
       );
-      // claim node with status colorization
-      addClaimNode(svg, x, claimsRowY, FLOW_CLAIM_W, FLOW_NODE_H,
+      // Claim node.
+      addClaimNode(svg, x, claimY, FLOW_CLAIM_W, FLOW_NODE_H,
         label, status, cls, { cached });
-      // edge from claim-bottom to corrector-top
+      // Edge from this claim's bottom to corrector top.
       addEdge(svg,
-        x + FLOW_CLAIM_W / 2, claimsRowY + FLOW_NODE_H,
-        cx, claimsRowY + FLOW_NODE_H + FLOW_GAP,
+        x + FLOW_CLAIM_W / 2, claimY + FLOW_NODE_H,
+        cx, correctorTopY,
         cls,
       );
     });
-    y = claimsRowY + FLOW_NODE_H + FLOW_GAP;
+    y = correctorTopY;
   } else {
     // No claims: keep the linear edge.
     addEdge(svg, cx, y - FLOW_GAP, cx, y, "");
