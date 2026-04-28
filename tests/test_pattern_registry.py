@@ -174,3 +174,71 @@ def test_minimal_pattern_loads(tmp_path):
     p = reg.get("foo")
     assert isinstance(p, Pattern)
     assert p.required_slot_names() == ["subject"]
+
+
+# ---- coverage gaps ----
+
+
+def test_pattern_slot_lookup_returns_none_for_unknown():
+    """Pattern.slot(name) returns the Slot when found, None otherwise."""
+    reg = load_default_registry()
+    p = reg.get("preference")
+    assert p.slot("agent") is not None
+    assert p.slot("nonexistent") is None
+
+
+def test_registry_has_works():
+    reg = load_default_registry()
+    assert reg.has("preference")
+    assert not reg.has("not_a_pattern")
+
+
+def test_empty_yaml_raises(tmp_path):
+    """from_yaml rejects empty/malformed top-level mappings."""
+    bad = tmp_path / "empty.yaml"
+    bad.write_text("", encoding="utf-8")
+    with pytest.raises(PatternRegistryError, match="non-empty mapping"):
+        PatternRegistry.from_yaml(bad)
+
+
+def test_yaml_top_level_list_raises(tmp_path):
+    bad = tmp_path / "list.yaml"
+    bad.write_text("- foo\n- bar\n", encoding="utf-8")
+    with pytest.raises(PatternRegistryError, match="non-empty mapping"):
+        PatternRegistry.from_yaml(bad)
+
+
+def test_pattern_body_must_be_mapping(tmp_path):
+    bad = _write_yaml(tmp_path, {"foo": "not a dict"})
+    with pytest.raises(PatternRegistryError, match="must be a mapping"):
+        PatternRegistry.from_yaml(bad)
+
+
+def test_pattern_with_no_slots_raises(tmp_path):
+    bad = _write_yaml(
+        tmp_path,
+        {"foo": {"description": "x", "slots": []}},
+    )
+    with pytest.raises(PatternRegistryError, match="at least one slot"):
+        PatternRegistry.from_yaml(bad)
+
+
+def test_slot_must_be_mapping(tmp_path):
+    bad = _write_yaml(
+        tmp_path,
+        {"foo": {"description": "x", "slots": ["not a dict"]}},
+    )
+    with pytest.raises(PatternRegistryError, match="each slot must be a mapping"):
+        PatternRegistry.from_yaml(bad)
+
+
+def test_slot_must_have_name_and_type(tmp_path):
+    bad = _write_yaml(
+        tmp_path,
+        {"foo": {
+            "description": "x",
+            "slots": [{"type": "entity", "required": True}],  # no name
+        }},
+    )
+    with pytest.raises(PatternRegistryError, match="slot missing 'name'"):
+        PatternRegistry.from_yaml(bad)
