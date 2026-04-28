@@ -11,6 +11,7 @@
   <h1>Aedos</h1>
   <nav class="tabs">
     <button class="tab active" data-tab="chat">Chat + Trace</button>
+    <button class="tab" data-tab="flow">Flow View</button>
     <button class="tab" data-tab="facts">Fact Store</button>
     <button class="tab" data-tab="predicates">Patterns</button>
   </nav>
@@ -36,6 +37,22 @@
           <p class="hint">No turns yet. Send a message to see the extraction → verification → correction pipeline.</p>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- Flow View tab ------------------------------------------------- -->
+  <section id="tab-flow" class="tab-panel">
+    <div class="flow-toolbar">
+      <label>Turn
+        <select id="flow-turn-select"></select>
+      </label>
+      <button id="flow-refresh">Refresh</button>
+      <span id="flow-status" class="hint"></span>
+    </div>
+    <div id="flow-container" class="flow-container">
+      <p class="hint">Send a message, then come back here to see a single
+        turn as a flowchart. Click any box to jump to its full detail in
+        the Chat + Trace tab.</p>
     </div>
   </section>
 
