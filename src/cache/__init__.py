@@ -4,23 +4,30 @@ Per spec, this is a CACHE, not a knowledge base. Every cached verdict
 is provisional — entries can be wrong, can go stale, and are subject
 to eviction. The cache is a performance optimization for retrieval.
 
-Implementation order (each its own commit):
+The pipeline:
 
-  1. ✓ Schema (verification_cache table + 4 pipeline event stages)
-  2. → Scoping classifier in OBSERVATION MODE (this module).
-       Decides per claim: user_specific / session_specific / world_fact.
-       Only world_fact is cache-eligible. In observation mode, the
-       classifier runs and logs its decision but does NOT gate caching.
-       Two sessions of observation logs first, then move to step 3.
-  3. Stability classifier in observation mode. Decides TTL class
-     for cache-eligible claims.
-  4. Cache lookup wired into retrieval verifier (read-only at first).
-  5. Cache write wired in. Now the cache is live.
-  6. Cache inspector tab in trace UI.
+  1. Scoping classifier — per claim, decides
+     ``user_specific`` / ``session_specific`` / ``world_fact``.
+     Only world_fact is cache-eligible. (See ``scoping_classifier.py``.)
+  2. Stability classifier — for cache-eligible claims, picks one of
+     ``immutable`` / ``decade_stable`` / ``years_stable`` /
+     ``months_stable`` / ``days_stable`` / ``volatile`` and the
+     resulting TTL. Volatile entries skip the cache. (See
+     ``stability_classifier.py``.)
+  3. Lookup — at route time, the router checks the cache for an
+     unexpired entry under the canonical key. A hit short-circuits
+     the retrieval verifier and returns a Decision with
+     ``served_from_cache=True``. (See ``Router._maybe_cache_hit``.)
+  4. Write — after a successful retrieval verdict, the pipeline
+     writes the verdict + TTL to the cache. (See
+     ``Pipeline._maybe_write_cache``.)
 
-Steps 4 and 5 are deliberately two commits — read-only-first lets us
-measure the hit rate against actual retrieval results before risking
-serving cached verdicts.
+OFF by default. Enable with ``AEDOS_CACHE_TIER2=1`` (single shortcut),
+or use the granular ``AEDOS_CACHE_SCOPING`` / ``AEDOS_CACHE_STABILITY``
+/ ``AEDOS_CACHE_WRITES`` env vars for partial / observation-only mode.
+
+Inspect with the Cache tab in the trace UI, ``/api/cache``, or
+``scripts/analyze_cache.py``.
 """
 
 from src.cache.scoping_classifier import (
