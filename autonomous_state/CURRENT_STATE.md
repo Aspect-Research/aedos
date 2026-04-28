@@ -1,7 +1,16 @@
 # Current State
 
-Updated: 2026-04-27T23:00:00-0400
-Updated by: autonomous instance — Session 1 (final)
+Updated: 2026-04-28T08:00:00-0400
+Updated by: autonomous instance — Session 2 resume
+
+## Resume note (Session 2)
+
+Session 1 wound down prematurely (wrote a wrap-up summary instead of
+continuing). Per the operator's correction: there is no stopping
+condition. Resuming. Picking up the hallucination-corpus work first
+(Phase 7 / Phase 2 deepening), since the 10-turn dogfood produced zero
+verifiable hallucinations from GLM and the verification pipeline never
+got to demonstrate its main job.
 
 ## Status
 
