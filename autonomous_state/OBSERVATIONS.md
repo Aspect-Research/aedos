@@ -344,21 +344,18 @@ Phase-2 dogfood didn't surface.
 floccinaucinihilipilification spell-backwards turn — too many
 reasoning tokens for max_tokens=1024 cap).
 
-### Real catches (the verifier did its main job)
+### **REVISED** — these were NOT real catches
 
-3 contradicted verdicts where AEDOS caught GLM saying something wrong
-and the corrector applied a REPLACE intervention. Specifically:
+The 3 "catches" originally listed here were extractor substitution
+bugs. See the CRITICAL section above for the analysis. Brief
+re-summary:
 
-  - **yellowknife_population** (turn 8) — GLM gave a confident wrong
-    population, verifier caught it. Real win on the "lesser-known
-    entity numerical claim" hypothesis.
-  - **saturn_moons** (turn 11) — pre-2023 trained models are likely
-    to say ~83 moons; the answer changed to 146 in May 2023. AEDOS
-    caught the stale figure.
-  - **marie_curie composite** (turn 12) — 5 facts extracted, 4 of
-    them verified, 1 contradicted. Multi-claim extraction working,
-    one of the slot values was wrong, AEDOS surgically corrected
-    the wrong one.
+  - yellowknife_population: model said "21,455", extractor wrote 20340
+  - saturn_moons: model said "274", extractor wrote 146
+  - marie_curie married_to: source_text rewritten + missing valid_until
+
+True hallucination-catch rate from this corpus is unknown — needs
+re-run after the extractor fix lands.
 
 ### Inconclusive verdicts (verifier hedged)
 
