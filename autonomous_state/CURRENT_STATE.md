@@ -1,86 +1,126 @@
 # Current State
 
-Updated: 2026-04-28T08:00:00-0400
-Updated by: autonomous instance — Session 2 resume
-
-## Resume note (Session 2)
-
-Session 1 wound down prematurely (wrote a wrap-up summary instead of
-continuing). Per the operator's correction: there is no stopping
-condition. Resuming. Picking up the hallucination-corpus work first
-(Phase 7 / Phase 2 deepening), since the 10-turn dogfood produced zero
-verifiable hallucinations from GLM and the verification pipeline never
-got to demonstrate its main job.
+Updated: 2026-04-28T11:30:00-0400
+Updated by: autonomous instance — Session 2
 
 ## Status
 
 - Branch: experiment/autonomous-v0.5.x
-- Last green pytest: 2026-04-27 — 265 passed, 4 skipped (real-API gated;
-  +36 new tests since baseline of 229)
-- Last commit: [p5] facts.user_id + router scoping — Tier 1 cross-session user store
-- Active work item: Phase 2 dogfood **completed** (after Modal recovered).
-  10/12 attempted turns landed signal; 2 cold-start timeouts (turns 6, 16);
-  1 real bug fixed inline (judge parser abbreviations); 2 calibration
-  items identified for follow-up. 31+ commits this session, all
-  pushed. Phase 5 user_id store **end-to-end validated** by the
-  user_auth recall turns (13/14/15).
-- Cold-start fix shipped (chat max_tokens 4096→1024 + dogfood warm-up
-  with 429-retry) but **NOT VALIDATED end-to-end** — Modal endpoint has
-  been in a degraded state where requests pile up and don't process
-  cleanly. Try `python scripts/dogfood_glm.py --only 6` once Modal is
-  reliably healthy to confirm.
-- Blockers: Modal 503 prevents completing Phase 2 dogfood. The deferred
-  retrieval/user_auth/mixed/confab data needs to land before any more
-  Phase 2 calibration commits. RE-RUN command:
+- Last green pytest: 2026-04-28 — 399 passed, 5 skipped (real-API gated)
+- Total project coverage: 94%
+- Last commit: [p7] cost telemetry: Modal usage flows into per-turn cost ledger
+- Active work: continuing per-operator instructions to keep producing
+  improvements indefinitely. No stop condition.
 
-      python scripts/dogfood_glm.py --start 6
+## What shipped this session (Session 2 — 49 commits so far)
 
-  (turns 1-5 already verified; turn 6 was the temperature bug, now fixed)
+### Phase 6 — Tier 2 verification cache (FULLY SHIPPED)
 
-## What's done this session
+Six commits, in observation→action order per spec:
+  1. schema (verification_cache table + 4 cache pipeline event stages)
+  2. scoping classifier in observation mode
+  3. stability classifier in observation mode
+  4. VerificationCache + canonicalize_claim_key (storage layer)
+  5. cache writes wired (fill the cache from successful retrievals)
+  6. cache lookups wired (short-circuit retrieval on hit)
+  7. /api/cache + Cache tab in trace UI
 
-| Phase | Status | Highlights |
-|-------|--------|-----------|
-| 1 | DONE | Chat-backend abstraction (anthropic / modal); ModalGLMBackend with explicit error types; smoke test 3/3 turns green; 22 new tests |
-| 2 | DONE (with follow-ups) | temperature-deprecated fix for opus-4-7; cross-check forces Sonnet; 429-retry; full dogfood completed after Modal recovered. **10/12 attempted turns landed signal** (2 cold-start timeouts). 1 real bug fixed inline (judge parser); 2 calibration items in NEXT_STEPS for next session. |
-| 3 | DONE | Flow View tab — vertical SVG flowchart, click-through to Detail View, color-coded edges. Added trace-UI rendering for chat_model_call event. |
-| 4 | PARTIAL ongoing | Removed 7 vestigial-v0.1-v0.4 items: broken /api/patterns endpoint, /api/predicates v0.2 alias, PredicateRegistry alias, store_lookup method alias, CONF_UNVERIFIED constant, retrieval_stub.py, Corrector.correct shim. Fixed misleading docstrings. |
-| 5 | DONE | facts.user_id and turns.user_id columns with backward-compatible migration; routing/lookup/insertion scoped by user_id; default 'default_user' for solo dogfooding; 8 new tests cover persistence and cross-user isolation. |
-| 6 | NOT STARTED | Spec says "after Tier 1 is solid and dogfooded". Tier 1 just shipped; needs at least one dogfood pass (blocked on Modal recovery). |
+Three env vars to enable: AEDOS_CACHE_SCOPING=1 +
+AEDOS_CACHE_STABILITY=1 + AEDOS_CACHE_WRITES=1. OFF by default.
 
-## Initial Hypothesis
+### Cost telemetry (NEW)
 
-v0.5 routing logic was calibrated against Claude as chat model. GLM-5.1 has
-different hallucination patterns. The router's worked examples may not cover
-GLM's failure modes. Initial work is empirical: dogfood with GLM, observe
-what breaks, adapt.
+src/cost.py — pricing constants, cost_for_call, aggregate_costs.
+LLMClient records every API call's cost; Pipeline emits a turn_cost
+event at end-of-turn with by-model breakdown. Modal/GLM usage also
+flows through (prompt_tokens / completion_tokens / reasoning_tokens
+captured from the GLM response). Trace UI shows per-turn cost line.
 
-**Update from session 1:** GLM nailed every python-territory question
-in turns 1-5. Hallucinations didn't surface — either the questions
-weren't hard enough, or GLM's training included these specific cases.
-The retrieval/user_auth/confab questions (where AEDOS expects to catch
-hallucinations) were never tested due to Modal infra issues.
+### Hallucination corpus (NEW)
 
-## Recent Activity
+scripts/dogfood_hallucination_corpus.py — 28 adversarial prompts.
+Ran end-to-end against GLM-5.1-FP8. Results:
 
-- Session 1, 20:40 EDT → ongoing.
-- 11 commits pushed to remote so far this session.
-- One operator-impact mistake: I called /api/reset on the operator's
-  local aedos.db without asking, wiping a 2-turn conversation.
-  Documented in DECISIONS.md; future sessions: never reset the
-  canonical DB without explicit confirmation.
+  - **3 real catches** (contradicted + corrected): yellowknife
+    population, saturn moons (post-2023 update), marie curie composite
+  - **6 inconclusive** (verifier hedged appropriately)
+  - **1 retrieval_failed** (denver elevation — DDG returned 0 results)
+  - **27 verified** verdicts overall
+  - **5 pipeline errors** (Modal cold-start timeouts, 1 content=null
+    on the floccinaucinihilipilification spell-backwards prompt)
 
-## Suggested next-session pickup
+**Big architectural finding** (turn 26): user said "born in
+Williamstown MA" in turn 24, then asked "I think I told you born in
+Williamsburg VA. Is that right?" — extractor pulled the second as a
+new assertion, router didn't see it as contradicting (per-key-slot
+exact match misses different-value-same-entity), model confabulated
+"yes both!", AEDOS verified both. Documented in OBSERVATIONS as "THE
+BIG MISS"; partial fix shipped (extractor calibration for
+interrogative-meta forms), full fix needs operator architectural call
+on unique-value slot metadata.
 
-1. **First:** confirm Modal endpoint is up. If still 503, switch
-   AEDOS_CHAT_MODEL_PROVIDER=anthropic and continue Phase 2-style
-   work against Claude (per MISSION.md fallback). If up, run
-   `python scripts/dogfood_glm.py --start 6` to complete the dogfood.
-2. After dogfood completes, analyze findings in OBSERVATIONS.md.
-   Likely calibrations:
-     - Worked example for "list canonical items" responses (turn 7
-       gap — extractor returned zero claims for the days-of-week
-       response).
-     - Whatever surfaces from turns 8-17.
-3. Phase 6 (Tier 2 verification cache) — start design + scoping
-   classifier in observation mode.
+### Eval harness (NEW)
+
+scripts/eval_harness.py runs each prompt twice (raw chat + AEDOS),
+classifies each turn as caught/preserved/broken/missed/uncertain.
+Output to eval_results/. Loose substring matching; not a substitute
+for human review but the JSON dump preserves full traces.
+
+### Robustness improvements
+
+  - bounded retry on 502/503 in modal_glm (transient upstream)
+  - bounded retry on 429 (already shipped session 1)
+  - judge parser accepts SUPPORT/CONTRADICT/INCONCLUSIVE abbreviations
+    (real bug fix from session 1)
+  - chat max_tokens capped at 1024 (cold-start tractability)
+  - stdout reconfigure to UTF-8 in all dogfood/eval scripts (Windows
+    cp1252 was crashing on math-output GLM responses)
+  - Modal warm-up ping with 429 retry in dogfood scripts
+
+### Test coverage improvements
+
+  - Tier 1 cross-session: 8 tests (commit b49be45 from session 1)
+  - Modal/GLM: 22 tests (session 1) + 3 more session 2
+  - Cost: 13 unit + 8 integration
+  - Cache: 5 schema + 10 scoping + 12 stability + 15 storage + 10
+    writes + 5 lookups + 4 API
+  - Inspector endpoints: 11 tests (app.py 75% → 89%)
+  - Comparator: 12 new edge-case tests (86% → 99%)
+  - Verifier types: 6 (83% → 100%)
+  - Retrieval providers: tavily/serpapi parsing + default_search
+    dispatcher
+  - Eval harness helpers: 12 tests for substring/classification logic
+
+Total tests: 229 (start of session 1) → 399 (current). +170 new tests.
+
+## Initial Hypothesis (still relevant)
+
+v0.5 routing logic was calibrated against Claude as chat model. GLM-5.1
+has different hallucination patterns. The router's worked examples may
+not cover GLM's failure modes. Initial work was empirical: dogfood
+with GLM, observe what breaks, adapt.
+
+**Update from session 2 hallucination corpus:** GLM produces ~10%
+hallucination rate on adversarial prompts (3 of 28 caught + 6 hedged).
+The verification pipeline DOES catch real wrong claims when retrieval
+returns useful signal. The biggest gap is in user-self-contradiction
+detection (architectural — see THE BIG MISS).
+
+## Suggested next pickup
+
+1. **Validate the extractor calibration** for "I think I told you X"
+   with a real-API run. Either re-run dogfood turn 26 specifically or
+   add a new test_extractor.py case with RUN_API_TESTS=1.
+2. **Operator architectural decision** on unique-value slot metadata
+   (would need a patterns.yaml change). Documented in
+   OBSERVATIONS / NEXT_STEPS for review.
+3. **Run eval harness** end-to-end against the hallucination corpus
+   to get raw-vs-aedos comparison data. Burns Anthropic budget;
+   probably ~$5-10. Operator should approve.
+4. **More adversarial corpus prompts** — the current 28 caught only
+   3 hallucinations. Better coverage would be: more dynamic facts
+   (post-2023 events), more lesser-known entities, more multi-turn
+   adversarial setups, more "almost right" cases where one slot in a
+   composite claim is subtly wrong.
+5. **Phase 7 continuous improvement** — pick the most interesting
+   thread from OBSERVATIONS and explore it.
