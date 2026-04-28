@@ -260,6 +260,11 @@ def main(argv: list[str]) -> int:
              "for modal, 'dogfood_anthropic' for anthropic, so the two "
              "runs don't overwrite each other.",
     )
+    parser.add_argument(
+        "--db-path", default=None,
+        help="Persistent DB path. Defaults to a tmp DB. Use this to "
+             "browse traces in the AEDOS UI afterward.",
+    )
     args = parser.parse_args(argv[1:])
 
     os.environ["AEDOS_CHAT_MODEL_PROVIDER"] = args.provider
@@ -279,8 +284,13 @@ def main(argv: list[str]) -> int:
     from src.pipeline import build_pipeline
 
     diag = _diagnostic_dir()
-    db_path = Path(tempfile.mkdtemp(prefix="aedos_dogfood_")) / "dogfood.db"
-    print(f"using ephemeral DB at {db_path}")
+    if args.db_path:
+        db_path = Path(args.db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"using persistent DB at {db_path}")
+    else:
+        db_path = Path(tempfile.mkdtemp(prefix="aedos_dogfood_")) / "dogfood.db"
+        print(f"using ephemeral DB at {db_path}")
     pipeline = build_pipeline(str(db_path))
     print(f"chat backend: {type(pipeline.chat_backend).__name__} "
           f"(model={getattr(pipeline.chat_backend, 'model', '?')})")
