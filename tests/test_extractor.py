@@ -370,6 +370,94 @@ def test_polarity_out_of_range_rejected():
     assert "polarity must be 0 or 1" in result.rejected_facts[0]["reason"]
 
 
+def test_facts_not_a_list_returns_empty_result():
+    """If the LLM returns ``facts`` as something other than a list
+    (str, dict, missing entirely), validation returns an empty result
+    rather than crashing. Defensive — the tool schema enforces array
+    but a malformed response shouldn't take down the pipeline."""
+    for bad_facts in (None, "not-a-list", {"hi": 1}, 42):
+        payload = {"facts": bad_facts}
+        result = _mk(payload).extract("...", role="user")
+        assert result.valid_facts == []
+        assert result.rejected_facts == []
+
+
+def test_non_dict_fact_rejected():
+    """A fact entry that isn't a dict (e.g. a stray string) is rejected
+    with a type-named reason, not silently dropped."""
+    payload = {"facts": ["just a string", 42, None]}
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert len(result.rejected_facts) == 3
+    reasons = [r["reason"] for r in result.rejected_facts]
+    assert all("not a dict" in r for r in reasons)
+    # Reason names the actual type so debugging is fast.
+    assert "str" in reasons[0]
+    assert "int" in reasons[1]
+    assert "NoneType" in reasons[2]
+
+
+def test_slots_not_a_dict_rejected():
+    """slots must be a dict; a list (a common LLM mistake) is
+    rejected explicitly."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "likes",
+                "slots": ["agent", "user"],  # list, not dict
+                "polarity": 1,
+                "source_text": "x",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "slots must be a dict" in result.rejected_facts[0]["reason"]
+
+
+def test_polarity_non_numeric_rejected():
+    """polarity must be coercible to int. A pure string like 'positive'
+    fails the int() coercion and is rejected with the int-required
+    reason."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "likes",
+                "slots": {"agent": "user", "object": "x"},
+                "polarity": "positive",
+                "source_text": "x",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "polarity must be an int" in result.rejected_facts[0]["reason"]
+
+
+def test_predicate_must_be_non_empty_string():
+    """predicate is the verification-routing key; an empty or
+    whitespace-only one would silently break dispatch. Reject up
+    front."""
+    for bad_pred in ("", "   ", 42, None):
+        payload = {
+            "facts": [
+                {
+                    "pattern": "preference",
+                    "predicate": bad_pred,
+                    "slots": {"agent": "user", "object": "x"},
+                    "polarity": 1,
+                    "source_text": "x",
+                }
+            ]
+        }
+        result = _mk(payload).extract("...", role="user")
+        assert result.valid_facts == []
+        assert "predicate must be a non-empty string" \
+               in result.rejected_facts[0]["reason"]
+
+
 def test_role_validation():
     extractor = _mk({"facts": []})
     with pytest.raises(ValueError, match="role"):
