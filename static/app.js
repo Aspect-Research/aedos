@@ -843,11 +843,21 @@ function renderDecisions(body, data) {
   }
   decisions.forEach((d) => {
     const node = el("div", { className: "decision" });
-    const header = el("div", { className: "decision-header" }, [
+    if (d.served_from_cache) node.classList.add("decision-cached");
+    const headerChildren = [
       el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
       statusBadge(d.verification_status),
-      triplify(d.claim),
-    ]);
+    ];
+    if (d.served_from_cache) {
+      headerChildren.push(el("span", {
+        className: "cache-badge cache-badge-hit",
+        title: "verdict came from the Tier 2 verification cache; "
+               + "retrieval was short-circuited",
+        textContent: "↺ CACHED",
+      }));
+    }
+    headerChildren.push(triplify(d.claim));
+    const header = el("div", { className: "decision-header" }, headerChildren);
     node.appendChild(header);
     const meta = [];
     if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
@@ -1224,7 +1234,11 @@ function buildFlowSvg(events, turnId) {
       const status = d.verification_status || "?";
       const method = d.routing_decision?.method || "(no routing)";
       const claim = d.claim || {};
-      const label = `${claim.predicate || "?"} (${method})`;
+      const cached = d.served_from_cache === true;
+      // Mark cached claims with a "↺" prefix so the operator can see
+      // at a glance which verdicts were short-circuited.
+      const labelCore = `${claim.predicate || "?"} (${method})`;
+      const label = cached ? `↺ ${labelCore}` : labelCore;
       const cls = flowEdgeClass(status);
       // edge from router-bottom to claim-top
       addEdge(svg,
@@ -1234,7 +1248,7 @@ function buildFlowSvg(events, turnId) {
       );
       // claim node with status colorization
       addClaimNode(svg, x, claimsRowY, FLOW_CLAIM_W, FLOW_NODE_H,
-        label, status, cls);
+        label, status, cls, { cached });
       // edge from claim-bottom to corrector-top
       addEdge(svg,
         x + FLOW_CLAIM_W / 2, claimsRowY + FLOW_NODE_H,
@@ -1295,17 +1309,20 @@ function addNode(svg, x, y, w, h, title, meta, jumpStage) {
   svg.appendChild(g);
 }
 
-function addClaimNode(svg, x, y, w, h, label, status, cls) {
+function addClaimNode(svg, x, y, w, h, label, status, cls, opts = {}) {
   const g = svgEl("g", { class: "flow-node" });
   g.dataset.jumpStage = "verification";
   // Tooltip carries the un-truncated label + status; the visible text
   // is severely clipped (22 chars) for the small claim rectangles.
   const tipEl = svgEl("title", {});
-  tipEl.textContent = `${label}\nstatus: ${status}`;
+  const cachedTip = opts.cached ? "\n(served from Tier 2 cache)" : "";
+  tipEl.textContent = `${label}\nstatus: ${status}${cachedTip}`;
   g.appendChild(tipEl);
+  const rectClasses = ["flow-node-rect", "flow-claim-rect", cls];
+  if (opts.cached) rectClasses.push("flow-claim-cached");
   g.appendChild(svgEl("rect", {
     x: String(x), y: String(y), width: String(w), height: String(h),
-    rx: "6", ry: "6", class: `flow-node-rect flow-claim-rect ${cls}`,
+    rx: "6", ry: "6", class: rectClasses.join(" "),
   }));
   const labelText = svgEl("text", {
     x: String(x + w / 2), y: String(y + 22),

@@ -829,3 +829,9 @@ tr.verified { background: #ecf7ef; }
 .flow-container .flow-claim-rect.contradicted { fill: #faeaea; }
 .flow-container .flow-claim-rect.inconclusive { fill: #fff4e1; }
 .flow-container .flow-claim-rect.unverifiable { fill: #efefef; }
+/* v0.6: cached claim — dashed border on the rect to indicate the
+   verdict was short-circuited from the Tier 2 cache. */
+.flow-container .flow-claim-rect.flow-claim-cached {
+  stroke-dasharray: 4 3;
+  stroke-width: 1.5;
+}

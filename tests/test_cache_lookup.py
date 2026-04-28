@@ -122,6 +122,9 @@ def test_cache_hit_skips_retrieval_call(tmp_path):
     d = trace.verification_decisions[0]
     assert d["verification_status"] == "verified"
     assert "served from cache" in d["notes"][0]
+    # v0.6: served_from_cache flag is True so the UI can render a
+    # cached-claim badge without grepping notes.
+    assert d["served_from_cache"] is True
 
     # cache_lookup event with result=hit landed.
     events = store.get_pipeline_events(trace.assistant_turn_id)
@@ -154,6 +157,11 @@ def test_cache_miss_falls_through_to_retrieval(tmp_path):
     # And then the cache_write fired (filling the cache for next time).
     write_events = [e for e in events if e["stage"] == "cache_write"]
     assert len(write_events) == 1
+
+    # v0.6: a fresh-retrieval verdict is NOT marked served_from_cache.
+    # Important — without this assertion, the UI badge would mistakenly
+    # appear on every verified retrieval.
+    assert d["served_from_cache"] is False
 
 
 def test_two_consecutive_calls_first_writes_second_hits(tmp_path):
