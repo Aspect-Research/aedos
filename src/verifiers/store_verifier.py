@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
-from src.fact_store import Fact, FactStore
+from src.fact_store import DEFAULT_USER_ID, Fact, FactStore
 
 
 class StoreLookupOutcome(str, Enum):
@@ -42,12 +42,16 @@ def store_lookup_verify(
     store: FactStore,
     *,
     key_slot_names: list[str],
+    user_id: str = DEFAULT_USER_ID,
 ) -> StoreLookupResult:
     """Look for matching or contradicting prior facts.
 
     ``key_slot_names`` lists which slots define identity. For
     ``preference`` that's [agent, object]; for ``spatial_temporal`` it's
     [entity, location]; etc. The router supplies these from the pattern.
+
+    ``user_id`` scopes the lookup so a user-asserted fact for one user
+    doesn't satisfy another user's same-shaped claim.
     """
     slots = claim.get("slots", {})
     key_slots = {k: slots[k] for k in key_slot_names if k in slots}
@@ -56,12 +60,15 @@ def store_lookup_verify(
     predicate = claim["predicate"]
 
     same = store.find_currently_valid(
-        pattern, predicate=predicate, slot_match=key_slots, polarity=polarity
+        pattern, predicate=predicate, slot_match=key_slots,
+        polarity=polarity, user_id=user_id,
     )
     if same:
         return StoreLookupResult(StoreLookupOutcome.MATCH, matching_fact=same[0])
 
-    opposite = store.find_contradictions(pattern, predicate, key_slots, polarity)
+    opposite = store.find_contradictions(
+        pattern, predicate, key_slots, polarity, user_id=user_id,
+    )
     if opposite:
         return StoreLookupResult(
             StoreLookupOutcome.CONTRADICTION, contradicting_fact=opposite[0]

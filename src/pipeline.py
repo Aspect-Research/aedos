@@ -27,7 +27,7 @@ from typing import Any
 
 from src.corrector import Corrector, Intervention
 from src.extractor import ClaimExtractor
-from src.fact_store import Fact, FactStore
+from src.fact_store import DEFAULT_USER_ID, Fact, FactStore
 from src.llm_client import ChatMessage, LLMClient
 from src.pattern_registry import PatternRegistry
 from src.router import Decision, Router, RoutingOutcome
@@ -85,6 +85,7 @@ class Pipeline:
         router: Router,
         corrector: Corrector,
         chat_backend: Any | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ):
         self.store = store
         self.registry = registry
@@ -92,6 +93,7 @@ class Pipeline:
         self.extractor = extractor
         self.router = router
         self.corrector = corrector
+        self.user_id = user_id
         # When no explicit backend is provided, use ``llm`` directly. This
         # preserves the long-standing test contract where MockLLM provides
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
@@ -100,7 +102,9 @@ class Pipeline:
 
     def run_turn(self, user_message: str) -> TurnTrace:
         # Stage 1 — log the user turn.
-        user_turn_id = self.store.insert_turn("user", user_message)
+        user_turn_id = self.store.insert_turn(
+            "user", user_message, user_id=self.user_id,
+        )
 
         # Stage 2 — extract claims from the user message.
         user_extraction = self.extractor.extract(user_message, role="user")
@@ -124,9 +128,13 @@ class Pipeline:
         # selects Anthropic (Claude) or Modal (GLM-5.1-FP8). The assistant
         # turn must exist before the call so a chat_model_call event has a
         # turn_id to attach to even if the backend raises.
-        system_prompt = self._build_chat_system_prompt(self.store.all_user_facts())
+        system_prompt = self._build_chat_system_prompt(
+            self.store.all_user_facts(user_id=self.user_id),
+        )
         history = self._build_chat_history()
-        assistant_turn_id = self.store.insert_turn("assistant", "")
+        assistant_turn_id = self.store.insert_turn(
+            "assistant", "", user_id=self.user_id,
+        )
         draft = self._invoke_chat_backend(system_prompt, history, assistant_turn_id)
         self.store.update_turn_content(
             assistant_turn_id, draft, original_content=None
@@ -292,9 +300,10 @@ class Pipeline:
         return CHAT_SYSTEM_TEMPLATE.format(facts_block=facts_block)
 
     def _build_chat_history(self) -> list[ChatMessage]:
-        """Every past turn, in order, in the shape the LLM expects."""
+        """Every past turn for this user, in order, in the shape the LLM
+        expects. Cross-user turns are excluded."""
         msgs: list[ChatMessage] = []
-        for t in self.store.list_turns():
+        for t in self.store.list_turns(user_id=self.user_id):
             msgs.append(ChatMessage(role=t["role"], content=t["content"]))
         return msgs
 
@@ -305,12 +314,17 @@ def build_pipeline(
     llm: LLMClient | None = None,
     registry: PatternRegistry | None = None,
     chat_backend: Any | None = None,
+    user_id: str = DEFAULT_USER_ID,
 ) -> Pipeline:
     """Convenience constructor used by app.py and integration tests.
 
     Selects the chat backend (the model under test for hallucination
     catching) by AEDOS_CHAT_MODEL_PROVIDER. Everything else stays on the
     Anthropic ``LLMClient``.
+
+    ``user_id`` scopes the conversation. The default ``default_user``
+    works for solo dogfooding. Future multi-user deployments thread per
+    request.
     """
     from src.llm_clients import build_chat_backend
     from src.pattern_registry import load_default_registry
@@ -328,10 +342,11 @@ def build_pipeline(
         llm=llm,
         retrieval_verifier=retrieval_verifier,
         code_gen_verifier=code_gen_verifier,
+        user_id=user_id,
     )
     corrector = Corrector(llm)
     chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
     return Pipeline(
         store, registry, llm, extractor, router, corrector,
-        chat_backend=chat_backend,
+        chat_backend=chat_backend, user_id=user_id,
     )

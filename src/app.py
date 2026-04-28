@@ -75,7 +75,10 @@ def chat(req: ChatRequest) -> dict[str, Any]:
 
 @app.get("/api/turns")
 def list_turns() -> list[dict[str, Any]]:
-    return _pipeline(app).store.list_turns()
+    # Inspector view: show every turn regardless of user_id. The chat
+    # endpoint scopes by user_id; this endpoint is for debugging and
+    # reads everything.
+    return _pipeline(app).store.list_turns(user_id=None)
 
 
 @app.get("/api/trace/{turn_id}")
@@ -94,12 +97,15 @@ def list_facts(
     verification_status: str | None = None,
     only_valid: bool = False,
 ) -> list[dict[str, Any]]:
+    # Inspector view: show every fact regardless of user_id (admin view).
+    # The router scopes by user_id internally.
     facts = _pipeline(app).store.query_facts(
         pattern=pattern,
         predicate=predicate,
         asserted_by=asserted_by,
         verification_status=verification_status,
         only_valid=only_valid,
+        user_id=None,
     )
     return [f.to_dict() for f in facts]
 

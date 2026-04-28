@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from src.fact_store import Fact, FactStore
+from src.fact_store import DEFAULT_USER_ID, Fact, FactStore
 from src.llm_client import LLMClient
 from src.llm_router import ROUTING_METHODS, RoutingDecision, route_claim
 from src.pattern_registry import Pattern, PatternRegistry
@@ -151,10 +151,12 @@ class Router:
         routing_fn: RoutingFn | None = None,
         retrieval_verifier: RetrievalVerifier | None = None,
         code_gen_verifier: CodeGenerationVerifier | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ):
         self.store = store
         self.registry = registry
         self.llm = llm
+        self.user_id = user_id
         # If neither a routing_fn nor an llm is provided, model-origin
         # routing fails loudly. User-origin routing doesn't need either.
         if routing_fn is None and llm is not None:
@@ -192,6 +194,7 @@ class Router:
         existing = self.store.find_currently_valid(
             pattern.name, predicate=claim["predicate"],
             slot_match=key_slots, polarity=polarity,
+            user_id=self.user_id,
         )
         if existing:
             fid = existing[0].id
@@ -207,7 +210,8 @@ class Router:
             )
 
         opposite = self.store.find_contradictions(
-            pattern.name, claim["predicate"], key_slots, polarity
+            pattern.name, claim["predicate"], key_slots, polarity,
+            user_id=self.user_id,
         )
         closed: list[int] = []
         for f in opposite:
@@ -422,7 +426,9 @@ class Router:
 
     def _route_store(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
         result = store_lookup_verify(
-            claim, self.store, key_slot_names=KEY_SLOTS_BY_PATTERN.get(pattern.name, [])
+            claim, self.store,
+            key_slot_names=KEY_SLOTS_BY_PATTERN.get(pattern.name, []),
+            user_id=self.user_id,
         )
         if result.outcome is StoreLookupOutcome.MATCH:
             assert result.matching_fact and result.matching_fact.id is not None
@@ -645,5 +651,6 @@ class Router:
                 valid_until=str(slots["valid_until"]) if slots.get("valid_until") else None,
                 source_turn_id=source_turn_id,
                 source_text=claim.get("source_text"),
+                user_id=self.user_id,
             )
         )
