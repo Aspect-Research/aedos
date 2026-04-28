@@ -34,11 +34,21 @@ class ExtractionResult:
     valid_facts: list[dict[str, Any]] = field(default_factory=list)
     rejected_facts: list[dict[str, Any]] = field(default_factory=list)  # each: {fact, reason}
     raw_tool_input: dict[str, Any] | None = None
+    # Defense-in-depth signals from the validator. Each entry:
+    #   {fact_index, kind, detail}
+    # Currently the only kind is "source_text_not_in_input" — a strong
+    # signal that the extractor rewrote the source_text (often because
+    # it substituted a "correct" value for what the chat model said).
+    # The fact still appears in valid_facts; this is a flag, not a
+    # rejection. Pipeline emits an extractor_substitution_warning
+    # pipeline event for each entry.
+    warnings: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "valid_facts": self.valid_facts,
             "rejected_facts": self.rejected_facts,
+            "warnings": self.warnings,
         }
 
 
@@ -307,7 +317,40 @@ class ClaimExtractor:
             user_message=user_message,
             tool=self._record_tool,
         )
-        return self._validate(raw)
+        result = self._validate(raw)
+        # Defense-in-depth: flag any fact whose source_text isn't a
+        # substring of the input. Strong signal of extractor rewriting.
+        self._flag_substitutions(result, text)
+        return result
+
+    @staticmethod
+    def _flag_substitutions(result: ExtractionResult, input_text: str) -> None:
+        """Append a warning to ``result.warnings`` for each fact whose
+        ``source_text`` doesn't appear (case-folded, whitespace-collapsed)
+        in the input. This catches the extractor-substitution failure
+        mode where the LLM rewrites a number or phrase to match its
+        own world knowledge instead of the actual model output."""
+        normalized_input = " ".join(input_text.split()).lower()
+        if not normalized_input:
+            return
+        for i, fact in enumerate(result.valid_facts):
+            src = fact.get("source_text") or ""
+            if not src:
+                continue
+            normalized_src = " ".join(src.split()).lower()
+            if not normalized_src:
+                continue
+            if normalized_src not in normalized_input:
+                result.warnings.append({
+                    "fact_index": i,
+                    "kind": "source_text_not_in_input",
+                    "detail": (
+                        f"source_text {src!r} is not a substring of the "
+                        f"input. Likely extractor rewrite — verify the "
+                        f"slot values weren't substituted with the "
+                        f"extractor's own world knowledge."
+                    ),
+                })
 
     # ---- validation -----------------------------------------------------
 
