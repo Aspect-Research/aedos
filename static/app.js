@@ -120,6 +120,49 @@ async function hydrate() {
 }
 hydrate();
 
+// ---- model selector ---------------------------------------
+//
+// Populate the model dropdown from /api/models. Persist the
+// selection in localStorage so it survives reloads. The selected
+// id is sent with every /api/chat POST and drives every step of
+// the pipeline for that turn.
+
+const MODEL_STORAGE_KEY = "aedos.selected_model";
+const modelSelect = $("#model-select");
+
+async function populateModelSelect() {
+  try {
+    const data = await api("GET", "/api/models");
+    modelSelect.innerHTML = "";
+    (data.models || []).forEach((m) => {
+      const opt = el("option", {
+        value: m.id,
+        textContent: m.label + (m.available ? "" : " — unavailable"),
+      });
+      if (!m.available) opt.disabled = true;
+      modelSelect.appendChild(opt);
+    });
+    // Restore the user's last pick if it's still in the available set;
+    // otherwise fall back to the server's default.
+    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
+    const ids = (data.models || []).map((m) => m.id);
+    if (saved && ids.includes(saved)) {
+      const opt = data.models.find((m) => m.id === saved);
+      if (opt && opt.available) modelSelect.value = saved;
+      else modelSelect.value = data.default;
+    } else {
+      modelSelect.value = data.default;
+    }
+  } catch (e) {
+    console.error("populateModelSelect failed:", e);
+  }
+}
+populateModelSelect();
+
+modelSelect.addEventListener("change", () => {
+  localStorage.setItem(MODEL_STORAGE_KEY, modelSelect.value);
+});
+
 function appendMessage(turn) {
   const node = el("div", { className: `msg ${turn.role}`, textContent: turn.content });
   if (turn.original_content && turn.original_content !== turn.content) {
@@ -148,7 +191,10 @@ form.addEventListener("submit", async (e) => {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
   try {
-    const trace = await api("POST", "/api/chat", { message: text });
+    const trace = await api("POST", "/api/chat", {
+      message: text,
+      model: modelSelect.value || null,
+    });
     messagesEl.removeChild(thinking);
     appendMessage({
       role: "assistant",

@@ -125,8 +125,47 @@ class Pipeline:
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
         # the llm.
         self.chat_backend = chat_backend if chat_backend is not None else llm
+        # Optional Modal/GLM backend for the per-turn ``model='glm-5.1'``
+        # selection path. Lazily constructed by build_pipeline if
+        # MODAL_API_KEY is present; absent here when not configured.
+        self._modal_backend: Any | None = None
+        # Active per-turn model override; set by run_turn when a model
+        # parameter is supplied. Used by _invoke_chat_backend to dispatch
+        # to the right chat backend without mutating self.chat_backend.
+        self._active_chat_model: str | None = None
 
-    def run_turn(self, user_message: str) -> TurnTrace:
+    def run_turn(
+        self, user_message: str, *, model: str | None = None,
+    ) -> TurnTrace:
+        """Run one user→assistant turn.
+
+        ``model`` (optional) makes EVERY internal LLM call (chat,
+        extractor, router, judge, corrector, scoping, stability,
+        code-gen) use the named model. ``glm-5.1`` routes only the
+        chat call to Modal — internal calls keep their prior Anthropic
+        model since GLM doesn't support tool use. ``None`` uses the
+        pipeline's defaults (the model attrs on ``self.llm`` and the
+        chat backend supplied at construction time)."""
+        # Tolerant of LLM clients that don't expose with_active_model
+        # (test MockLLMs don't). When the LLM doesn't have the method,
+        # the model selection is a no-op on the Anthropic side; the
+        # chat backend dispatch via _active_chat_model still works.
+        ctx = getattr(self.llm, "with_active_model", None)
+        if ctx is not None:
+            with ctx(model):
+                self._active_chat_model = model
+                try:
+                    return self._run_turn_inner(user_message)
+                finally:
+                    self._active_chat_model = None
+        else:
+            self._active_chat_model = model
+            try:
+                return self._run_turn_inner(user_message)
+            finally:
+                self._active_chat_model = None
+
+    def _run_turn_inner(self, user_message: str) -> TurnTrace:
         # Stage 1 — log the user turn.
         user_turn_id = self.store.insert_turn(
             "user", user_message, user_id=self.user_id,
@@ -467,14 +506,16 @@ class Pipeline:
         else CHAT_MAX_TOKENS_ANTHROPIC
     )
 
-    def _max_tokens_for_chat(self) -> int:
+    def _max_tokens_for_chat(self, backend: Any | None = None) -> int:
         """Per-backend cap selection. Global env override wins; else
         provider-specific default; else 1024. Reasoning-content models
         get more headroom because the cap counts reasoning tokens
-        too."""
+        too. ``backend`` defaults to the configured chat_backend; the
+        caller passes the dispatched backend when a per-turn model
+        override (e.g. ``glm-5.1``) routes elsewhere."""
         if self.CHAT_MAX_TOKENS_GLOBAL_OVERRIDE is not None:
             return self.CHAT_MAX_TOKENS_GLOBAL_OVERRIDE
-        provider = getattr(self.chat_backend, "provider", None)
+        provider = getattr(backend or self.chat_backend, "provider", None)
         if provider == "modal":
             return self.CHAT_MAX_TOKENS_MODAL
         if provider == "anthropic":
@@ -540,23 +581,37 @@ class Pipeline:
                      "error": f"{type(exc).__name__}: {exc}"},
                 )
 
+    def _select_chat_backend(self) -> Any:
+        """Per-turn dispatch. ``glm-5.1`` → Modal backend (lazily
+        constructed); anything else (or ``None``) → the default
+        ``self.chat_backend`` whose model attribute already reflects
+        the active LLM model from ``with_active_model``.
+
+        Raises if GLM is requested but no Modal backend was built —
+        signals a configuration problem (MODAL_API_KEY missing) early
+        rather than silently falling back."""
+        if self._active_chat_model == "glm-5.1":
+            if self._modal_backend is None:
+                raise RuntimeError(
+                    "model='glm-5.1' was requested but no Modal backend "
+                    "is available — set MODAL_API_KEY and rebuild the "
+                    "pipeline."
+                )
+            return self._modal_backend
+        return self.chat_backend
+
     def _invoke_chat_backend(
         self, system_prompt: str, history: list[ChatMessage], turn_id: int
     ) -> str:
-        """Call ``self.chat_backend.chat`` with provenance kwargs when the
-        backend exposes a ``provider`` attribute (the new backends do;
-        LLMClient and MockLLM don't). This routes the chat_model_call
-        event without forcing the test doubles to grow new arguments.
-
-        Also passes ``cost_recorder`` (when LLMClient exposes one) so
-        the chat backend can report its tokens into the per-turn
-        cost ledger. AnthropicChatBackend doesn't need this — it goes
-        through LLMClient.chat which records natively. ModalGLMBackend
-        does — its responses contain usage info that would otherwise
-        be dropped."""
-        if hasattr(self.chat_backend, "provider"):
+        """Call the chat backend selected by ``_select_chat_backend``.
+        Backends that expose a ``provider`` attribute (the new ones
+        do; LLMClient and MockLLM don't) get provenance + cost-recorder
+        kwargs so the chat_model_call event lands without forcing
+        test doubles to grow new arguments."""
+        backend = self._select_chat_backend()
+        if hasattr(backend, "provider"):
             kwargs: dict[str, Any] = {
-                "max_tokens": self._max_tokens_for_chat(),
+                "max_tokens": self._max_tokens_for_chat(backend),
                 "store": self.store,
                 "turn_id": turn_id,
             }
@@ -564,7 +619,7 @@ class Pipeline:
             if recorder is not None:
                 kwargs["cost_recorder"] = recorder
             try:
-                return self.chat_backend.chat(system_prompt, history, **kwargs)
+                return backend.chat(system_prompt, history, **kwargs)
             except TypeError:
                 # Backend may not accept cost_recorder yet (older
                 # versions or stubs in tests). Retry without it.
@@ -635,6 +690,19 @@ def build_pipeline(
     corrector = Corrector(llm)
     chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
 
+    # Per-turn ``model='glm-5.1'`` selection routes the chat call to a
+    # Modal backend. Construct it eagerly when MODAL_API_KEY is set so
+    # the pipeline can dispatch without rebuilding state mid-request.
+    # Absent → selecting GLM in the UI will surface a configuration
+    # error early.
+    modal_backend = None
+    if os.getenv("MODAL_API_KEY"):
+        try:
+            from src.llm_clients.modal_glm import ModalGLMBackend
+            modal_backend = ModalGLMBackend.from_env()
+        except Exception:
+            modal_backend = None  # missing key / construct failure → no GLM
+
     # v0.6 Phase 6 — scoping + stability classifiers + cache writes.
     # Off by default to avoid burning the extra LLM calls on every turn
     # while the pipeline is settling.
@@ -674,10 +742,12 @@ def build_pipeline(
                 from src.cache import VerificationCache
                 verification_cache = VerificationCache(store)
 
-    return Pipeline(
+    p = Pipeline(
         store, registry, llm, extractor, router, corrector,
         chat_backend=chat_backend, user_id=user_id,
         scoping_classifier=scoping_classifier,
         stability_classifier=stability_classifier,
         verification_cache=verification_cache,
     )
+    p._modal_backend = modal_backend
+    return p

@@ -24,6 +24,9 @@ def client_with_seed_data(tmp_path, monkeypatch):
     """Build a TestClient with a seeded DB so inspector endpoints have
     something to return."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    # Suppress GLM dispatch path so /api/models reports it unavailable
+    # in this fixture (deterministic).
+    monkeypatch.delenv("MODAL_API_KEY", raising=False)
     monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
 
     db_path = tmp_path / "api.db"
@@ -204,9 +207,13 @@ def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
     from src.app import app
 
     with TestClient(app) as c:
-        # Replace the pipeline's run_turn with one that raises.
-        c.app.state.pipeline.run_turn = lambda _msg: (_ for _ in ()).throw(
-            RuntimeError("backend down")
+        # Replace the pipeline's run_turn with one that raises. Accept
+        # **kwargs since the chat endpoint now threads ``model=``
+        # through to run_turn.
+        c.app.state.pipeline.run_turn = (
+            lambda _msg, **_kw: (_ for _ in ()).throw(
+                RuntimeError("backend down")
+            )
         )
         r = c.post("/api/chat", json={"message": "hi"})
         assert r.status_code == 502
@@ -214,6 +221,81 @@ def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
         assert body["error_type"] == "RuntimeError"
         assert "backend down" in body["error_message"]
         assert "pipeline raised" in body["hint"].lower()
+
+
+def test_models_endpoint_returns_full_list(client_with_seed_data):
+    """/api/models drives the chat UI dropdown. Returns the canonical
+    id list, the server's default, and an availability flag per model
+    (so GLM can be greyed out when MODAL_API_KEY is missing)."""
+    r = client_with_seed_data.get("/api/models")
+    assert r.status_code == 200
+    body = r.json()
+    ids = [m["id"] for m in body["models"]]
+    assert ids == [
+        "claude-opus-4-7", "claude-sonnet-4-6",
+        "claude-haiku-4-5", "glm-5.1",
+    ]
+    # Every entry has a label + availability bool.
+    for m in body["models"]:
+        assert isinstance(m["label"], str) and m["label"]
+        assert isinstance(m["available"], bool)
+    # GLM unavailable in this fixture (no MODAL_API_KEY).
+    glm = next(m for m in body["models"] if m["id"] == "glm-5.1")
+    assert glm["available"] is False
+    # Anthropic models always available (the LLMClient is constructed).
+    for cid in ("claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"):
+        m = next(x for x in body["models"] if x["id"] == cid)
+        assert m["available"] is True
+    # Default is some real model.
+    assert body["default"] in ids
+
+
+def test_chat_endpoint_threads_model_into_run_turn(tmp_path, monkeypatch):
+    """The chat POST passes ``model`` into Pipeline.run_turn so the
+    operator's selection drives the turn."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "m.db"))
+
+    from src.app import app
+    captured: dict = {}
+
+    class _StubTrace:
+        def to_dict(self):
+            return {}
+
+    with TestClient(app) as c:
+        c.app.state.pipeline.run_turn = (
+            lambda msg, **kw: captured.update({"msg": msg, **kw}) or _StubTrace()
+        )
+        r = c.post("/api/chat", json={
+            "message": "hi", "model": "claude-haiku-4-5",
+        })
+        assert r.status_code == 200
+        assert captured["model"] == "claude-haiku-4-5"
+        assert captured["msg"] == "hi"
+
+
+def test_chat_endpoint_omitted_model_passes_none(tmp_path, monkeypatch):
+    """When the UI omits ``model`` (older clients), the pipeline gets
+    None and runs with its default model — no 422, no required-field
+    error."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "n.db"))
+
+    from src.app import app
+    captured: dict = {}
+
+    class _StubTrace:
+        def to_dict(self):
+            return {}
+
+    with TestClient(app) as c:
+        c.app.state.pipeline.run_turn = (
+            lambda msg, **kw: captured.update({"msg": msg, **kw}) or _StubTrace()
+        )
+        r = c.post("/api/chat", json={"message": "hi"})
+        assert r.status_code == 200
+        assert captured["model"] is None
 
 
 def test_health_endpoint_reports_db_error_with_ok_false(

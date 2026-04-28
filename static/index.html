@@ -26,6 +26,13 @@
   <section id="tab-chat" class="tab-panel active">
     <div class="split">
       <div class="chat-pane">
+        <div class="chat-toolbar">
+          <label class="model-select">Model
+            <select id="model-select" title="Drives every step (chat, extraction, routing, verification, correction)">
+              <!-- populated from /api/models on load -->
+            </select>
+          </label>
+        </div>
         <div id="messages" class="messages"></div>
         <form id="chat-form" class="chat-form">
           <textarea id="input" placeholder="Type a message..." rows="2" required></textarea>
