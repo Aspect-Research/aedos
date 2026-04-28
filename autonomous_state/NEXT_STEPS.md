@@ -36,17 +36,13 @@ then graduate to SESSION_LOG.md after a few sessions.
   or accept that canonical reference data isn't an extractable claim.
   See OBSERVATIONS 2026-04-27.
 
-- [ ] **Cross-check signal restoration on opus-4-7.** With temperature
-  silently dropped, the canonical-constants cross-check runs both
-  iterations with identical params and likely produces identical
-  output, weakening (effectively eliminating) the cross-check signal
-  on opus-4-7. Options:
-    1. Force the cross-check to use Sonnet 4.6 (still accepts
-       temperature). Per-stage model override.
-    2. Use a different variation source — small prompt perturbation,
-       reordered examples, etc.
-  Either way, add a real-API-gated test that confirms the signal works
-  end-to-end on the cross-check path.
+- [x] **Cross-check signal restoration on opus-4-7.** Done in commit
+  91fac42. CROSS_CHECK_MODEL hardcoded to claude-sonnet-4-6;
+  verify_with_cross_check forces it on both iterations regardless of
+  configured corrector_model. The single-shot verify path is unchanged.
+  2 new unit tests confirm. **Real-API end-to-end validation still
+  pending** — needs to wait for Modal recovery so the dogfood can
+  re-run turn 6 (ne_states) and exercise the full cross-check path.
 
 ## Priority 2: Streamlining
 
