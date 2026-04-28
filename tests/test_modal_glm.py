@@ -367,13 +367,20 @@ def test_chat_logs_pipeline_event_on_failure(tmp_path):
 
 
 def test_pipeline_caps_chat_max_tokens(tmp_path):
-    """Phase-2 fix (commit 4d81d59): chat call uses Pipeline.CHAT_MAX_TOKENS
-    instead of the legacy 4096 default. The 4096 cap let GLM's reasoning
-    chain blow past the 300s Modal timeout. The current cap is read from
-    AEDOS_CHAT_MAX_TOKENS (default 1024). The test asserts:
-      (a) the chat backend was called with whatever Pipeline.CHAT_MAX_TOKENS
-          is set to (consistency between class attr and call site), and
-      (b) the cap is reasonable for AEDOS chat use (≤ 4096)."""
+    """Originally (commit 4d81d59) the cap moved off the legacy 4096
+    default that let GLM's reasoning chain blow past the 300s Modal
+    timeout. Caps are now per-backend (CHAT_MAX_TOKENS_ANTHROPIC=1024,
+    CHAT_MAX_TOKENS_MODAL=4096); see the per_backend tests above for
+    the dispatch contract.
+
+    This test still covers the legacy single-knob backward-compat
+    surface (Pipeline.CHAT_MAX_TOKENS) and the unknown-provider
+    fallback path: a backend with provider='stub' goes through
+    CHAT_MAX_TOKENS_DEFAULT (1024), which equals the alias's value
+    when no global override is set. So the assertion that
+    captured == [Pipeline.CHAT_MAX_TOKENS] still holds for the stub
+    backend, and the 256–4096-but-not-4096 sanity bound on the alias
+    still rules out the legacy regression."""
     from src.corrector import Corrector
     from src.extractor import ClaimExtractor
     from src.fact_store import FactStore
