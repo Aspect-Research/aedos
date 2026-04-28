@@ -351,6 +351,7 @@ All LLM-bound components validated end-to-end against Anthropic Opus
 | test_scoping_calibration_against_worked_examples | PASSED ≥ 3/4 | Phase 6 scoping classifier distinguishes user/session/world facts |
 | test_stability_calibration_against_worked_examples | PASSED ≥ 3/4 | Phase 6 stability classifier bins claims into TTL classes correctly (immutable / decade_stable / volatile) |
 | test_real_api_extractor_does_not_substitute_values | PASSED | Verbatim rule actually changed Opus's behavior — value=146 stays 146 |
+| test_real_api_interrogative_meta_returns_no_facts | PASSED | Interrogative-meta calibration works — 'I think I told you X', 'Did I say X', etc. all produce facts=[] |
 | Saturn moons end-to-end (corpus turn 11) | AEDOS caught Claude's hallucination, replaced 146 → 274 | Whole pipeline working on a real chat-model hallucination |
 
 This is the strongest proof yet that the v0.5/v0.6 architecture works
