@@ -1,16 +1,16 @@
 # Current State
 
-Updated: 2026-04-28T11:30:00-0400
-Updated by: autonomous instance — Session 2
+Updated: 2026-04-28T13:00:00-0400
+Updated by: autonomous instance — Session 2 (continuing)
 
 ## Status
 
 - Branch: experiment/autonomous-v0.5.x
-- Last green pytest: 2026-04-28 — 399 passed, 5 skipped (real-API gated)
+- Last green pytest: 2026-04-28 — 420 passed, 7 skipped (real-API gated)
 - Total project coverage: 94%
-- Last commit: [p7] cost telemetry: Modal usage flows into per-turn cost ledger
+- Last commit: [p7] retrieval: rotate User-Agent on empty DDG result
 - Active work: continuing per-operator instructions to keep producing
-  improvements indefinitely. No stop condition.
+  improvements indefinitely. No stop condition. 59+ commits this session.
 
 ## What shipped this session (Session 2 — 49 commits so far)
 
@@ -106,21 +106,43 @@ The verification pipeline DOES catch real wrong claims when retrieval
 returns useful signal. The biggest gap is in user-self-contradiction
 detection (architectural — see THE BIG MISS).
 
+## Late-session additions (since 11:30)
+
+  - **CRITICAL extractor bug found and fixed:** the 3 "catches"
+    earlier this session were extractor-substitution false positives,
+    not real catches. Extractor (Opus 4.7) was rewriting source_text
+    to substitute its own world knowledge. Shipped: aggressive
+    'CRITICAL: extract VERBATIM' rule + 2 worked examples (Saturn 274,
+    Yellowknife 22085) + defense-in-depth substitution detector
+    (source_text-not-in-input check) + UI banner +
+    extractor_substitution_warning pipeline event +
+    extractor_substitution_warning rendering in Detail View. Validated
+    post-hoc against the existing corpus: 5 of 27 turns flagged (18%).
+  - **DDG resilience:** User-Agent rotation on empty result. Denver-
+    elevation case (all 3 queries returned 0) would now retry with a
+    different UA. 3 new tests.
+  - **Test coverage gains:** pattern_registry 91% → 100% (8 new tests),
+    comparator 86% → ~99% (12 new tests), retrieval_verifier 82% → 88%
+    (search providers + UA rotation).
+  - **Documentation:** README v0.6 section, ARCHITECTURE.md Tier 2
+    cache section, .env.example v0.6 cache knobs.
+
 ## Suggested next pickup
 
-1. **Validate the extractor calibration** for "I think I told you X"
-   with a real-API run. Either re-run dogfood turn 26 specifically or
-   add a new test_extractor.py case with RUN_API_TESTS=1.
+1. **Re-run dogfood + corpus** once Modal is healthy. With the
+   extractor verbatim rule shipped, the 'catches' that were really
+   substitution bugs should disappear and any REAL hallucinations GLM
+   produces should now show up as legitimate catches. This is the
+   payoff measurement of the whole session.
 2. **Operator architectural decision** on unique-value slot metadata
-   (would need a patterns.yaml change). Documented in
-   OBSERVATIONS / NEXT_STEPS for review.
-3. **Run eval harness** end-to-end against the hallucination corpus
-   to get raw-vs-aedos comparison data. Burns Anthropic budget;
-   probably ~$5-10. Operator should approve.
-4. **More adversarial corpus prompts** — the current 28 caught only
-   3 hallucinations. Better coverage would be: more dynamic facts
-   (post-2023 events), more lesser-known entities, more multi-turn
-   adversarial setups, more "almost right" cases where one slot in a
-   composite claim is subtly wrong.
-5. **Phase 7 continuous improvement** — pick the most interesting
-   thread from OBSERVATIONS and explore it.
+   for the unique-per-entity contradiction model (birthplace,
+   biological mother, native language). Would catch the 'born in MA
+   in turn 24, born in VA in turn 26' adversarial pattern.
+3. **Run eval harness** for raw-vs-aedos comparison data on the
+   hallucination corpus. Burns Anthropic budget (~$5-10).
+4. **More adversarial corpus prompts** — focus on the gaps the
+   first run revealed: dynamic facts (post-2023 events), composite
+   claims where ONE slot is subtly wrong, multi-turn adversarial
+   sequences.
+5. **Continue the loop** per the operator's prompt. Pick something
+   from OBSERVATIONS, ship a small improvement, commit, push, repeat.
