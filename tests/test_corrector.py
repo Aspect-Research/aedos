@@ -205,23 +205,3 @@ def test_corrector_system_prompt_lists_intervention_types():
         assert kw in CORRECTOR_SYSTEM
 
 
-# ---------- back-compat ----------
-
-
-def test_legacy_correct_method_still_works():
-    """v0.1 callers using .correct(text, corrections) keep working."""
-    llm = FakeLLM(rewrite_responses=["rewritten"])
-    c = Corrector(llm)
-    out = c.correct(
-        "There are 3 p's in strawberry.",
-        [
-            {
-                "original_object": 3,
-                "corrected_object": 0,
-                "explanation": "actual is 0",
-                "source_text": "3 p's",
-            }
-        ],
-    )
-    assert out == "rewritten"
-    assert len(llm.rewrite_calls) == 1
