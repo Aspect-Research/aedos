@@ -10,11 +10,16 @@ Updated by: autonomous instance — Session 1 (final)
   +36 new tests since baseline of 229)
 - Last commit: [p5] facts.user_id + router scoping — Tier 1 cross-session user store
 - Active work item: Phase 2 dogfood **completed** (after Modal recovered).
-  12/17 turns landed signal; 2 cold-start timeouts (turns 6, 16); 1
-  real bug fixed inline (judge parser abbreviations); 2 calibration
-  items identified for follow-up. 27+ commits this session, all
+  10/12 attempted turns landed signal; 2 cold-start timeouts (turns 6, 16);
+  1 real bug fixed inline (judge parser abbreviations); 2 calibration
+  items identified for follow-up. 31+ commits this session, all
   pushed. Phase 5 user_id store **end-to-end validated** by the
   user_auth recall turns (13/14/15).
+- Cold-start fix shipped (chat max_tokens 4096→1024 + dogfood warm-up
+  with 429-retry) but **NOT VALIDATED end-to-end** — Modal endpoint has
+  been in a degraded state where requests pile up and don't process
+  cleanly. Try `python scripts/dogfood_glm.py --only 6` once Modal is
+  reliably healthy to confirm.
 - Blockers: Modal 503 prevents completing Phase 2 dogfood. The deferred
   retrieval/user_auth/mixed/confab data needs to land before any more
   Phase 2 calibration commits. RE-RUN command:
