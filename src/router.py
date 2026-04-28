@@ -62,6 +62,7 @@ class RoutingOutcome(str, Enum):
     USER_STORED = "user_stored"
     USER_DUPLICATE = "user_duplicate"
     USER_CONTRADICTED_PRIOR = "user_contradicted_prior"
+    USER_CONTRADICTED_SELF = "user_contradicted_self"  # v0.6 prototype
     VERIFIED = "verified"
     CONTRADICTED = "contradicted"
     UNVERIFIED = "unverified"
@@ -90,6 +91,38 @@ _USER_SUBJECT_PATTERNS: dict[str, str] = {
     "preference": "agent",
     "propositional_attitude": "agent",
 }
+
+
+# v0.6 PROTOTYPE — unique-value-slot detection. Opt-in via env var.
+#
+# The default contradiction model in v0.3+ catches polarity flips
+# (same key slots, opposite polarity). It does NOT catch "user said
+# X about themselves in turn N, then says Y about themselves in turn
+# M" when X and Y are different values on a slot that's biologically/
+# definitionally unique per entity (one birthplace, one biological
+# mother, one native language at birth).
+#
+# This map says: "for THIS pattern + THIS predicate + THIS key-slot
+# combination, the value-slot is unique-per-entity." A new user
+# assertion with the same key-slots but a different value-slot value
+# is flagged as user_contradicted_self.
+#
+# Format: (pattern, predicate, identity_slot, value_slot) → True
+#
+# Empty by default — the operator opts in by setting the env var
+# AEDOS_UNIQUE_VALUE_SLOTS=1. Even when enabled, the rule only applies
+# to patterns explicitly listed here. Adding new entries is intended
+# as a careful, considered design decision — see CLAUDE.md's
+# "Bounded predicate vocabulary" invariant for the design philosophy.
+_UNIQUE_VALUE_SLOTS: dict[tuple[str, str, str, str], bool] = {
+    ("spatial_temporal", "was_born_in", "entity", "location"): True,
+}
+
+
+def _unique_value_slots_enabled() -> bool:
+    """Reads the env var live so tests can monkeypatch."""
+    import os
+    return os.getenv("AEDOS_UNIQUE_VALUE_SLOTS") == "1"
 
 
 def _is_user(value: Any) -> bool:
@@ -228,9 +261,36 @@ class Router:
             self.store.close_fact(f.id)
             closed.append(f.id)
 
+        # v0.6 PROTOTYPE — unique-value-slot detection. If the operator
+        # has opted in (AEDOS_UNIQUE_VALUE_SLOTS=1), check whether this
+        # user assertion contradicts a prior assertion on a slot that
+        # is unique-per-entity (e.g. birthplace). Same identity slot,
+        # different value slot, same polarity → user_contradicted_self.
+        prior_self_contradictions: list[dict] = []
+        if _unique_value_slots_enabled():
+            prior_self_contradictions = self._find_unique_value_conflicts(
+                pattern.name, claim["predicate"], slots, polarity,
+            )
+
         new_id = self._store(claim, source_turn_id, asserted_by="user",
                              confidence=CONF_USER_ASSERTED,
                              verification_status="user_asserted")
+
+        if prior_self_contradictions:
+            return Decision(
+                claim=claim,
+                outcome=RoutingOutcome.USER_CONTRADICTED_SELF,
+                verification_status="user_asserted",
+                confidence=CONF_USER_ASSERTED,
+                stored_fact_id=new_id,
+                closed_fact_ids=closed,
+                notes=[
+                    f"user contradicting themselves on a unique-per-entity "
+                    f"slot ({len(prior_self_contradictions)} prior fact(s) "
+                    f"with a different value); both stored — operator "
+                    f"intervention recommended"
+                ],
+            )
 
         if closed:
             return Decision(
@@ -729,6 +789,44 @@ class Router:
         return slots
 
     # ---- helpers --------------------------------------------------------
+
+    def _find_unique_value_conflicts(
+        self, pattern_name: str, predicate: str,
+        slots: dict, polarity: int,
+    ) -> list[dict]:
+        """v0.6 prototype. Look up any prior facts where the identity-
+        slot is the same but the value-slot is different. Returns a
+        list of {prior_value, slot_name} dicts. Only checks pattern/
+        predicate combinations explicitly in _UNIQUE_VALUE_SLOTS."""
+        conflicts: list[dict] = []
+        for (p_name, pred, id_slot, val_slot), enabled in _UNIQUE_VALUE_SLOTS.items():
+            if not enabled:
+                continue
+            if p_name != pattern_name or pred != predicate:
+                continue
+            id_value = slots.get(id_slot)
+            new_value = slots.get(val_slot)
+            if id_value is None or new_value is None:
+                continue
+            # Find ALL currently-valid facts with same identity value,
+            # any value-slot value, same polarity.
+            prior = self.store.find_currently_valid(
+                pattern_name, predicate=predicate,
+                slot_match={id_slot: id_value},
+                polarity=polarity,
+                user_id=self.user_id,
+            )
+            for p_fact in prior:
+                prior_val = p_fact.slots.get(val_slot)
+                if prior_val is not None and str(prior_val) != str(new_value):
+                    conflicts.append({
+                        "prior_fact_id": p_fact.id,
+                        "prior_value": prior_val,
+                        "new_value": new_value,
+                        "slot_name": val_slot,
+                        "identity_slot": id_slot,
+                    })
+        return conflicts
 
     def _key_slots(self, pattern: Pattern, slots: dict) -> dict:
         names = KEY_SLOTS_BY_PATTERN.get(pattern.name, [])
