@@ -492,6 +492,22 @@ Concrete fixes (NEXT_STEPS items):
   Adversarial multi-turn prompts can exploit the gap. Worth a paper-
   worthy section.
 
+  ### Prototype shipped (v0.6, opt-in)
+
+  Commit f6ef7bf: AEDOS_UNIQUE_VALUE_SLOTS=1 enables a hardcoded
+  detection for the canonical case (spatial_temporal.was_born_in
+  with entity user). When the operator enables it and the user
+  contradicts themselves on this slot, the router returns
+  USER_CONTRADICTED_SELF instead of silently storing both. 6 tests
+  cover off-by-default, on-with-env, repeated-fact (no flag),
+  different-predicate (no flag), different-user (no flag), enum value.
+
+  Operator decision points:
+    - Make it default-on?
+    - Extend _UNIQUE_VALUE_SLOTS to more pattern/predicate combos
+      (biological mother, native language, blood type, etc.)?
+    - Revert the prototype if false-positive rate is bad?
+
   **Predicted behavior after the interrogative-meta extractor fix
   (commit 058f474) lands in real API:**
 
