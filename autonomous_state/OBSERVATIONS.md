@@ -323,6 +323,25 @@ Implications:
 clean numbers. This is THE most important Phase-2 calibration finding
 of the whole autonomous run so far.
 
+### COMPREHENSIVE REAL-API VALIDATION 2026-04-28
+
+All LLM-bound components validated end-to-end against Anthropic Opus
+4.7. Cost: ~$1 total. Results:
+
+| Test | Status | What it proves |
+|------|--------|---------------|
+| test_router_calibration_against_worked_examples | PASSED ≥ 14/16 | LLM router picks the right verification method per claim, including the new lifespan case |
+| test_scoping_calibration_against_worked_examples | PASSED ≥ 3/4 | Phase 6 scoping classifier distinguishes user/session/world facts |
+| test_stability_calibration_against_worked_examples | PASSED ≥ 3/4 | Phase 6 stability classifier bins claims into TTL classes correctly (immutable / decade_stable / volatile) |
+| test_real_api_extractor_does_not_substitute_values | PASSED | Verbatim rule actually changed Opus's behavior — value=146 stays 146 |
+| Saturn moons end-to-end (corpus turn 11) | AEDOS caught Claude's hallucination, replaced 146 → 274 | Whole pipeline working on a real chat-model hallucination |
+
+This is the strongest proof yet that the v0.5/v0.6 architecture works
+in practice. The verbatim fix is the load-bearing one — without it,
+the rest is rendered moot by extractor poisoning.
+
+---
+
 ### REAL-API VALIDATION 2026-04-28 (post-fix)
 
 Two confirmations in one run:
