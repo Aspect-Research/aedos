@@ -63,16 +63,20 @@ of predicates is a small, human-editable file.
 | Component | Responsibility | Inputs | Outputs |
 |---|---|---|---|
 | `fact_store` | SQLite. Owns all persistent state: facts, turns, pipeline_events. Validates rows on insert. Handles contradiction lookup and temporal close/reopen. | — | — |
-| `predicate_registry` | Loads and validates `predicates.yaml`. Exposes lookups and a prompt-formatted dump. The extractor tool schema enumerates these names. | `predicates.yaml` | `Predicate` objects |
-| `extractor` | Single LLM call per message, forced tool use for structured output. Validates each returned claim against the registry; drops ones that don't fit. | text, role | `ExtractionResult` |
-| `router` | One code path, one decision table. Dispatches claims to the verifier named by the registry. Writes facts to the store. Emits a `Decision` per claim for logging. | claim, origin | `Decision` |
-| `verifiers/code_generation` | (v0.4) Three-stage firewall: triage → neutral prompt → code writer → sandbox → comparator. Replaces hand-written python verifiers. | claim | `CodeGenVerificationResult` |
-| `verifiers/store_verifier` | Matches a model claim against currently-valid facts in the store. Match / contradiction / miss. | claim, store | `StoreLookupResult` |
-| `verifiers/retrieval_stub` | Placeholder for v2. Always inconclusive. | claim | explanation |
-| `corrector` | Single LLM call that rewrites the assistant draft given a list of corrections. | draft + corrections | rewritten text |
-| `pipeline` | Orchestrator. Runs every stage of a turn in order. Writes a `pipeline_events` row for each stage so the UI can rebuild the trace. | user message | `TurnTrace` |
-| `llm_client` | Anthropic SDK wrapper. Three methods: `chat`, `extract_with_tool`, `rewrite`. Applies prompt caching on stable system prefixes. | — | — |
-| `app` | FastAPI backend. Endpoints for chat, trace, fact inspector, predicate inspector, reset. Serves the static UI. | HTTP | JSON / HTML |
+| `pattern_registry` | Loads and validates `patterns.yaml` (8 patterns; predicates free-form within). Exposes lookups and a prompt-formatted dump. | `patterns.yaml` | `Pattern` objects |
+| `extractor` | Single LLM call per message, forced tool use. Validates each returned claim against the registry; drops malformed; flags substitutions (source_text-not-in-input, value-not-in-source-text). | text, role | `ExtractionResult` |
+| `llm_router` | (v0.5) Per-claim LLM routing classifier. Returns one of `python`, `python_with_canonical_constants`, `retrieval`, `user_authoritative`, `unverifiable`. | claim | `RoutingDecision` |
+| `router` | Dispatches claims to the verifier the LLM router picked. Writes facts to the store. Cache-eligible claims hit the v0.6 cache before retrieval. | claim, origin | `Decision` |
+| `verifiers/code_generation` | (v0.5) prompt builder → code writer → sandbox → comparator. Cross-check at temp 0.0/0.3 for canonical-constants claims (forces Sonnet 4.6 since Opus 4.7 deprecated temperature). | claim | `CodeGenVerificationResult` |
+| `verifiers/store_verifier` | Matches a model claim against user-asserted facts. Scoped by `user_id`. | claim, store, user_id | `StoreLookupResult` |
+| `verifiers/retrieval_verifier` | Slots-aware multi-attempt retrieval (DDG with UA rotation, Tavily, SerpAPI) + LLM judge. Result-cached in `retrieval_cache` table. | claim | `RetrievalResult` |
+| `cache` | (v0.6 Tier 2) Scoping + stability classifiers + verification cache. Frame: cache, not knowledge base. | claim | `CachedVerdict` or None |
+| `corrector` | Single LLM call that rewrites the assistant draft given a list of interventions (replace / hedge / soften / remove). | draft + interventions | rewritten text |
+| `pipeline` | Orchestrator. Runs every stage in order. Writes `pipeline_events` rows. Aggregates per-turn cost. | user message | `TurnTrace` |
+| `llm_client` | Anthropic SDK wrapper. Three methods: `chat`, `extract_with_tool`, `rewrite`. Records cost per call. Drops `temperature` for opus-4-7. | — | — |
+| `llm_clients/` | Pluggable chat-model backends (anthropic / modal-glm). Selected by `AEDOS_CHAT_MODEL_PROVIDER`. | system + messages | response text |
+| `cost` | (v0.6) Per-million-token pricing constants + `cost_for_call` + `aggregate_costs`. | model + tokens | `CallCost` |
+| `app` | FastAPI backend. Endpoints for chat, trace, fact inspector, pattern inspector, cache inspector, reset. Serves the static UI. | HTTP | JSON / HTML |
 
 ## Key design decisions
 
