@@ -169,6 +169,34 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 }
 .stage-header .turn-role { font-weight: 400; color: var(--muted); text-transform: none; letter-spacing: 0; }
 .stage-body { padding: 0.5rem 0.7rem; }
+
+/* cache_lookup event styling. Hits are wins — make them green and
+   prominent. Misses are normal flow. Errors borrow the warn color. */
+.stage.cache-hit { border-color: var(--ok, #2a8b3e); }
+.stage.cache-hit .stage-header { background: #e6f4ea; color: #0f5132; }
+.stage.cache-miss .stage-header { background: #f0f0ec; color: var(--muted); }
+.stage.cache-error { border-color: var(--bad, #b3261e); }
+.stage.cache-error .stage-header { background: #fadada; color: #b3261e; }
+
+.cache-badge {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-right: 0.35rem;
+  letter-spacing: 0.04em;
+}
+.cache-badge-hit   { background: var(--ok, #2a8b3e); color: white; }
+.cache-badge-miss  { background: #d8d8d4; color: var(--muted); }
+.cache-badge-error { background: var(--bad, #b3261e); color: white; }
+.cache-key { font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem; }
+.decision-meta-secondary {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
 .claim {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
