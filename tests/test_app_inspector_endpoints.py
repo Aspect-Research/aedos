@@ -214,3 +214,133 @@ def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
         assert body["error_type"] == "RuntimeError"
         assert "backend down" in body["error_message"]
         assert "pipeline raised" in body["hint"].lower()
+
+
+def test_health_endpoint_reports_db_error_with_ok_false(
+    client_with_seed_data, monkeypatch,
+):
+    """If the SQLite read fails (e.g. corrupt DB / locked file),
+    /api/health returns ok=False with the error string instead of
+    crashing the request."""
+    from src.app import app
+    p = app.state.pipeline
+
+    class _BoomConn:
+        def execute(self, *a, **kw):
+            raise RuntimeError("disk I/O error")
+
+    # Stash the real conn, patch in the broken one, restore after.
+    real = p.store._conn
+    monkeypatch.setattr(p.store, "_conn", _BoomConn())
+    try:
+        r = client_with_seed_data.get("/api/health")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False
+        assert "RuntimeError" in body["error"]
+        assert "disk I/O error" in body["error"]
+    finally:
+        p.store._conn = real
+
+
+# ---- /api/cache -----------------------------------------------------
+
+
+def test_cache_endpoint_returns_stats_and_entries(client_with_seed_data):
+    """/api/cache returns the verification cache contents + aggregate
+    stats. Hand-insert a couple of rows so we have something to assert
+    on."""
+    from src.app import app
+    from datetime import datetime, timezone, timedelta
+    p = app.state.pipeline
+    now = datetime.now(timezone.utc)
+    future = (now + timedelta(days=30)).isoformat()
+    past = (now - timedelta(days=1)).isoformat()
+
+    # Two cache rows: one immutable (no expires_at), one expired.
+    p.store._conn.execute(
+        "INSERT INTO verification_cache "
+        "(canonical_key, pattern, predicate, verdict, stability_class, "
+        " expires_at, evidence, hit_count, cached_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("k|live", "spatial_temporal", "born_in", "verified", "immutable",
+         None, None, 5, now.isoformat(), now.isoformat()),
+    )
+    p.store._conn.execute(
+        "INSERT INTO verification_cache "
+        "(canonical_key, pattern, predicate, verdict, stability_class, "
+        " expires_at, evidence, hit_count, cached_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("k|expired", "world_fact", "population_of", "verified",
+         "months_stable", past, None, 1, now.isoformat(), now.isoformat()),
+    )
+    p.store._conn.commit()
+
+    r = client_with_seed_data.get("/api/cache")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["stats"]["total_entries"] == 2
+    assert body["stats"]["immutable_entries"] == 1
+    assert body["stats"]["total_hits"] == 6  # 5 + 1
+
+    # Find each entry by key and check the is_expired flag.
+    by_key = {e["canonical_key"]: e for e in body["entries"]}
+    assert by_key["k|live"]["is_expired"] is False  # immutable, no ttl
+    assert by_key["k|expired"]["is_expired"] is True
+
+
+def test_cache_endpoint_treats_malformed_expires_at_as_expired(
+    client_with_seed_data,
+):
+    """If a cache row has a non-ISO expires_at (data corruption /
+    schema migration), the endpoint marks it expired rather than
+    crashing the request on ValueError."""
+    from src.app import app
+    p = app.state.pipeline
+    p.store._conn.execute(
+        "INSERT INTO verification_cache "
+        "(canonical_key, pattern, predicate, verdict, stability_class, "
+        " expires_at, evidence, hit_count, cached_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("k|broken", "p", "pred", "verified", "immutable",
+         "not-a-date", None, 0,
+         "2026-04-28T00:00:00+00:00",
+         "2026-04-28T00:00:00+00:00"),
+    )
+    p.store._conn.commit()
+
+    r = client_with_seed_data.get("/api/cache")
+    assert r.status_code == 200
+    body = r.json()
+    broken = next(e for e in body["entries"] if e["canonical_key"] == "k|broken")
+    assert broken["is_expired"] is True
+
+
+# ---- /api/reset and / -----------------------------------------------
+
+
+def test_reset_endpoint_wipes_db(client_with_seed_data):
+    """/api/reset truncates the store. After calling it, /api/turns
+    should return an empty list."""
+    # Seed data is already there from the fixture.
+    pre = client_with_seed_data.get("/api/turns").json()
+    assert len(pre) > 0
+
+    r = client_with_seed_data.post("/api/reset")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+    post = client_with_seed_data.get("/api/turns").json()
+    assert post == []
+
+
+def test_index_serves_html(client_with_seed_data):
+    """GET / returns the SPA's index.html."""
+    r = client_with_seed_data.get("/")
+    assert r.status_code == 200
+    # FileResponse for index.html — content type starts with text/html.
+    ct = r.headers.get("content-type", "")
+    assert ct.startswith("text/html")
+    # Sanity: includes the well-known SPA markers.
+    body = r.text.lower()
+    assert "<!doctype html" in body or "<html" in body
