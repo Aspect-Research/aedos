@@ -35,10 +35,11 @@ class TemperatureScriptedLLM:
 
     def rewrite(self, system, user_message, max_tokens=2048, temperature=None,
                 model=None):
-        # ``model`` is the v0.5.x cross-check override (CROSS_CHECK_MODEL).
-        # The mock keys scripts by temperature only — it doesn't care which
-        # model name the cross-check picks, just that the call shape is
-        # accepted.
+        # ``model`` is the cross-check override (now drawn from the LLM's
+        # active corrector_model so a single operator selection drives
+        # every step). The mock keys scripts by temperature only — it
+        # doesn't care which model name the cross-check picks, just that
+        # the call shape is accepted.
         self.rewrite_calls.append({"temperature": temperature, "model": model})
         scripts = self.rewrites_by_temp.get(temperature, [])
         return scripts.pop(0)
@@ -172,12 +173,12 @@ def test_cross_check_with_one_side_failing_is_disagreement(tmp_path):
 # ---------- v0.5.x: cross-check forces a temperature-accepting model ----
 
 
-def test_cross_check_overrides_model_to_cross_check_model(tmp_path):
-    """v0.5.x: Opus 4.7 silently drops temperature, which would erase
-    the cross-check signal. The cross-check forces CROSS_CHECK_MODEL
-    (Sonnet 4.6) on both generations regardless of llm.corrector_model."""
-    from src.verifiers.code_generation.pipeline import CROSS_CHECK_MODEL
-
+def test_cross_check_uses_active_corrector_model(tmp_path):
+    """The cross-check now uses ``llm.corrector_model`` so the
+    operator's chosen model drives every step uniformly. Picking
+    Sonnet → cross-check uses Sonnet on both iterations (and gets
+    real temperature variation). Picking Opus → cross-check uses Opus
+    (and loses temperature variation — documented trade-off)."""
     store = FactStore(tmp_path / "x.db")
     llm = TemperatureScriptedLLM(
         extracts=[_prompt(), _prompt()],
@@ -185,15 +186,15 @@ def test_cross_check_overrides_model_to_cross_check_model(tmp_path):
             0.0: ["print(4)"],
             0.3: ["print(4)"],
         },
-        corrector_model="claude-opus-4-7",  # default that drops temperature
+        corrector_model="claude-sonnet-4-6",
     )
     verifier = CodeGenerationVerifier(store=store, llm=llm)
     turn_id = store.insert_turn("user", "test")
     verifier.verify_with_cross_check(_claim(4), source_turn_id=turn_id)
 
-    # Both rewrite calls received the cross-check model override.
-    assert all(c["model"] == CROSS_CHECK_MODEL for c in llm.rewrite_calls)
-    # And both temperatures were exercised — variation signal preserved.
+    # Both rewrite calls used the active corrector model.
+    assert all(c["model"] == "claude-sonnet-4-6" for c in llm.rewrite_calls)
+    # And both temperatures were exercised on a temp-accepting model.
     temps = sorted({c["temperature"] for c in llm.rewrite_calls})
     assert temps == [0.0, 0.3]
     store.close()

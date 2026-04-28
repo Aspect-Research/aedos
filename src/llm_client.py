@@ -15,6 +15,7 @@ extractor's system prompt is the largest reused prefix and benefits most.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from dataclasses import dataclass
@@ -35,6 +36,19 @@ DEFAULT_MODEL = "claude-opus-4-7"
 # case is the canonical-constants cross-check loses its temperature-
 # variation signal, which is documented in OBSERVATIONS.md.
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
+
+# Models the operator can pick from in the chat UI. The selected model
+# drives every Anthropic-backed call this client makes (chat, extraction,
+# rewrite). GLM is here for completeness so the UI can list it; the
+# Pipeline routes the chat call to ``ModalGLMBackend`` when GLM is
+# selected and keeps internal calls on the prior Anthropic model
+# (GLM doesn't support tool use, so extraction etc. can't run on it).
+ALLOWED_MODELS: tuple[str, ...] = (
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "glm-5.1",
+)
 
 _log = logging.getLogger(__name__)
 
@@ -80,6 +94,35 @@ class LLMClient:
         out = self._recorded_calls
         self._recorded_calls = []
         return out
+
+    @contextlib.contextmanager
+    def with_active_model(self, model: str | None):
+        """Temporarily set chat / extractor / corrector model to ``model``
+        for the duration of the block. Restores the previous values on
+        exit. Pass ``None`` for a no-op (preserves current model state).
+
+        GLM is a no-op on this client because GLM is dispatched at the
+        Pipeline level (Modal chat backend) and doesn't run any
+        Anthropic-side calls. Selecting GLM in the UI keeps the
+        internal Anthropic-side calls on whatever model was previously
+        active.
+
+        Single-threaded use only — restoration is not thread-safe."""
+        if model is None or model == "glm-5.1":
+            yield
+            return
+        if model not in ALLOWED_MODELS:
+            raise ValueError(
+                f"unknown model {model!r}; allowed: {ALLOWED_MODELS}"
+            )
+        saved = (self.model, self.extractor_model, self.corrector_model)
+        self.model = model
+        self.extractor_model = model
+        self.corrector_model = model
+        try:
+            yield
+        finally:
+            self.model, self.extractor_model, self.corrector_model = saved
 
     def _record_call(self, model: str, response: Any) -> None:
         """Capture token counts from an Anthropic response and stash a

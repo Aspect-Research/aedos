@@ -548,6 +548,124 @@ def _build_pipeline_with_backend(tmp_path, backend):
     p.run_turn("hi")
 
 
+# ---- per-turn model dispatch (UI single-model selection) ----
+
+
+def test_pipeline_runs_with_glm_dispatch_to_modal_backend(tmp_path):
+    """When run_turn(model='glm-5.1'), _select_chat_backend dispatches
+    to the lazily-attached Modal backend instead of the configured
+    chat_backend. Anthropic chat backend is NOT called."""
+    from src.corrector import Corrector
+    from src.extractor import ClaimExtractor
+    from src.fact_store import FactStore
+    from src.llm_router import RoutingDecision
+    from src.pattern_registry import load_default_registry, reset_cache
+    from src.pipeline import Pipeline
+    from src.router import Router
+
+    reset_cache()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    @dataclass
+    class _MockLLM:
+        extracts: list = field(default_factory=list)
+        rewrites: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+            return self.extracts.pop(0)
+
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+            return self.rewrites.pop(0)
+
+    anthropic_calls: list = []
+    modal_calls: list = []
+
+    class AnthropicStub:
+        provider = "anthropic"
+        model = "claude-opus-4-7"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            anthropic_calls.append(turn_id)
+            return "from anthropic"
+
+    class ModalStub:
+        provider = "modal"
+        model = "GLM"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            modal_calls.append(turn_id)
+            return "from modal"
+
+    store = FactStore(tmp_path / "g.db")
+    registry = load_default_registry()
+    # Two turns × two extractions per turn (user + assistant) = 4.
+    mock = _MockLLM(extracts=[{"facts": []}] * 4)
+    extractor = ClaimExtractor(mock, registry)
+    router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
+        method="unverifiable", reason="x", confidence=0.9))
+    p = Pipeline(store, registry, mock, extractor, router, Corrector(mock),
+                 chat_backend=AnthropicStub())
+    p._modal_backend = ModalStub()
+
+    # Default — no model override → anthropic stub is called.
+    p.run_turn("first")
+    assert len(anthropic_calls) == 1
+    assert modal_calls == []
+
+    # model='glm-5.1' → routed to modal stub instead.
+    p.run_turn("second", model="glm-5.1")
+    assert len(anthropic_calls) == 1  # unchanged
+    assert len(modal_calls) == 1
+
+
+def test_pipeline_glm_request_with_no_modal_backend_raises(tmp_path):
+    """Selecting GLM in the UI when MODAL_API_KEY is missing surfaces
+    a configuration error early — better than a silent fallback."""
+    from src.corrector import Corrector
+    from src.extractor import ClaimExtractor
+    from src.fact_store import FactStore
+    from src.llm_router import RoutingDecision
+    from src.pattern_registry import load_default_registry, reset_cache
+    from src.pipeline import Pipeline
+    from src.router import Router
+
+    reset_cache()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    @dataclass
+    class _MockLLM:
+        extracts: list = field(default_factory=list)
+        rewrites: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+            return self.extracts.pop(0)
+
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+            return self.rewrites.pop(0)
+
+    class AnthropicStub:
+        provider = "anthropic"
+        model = "claude-opus-4-7"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            return "ok"
+
+    store = FactStore(tmp_path / "g2.db")
+    registry = load_default_registry()
+    mock = _MockLLM(extracts=[{"facts": []}, {"facts": []}])
+    extractor = ClaimExtractor(mock, registry)
+    router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
+        method="unverifiable", reason="x", confidence=0.9))
+    p = Pipeline(store, registry, mock, extractor, router, Corrector(mock),
+                 chat_backend=AnthropicStub())
+    p._modal_backend = None  # explicit — no MODAL_API_KEY scenario
+
+    with pytest.raises(RuntimeError, match="no Modal backend"):
+        p.run_turn("hi", model="glm-5.1")
+
+
 def test_per_backend_max_tokens_modal_gets_more_headroom(tmp_path, monkeypatch):
     """Reasoning models (provider='modal') need more max_tokens because
     the cap counts reasoning_content too. Anthropic chat doesn't.

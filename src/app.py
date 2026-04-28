@@ -57,6 +57,13 @@ def _pipeline(app: FastAPI) -> Pipeline:
 
 class ChatRequest(BaseModel):
     message: str
+    # Operator's per-turn model selection from the chat UI dropdown.
+    # When set, drives every Anthropic-backed call (chat, extraction,
+    # router, judge, corrector, scoping, stability, code-gen). ``glm-5.1``
+    # routes only the chat call to Modal — internal calls keep the
+    # pipeline's prior Anthropic model since GLM doesn't do tool use.
+    # ``None`` falls back to the pipeline's defaults (Opus 4.7).
+    model: str | None = None
 
 
 # ---- chat endpoint ---------------------------------------------------
@@ -67,7 +74,7 @@ def chat(req: ChatRequest) -> dict[str, Any]:
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
     try:
-        trace = _pipeline(app).run_turn(req.message)
+        trace = _pipeline(app).run_turn(req.message, model=req.model)
     except Exception as exc:
         # Return a structured error rather than letting FastAPI's
         # generic 500-with-no-body propagate. The chat backend
@@ -148,6 +155,40 @@ def list_patterns() -> list[dict[str, Any]]:
         }
         for p in reg.all()
     ]
+
+
+@app.get("/api/models")
+def list_models() -> dict[str, Any]:
+    """Models the chat UI can offer in the per-turn selector. Returns
+    the canonical model id, a display label, and an ``available`` flag
+    so the UI can grey out GLM when MODAL_API_KEY is missing.
+
+    The selected model drives every Anthropic-backed call in a turn
+    (chat, extraction, router, judge, corrector, scoping, stability,
+    code-gen). GLM routes only the chat call to Modal — internal calls
+    keep the prior Anthropic model since GLM doesn't do tool use.
+    """
+    from src.llm_client import ALLOWED_MODELS
+    p = _pipeline(app)
+    modal_available = p._modal_backend is not None
+    labels = {
+        "claude-opus-4-7": "Claude Opus 4.7",
+        "claude-sonnet-4-6": "Claude Sonnet 4.6",
+        "claude-haiku-4-5": "Claude Haiku 4.5",
+        "glm-5.1": "GLM 5.1 (chat only — internal calls stay on Anthropic)",
+    }
+    default_model = getattr(p.llm, "model", "claude-opus-4-7")
+    return {
+        "default": default_model,
+        "models": [
+            {
+                "id": m,
+                "label": labels.get(m, m),
+                "available": (modal_available if m == "glm-5.1" else True),
+            }
+            for m in ALLOWED_MODELS
+        ],
+    }
 
 
 @app.get("/api/health")

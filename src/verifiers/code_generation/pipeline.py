@@ -34,12 +34,10 @@ from src.verifiers.code_generation.sandbox import run_code
 CodeGenStatus = str  # Literal so router can string-compare
 
 
-# Model used for the canonical-constants cross-check. Hardcoded to a
-# temperature-accepting model (Sonnet 4.6) so the two cross-check
-# iterations actually run at different temperatures and can disagree.
-# Default corrector_model (Opus 4.7) silently drops temperature, which
-# would erase the cross-check signal.
-CROSS_CHECK_MODEL = "claude-sonnet-4-6"
+# The cross-check now uses ``llm.corrector_model`` (the operator's
+# active selection) so a single model drives every pipeline step. See
+# verify_with_cross_check below for the temperature-variation
+# trade-off when that model is Opus 4.7.
 
 
 @dataclass
@@ -246,11 +244,17 @@ class CodeGenerationVerifier:
         so the router can fall back to retrieval (or surface the
         discrepancy in the trace).
         """
-        # Force Sonnet 4.6 for the cross-check so ``temperature`` actually
-        # takes effect. Opus 4.7 (the default corrector_model) silently
-        # drops temperature, which would make both iterations identical
-        # and erase the cross-check signal.
-        cross_check_model = CROSS_CHECK_MODEL
+        # The cross-check uses the LLM's currently-active corrector
+        # model so the operator's chosen model drives every step
+        # uniformly. Trade-off: when the operator picks Opus 4.7 (which
+        # silently drops ``temperature``), both iterations run with the
+        # same effective settings and the cross-check loses its
+        # variation signal — agreement becomes a no-op signal rather
+        # than a genuine cross-check. That's the documented cost of
+        # selecting Opus across the board; pick Sonnet 4.6 or Haiku 4.5
+        # if you want the cross-check to actually disagree on real
+        # ambiguity.
+        cross_check_model = self.llm.corrector_model
         result_a = verify_via_code_generation(
             claim,
             self.llm,
