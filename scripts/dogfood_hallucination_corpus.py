@@ -419,6 +419,12 @@ def main(argv: list[str]) -> int:
     last_was_error = False
     current_pipeline = None
     current_session_id = None
+    # Abort early after this many consecutive PIPELINE ERRORs — likely
+    # indicates Modal is sustained-down or some other persistent
+    # issue. Better to stop and return what we have than burn time
+    # on calls that won't land.
+    consecutive_errors = 0
+    max_consecutive_errors = 4
 
     # Optional warm-up for modal.
     if args.provider == "modal":
@@ -488,10 +494,12 @@ def main(argv: list[str]) -> int:
         try:
             trace = current_pipeline.run_turn(prompt)
             last_was_error = False
+            consecutive_errors = 0  # reset on success
         except Exception as exc:  # noqa: BLE001
             print(f"  PIPELINE ERROR: {type(exc).__name__}: {exc}")
             overall_ok = False
             last_was_error = True
+            consecutive_errors += 1
             summary = {
                 "id": slug, "category": entry["category"], "prompt": prompt,
                 "expected": entry["expected"], "notes": entry["notes"],
@@ -502,6 +510,11 @@ def main(argv: list[str]) -> int:
             out_file = diag / f"{out_prefix}_{i:02d}_{_slugify(slug)}.json"
             with out_file.open("w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2)
+            if consecutive_errors >= max_consecutive_errors:
+                print(f"\n  ABORTING: {consecutive_errors} consecutive "
+                      f"pipeline errors. Modal endpoint likely sustained-"
+                      f"down. Returning what we have.")
+                break
             continue
 
         elapsed = time.monotonic() - started

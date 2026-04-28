@@ -339,6 +339,9 @@ def main(argv: list[str]) -> int:
     summaries: list[dict[str, Any]] = []
     overall_ok = True
     last_was_error = False
+    # Abort early after this many consecutive PIPELINE ERRORs.
+    consecutive_errors = 0
+    max_consecutive_errors = 4
 
     for i, entry in enumerate(PROMPTS, start=1):
         if i < args.start:
@@ -367,10 +370,12 @@ def main(argv: list[str]) -> int:
         try:
             trace = pipeline.run_turn(prompt)
             last_was_error = False
+            consecutive_errors = 0
         except Exception as exc:  # noqa: BLE001
             print(f"  PIPELINE ERROR: {type(exc).__name__}: {exc}")
             overall_ok = False
             last_was_error = True
+            consecutive_errors += 1
             summary = {
                 "id": slug, "category": entry["category"], "prompt": prompt,
                 "expected": entry["expected"], "notes": entry["notes"],
@@ -380,6 +385,10 @@ def main(argv: list[str]) -> int:
             out_file = diag / f"{out_prefix}_{i:02d}_{_slugify(slug)}.json"
             with out_file.open("w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2)
+            if consecutive_errors >= max_consecutive_errors:
+                print(f"\n  ABORTING: {consecutive_errors} consecutive "
+                      f"pipeline errors. Returning what we have.")
+                break
             continue
 
         elapsed = time.monotonic() - started
