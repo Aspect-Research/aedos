@@ -298,3 +298,61 @@ def test_cache_lookup_failure_falls_through_to_retrieval(tmp_path):
     assert len(lookup_events) == 1
     assert "error" in lookup_events[0]["data"]
     assert "cache disk corrupt" in lookup_events[0]["data"]["error"]
+
+
+def test_cache_hit_contradicted_serves_with_correction(tmp_path):
+    """Cache hits with verdict=contradicted return a Decision with the
+    correction populated from cached evidence — not just verified."""
+    fact = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "Paris", "location": "Germany"},
+        "polarity": 1, "source_text": "Paris is in Germany",
+    }
+    p, store, cache, retrieval = _build(tmp_path, fact, prepopulate_cache=False)
+
+    # Pre-populate the cache with a contradicted verdict + evidence.
+    cache.write(
+        canonical_key=canonicalize_claim_key(fact),
+        pattern=fact["pattern"], predicate=fact["predicate"],
+        verdict="contradicted",
+        stability_class="decade_stable",
+        ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
+        evidence={"actual_value": "France",
+                  "explanation": "Paris is in France, not Germany"},
+    )
+
+    trace = p.run_turn("test")
+    # Retrieval skipped — cache hit served.
+    assert retrieval.calls == []
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "contradicted"
+    # Correction populated from cached evidence.
+    correction = d.get("correction") or {}
+    assert correction.get("corrected_object") == "France"
+    assert "Paris is in France" in (correction.get("explanation") or "")
+
+
+def test_cache_hit_inconclusive_serves_without_redoing_retrieval(tmp_path):
+    """Cache hits with retrieval_inconclusive verdict still skip
+    re-retrieval — we don't redo expensive work on a known-tough claim."""
+    fact = {
+        "pattern": "quantitative", "predicate": "has_population",
+        "slots": {"subject": "obscure-town", "property": "population",
+                  "value": 1234},
+        "polarity": 1, "source_text": "obscure-town has 1234 people",
+    }
+    p, store, cache, retrieval = _build(tmp_path, fact, prepopulate_cache=False)
+
+    cache.write(
+        canonical_key=canonicalize_claim_key(fact),
+        pattern=fact["pattern"], predicate=fact["predicate"],
+        verdict="retrieval_inconclusive",
+        stability_class="decade_stable",
+        ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
+        evidence={"explanation": "no signal from prior retrieval"},
+    )
+
+    trace = p.run_turn("test")
+    assert retrieval.calls == []  # not re-attempted
+    d = trace.verification_decisions[0]
+    assert d["verification_status"] == "retrieval_inconclusive"
