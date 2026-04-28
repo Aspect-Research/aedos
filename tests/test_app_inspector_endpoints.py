@@ -27,7 +27,6 @@ def client_with_seed_data(tmp_path, monkeypatch):
     # Suppress GLM dispatch path so /api/models reports it unavailable
     # in this fixture (deterministic).
     monkeypatch.delenv("MODAL_API_KEY", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
 
     db_path = tmp_path / "api.db"
     monkeypatch.setenv("AEDOS_DB_PATH", str(db_path))

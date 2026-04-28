@@ -492,21 +492,20 @@ For each model-asserted claim:
   a wrong answer for the entire TTL window. The asymmetry justifies
   the v0.6 conservative posture.
 
-### Off by default
+### Always on
 
-Single shortcut to enable the whole stack: `AEDOS_CACHE_TIER2=1`
-turns on scoping + stability + writes at once. For partial / observation
-modes, the granular env vars override the shortcut: e.g.
-`AEDOS_CACHE_TIER2=1 AEDOS_CACHE_WRITES=0` enables the classifiers but
-not the actual cache reads/writes — useful for measuring what the
-classifiers PRODUCE on real claims before risking served verdicts. The
-granular vars (`AEDOS_CACHE_SCOPING`, `AEDOS_CACHE_STABILITY`,
-`AEDOS_CACHE_WRITES`) can also be set independently in the original
-ratcheting order.
+The cache builds on every turn — `build_pipeline` always wires the
+scoping classifier, the stability classifier, and the
+`VerificationCache`. Each layer adds one LLM call per assistant claim
+in the worst case, but the cache accumulates verdicts across sessions
+so the pipeline gets faster the more you use it. That accumulation is
+the whole point; opting out would defeat it. Earlier versions had
+`AEDOS_CACHE_*` opt-in env vars; those are gone.
 
-Each enabled layer adds one LLM call per assistant claim — opt-in for a
-reason. Calibrate the classifier prompts on real claims first, then
-enable writes.
+For hermetic test contexts that need a no-cache pipeline, construct
+`Pipeline` directly with `scoping_classifier=None` /
+`stability_classifier=None` / `verification_cache=None` — `build_pipeline`
+no longer offers an env-driven way to disable it.
 
 The Cache tab in the trace UI shows live hit rate, per-stability hit
 breakdown, and the most-recently-cached entries with verdict, stability

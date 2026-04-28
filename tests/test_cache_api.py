@@ -16,9 +16,6 @@ from src.fact_store import FactStore
 def client_with_cache(tmp_path, monkeypatch):
     """Build a TestClient backed by an isolated DB with cache entries."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_WRITES", raising=False)
 
     db_path = tmp_path / "api.db"
     monkeypatch.setenv("AEDOS_DB_PATH", str(db_path))

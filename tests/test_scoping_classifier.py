@@ -241,29 +241,16 @@ def test_pipeline_continues_when_classifier_raises(tmp_path):
     assert "classifier exploded" in scope_events[0]["data"]["error"]
 
 
-# ---- env-var gate -------------------------------------------------------
+# ---- always-on construction --------------------------------------------
 
 
-def test_build_pipeline_off_by_default(tmp_path, monkeypatch):
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
+def test_build_pipeline_always_wires_scoping_classifier(tmp_path, monkeypatch):
+    """The scoping classifier is always wired by build_pipeline now —
+    no env-var gate. Caches should accumulate across turns; opting
+    out would defeat the purpose."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-
-    # We can't actually build the pipeline without making real API calls
-    # (the LLMClient initialization is fine, but we don't exercise it
-    # here). Just confirm the env-var gate logic by direct check.
-    from src.pipeline import build_pipeline
-    # The env var being absent → scoping_classifier stays None inside
-    # build_pipeline. Hard to assert without monkey-patching internals;
-    # instead just confirm build_pipeline runs to construction without
-    # AEDOS_CACHE_SCOPING set (i.e. no import-time errors).
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._scoping_classifier is None
-    p.store.close()
-
-
-def test_build_pipeline_on_with_env_var(tmp_path, monkeypatch):
-    monkeypatch.setenv("AEDOS_CACHE_SCOPING", "1")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    for var in ("AEDOS_CACHE_TIER2", "AEDOS_CACHE_SCOPING"):
+        monkeypatch.delenv(var, raising=False)
 
     from src.pipeline import build_pipeline
     p = build_pipeline(str(tmp_path / "x.db"))
