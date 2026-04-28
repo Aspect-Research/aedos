@@ -57,9 +57,6 @@ CONF_RETRIEVAL_FAILED = 0.4
 CONF_UNVERIFIABLE_IN_PRINCIPLE = 0.3
 CONF_ROUTING_ANOMALY = 0.2
 
-# v0.2 alias kept for any external callers:
-CONF_UNVERIFIED = CONF_PENDING_IMPLEMENTATION
-
 
 class RoutingOutcome(str, Enum):
     USER_STORED = "user_stored"
@@ -243,9 +240,9 @@ class Router:
     # ---- model-origin claims -------------------------------------------
 
     def _route_model(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
-        # Routing anomaly check: pattern opted into flagging non-user agents.
-        # Catches upstream extractor errors regardless of how the LLM router
-        # would have routed the claim. Removed in v0.5 §9 cleanup.
+        # Routing anomaly check (hardcoded in _USER_SUBJECT_PATTERNS — v0.5
+        # replaced the per-pattern YAML opt-in). Catches upstream extractor
+        # errors regardless of how the LLM router would have routed the claim.
         slots = claim.get("slots", {})
         anomaly = self._maybe_anomaly(pattern, slots)
         if anomaly is not None:

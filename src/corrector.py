@@ -172,28 +172,6 @@ class Corrector:
 
         return self.llm.rewrite(CORRECTOR_SYSTEM, _format_user_message(draft, interventions))
 
-    # ---- back-compat (v0.1 surface) -------------------------------------
-
-    def correct(self, original_text: str, corrections: Iterable[dict]) -> str:
-        """v0.1 entry point. Synthesizes REPLACE interventions from corrections."""
-        interventions = [
-            Intervention(
-                intervention_type=INTERVENTION_REPLACE,
-                claim={
-                    "subject": "(legacy)",
-                    "predicate": "(legacy)",
-                    "object": c.get("original_object", ""),
-                    "source_text": c.get("source_text", ""),
-                },
-                verification_status="contradicted",
-                verified_value=c.get("corrected_object"),
-                reason=c.get("explanation", ""),
-            )
-            for c in corrections
-        ]
-        return self.apply(original_text, interventions)
-
-
 def _format_user_message(draft: str, interventions: list[Intervention]) -> str:
     lines = [
         "Original response:",
