@@ -211,7 +211,7 @@ intervention (if any) to apply.
 | `retrieval_inconclusive` | **v0.3 split:** verifier RAN, search returned snippets, judge said INSUFFICIENT_EVIDENCE | 0.4 | **hedge** — there's positive evidence of uncertainty |
 | `retrieval_failed` | **v0.3 split:** verifier didn't get useful signal — network error, no results, judge unparseable | 0.4 | **noop** — verifier failure is not evidence of uncertainty about the *claim*; the pipeline emits a `verifier_failure` event instead |
 | `unverifiable_pending_implementation` | Python verifier inconclusive, store-lookup miss, etc. | 0.4 | **hedge** when confidence < 0.5 |
-| `routing_anomaly` | Pattern with `flag_non_user_as_anomaly` got a non-user agent | 0.2 | noop **at content level** — pipeline emits a `routing_anomaly_detected` event with the offending slot |
+| `routing_anomaly` | A `_USER_SUBJECT_PATTERNS` pattern (`preference`, `propositional_attitude`) got a non-user agent — almost always an upstream extractor error | 0.2 | noop **at content level** — pipeline emits a `routing_anomaly_detected` event with the offending slot |
 
 The `retrieval_inconclusive` / `retrieval_failed` split is the v0.3 fix
 for a v0.2 bug: hedging on retrieval failure was making the system more
@@ -408,13 +408,15 @@ corrector if needed).
   abstain (see "Representation: patterns vs predicates" → Known scope
   limits above). This is a deliberate design decision, not a TODO.
 
-- **Python verification depends on triage + leak detection.** v0.4
-  generates python on demand, but every step has limits: triage may
-  occasionally over- or under-reject; the leak detector is heuristic
+- **Python verification depends on the LLM router + leak detection.**
+  v0.5 generates python on demand: the router decides python-eligibility,
+  the prompt builder articulates a neutral question, and the code writer
+  produces a script the sandbox runs. Every step has limits: the router
+  may occasionally over- or under-route; the leak detector is heuristic
   (literal substrings only); the sandbox runs in a subprocess so
   startup cost is non-trivial (~tens to hundreds of ms per claim).
-  The system fails loud — `comparison_error`, `code_execution_failed`,
-  `not_python_verifiable` — rather than silently passing.
+  The system fails loud — `comparison_error`, `code_execution_failed` —
+  rather than silently passing.
 
 - **Single conversation.** The `facts`, `turns`, and `pipeline_events`
   tables have no conversation id. Everything is one long conversation
@@ -424,10 +426,11 @@ corrector if needed).
 - **No streaming.** The chat endpoint blocks on the full turn. Fine for a
   debugging UI; not what you'd ship.
 
-- **No re-verification on edit.** If you change a predicate's
-  `verification_method` in the registry while facts already exist,
-  historical facts keep their old verification status. `reset_db.py` is
-  the intended workflow for this; production would need a re-verify pass.
+- **No re-verification on edit.** If you change the router's prompt or
+  worked examples while facts already exist, historical facts keep
+  their old verification status (they were verified by the previous
+  routing logic). `reset_db.py` is the intended workflow for this;
+  production would need a re-verify pass.
 
 ## What v2 would add
 
