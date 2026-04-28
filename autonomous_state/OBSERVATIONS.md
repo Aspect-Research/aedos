@@ -76,3 +76,79 @@ correction needed.
   it would defeat the purpose of dogfooding and also let stale GLM
   responses drift away from current model behavior. But worth a note
   in case dev velocity becomes painful.
+
+## 2026-04-27 — Phase-2 dogfood (in progress, 7/17 turns done)
+
+Findings so far from `scripts/dogfood_glm.py`:
+
+### GLM is acing python-territory questions
+
+Turns 1–5 (count_m_in_commitment, count_vowels_serendipitous, mult_13_17,
+sqrt_sum, date_diff_moon) all routed to python with confidence ≥ 0.98
+and verified successfully. GLM's answer for each was correct on the
+first try.
+
+  * commitment has 3 m's (NOT 2 as the operator wrote in the
+    prompt set — operator-prediction error, fixed in commit 70b4b65)
+  * date math: 20,735 days from moon landing to 2026-04-27 — correct
+
+This is the calibration win of v0.5: routing computable claims to python
+catches none of these because none of them are wrong. The verifier
+doesn't generate corrections, but its successful checks are
+load-bearing — they confirm the model's confident answers.
+
+### Real bug: canonical-constants cross-check breaks on Opus 4.7
+
+Turn 6 (list New England states, routed to python_with_canonical_constants)
+errored with `BadRequestError: 'temperature' is deprecated for this model`.
+Anthropic deprecated the `temperature` parameter for `claude-opus-4-7`,
+which is the default corrector_model. The cross-check in
+`pipeline.verify_with_cross_check` runs the code-gen pipeline twice at
+temperatures 0.0 and 0.3 — neither call lands now.
+
+  * **Fix shipped (commit 6d466df):** `LLMClient.rewrite` now drops
+    temperature when the model is `claude-opus-4-7`-prefixed and logs
+    a warning. Pipeline no longer crashes.
+  * **Caveat:** with temperature dropped, both cross-check calls run
+    with the same params. The cross-check's value-add is now near-zero
+    on opus models (LLM nondeterminism would still occasionally vary
+    output, but the deliberate variation source is gone).
+  * **Follow-up:** consider running the cross-check on Sonnet 4.6
+    explicitly (via a per-stage model override), or use a different
+    variation source (small prompt perturbation, swap the order of
+    examples, etc.). NEXT_STEPS item.
+
+### Real calibration gap: extractor produces zero claims for canonical lists
+
+Turn 7 (days of the week). GLM produced a perfectly clean numbered list:
+"The seven days of the week in order, starting with Monday, are: 1.
+Monday 2. Tuesday ... 7. Sunday". The extractor returned `valid_facts:
+[]` AND `rejected_facts: []` — nothing was even attempted.
+
+This is a real v0.5 design gap: "list canonical items in order"
+responses don't fit any pattern in `patterns.yaml`. The closest is
+`quantitative` (subject + property + value), but the extractor doesn't
+shoehorn the list into that shape. Result: the entire `python_with_
+canonical_constants` path can never trigger from this kind of response,
+because no claim ever gets extracted.
+
+**Hypothesis:** the extractor would benefit from a worked example in
+`extractor.py` for "the days of the week are: [Mon, Tue, ...]" → e.g.
+`quantitative.has_value(subject="days_of_week", property="ordered_list",
+value=["Monday", ..., "Sunday"])`. Then the LLM router would route to
+`python_with_canonical_constants`, and the cross-check would verify
+the list. Worth trying.
+
+  * Adding this needs care — list-valued slots aren't well-supported
+    by the current verifier's comparator. May need a list-comparison
+    branch in `comparator.py`.
+  * Alternative interpretation: this is correct behavior. "Days of the
+    week" is canonical reference data, not a claim about the world.
+    Verifying it is busy-work. Reasonable people could argue either
+    way.
+
+I lean toward "extract it" because the whole point of canonical-
+constants verification is to catch the LLM emitting WRONG canonical
+reference data ("the New England states are: Maine, Vermont, NH, MA,
+RI, CT, Pennsylvania" — the LLM-generated trap is to add an extra
+state). If we don't extract list responses, we never catch that.
