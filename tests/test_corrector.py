@@ -217,3 +217,113 @@ def test_corrector_system_prompt_lists_intervention_types():
         assert kw in CORRECTOR_SYSTEM
 
 
+def test_corrector_system_prompt_demands_internal_consistency():
+    """The user reported a draft where the corrector replaced '2 words'
+    with '0 words' but left the sentence 'These are likely: Donald,
+    children, prompt, vowels' untouched — internally contradictory.
+    The system prompt now explicitly tells the model to fix adjacent
+    contradicting prose, not just the named source_text."""
+    from src.corrector import CORRECTOR_SYSTEM
+    # Key phrases pinning the new contract.
+    assert "internal consistency" in CORRECTOR_SYSTEM.lower()
+    # The Donald/children/prompt/vowels case is called out explicitly
+    # as the canonical example so a future LLM doesn't lose the lesson.
+    assert "Donald" in CORRECTOR_SYSTEM and "vowels" in CORRECTOR_SYSTEM
+    # And the old "MINIMAL CHANGES. Preserve everything" framing is
+    # gone — that's what produced the bug.
+    assert "MINIMAL CHANGES" not in CORRECTOR_SYSTEM
+
+
+def test_corrector_user_message_includes_verified_values_checklist():
+    """When any intervention is a `replace`, the user message renders
+    a 'Verified values that the rewritten response must agree with:'
+    block listing every replacement target. Gives the model an
+    explicit checklist to scan adjacent prose against."""
+    from src.corrector import (
+        Corrector, INTERVENTION_REPLACE, INTERVENTION_HEDGE, Intervention,
+    )
+
+    @dataclass
+    class _LLM:
+        rewrite_calls: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def rewrite(self, system, user_message, max_tokens=2048,
+                    temperature=None):
+            self.rewrite_calls.append({"user_message": user_message})
+            return "ok"
+
+    llm = _LLM()
+    c = Corrector(llm)
+    interventions = [
+        Intervention(
+            intervention_type=INTERVENTION_REPLACE,
+            claim={"pattern": "quantitative", "predicate": "has_count",
+                   "slots": {"subject": "prompt",
+                             "property": "words_with_more_than_two_vowels",
+                             "value": 2},
+                   "polarity": 1,
+                   "source_text": "Count: 2 words"},
+            verification_status="contradicted",
+            verified_value=0,
+            reason="actual is 0",
+        ),
+        Intervention(
+            intervention_type=INTERVENTION_HEDGE,
+            claim={"pattern": "categorical", "predicate": "is_a",
+                   "slots": {"entity": "x", "category": "y"},
+                   "polarity": 1, "source_text": "src"},
+            verification_status="retrieval_inconclusive",
+            reason="hedge",
+        ),
+    ]
+    c.apply("draft", interventions)
+
+    msg = llm.rewrite_calls[0]["user_message"]
+    # Checklist block present.
+    assert "Verified values" in msg
+    # The replace's verified value is enumerated (= 0).
+    assert "= 0" in msg
+    # The descriptor uses subject.property when both are available.
+    assert "prompt.words_with_more_than_two_vowels" in msg
+    # Hedge interventions don't appear in the checklist (they have no
+    # verified_value to enforce).
+    checklist_section = msg.split("Verified values")[1]
+    assert "[hedge]" not in checklist_section
+
+
+def test_corrector_user_message_no_checklist_when_no_replace():
+    """When no intervention is a replace, the checklist block is
+    omitted — there's nothing to enforce internal consistency
+    against."""
+    from src.corrector import (
+        Corrector, INTERVENTION_HEDGE, Intervention,
+    )
+
+    @dataclass
+    class _LLM:
+        rewrite_calls: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def rewrite(self, system, user_message, max_tokens=2048,
+                    temperature=None):
+            self.rewrite_calls.append({"user_message": user_message})
+            return "ok"
+
+    llm = _LLM()
+    c = Corrector(llm)
+    interventions = [
+        Intervention(
+            intervention_type=INTERVENTION_HEDGE,
+            claim={"pattern": "categorical", "predicate": "is_a",
+                   "slots": {"entity": "x", "category": "y"},
+                   "polarity": 1, "source_text": "src"},
+            verification_status="retrieval_inconclusive",
+            reason="hedge",
+        ),
+    ]
+    c.apply("draft", interventions)
+    msg = llm.rewrite_calls[0]["user_message"]
+    assert "Verified values" not in msg
+
+
