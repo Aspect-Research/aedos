@@ -74,6 +74,13 @@ PIPELINE_STAGES = {
     # LLM calls (extractor + router + code-writer + judge + corrector +
     # any classifiers) into total_usd / by_model breakdown.
     "turn_cost",
+    # Defense-in-depth: extractor flagged a fact whose source_text
+    # isn't a substring of the input — strong signal that the
+    # extractor rewrote the model's claim with its own world
+    # knowledge. The fact still goes through, but the trace UI
+    # surfaces the warning prominently so the operator can spot
+    # corruption of the verification pipeline.
+    "extractor_substitution_warning",
 }
 
 # Confidence adjustments

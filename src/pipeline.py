@@ -184,6 +184,20 @@ class Pipeline:
             "assistant_extraction",
             asst_extraction.to_dict(),
         )
+        # Surface any substitution warnings as their own prominent
+        # event so the operator can see the extractor rewriting model
+        # claims (the bug class that produced false-positive 'catches'
+        # in the hallucination corpus).
+        for w in asst_extraction.warnings:
+            fact_index = w.get("fact_index")
+            if fact_index is None or fact_index >= len(asst_extraction.valid_facts):
+                fact = None
+            else:
+                fact = asst_extraction.valid_facts[fact_index]
+            self.store.insert_pipeline_event(
+                assistant_turn_id, "extractor_substitution_warning",
+                {"warning": w, "fact": fact, "model_draft": draft},
+            )
 
         # Reset per-turn cache state.
         self._cache_decisions = {}

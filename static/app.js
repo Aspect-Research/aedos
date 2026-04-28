@@ -167,11 +167,15 @@ function renderTrace(events) {
   events
     .filter((e) => e.stage === "verifier_failure")
     .forEach((ev) => traceEl.appendChild(renderVerifierFailureBanner(ev)));
+  events
+    .filter((e) => e.stage === "extractor_substitution_warning")
+    .forEach((ev) => traceEl.appendChild(renderSubstitutionWarning(ev)));
   // Bury per-attempt retrieval logs and code-gen sub-stages inside their
   // decisions, not as standalone stages.
   const buriedStages = new Set([
     "routing_anomaly_detected",
     "verifier_failure",
+    "extractor_substitution_warning",
     "retrieval_query_attempt",
     // v0.4 / v0.5 code-gen sub-stages — surfaced inside the verification decision.
     "code_triage",  // legacy; v0.5 doesn't emit but old DBs may have it
@@ -221,6 +225,31 @@ function renderAnomalyBanner(event) {
   }
   return banner;
 }
+
+function renderSubstitutionWarning(event) {
+  const d = event.data || {};
+  const w = d.warning || {};
+  const fact = d.fact || {};
+  const banner = el("div", { className: "anomaly-banner",
+    style: "background:#fff7e6;border-color:#c87000;color:#8a4d00;" });
+  banner.appendChild(el("strong", {
+    textContent: "⚠ Extractor substitution detected",
+  }));
+  banner.appendChild(el("div", {
+    textContent: w.detail || "extractor source_text doesn't match input",
+  }));
+  if (fact.source_text) {
+    banner.appendChild(el("div", { className: "decision-meta",
+      textContent: `extractor wrote source_text: ${JSON.stringify(fact.source_text)}` }));
+  }
+  if (d.model_draft) {
+    banner.appendChild(el("div", { className: "decision-meta",
+      style: "font-size:0.7rem",
+      textContent: `actual model draft (first 240): ${d.model_draft.slice(0, 240)}` }));
+  }
+  return banner;
+}
+
 
 function renderVerifierFailureBanner(event) {
   const d = event.data || {};
