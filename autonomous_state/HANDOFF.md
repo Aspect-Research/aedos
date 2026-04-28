@@ -35,8 +35,31 @@ ReadTimeout, and 200. Quick check:
           'messages':[{'role':'user','content':'hi'}],'max_tokens':32}, \
     timeout=300.0); print('status', r.status_code)"
 
-200 → resume `python scripts/dogfood_glm.py --start 6`.
-503 → either wait, or run against Anthropic for now:
-`python scripts/dogfood_glm.py --provider anthropic --start 6`
-(but ask the operator first re: API spend — full 17-prompt run uses
-~50-100 LLM calls).
+200 → re-run dogfood + corpus to validate the session 2 fixes:
+
+    python scripts/dogfood_glm.py
+    python scripts/dogfood_hallucination_corpus.py
+    python scripts/summarize_corpus_run.py
+    python scripts/analyze_substitutions.py
+
+  Look for the substitution rate (was 24.3% pre-fix; should drop
+  significantly after the verbatim rule lands in real LLM calls).
+
+503 / timeout → use Anthropic fallback. Single-prompt validation:
+
+    py scripts/eval_harness.py --provider anthropic --corpus hallucination --limit 1
+    py scripts/smoke_test_glm.py --provider anthropic
+
+  Full corpus run against Anthropic costs ~$3-5 in API spend; ask
+  operator first.
+
+Open Phase 6 prototype to evaluate (off by default):
+
+    AEDOS_UNIQUE_VALUE_SLOTS=1 python scripts/dogfood_hallucination_corpus.py
+
+  This enables the unique-value-slot detection for spatial_temporal.
+  was_born_in (one entry only). The Williamsburg/Williamstown
+  scenario should now produce USER_CONTRADICTED_SELF events.
+
+Current /api/health summary (when the dev server is running) shows
+exactly which features are enabled by env vars.
