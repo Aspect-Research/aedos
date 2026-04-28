@@ -18,7 +18,11 @@ from src.verifiers.retrieval_verifier import (
     RetrievalVerifier,
     Snippet,
     build_queries,
+    default_search,
     parse_judge_response,
+    search_duckduckgo,
+    search_serpapi,
+    search_tavily,
 )
 
 
@@ -96,6 +100,102 @@ def test_parse_insufficient():
 def test_parse_malformed_returns_none():
     assert parse_judge_response("MAYBE") is None
     assert parse_judge_response("") is None
+
+
+def test_default_search_prefers_tavily(monkeypatch):
+    """When TAVILY_API_KEY is set, default_search calls search_tavily,
+    not the others."""
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
+    monkeypatch.setenv("SERPAPI_KEY", "serp-key")
+
+    called: list[str] = []
+    def fake_tavily(query, key, *, top_n=3):
+        called.append(f"tavily({query!r}, {key!r})")
+        return [Snippet(title="t", snippet="s", url="u")]
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.search_tavily", fake_tavily,
+    )
+
+    result = default_search("test query")
+    assert result == [Snippet(title="t", snippet="s", url="u")]
+    assert called == ["tavily('test query', 'tavily-key')"]
+
+
+def test_default_search_falls_to_serpapi_when_no_tavily(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setenv("SERPAPI_KEY", "serp-key")
+
+    called: list[str] = []
+    def fake_serp(query, key, *, top_n=3):
+        called.append(f"serp({query!r}, {key!r})")
+        return [Snippet(title="s", snippet="x", url="y")]
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.search_serpapi", fake_serp,
+    )
+
+    result = default_search("test")
+    assert called == ["serp('test', 'serp-key')"]
+
+
+def test_default_search_falls_to_ddg_when_no_keys(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_KEY", raising=False)
+
+    called: list[str] = []
+    def fake_ddg(query, *, top_n=3):
+        called.append(f"ddg({query!r})")
+        return [Snippet(title="d", snippet="x", url="y")]
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.search_duckduckgo", fake_ddg,
+    )
+
+    result = default_search("test")
+    assert called == ["ddg('test')"]
+
+
+def test_search_tavily_parses_response(monkeypatch):
+    """search_tavily extracts title/content/url from the Tavily response
+    shape into Snippet objects."""
+    fake_response = type("R", (), {
+        "raise_for_status": lambda self: None,
+        "json": lambda self: {
+            "results": [
+                {"title": "T1", "content": "C1", "url": "U1"},
+                {"title": "T2", "content": "C2", "url": "U2"},
+                {"title": "T3", "content": "C3", "url": "U3"},
+                {"title": "T4", "content": "C4", "url": "U4"},  # truncated by top_n
+            ]
+        },
+    })()
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.httpx.post",
+        lambda *a, **kw: fake_response,
+    )
+    snippets = search_tavily("q", "key", top_n=3)
+    assert len(snippets) == 3
+    assert snippets[0].title == "T1"
+    assert snippets[0].snippet == "C1"
+    assert snippets[0].url == "U1"
+
+
+def test_search_serpapi_parses_response(monkeypatch):
+    fake_response = type("R", (), {
+        "raise_for_status": lambda self: None,
+        "json": lambda self: {
+            "organic_results": [
+                {"title": "T1", "snippet": "S1", "link": "L1"},
+                {"title": "T2", "snippet": "S2", "link": "L2"},
+            ]
+        },
+    })()
+    monkeypatch.setattr(
+        "src.verifiers.retrieval_verifier.httpx.get",
+        lambda *a, **kw: fake_response,
+    )
+    snippets = search_serpapi("q", "key", top_n=5)
+    assert len(snippets) == 2
+    assert snippets[0].title == "T1"
+    assert snippets[1].url == "L2"
 
 
 def test_parse_accepts_abbreviations():
