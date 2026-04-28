@@ -359,6 +359,23 @@ class Pipeline:
             assistant_turn_id, "final", {"content": final_content}
         )
 
+        # v0.6 — end-of-turn cost aggregate. Drains the LLMClient's
+        # per-call ledger so the next turn starts fresh.
+        try:
+            calls = self.llm.pop_recorded_calls() if hasattr(
+                self.llm, "pop_recorded_calls",
+            ) else []
+            if calls:
+                from src.cost import aggregate_costs
+                self.store.insert_pipeline_event(
+                    assistant_turn_id, "turn_cost",
+                    aggregate_costs(calls),
+                )
+        except Exception:
+            # Cost telemetry is observability — never break a turn on
+            # an aggregator failure.
+            pass
+
         return TurnTrace(
             user_turn_id=user_turn_id,
             assistant_turn_id=assistant_turn_id,

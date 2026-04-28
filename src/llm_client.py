@@ -22,6 +22,8 @@ from typing import Any, Iterable
 
 import anthropic
 
+from src.cost import CallCost, cost_for_call
+
 # Per the Claude API skill, claude-opus-4-7 is the recommended default.
 # User spec listed claude-sonnet-4-5 or claude-opus-4-7 as options.
 DEFAULT_MODEL = "claude-opus-4-7"
@@ -68,6 +70,32 @@ class LLMClient:
         self.corrector_model = (
             corrector_model or os.getenv("AEDOS_CORRECTOR_MODEL") or DEFAULT_MODEL
         )
+        # Cost telemetry: every API call records a CallCost entry here.
+        # Pipeline pops the list at end-of-turn to emit a turn_cost event.
+        self._recorded_calls: list[CallCost] = []
+
+    def pop_recorded_calls(self) -> list[CallCost]:
+        """Return and clear the per-instance call ledger. Pipeline
+        calls this at end-of-turn to aggregate cost into an event."""
+        out = self._recorded_calls
+        self._recorded_calls = []
+        return out
+
+    def _record_call(self, model: str, response: Any) -> None:
+        """Capture token counts from an Anthropic response and stash a
+        CallCost entry. Best-effort — never crash the call on metric
+        failure."""
+        try:
+            usage = getattr(response, "usage", None)
+            if usage is None:
+                return
+            in_toks = int(getattr(usage, "input_tokens", 0) or 0)
+            out_toks = int(getattr(usage, "output_tokens", 0) or 0)
+            self._recorded_calls.append(
+                cost_for_call(model, in_toks, out_toks)
+            )
+        except Exception:
+            pass
 
     # ---- chat ------------------------------------------------------------
 
@@ -90,6 +118,7 @@ class LLMClient:
             ],
             messages=[{"role": m.role, "content": m.content} for m in messages],
         )
+        self._record_call(self.model, response)
         return _first_text(response)
 
     # ---- extraction via forced tool use ---------------------------------
@@ -116,6 +145,7 @@ class LLMClient:
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
         )
+        self._record_call(self.extractor_model, response)
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == tool["name"]:
                 return dict(block.input)
@@ -157,6 +187,7 @@ class LLMClient:
                     temperature, chosen_model,
                 )
         response = self._client.messages.create(**kwargs)
+        self._record_call(chosen_model, response)
         return _first_text(response)
 
 

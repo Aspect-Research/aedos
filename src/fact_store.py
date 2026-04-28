@@ -70,6 +70,10 @@ PIPELINE_STAGES = {
     "cache_stability_decision",     # per claim: stability_class + TTL + reason
     "cache_lookup",                 # per claim: hit/miss + cached_key + age
     "cache_write",                  # per claim: insert/update + canonical_key
+    # v0.6 — end-of-turn cost aggregate. One per turn. Sum of all
+    # LLM calls (extractor + router + code-writer + judge + corrector +
+    # any classifiers) into total_usd / by_model breakdown.
+    "turn_cost",
 }
 
 # Confidence adjustments
