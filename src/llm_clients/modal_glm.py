@@ -57,6 +57,15 @@ MODAL_REQUEST_TIMEOUT = 300.0
 MODAL_429_MAX_RETRIES = 3
 MODAL_429_BACKOFF_S = (30.0, 60.0, 120.0)  # one entry per retry
 
+# Modal upstream sometimes serves 502/503 during deploy / container
+# restart / brief outage. Empirically these resolve in 30-90s and are
+# distinct from a sustained outage (where retrying won't help). Two
+# retries with longer backoff: catches the brief blips, gives up on
+# anything sustained so we don't burn tens of minutes on a dead
+# endpoint.
+MODAL_5XX_MAX_RETRIES = 2
+MODAL_5XX_BACKOFF_S = (60.0, 120.0)
+
 
 class ModalError(RuntimeError):
     """Base class for Modal/GLM endpoint failures.
@@ -192,23 +201,48 @@ class ModalGLMBackend:
         }
 
     def _post_with_retry(self, payload: dict[str, Any]) -> tuple[str, int, str | None]:
-        """Wrap ``_post`` with bounded retry on 429.
+        """Wrap ``_post`` with bounded retry on transient errors.
 
-        429 'Too many concurrent requests' is transient — usually the
-        previous request's slot hasn't been released yet. Backoff and
-        retry. All other errors propagate immediately (don't retry on
-        401, 5xx, timeout, malformed response — those are not transient
-        in a way that retrying within seconds would fix)."""
-        last_exc: ModalRateLimitError | None = None
-        for attempt in range(MODAL_429_MAX_RETRIES + 1):
+        429 'Too many concurrent requests' — slot held by previous
+            request. Retry up to MODAL_429_MAX_RETRIES times.
+        502 / 503 — Modal upstream brief outage / restart. Retry up
+            to MODAL_5XX_MAX_RETRIES times with longer backoff.
+        Other errors (401, other 5xx, timeout, malformed response)
+            propagate immediately — retrying won't fix them."""
+        attempts_429 = 0
+        attempts_5xx = 0
+        last_exc: ModalError | None = None
+        # Hard upper bound on total attempts so a perpetual 429+5xx
+        # alternation doesn't loop forever.
+        max_total_attempts = (MODAL_429_MAX_RETRIES + 1
+                              + MODAL_5XX_MAX_RETRIES + 1)
+        for _ in range(max_total_attempts):
             try:
                 return self._post(payload)
             except ModalRateLimitError as exc:
                 last_exc = exc
-                if attempt >= MODAL_429_MAX_RETRIES:
-                    break
-                backoff = MODAL_429_BACKOFF_S[min(attempt, len(MODAL_429_BACKOFF_S) - 1)]
+                if attempts_429 >= MODAL_429_MAX_RETRIES:
+                    raise
+                backoff = MODAL_429_BACKOFF_S[
+                    min(attempts_429, len(MODAL_429_BACKOFF_S) - 1)
+                ]
+                attempts_429 += 1
                 time.sleep(backoff)
+            except ModalServerError as exc:
+                last_exc = exc
+                # Only retry 502/503 — other 5xx (500, 504, 511) are
+                # less likely to clear quickly. Conservative: 502/503 only.
+                if exc.status_code not in (502, 503):
+                    raise
+                if attempts_5xx >= MODAL_5XX_MAX_RETRIES:
+                    raise
+                backoff = MODAL_5XX_BACKOFF_S[
+                    min(attempts_5xx, len(MODAL_5XX_BACKOFF_S) - 1)
+                ]
+                attempts_5xx += 1
+                time.sleep(backoff)
+        # Fell out of the loop — shouldn't happen given the raises
+        # above, but be explicit.
         assert last_exc is not None
         raise last_exc
 
