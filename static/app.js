@@ -1244,6 +1244,12 @@ function buildFlowSvg(events, turnId) {
 function addNode(svg, x, y, w, h, title, meta, jumpStage) {
   const g = svgEl("g", { class: "flow-node" });
   if (jumpStage) g.dataset.jumpStage = jumpStage;
+  // Native browser tooltip on hover (SVG <title>). Always full text,
+  // even when not truncated — useful for confirming what a node is.
+  const fullTip = meta ? `${title}\n${meta}` : title;
+  const tipEl = svgEl("title", {});
+  tipEl.textContent = fullTip;
+  g.appendChild(tipEl);
   g.appendChild(svgEl("rect", {
     x: String(x), y: String(y), width: String(w), height: String(h),
     rx: "6", ry: "6", class: "flow-node-rect",
@@ -1272,6 +1278,11 @@ function addNode(svg, x, y, w, h, title, meta, jumpStage) {
 function addClaimNode(svg, x, y, w, h, label, status, cls) {
   const g = svgEl("g", { class: "flow-node" });
   g.dataset.jumpStage = "verification";
+  // Tooltip carries the un-truncated label + status; the visible text
+  // is severely clipped (22 chars) for the small claim rectangles.
+  const tipEl = svgEl("title", {});
+  tipEl.textContent = `${label}\nstatus: ${status}`;
+  g.appendChild(tipEl);
   g.appendChild(svgEl("rect", {
     x: String(x), y: String(y), width: String(w), height: String(h),
     rx: "6", ry: "6", class: `flow-node-rect flow-claim-rect ${cls}`,
