@@ -353,6 +353,7 @@ All LLM-bound components validated end-to-end against Anthropic Opus
 | test_real_api_extractor_does_not_substitute_values | PASSED | Verbatim rule actually changed Opus's behavior — value=146 stays 146 |
 | test_real_api_interrogative_meta_returns_no_facts | PASSED | Interrogative-meta calibration works — 'I think I told you X', 'Did I say X', etc. all produce facts=[] |
 | Saturn moons end-to-end (corpus turn 11) | AEDOS caught Claude's hallucination, replaced 146 → 274 | Whole pipeline working on a real chat-model hallucination |
+| smoke_test_glm.py against Modal/GLM-5.1 | PASSED 3/3 (strawberry r's, 23×47, egalitarian backwards) | GLM chat backend works end-to-end (cold start ~80s, warm ~30s) |
 
 This is the strongest proof yet that the v0.5/v0.6 architecture works
 in practice. The verbatim fix is the load-bearing one — without it,
