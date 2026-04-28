@@ -98,6 +98,27 @@ def test_parse_malformed_returns_none():
     assert parse_judge_response("") is None
 
 
+def test_parse_accepts_abbreviations():
+    """Phase-2 dogfood (Tokyo→Edo) surfaced the judge LLM emitting
+    'SUPPORT' instead of the prompted 'SUPPORTED'. Accept the common
+    abbreviated forms as aliases for their canonical labels."""
+    cases = [
+        ("SUPPORT\nJustification: clear", "SUPPORTED"),
+        ("Supports\nJustification: yep", "SUPPORTED"),
+        ("CONTRADICT\nJustification: nope", "CONTRADICTED"),
+        ("Contradicts\nJustification: explicitly", "CONTRADICTED"),
+        ("INSUFFICIENT\nJustification: thin", "INSUFFICIENT_EVIDENCE"),
+        ("INCONCLUSIVE\nJustification: ambiguous", "INSUFFICIENT_EVIDENCE"),
+        ("UNCLEAR\nJustification: meh", "INSUFFICIENT_EVIDENCE"),
+    ]
+    for raw, expected in cases:
+        v = parse_judge_response(raw)
+        assert v is not None, f"parser refused {raw!r}"
+        assert v.verdict == expected, (
+            f"{raw!r} produced {v.verdict!r}, expected {expected!r}"
+        )
+
+
 # ---------- build_queries ----------
 
 

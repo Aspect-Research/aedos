@@ -9,10 +9,12 @@ Updated by: autonomous instance — Session 1 (final)
 - Last green pytest: 2026-04-27 — 265 passed, 4 skipped (real-API gated;
   +36 new tests since baseline of 229)
 - Last commit: [p5] facts.user_id + router scoping — Tier 1 cross-session user store
-- Active work item: Phase 2 dogfood is stalled on Modal upstream 503.
-  Modal endpoint has been returning 503 from the upstream for ~1+ hour
-  (sustained outage). Picked up Phase 4 / 5 / Phase 6 design in parallel.
-  19 commits this session, all pushed.
+- Active work item: Phase 2 dogfood **completed** (after Modal recovered).
+  12/17 turns landed signal; 2 cold-start timeouts (turns 6, 16); 1
+  real bug fixed inline (judge parser abbreviations); 2 calibration
+  items identified for follow-up. 27+ commits this session, all
+  pushed. Phase 5 user_id store **end-to-end validated** by the
+  user_auth recall turns (13/14/15).
 - Blockers: Modal 503 prevents completing Phase 2 dogfood. The deferred
   retrieval/user_auth/mixed/confab data needs to land before any more
   Phase 2 calibration commits. RE-RUN command:
@@ -26,7 +28,7 @@ Updated by: autonomous instance — Session 1 (final)
 | Phase | Status | Highlights |
 |-------|--------|-----------|
 | 1 | DONE | Chat-backend abstraction (anthropic / modal); ModalGLMBackend with explicit error types; smoke test 3/3 turns green; 22 new tests |
-| 2 | PARTIAL | temperature-deprecated fix for opus-4-7; 429-retry in modal_glm; 5 of 17 dogfood turns ran successfully; turn 6 was a real bug (now fixed); turn 7 surfaced an extractor calibration gap (zero claims on canonical lists); turns 8-17 stalled on Modal infra. |
+| 2 | DONE (with follow-ups) | temperature-deprecated fix for opus-4-7; cross-check forces Sonnet; 429-retry; full dogfood completed after Modal recovered. **10/12 attempted turns landed signal** (2 cold-start timeouts). 1 real bug fixed inline (judge parser); 2 calibration items in NEXT_STEPS for next session. |
 | 3 | DONE | Flow View tab — vertical SVG flowchart, click-through to Detail View, color-coded edges. Added trace-UI rendering for chat_model_call event. |
 | 4 | PARTIAL ongoing | Removed 7 vestigial-v0.1-v0.4 items: broken /api/patterns endpoint, /api/predicates v0.2 alias, PredicateRegistry alias, store_lookup method alias, CONF_UNVERIFIED constant, retrieval_stub.py, Corrector.correct shim. Fixed misleading docstrings. |
 | 5 | DONE | facts.user_id and turns.user_id columns with backward-compatible migration; routing/lookup/insertion scoped by user_id; default 'default_user' for solo dogfooding; 8 new tests cover persistence and cross-user isolation. |

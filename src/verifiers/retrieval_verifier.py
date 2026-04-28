@@ -248,6 +248,26 @@ VERDICT
 Justification: <one sentence>"""
 
 
+# Map of accepted verdict tokens (after upper + strip) → canonical label.
+# The judge prompt asks for SUPPORTED / CONTRADICTED / INSUFFICIENT_EVIDENCE,
+# but real LLM output abbreviates ('SUPPORT', 'CONTRADICT', 'INCONCLUSIVE').
+# Accepting the abbreviated forms turns the dogfood-observed
+# 'judge_parse_error' on Tokyo→Edo into the SUPPORT verdict the judge
+# clearly intended. Canonical labels stay unchanged downstream.
+_JUDGE_VERDICT_ALIASES = {
+    "SUPPORTED": "SUPPORTED",
+    "SUPPORT": "SUPPORTED",
+    "SUPPORTS": "SUPPORTED",
+    "CONTRADICTED": "CONTRADICTED",
+    "CONTRADICT": "CONTRADICTED",
+    "CONTRADICTS": "CONTRADICTED",
+    "INSUFFICIENT_EVIDENCE": "INSUFFICIENT_EVIDENCE",
+    "INSUFFICIENT": "INSUFFICIENT_EVIDENCE",
+    "INCONCLUSIVE": "INSUFFICIENT_EVIDENCE",
+    "UNCLEAR": "INSUFFICIENT_EVIDENCE",
+}
+
+
 def parse_judge_response(text: str) -> JudgeVerdict | None:
     if not text:
         return None
@@ -255,12 +275,13 @@ def parse_judge_response(text: str) -> JudgeVerdict | None:
     if not lines:
         return None
     first = lines[0].split()[0].upper().rstrip(":.,")
-    if first not in ("SUPPORTED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE"):
+    canonical = _JUDGE_VERDICT_ALIASES.get(first)
+    if canonical is None:
         return None
     rest = " ".join(lines[1:]).strip()
     if rest.lower().startswith("justification:"):
         rest = rest.split(":", 1)[1].strip()
-    return JudgeVerdict(verdict=first, justification=rest or "(no justification)")
+    return JudgeVerdict(verdict=canonical, justification=rest or "(no justification)")
 
 
 def _is_historical(claim: dict) -> bool:
