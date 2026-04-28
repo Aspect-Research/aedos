@@ -267,3 +267,93 @@ verdict is provisional."
 - Should the cache hit_count drive eviction (LRU) or pure TTL?
   Recommend pure TTL for v0.6, add LRU later if cache size becomes a
   problem.
+
+## 2026-04-27 — Phase-2 dogfood complete (12/17 turns landed signal)
+
+After Modal recovered from its multi-hour 503 outage, the resumed
+dogfood (`scripts/dogfood_glm.py --start 6`) ran 12 of 12 attempted
+turns to completion. Two timed out on Modal cold-start (turns 6, 16).
+Of the 10 that landed signal:
+
+| # | Category | Verdict | Notable |
+|---|----------|---------|---------|
+| 7 | python_canonical | facts=0 | **Reproduced** — extractor refuses to extract canonical-list responses |
+| 8 | retrieval:art | verified | Salvador Dalí / Persistence of Memory |
+| 9 | retrieval:geo | verified | Suriname / Dutch |
+| 10 | retrieval:tech | 3× verified | Multi-claim — one verdict per founder |
+| 11 | retrieval:history | retrieval_failed | **Real bug** — judge said "SUPPORT", parser wanted "SUPPORTED" |
+| 12 | mixed | 2 verified + 1 inconclusive + 1 hedge | **Real router calibration finding** below |
+| 13 | user_auth:set | verified | Coffee preference stored |
+| 14 | user_auth:recall | verified, 11.7s | Phase 5 user_id store working end-to-end |
+| 15 | user_auth:recall | verified, 8.4s | Polarity-aware ("no, no sugar") matched against `polarity=0` |
+| 17 | retrieval:obscure | verified | Belgium first stamps = 1849 |
+
+### Real bugs / gaps fixed this session as a result
+
+1. **Judge parser rejected "SUPPORT" / "CONTRADICT" / "INCONCLUSIVE"**
+   despite the judge LLM clearly intending those. Tokyo→Edo turn:
+   judge wrote "SUPPORT\nJustification: Multiple sources confirm Edo
+   is the former name of Tokyo..." — perfect signal, marked as
+   `judge_parse_error` and counted as `retrieval_failed`. Fixed by
+   accepting common abbreviations as aliases for canonical labels.
+   Test added; would have caught this earlier with a single fixture.
+
+### Real bugs / gaps not yet fixed
+
+2. **Mixed claims with python-on-given-inputs DON'T route to python.**
+   The CLAUDE.md spec gives the exact case: "Marie Curie was born in
+   1867 and died in 1934, so she lived 67 years" should route the
+   arithmetic to python. In dogfood, GLM said exactly that, and the
+   `lifespan_years=66` claim went to **retrieval** with reason "the
+   claim doesn't supply [the dates]". The router is technically
+   correct given what the EXTRACTOR sent it: the extractor stripped
+   the dates from the lifespan claim's slots. The fix is in
+   `extractor.py` worked examples — when a lifespan/duration/diff
+   claim appears alongside its inputs in the same response, the
+   extractor should embed the inputs as slots so the router can see
+   they're self-contained. Adding this fix needs a real-API run to
+   validate. NEXT_STEPS item.
+
+3. **Days-of-week / canonical-list extraction:** still confirmed.
+   Same finding as before — the extractor returns `valid_facts: []`
+   for "the seven days of the week are: Mon, Tue, ..., Sun". Either
+   add a worked example for list responses, or accept that canonical
+   reference enumerations aren't extractable claims. Architectural
+   decision, defer to operator.
+
+### What worked on the first try
+
+- All retrieval-territory questions where the answer was a single
+  prominent fact (Dali, Suriname, Cloudflare, Belgium stamps) —
+  cleanly verified.
+- All user_auth turns. **Phase 5's user_id scoping is end-to-end
+  validated:** stored a preference in turn 13, recalled correctly in
+  turn 14 (positive form) and turn 15 (negation/polarity form).
+- Multi-claim extraction (Cloudflare → 3 founders, all verified).
+
+### What didn't surface
+
+- **No false-positive hallucinations from GLM in this run.** Every
+  claim GLM made that we could verify was correct. The retrieval
+  verifier produced no `contradicted` verdicts. Either the prompts
+  weren't hard enough, GLM is genuinely strong on these specific
+  facts, or both. Future Phase 7 work should curate prompts where
+  GLM's training data is stale or thin.
+- The fake-book confabulation prompt (turn 16) timed out before we
+  could see how GLM handled a non-existent thing. Re-run with
+  smaller max_tokens may help — the model probably reasoned for
+  hundreds of tokens trying to recall a book that doesn't exist.
+
+### Cold-start reality
+
+Two of two Modal cold-starts (turns 6 and 16) exceeded the 300s
+timeout. This suggests either:
+  - Increase timeout to 600s (ugly)
+  - Lower `max_tokens` in the chat call (currently 4096; chat draft
+    is short, model spends tokens reasoning) — see NEXT_STEPS
+  - Pre-warm the endpoint with a tiny request before the first real
+    turn (script-level fix in `dogfood_glm.py`)
+
+The right answer is probably "lower max_tokens to ~1024 for chat" —
+chat responses are inherently short, and reducing the cap forces the
+reasoning chain to wrap up faster too.

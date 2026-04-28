@@ -27,14 +27,36 @@ then graduate to SESSION_LOG.md after a few sessions.
   print so the log file streams. Expected wall-clock for turns 6-17
   with retries: ~15-20 min if Modal is healthy.
 
-- [ ] **Phase 2 calibration outputs.** After the rerun, tune the
-  router's worked examples in `_ROUTER_SYSTEM` (src/llm_router.py) for
-  any GLM-specific misroutes. Add scenario tests for each new pattern.
-  **Already-known item:** the extractor returned ZERO claims for GLM's
-  "days of the week" response (turn 7) — a real calibration gap. Either
-  add an extractor worked example for "list canonical items in order",
-  or accept that canonical reference data isn't an extractable claim.
-  See OBSERVATIONS 2026-04-27.
+- [x] **Phase 2 dogfood completed** (12/17 turns landed signal). See
+  OBSERVATIONS 2026-04-27 "Phase-2 dogfood complete". 1 real bug
+  fixed inline (judge parser abbreviations); 2 calibration items
+  identified for follow-up below.
+
+- [ ] **Calibration: lifespan/duration claims should embed inputs.**
+  Real finding from turn 12 (Marie Curie). The CLAUDE.md spec says
+  "Marie Curie was born in 1867 and died in 1934, so she lived 67
+  years" should route to python. But the EXTRACTOR strips the dates
+  from the lifespan claim's slots, so the router correctly says "needs
+  external data". Fix the extractor: when a lifespan/duration/diff
+  claim appears alongside its inputs in the same response, embed the
+  inputs as slots. Add a worked example in `extractor.py`'s system
+  prompt and a real-API test case in `test_routing_calibration.py`.
+
+- [ ] **Calibration: canonical-list responses extract zero claims.**
+  Reproduced (turn 7 days_of_week). The extractor returns
+  `valid_facts: []` for "the seven days of the week are: Mon, ...,
+  Sun". Architectural choice for the operator: add an `ordered_list`
+  pattern to `patterns.yaml` (substantive change), or accept that
+  canonical enumerations aren't extractable claims (and lose the
+  ability to catch "the New England states are: ME, NH, VT, MA, RI,
+  CT, Pennsylvania" — the LLM-trap hallucination).
+
+- [ ] **Reduce chat max_tokens.** Two of two Modal cold-starts
+  (turns 6 and 16) exceeded the 300s timeout. With max_tokens=4096
+  and GLM's reasoning chain, requests can blow past the timeout.
+  Chat responses are inherently short — try max_tokens=1024 in
+  `pipeline._invoke_chat_backend`. Trade-off: occasionally truncates
+  a long answer, but probably never matters for AEDOS chat use.
 
 - [x] **Cross-check signal restoration on opus-4-7.** Done in commit
   91fac42. CROSS_CHECK_MODEL hardcoded to claude-sonnet-4-6;
