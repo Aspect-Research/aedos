@@ -507,6 +507,11 @@ class FactStore:
             "DROP TABLE IF EXISTS retrieval_cache;"
         )
         self._conn.executescript(SCHEMA)
+        # Run the same idempotent migration init() does so the user_id
+        # indexes get re-created (SCHEMA only declares the columns;
+        # the indexes are created in _migrate_user_id since they need
+        # to wait for the column to exist on legacy DBs).
+        self._migrate_user_id()
         self._conn.commit()
 
 
