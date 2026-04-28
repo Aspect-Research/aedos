@@ -55,8 +55,8 @@ PROMPTS: list[dict[str, Any]] = [
         "id": "count_m_in_commitment",
         "category": "python:count",
         "prompt": "How many m's are in the word 'commitment'?",
-        "expected": "2",
-        "notes": "common LLM trap — many models say 3. router should pick python; verifier should compute 2.",
+        "expected": "3 (c-o-m-m-i-t-m-e-n-t)",
+        "notes": "operator originally wrote 'expected: 2' here — incorrect. GLM got 3, verifier confirmed 3. Recording the correction so the next reader doesn't repeat the mistake.",
     },
     {
         "id": "count_vowels_serendipitous",
