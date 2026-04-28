@@ -240,13 +240,32 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--only", type=int, default=None)
     parser.add_argument("--inter-turn-sleep", type=float, default=8.0)
+    parser.add_argument(
+        "--provider", choices=["modal", "anthropic"], default="modal",
+        help="chat backend to test (default modal). 'anthropic' is the "
+             "fallback per MISSION.md when Modal is unreachable.",
+    )
+    parser.add_argument(
+        "--output-prefix", default=None,
+        help="filename prefix for per-turn dumps. Defaults to 'dogfood' "
+             "for modal, 'dogfood_anthropic' for anthropic, so the two "
+             "runs don't overwrite each other.",
+    )
     args = parser.parse_args(argv[1:])
 
-    os.environ["AEDOS_CHAT_MODEL_PROVIDER"] = "modal"
-    if not os.getenv("MODAL_API_KEY") or not os.getenv("ANTHROPIC_API_KEY"):
-        print("ERROR: MODAL_API_KEY and ANTHROPIC_API_KEY must both be set",
+    os.environ["AEDOS_CHAT_MODEL_PROVIDER"] = args.provider
+    if args.provider == "modal" and not os.getenv("MODAL_API_KEY"):
+        print("ERROR: MODAL_API_KEY must be set for --provider=modal",
               file=sys.stderr)
         return 2
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("ERROR: ANTHROPIC_API_KEY must be set (infra LLMs always "
+              "use Anthropic regardless of chat provider)", file=sys.stderr)
+        return 2
+
+    out_prefix = args.output_prefix or (
+        "dogfood_anthropic" if args.provider == "anthropic" else "dogfood"
+    )
 
     from src.pipeline import build_pipeline
 
@@ -298,7 +317,7 @@ def main(argv: list[str]) -> int:
                 "error": f"{type(exc).__name__}: {exc}",
             }
             summaries.append(summary)
-            out_file = diag / f"dogfood_{i:02d}_{_slugify(slug)}.json"
+            out_file = diag / f"{out_prefix}_{i:02d}_{_slugify(slug)}.json"
             with out_file.open("w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2)
             continue
@@ -325,7 +344,7 @@ def main(argv: list[str]) -> int:
         for r in summary["routings"]:
             print(f"  routed: method={r['method']} conf={r['confidence']:.2f}")
 
-        out_file = diag / f"dogfood_{i:02d}_{_slugify(slug)}.json"
+        out_file = diag / f"{out_prefix}_{i:02d}_{_slugify(slug)}.json"
         with out_file.open("w", encoding="utf-8") as f:
             json.dump(
                 {
