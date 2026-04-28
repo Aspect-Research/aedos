@@ -178,6 +178,61 @@ def test_search_tavily_parses_response(monkeypatch):
     assert snippets[0].url == "U1"
 
 
+def test_search_duckduckgo_retries_with_alternate_ua_on_empty(monkeypatch):
+    """DDG often returns 0 results due to bot fingerprinting. The new
+    retry rotates User-Agent and tries again. Test: first attempt
+    returns empty; second attempt with different UA returns results."""
+    from src.verifiers import retrieval_verifier as rv
+
+    calls: list[str] = []
+    def fake_ddg_attempt(query, user_agent, top_n):
+        calls.append(user_agent)
+        if len(calls) == 1:
+            return []  # first UA: 0 results
+        return [Snippet(title="t", snippet="s", url="u")]
+
+    monkeypatch.setattr(rv, "_ddg_attempt", fake_ddg_attempt)
+
+    results = rv.search_duckduckgo("test query")
+    assert len(results) == 1
+    # Both UAs were tried.
+    assert len(calls) == 2
+    # And they were different — the retry actually rotates.
+    assert calls[0] != calls[1]
+
+
+def test_search_duckduckgo_returns_empty_when_all_uas_fail(monkeypatch):
+    from src.verifiers import retrieval_verifier as rv
+
+    calls: list[str] = []
+    def fake_ddg_attempt(query, user_agent, top_n):
+        calls.append(user_agent)
+        return []
+
+    monkeypatch.setattr(rv, "_ddg_attempt", fake_ddg_attempt)
+
+    results = rv.search_duckduckgo("test query")
+    assert results == []
+    # All UAs were exhausted.
+    assert len(calls) == len(rv._USER_AGENTS)
+
+
+def test_search_duckduckgo_first_ua_success_skips_rest(monkeypatch):
+    from src.verifiers import retrieval_verifier as rv
+
+    calls: list[str] = []
+    def fake_ddg_attempt(query, user_agent, top_n):
+        calls.append(user_agent)
+        return [Snippet(title="t", snippet="s", url="u")]
+
+    monkeypatch.setattr(rv, "_ddg_attempt", fake_ddg_attempt)
+
+    results = rv.search_duckduckgo("test query")
+    assert len(results) == 1
+    # Only the first UA was tried.
+    assert len(calls) == 1
+
+
 def test_search_serpapi_parses_response(monkeypatch):
     fake_response = type("R", (), {
         "raise_for_status": lambda self: None,
