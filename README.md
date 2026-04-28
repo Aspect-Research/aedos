@@ -269,4 +269,6 @@ scripts/
   eval_harness.py               — raw vs aedos comparison
   summarize_corpus_run.py       — analyze a run's catches/hedges
   analyze_substitutions.py      — extractor substitution rate measurement
+  analyze_costs.py              — per-turn LLM cost breakdown by model
+  analyze_cache.py              — cache hit rate + most-reused canonical keys
 ```
