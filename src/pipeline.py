@@ -171,224 +171,26 @@ class Pipeline:
                 self._active_chat_model = None
 
     def _run_turn_inner(self, user_message: str) -> TurnTrace:
-        # Stage 1 — log the user turn.
-        user_turn_id = self.store.insert_turn(
-            "user", user_message, user_id=self.user_id,
+        """Top-level orchestrator. Each stage is a clearly-named
+        method that returns the inputs the next stage needs. Reading
+        this function tells you the shape of a turn."""
+        user_turn_id, user_extraction, user_decisions = (
+            self._stage_user_side(user_message)
         )
-
-        # Stage 2 — extract claims from the user message.
-        user_extraction = self.extractor.extract(user_message, role="user")
-        self.store.insert_pipeline_event(
-            user_turn_id, "user_extraction", user_extraction.to_dict()
+        assistant_turn_id, draft = self._stage_chat_draft(user_message)
+        asst_extraction = self._stage_assistant_extract(
+            draft, user_message, assistant_turn_id,
         )
-        # Surface substitution warnings on the user side too — same
-        # extractor-rewrite class that affects assistant claims could
-        # corrupt the user-fact store. Less critical (user inputs are
-        # typically what the user actually said) but worth observability.
-        for w in user_extraction.warnings:
-            fact_index = w.get("fact_index")
-            if fact_index is None or fact_index >= len(user_extraction.valid_facts):
-                fact = None
-            else:
-                fact = user_extraction.valid_facts[fact_index]
-            self.store.insert_pipeline_event(
-                user_turn_id, "extractor_substitution_warning",
-                {"warning": w, "fact": fact, "user_input": user_message,
-                 "side": "user"},
-            )
-
-        # Stage 3 — route each user claim (store / boost / close-and-reopen).
-        user_decisions: list[Decision] = [
-            self.router.route(c, origin="user", source_turn_id=user_turn_id)
-            for c in user_extraction.valid_facts
-        ]
-        self.store.insert_pipeline_event(
-            user_turn_id,
-            "user_storage",
-            {"decisions": [d.to_dict() for d in user_decisions]},
+        verification_decisions = self._stage_verify(
+            asst_extraction.valid_facts, assistant_turn_id,
         )
-
-        # Stage 4 — generate the assistant draft with ground-truth context.
-        # The chat backend is the configurable seam: AEDOS_CHAT_MODEL_PROVIDER
-        # selects Anthropic (Claude) or Modal (GLM-5.1-FP8). The assistant
-        # turn must exist before the call so a chat_model_call event has a
-        # turn_id to attach to even if the backend raises.
-        system_prompt = self._build_chat_system_prompt(
-            self.store.all_user_facts(user_id=self.user_id),
+        self._stage_anomaly_and_failure_events(
+            verification_decisions, assistant_turn_id,
         )
-        history = self._build_chat_history()
-        assistant_turn_id = self.store.insert_turn(
-            "assistant", "", user_id=self.user_id,
+        final_content, original_content, interventions = self._stage_correct(
+            draft, verification_decisions, assistant_turn_id,
         )
-        draft = self._invoke_chat_backend(system_prompt, history, assistant_turn_id)
-        self.store.update_turn_content(
-            assistant_turn_id, draft, original_content=None
-        )
-        self.store.insert_pipeline_event(
-            assistant_turn_id, "assistant_draft", {"content": draft}
-        )
-
-        # Stage 5 — extract claims from the assistant draft.
-        # The user's preceding message is passed as context so the
-        # extractor can resolve self-references like "this sentence" to
-        # the literal text and embed it as a slot value. Without this,
-        # claims like "this sentence has 7 words with 'e'" lose the
-        # actual sentence and the verification pipeline can't compute
-        # an answer.
-        asst_extraction = self.extractor.extract(
-            draft, role="assistant", context=user_message,
-        )
-        self.store.insert_pipeline_event(
-            assistant_turn_id,
-            "assistant_extraction",
-            asst_extraction.to_dict(),
-        )
-        # Surface any substitution warnings as their own prominent
-        # event so the operator can see the extractor rewriting model
-        # claims (the bug class that produced false-positive 'catches'
-        # in the hallucination corpus).
-        for w in asst_extraction.warnings:
-            fact_index = w.get("fact_index")
-            if fact_index is None or fact_index >= len(asst_extraction.valid_facts):
-                fact = None
-            else:
-                fact = asst_extraction.valid_facts[fact_index]
-            self.store.insert_pipeline_event(
-                assistant_turn_id, "extractor_substitution_warning",
-                {"warning": w, "fact": fact, "model_draft": draft},
-            )
-
-        # Reset per-turn cache state.
-        self._cache_decisions = {}
-
-        # Stage 5b — cache classification (scoping + stability) for
-        # each assistant claim. CacheGate owns the per-claim state
-        # and event emission; failures stay observability-only.
-        self._cache_gate.reset_for_turn()
-        for claim in asst_extraction.valid_facts:
-            self._cache_gate.classify(claim, turn_id=assistant_turn_id)
-
-        # Stage 6 — route each assistant claim through the appropriate
-        # verifier. Hand the gate to the router so it can short-circuit
-        # on a cache hit before invoking retrieval.
-        self.router._cache_gate = self._cache_gate
-        verification_decisions: list[Decision] = [
-            self.router.route(c, origin="model", source_turn_id=assistant_turn_id)
-            for c in asst_extraction.valid_facts
-        ]
-        self.store.insert_pipeline_event(
-            assistant_turn_id,
-            "verification",
-            {"decisions": [d.to_dict() for d in verification_decisions]},
-        )
-
-        # Stage 6b — opportunistic cache writes for retrieval-path
-        # verdicts on cache-eligible claims. Gate decides eligibility
-        # from its stashed classify decisions.
-        for d, claim in zip(verification_decisions, asst_extraction.valid_facts):
-            self._cache_gate.maybe_write(d, claim, turn_id=assistant_turn_id)
-
-        # Stage 7a — log routing anomalies as their own prominent event.
-        # These signal extractor errors and don't trigger a content-level
-        # rewrite (the corrector skips them).
-        routing_anomaly_decisions = [
-            d for d in verification_decisions
-            if d.outcome is RoutingOutcome.ROUTING_ANOMALY
-        ]
-        for d in routing_anomaly_decisions:
-            slot_info = d.anomaly_slot or {}
-            self.store.insert_pipeline_event(
-                assistant_turn_id,
-                "routing_anomaly_detected",
-                {
-                    "claim": d.claim,
-                    "stored_fact_id": d.stored_fact_id,
-                    "anomaly_slot": slot_info,
-                    "warning": (
-                        "pattern "
-                        f"{d.claim.get('pattern')!r} expects slot "
-                        f"{slot_info.get('slot')!r} = "
-                        f"{slot_info.get('expected')!r} for the user-"
-                        f"authoritative branch, but got "
-                        f"{slot_info.get('actual')!r}; this almost always "
-                        "indicates an extractor error rather than a wrong fact"
-                    ),
-                    "notes": d.notes,
-                },
-            )
-
-        # Stage 7a' — log verifier failures (retrieval_failed) as their own
-        # warning event. The corrector deliberately does NOT hedge these,
-        # because a verifier failure is not evidence of uncertainty about
-        # the claim.
-        verifier_failures = [
-            d for d in verification_decisions
-            if d.verification_status == "retrieval_failed"
-        ]
-        for d in verifier_failures:
-            self.store.insert_pipeline_event(
-                assistant_turn_id,
-                "verifier_failure",
-                {
-                    "claim": d.claim,
-                    "stored_fact_id": d.stored_fact_id,
-                    "warning": (
-                        "the retrieval verifier didn't produce useful signal "
-                        "(network error, no results, or judge couldn't parse); "
-                        "the corrector will NOT hedge this claim — verifier "
-                        "failure is not evidence of uncertainty"
-                    ),
-                    "retrieval_result": (
-                        d.retrieval_result.to_dict() if d.retrieval_result else None
-                    ),
-                    "notes": d.notes,
-                },
-            )
-
-        # Stage 7b — plan and apply interventions on the assistant draft.
-        interventions: list[Intervention] = self.corrector.plan_interventions(
-            verification_decisions
-        )
-        original_content: str | None = None
-        final_content = draft
-        if interventions:
-            rewritten = self.corrector.apply(draft, interventions)
-            if rewritten and rewritten != draft:
-                final_content = rewritten
-                original_content = draft
-                self.store.update_turn_content(
-                    assistant_turn_id, final_content, original_content=draft
-                )
-            self.store.insert_pipeline_event(
-                assistant_turn_id,
-                "correction",
-                {
-                    "original": draft,
-                    "corrected": final_content,
-                    "interventions": [i.to_dict() for i in interventions],
-                },
-            )
-
-        self.store.insert_pipeline_event(
-            assistant_turn_id, "final", {"content": final_content}
-        )
-
-        # v0.6 — end-of-turn cost aggregate. Drains the LLMClient's
-        # per-call ledger so the next turn starts fresh.
-        try:
-            calls = self.llm.pop_recorded_calls() if hasattr(
-                self.llm, "pop_recorded_calls",
-            ) else []
-            if calls:
-                from src.cost import aggregate_costs
-                self.store.insert_pipeline_event(
-                    assistant_turn_id, "turn_cost",
-                    aggregate_costs(calls),
-                )
-        except Exception:
-            # Cost telemetry is observability — never break a turn on
-            # an aggregator failure.
-            pass
+        self._stage_finalize(final_content, assistant_turn_id)
 
         return TurnTrace(
             user_turn_id=user_turn_id,
@@ -400,8 +202,207 @@ class Pipeline:
             assistant_extraction=asst_extraction.to_dict(),
             verification_decisions=[d.to_dict() for d in verification_decisions],
             interventions=[i.to_dict() for i in interventions],
-            routing_anomalies=[d.to_dict() for d in routing_anomaly_decisions],
+            routing_anomalies=[
+                d.to_dict() for d in verification_decisions
+                if d.outcome is RoutingOutcome.ROUTING_ANOMALY
+            ],
         )
+
+    # ---- per-stage methods (one method per turn phase) -----------------
+
+    def _stage_user_side(self, user_message: str):
+        """Stages 1–3: log user turn, extract user claims, route them."""
+        user_turn_id = self.store.insert_turn(
+            "user", user_message, user_id=self.user_id,
+        )
+        user_extraction = self.extractor.extract(user_message, role="user")
+        self.store.insert_pipeline_event(
+            user_turn_id, "user_extraction", user_extraction.to_dict()
+        )
+        self._emit_substitution_warnings(
+            user_extraction, user_turn_id,
+            extra={"user_input": user_message, "side": "user"},
+        )
+        user_decisions: list[Decision] = [
+            self.router.route(c, origin="user", source_turn_id=user_turn_id)
+            for c in user_extraction.valid_facts
+        ]
+        self.store.insert_pipeline_event(
+            user_turn_id, "user_storage",
+            {"decisions": [d.to_dict() for d in user_decisions]},
+        )
+        return user_turn_id, user_extraction, user_decisions
+
+    def _stage_chat_draft(self, user_message: str):
+        """Stage 4: generate the assistant draft with ground-truth
+        context. Returns (assistant_turn_id, draft). The assistant
+        turn is created BEFORE the chat call so the chat_model_call
+        event always has a turn_id even if the backend raises."""
+        system_prompt = self._build_chat_system_prompt(
+            self.store.all_user_facts(user_id=self.user_id),
+        )
+        history = self._build_chat_history()
+        assistant_turn_id = self.store.insert_turn(
+            "assistant", "", user_id=self.user_id,
+        )
+        draft = self._invoke_chat_backend(
+            system_prompt, history, assistant_turn_id,
+        )
+        self.store.update_turn_content(
+            assistant_turn_id, draft, original_content=None,
+        )
+        self.store.insert_pipeline_event(
+            assistant_turn_id, "assistant_draft", {"content": draft}
+        )
+        return assistant_turn_id, draft
+
+    def _stage_assistant_extract(self, draft, user_message, assistant_turn_id):
+        """Stage 5: extract claims from the assistant draft. The
+        user's preceding message is passed as context so the extractor
+        can resolve self-references."""
+        asst_extraction = self.extractor.extract(
+            draft, role="assistant", context=user_message,
+        )
+        self.store.insert_pipeline_event(
+            assistant_turn_id, "assistant_extraction",
+            asst_extraction.to_dict(),
+        )
+        self._emit_substitution_warnings(
+            asst_extraction, assistant_turn_id,
+            extra={"model_draft": draft},
+        )
+        return asst_extraction
+
+    def _stage_verify(self, valid_facts, assistant_turn_id):
+        """Stages 5b + 6 + 6b: cache classify, route+verify each
+        claim, opportunistic cache writes."""
+        # Reset per-turn cache state and classify each claim.
+        self._cache_gate.reset_for_turn()
+        for claim in valid_facts:
+            self._cache_gate.classify(claim, turn_id=assistant_turn_id)
+        # Hand the gate to the router so it can short-circuit on hits.
+        self.router._cache_gate = self._cache_gate
+        verification_decisions: list[Decision] = [
+            self.router.route(c, origin="model", source_turn_id=assistant_turn_id)
+            for c in valid_facts
+        ]
+        self.store.insert_pipeline_event(
+            assistant_turn_id, "verification",
+            {"decisions": [d.to_dict() for d in verification_decisions]},
+        )
+        # Opportunistic cache writes from successful retrievals.
+        for d, claim in zip(verification_decisions, valid_facts):
+            self._cache_gate.maybe_write(d, claim, turn_id=assistant_turn_id)
+        return verification_decisions
+
+    def _stage_anomaly_and_failure_events(
+        self, verification_decisions, assistant_turn_id,
+    ):
+        """Stage 7a + 7a': emit routing-anomaly and verifier-failure
+        events as separate prominent records. The corrector deliberately
+        skips these — both classes of failure aren't evidence of
+        uncertainty about the claim, so hedging would be wrong."""
+        for d in verification_decisions:
+            if d.outcome is RoutingOutcome.ROUTING_ANOMALY:
+                slot_info = d.anomaly_slot or {}
+                self.store.insert_pipeline_event(
+                    assistant_turn_id, "routing_anomaly_detected",
+                    {
+                        "claim": d.claim,
+                        "stored_fact_id": d.stored_fact_id,
+                        "anomaly_slot": slot_info,
+                        "warning": (
+                            "pattern "
+                            f"{d.claim.get('pattern')!r} expects slot "
+                            f"{slot_info.get('slot')!r} = "
+                            f"{slot_info.get('expected')!r} for the user-"
+                            f"authoritative branch, but got "
+                            f"{slot_info.get('actual')!r}; this almost always "
+                            "indicates an extractor error rather than a wrong fact"
+                        ),
+                        "notes": d.notes,
+                    },
+                )
+            if d.verification_status == "retrieval_failed":
+                self.store.insert_pipeline_event(
+                    assistant_turn_id, "verifier_failure",
+                    {
+                        "claim": d.claim,
+                        "stored_fact_id": d.stored_fact_id,
+                        "warning": (
+                            "the retrieval verifier didn't produce useful signal "
+                            "(network error, no results, or judge couldn't parse); "
+                            "the corrector will NOT hedge this claim — verifier "
+                            "failure is not evidence of uncertainty"
+                        ),
+                        "retrieval_result": (
+                            d.retrieval_result.to_dict()
+                            if d.retrieval_result else None
+                        ),
+                        "notes": d.notes,
+                    },
+                )
+
+    def _stage_correct(self, draft, verification_decisions, assistant_turn_id):
+        """Stage 7b: plan + apply interventions. Returns
+        (final_content, original_content, interventions). When no
+        interventions or the rewrite is identical to the draft,
+        original_content stays None."""
+        interventions: list[Intervention] = self.corrector.plan_interventions(
+            verification_decisions
+        )
+        original_content: str | None = None
+        final_content = draft
+        if interventions:
+            rewritten = self.corrector.apply(draft, interventions)
+            if rewritten and rewritten != draft:
+                final_content = rewritten
+                original_content = draft
+                self.store.update_turn_content(
+                    assistant_turn_id, final_content, original_content=draft,
+                )
+            self.store.insert_pipeline_event(
+                assistant_turn_id, "correction",
+                {
+                    "original": draft,
+                    "corrected": final_content,
+                    "interventions": [i.to_dict() for i in interventions],
+                },
+            )
+        return final_content, original_content, interventions
+
+    def _stage_finalize(self, final_content, assistant_turn_id):
+        """Emit the ``final`` event + drain cost telemetry. Cost
+        aggregator failures never break the turn — pure observability."""
+        self.store.insert_pipeline_event(
+            assistant_turn_id, "final", {"content": final_content}
+        )
+        try:
+            calls = self.llm.pop_recorded_calls() if hasattr(
+                self.llm, "pop_recorded_calls",
+            ) else []
+            if calls:
+                from src.cost import aggregate_costs
+                self.store.insert_pipeline_event(
+                    assistant_turn_id, "turn_cost",
+                    aggregate_costs(calls),
+                )
+        except Exception:
+            pass
+
+    def _emit_substitution_warnings(self, extraction, turn_id, *, extra):
+        """Common helper for stages 2 + 5: emit one
+        extractor_substitution_warning event per warned fact."""
+        for w in extraction.warnings:
+            fact_index = w.get("fact_index")
+            if fact_index is None or fact_index >= len(extraction.valid_facts):
+                fact = None
+            else:
+                fact = extraction.valid_facts[fact_index]
+            self.store.insert_pipeline_event(
+                turn_id, "extractor_substitution_warning",
+                {"warning": w, "fact": fact, **extra},
+            )
 
     # ---- internal helpers -----------------------------------------------
 
