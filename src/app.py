@@ -210,18 +210,54 @@ def list_cache_entries(limit: int = 200) -> dict[str, Any]:
         d["is_expired"] = is_expired
         entries.append(d)
 
-    # Aggregate stats.
+    # Aggregate stats from the cache table itself.
     stats_row = store._conn.execute(
         "SELECT COUNT(*) AS total, "
         "       COUNT(CASE WHEN expires_at IS NULL THEN 1 END) AS immutable, "
         "       SUM(hit_count) AS total_hits "
         "FROM verification_cache"
     ).fetchone()
+
+    # Live hit-rate stats from pipeline_events. Cache hits / misses /
+    # errors are written by the router on every cache_lookup. The hit
+    # rate here measures actual short-circuited retrievals — distinct
+    # from total_hits, which is per-cache-entry and accumulates over
+    # the entry's lifetime.
+    lookup_rows = store._conn.execute(
+        "SELECT data FROM pipeline_events WHERE stage = 'cache_lookup'"
+    ).fetchall()
+    hits = misses = errors = 0
+    by_stability_hits: dict[str, int] = {}
+    import json as _json
+    for r in lookup_rows:
+        try:
+            data = _json.loads(r["data"])
+        except (TypeError, ValueError):
+            continue
+        if data.get("error"):
+            errors += 1
+            continue
+        result = data.get("result")
+        if result == "hit":
+            hits += 1
+            stab = data.get("stability_class") or "unknown"
+            by_stability_hits[stab] = by_stability_hits.get(stab, 0) + 1
+        elif result == "miss":
+            misses += 1
+    total_lookups = hits + misses
+    hit_rate = (hits / total_lookups) if total_lookups else None
+
     return {
         "stats": {
             "total_entries": int(stats_row["total"] or 0),
             "immutable_entries": int(stats_row["immutable"] or 0),
             "total_hits": int(stats_row["total_hits"] or 0),
+            "lookups": total_lookups,
+            "lookup_hits": hits,
+            "lookup_misses": misses,
+            "lookup_errors": errors,
+            "hit_rate": hit_rate,
+            "hits_by_stability": by_stability_hits,
         },
         "entries": entries,
     }

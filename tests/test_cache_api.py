@@ -104,3 +104,86 @@ def test_cache_endpoint_when_empty(tmp_path, monkeypatch):
         body = r.json()
         assert body["stats"]["total_entries"] == 0
         assert body["entries"] == []
+        # Empty cache → no lookups recorded → hit_rate is None.
+        assert body["stats"]["lookups"] == 0
+        assert body["stats"]["hit_rate"] is None
+
+
+def test_cache_endpoint_reports_live_hit_rate_from_pipeline_events(
+    tmp_path, monkeypatch,
+):
+    """Beyond the static cache-table totals, /api/cache reports the
+    live hit/miss rate from cache_lookup pipeline_events. This is what
+    the operator wants to see — what fraction of retrieval calls were
+    short-circuited by the cache."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    db_path = tmp_path / "rate.db"
+    monkeypatch.setenv("AEDOS_DB_PATH", str(db_path))
+
+    # Seed pipeline_events with 6 hits, 4 misses, 1 error.
+    store = FactStore(str(db_path))
+    asst = store.insert_turn("assistant", "x")
+    for _ in range(6):
+        store.insert_pipeline_event(asst, "cache_lookup", {
+            "canonical_key": "k|alpha",
+            "result": "hit",
+            "verdict": "verified",
+            "stability_class": "decade_stable",
+            "hit_count": 1,
+        })
+    for _ in range(4):
+        store.insert_pipeline_event(asst, "cache_lookup", {
+            "canonical_key": "k|beta",
+            "result": "miss",
+        })
+    store.insert_pipeline_event(asst, "cache_lookup", {
+        "canonical_key": "k|err",
+        "error": "OperationalError: locked",
+    })
+    store.close()
+
+    from src.app import app
+    with TestClient(app) as c:
+        r = c.get("/api/cache")
+        assert r.status_code == 200
+        stats = r.json()["stats"]
+        assert stats["lookups"] == 10  # hits + misses; errors not counted
+        assert stats["lookup_hits"] == 6
+        assert stats["lookup_misses"] == 4
+        assert stats["lookup_errors"] == 1
+        assert stats["hit_rate"] == 0.6
+        # Per-stability hits aggregated.
+        assert stats["hits_by_stability"] == {"decade_stable": 6}
+
+
+def test_cache_endpoint_hits_by_stability_groups_classes(
+    tmp_path, monkeypatch,
+):
+    """When hits span multiple stability classes (immutable + months_
+    stable, etc.), the per-class breakdown reports each independently
+    so the operator can see which class is actually saving work."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    db_path = tmp_path / "stab.db"
+    monkeypatch.setenv("AEDOS_DB_PATH", str(db_path))
+
+    store = FactStore(str(db_path))
+    asst = store.insert_turn("assistant", "x")
+    for stab, n in (("immutable", 3), ("decade_stable", 2),
+                    ("months_stable", 1)):
+        for _ in range(n):
+            store.insert_pipeline_event(asst, "cache_lookup", {
+                "canonical_key": f"k|{stab}",
+                "result": "hit",
+                "verdict": "verified",
+                "stability_class": stab,
+                "hit_count": 1,
+            })
+    store.close()
+
+    from src.app import app
+    with TestClient(app) as c:
+        r = c.get("/api/cache")
+        stats = r.json()["stats"]
+        assert stats["hits_by_stability"] == {
+            "immutable": 3, "decade_stable": 2, "months_stable": 1,
+        }

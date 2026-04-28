@@ -675,6 +675,24 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   flex-wrap: wrap;
 }
 .toolbar label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--muted); }
+
+/* Cache tab stats block — multi-line stats inside the toolbar. */
+.cache-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  flex-grow: 1;
+}
+.cache-stats .cache-totals { color: var(--muted); }
+.cache-stats .cache-hit-rate { color: var(--text); font-size: 0.85rem; }
+.cache-stats .cache-hit-rate strong { color: var(--accent); }
+.cache-stats .cache-by-stability {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
 .toolbar input, .toolbar select {
   font-family: inherit;
   padding: 0.3rem;
