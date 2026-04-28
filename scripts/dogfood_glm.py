@@ -281,32 +281,51 @@ def main(argv: list[str]) -> int:
     # reliably exceeds our 300s ModalGLMBackend timeout. Burning a tiny
     # request here pays the cold-start cost before the real run starts,
     # so the first real turn lands in the warm window.
+    #
+    # 429 'Too many concurrent requests' is common when a previous run
+    # left a hung request occupying the slot — retry with backoff. If
+    # we never get to 200, warn but proceed (the real call may still
+    # land if the slot eventually clears).
     if args.provider == "modal":
         import httpx
         print("warming up Modal endpoint (may take 90-300s on cold container)...")
-        try:
-            warmup_started = time.monotonic()
-            r = httpx.post(
-                "https://api.us-west-2.modal.direct/v1/chat/completions",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {os.getenv('MODAL_API_KEY')}",
-                },
-                json={"model": "zai-org/GLM-5.1-FP8",
-                      "messages": [{"role": "user", "content": "hi"}],
-                      "max_tokens": 16},
-                timeout=600.0,
-            )
-            print(f"  warm-up: status={r.status_code} "
-                  f"after {time.monotonic() - warmup_started:.1f}s")
-            if r.status_code != 200:
-                print("  WARNING: warm-up didn't return 200. First real turn "
-                      "may still cold-start.")
-        except httpx.TimeoutException:
-            print("  WARNING: warm-up itself timed out at 600s. Modal endpoint "
-                  "may be down. Continuing — turn 1 may also fail.")
-        except Exception as exc:
-            print(f"  WARNING: warm-up errored: {type(exc).__name__}: {exc}")
+        warmup_started = time.monotonic()
+        warm_ok = False
+        for attempt in range(5):
+            try:
+                r = httpx.post(
+                    "https://api.us-west-2.modal.direct/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('MODAL_API_KEY')}",
+                    },
+                    json={"model": "zai-org/GLM-5.1-FP8",
+                          "messages": [{"role": "user", "content": "hi"}],
+                          "max_tokens": 16},
+                    timeout=600.0,
+                )
+                if r.status_code == 200:
+                    warm_ok = True
+                    print(f"  warm-up: status=200 "
+                          f"after {time.monotonic() - warmup_started:.1f}s")
+                    break
+                if r.status_code == 429:
+                    print(f"  warm-up attempt {attempt+1}: 429 "
+                          f"(slot busy); waiting 60s and retrying")
+                    time.sleep(60.0)
+                    continue
+                print(f"  warm-up attempt {attempt+1}: status={r.status_code} "
+                      f"body={r.text[:120]}")
+                break
+            except httpx.TimeoutException:
+                print(f"  warm-up attempt {attempt+1}: timed out at 600s")
+                break
+            except Exception as exc:
+                print(f"  warm-up attempt {attempt+1}: {type(exc).__name__}: {exc}")
+                break
+        if not warm_ok:
+            print("  WARNING: never got a 200 from warm-up. First real turn "
+                  "may still cold-start or 429.")
 
     summaries: list[dict[str, Any]] = []
     overall_ok = True
