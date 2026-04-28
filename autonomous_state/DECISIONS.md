@@ -17,3 +17,53 @@ existing entries.
 - Decision: state files initialized but no actual work performed during
   setup. Rationale: keep setup narrow; let the autonomous instance receive
   its actual task list in its own session prompt.
+
+## 2026-04-27 — Chat backend abstraction (Phase 1)
+
+- Decision: factor a `chat_backend` seam out of `Pipeline` rather than
+  growing `LLMClient` to multiplex providers. New module
+  `src/llm_clients/` holds `AnthropicChatBackend` and `ModalGLMBackend`;
+  the factory `build_chat_backend()` reads `AEDOS_CHAT_MODEL_PROVIDER`.
+  Rationale: keeping `LLMClient` Anthropic-only preserves the prompt-
+  caching path and avoids tangling Modal HTTP details with the SDK
+  client used by the extractor / router / code-writer / judge /
+  corrector. The seam is one method (`chat`), so the cost is small.
+
+- Decision: Pipeline's `chat_backend` defaults to the `llm` argument
+  (which is `LLMClient` or a test `MockLLM`). The dispatch in
+  `_invoke_chat_backend` only passes `store`/`turn_id` kwargs when the
+  backend declares `provider`. Rationale: preserves the long-standing
+  test contract where `MockLLM.chat(system, messages, max_tokens=...)`
+  is the only signature; tests don't need to grow new arguments. Tried
+  a try/except TypeError fallback first; rejected as fragile (could
+  swallow real bugs).
+
+- Decision: log a `chat_model_call` pipeline event from BOTH backends
+  (Anthropic and Modal), not just Modal. Rationale: uniform observability
+  across providers is the whole point of the chat-model swap; the trace
+  UI should show the same row regardless of which model produced the
+  draft. The Anthropic backend's event is slim (counts only); the Modal
+  event includes status_code and response_id.
+
+- Decision: surface 401/429/5xx/timeout/malformed-response as specific
+  exception types (`ModalAuthError`, `ModalRateLimitError`, etc.) rather
+  than a single generic `RuntimeError`. Rationale: the trace UI and
+  future retry/circuit-breaker logic both need to reason about WHY a
+  call failed; a string-matched message is brittle. Each exception
+  carries `status_code` so the pipeline event has the HTTP status even
+  on the error path.
+
+- Decision: `MODAL_REQUEST_TIMEOUT` set to 300s (was first 60s, then
+  180s). Rationale: GLM-5.1-FP8 is a reasoning model — every request
+  produces a long `reasoning_content` chain before the user-visible
+  `content`, so even warm requests with high `max_tokens` can run for a
+  minute or more. Cold starts add another 90+ seconds. 300s covers
+  both. The timeout exists primarily to release the Modal endpoint's
+  concurrency slot if a request hangs; it isn't a UX latency budget.
+
+- Decision: `content=null` in a 200 response is a `ModalResponseError`,
+  not silent failure. Rationale: GLM hits this when `max_tokens` is too
+  small to leave room for content after the reasoning chain. A null
+  draft would propagate as an empty assistant turn that the extractor
+  can't process. The pipeline doesn't have a fallback path for chat
+  failure — failing loudly is correct here.

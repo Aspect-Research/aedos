@@ -169,6 +169,23 @@ def test_non_json_response_raises_response_error():
         backend.chat(system="", messages=[ChatMessage("user", "hi")])
 
 
+def test_content_null_raises_response_error_with_reasoning_hint():
+    # GLM-5.1 returns content=null when it spent its max_tokens on
+    # reasoning_content before producing any user-facing content.
+    body = {
+        "id": "x",
+        "choices": [{"message": {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "1. Think hard about this..." * 20,
+        }}],
+    }
+    bad = StubResponse(status_code=200, body=body, text=json.dumps(body))
+    backend = ModalGLMBackend(api_key="k", client=StubClient([bad]))
+    with pytest.raises(ModalResponseError, match="content=null"):
+        backend.chat(system="", messages=[ChatMessage("user", "hi")])
+
+
 # ---- pipeline event logging ---------------------------------------------
 
 

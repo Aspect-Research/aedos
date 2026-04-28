@@ -57,3 +57,6 @@ uv.lock
 
 # Claude Code local settings (per-machine, not part of the project)
 .claude/settings.local.json
+
+# Smoke-test / dogfooding diagnostic dumps (operator-local; not in repo).
+diagnostic_output/
