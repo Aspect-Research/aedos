@@ -511,10 +511,20 @@ entry shows verdict, stability class, hit count, expiry status.
   (replacing the snippet-only v1 path).
 - Structured-fact retrieval against Wikidata / Wikipedia infoboxes for
   predicates with stable answers (capitals, birth years, founders).
-- Multi-conversation scoping on the core tables.
+- ~~Multi-conversation scoping on the core tables.~~ **(v0.5.x done):
+  facts/turns now have user_id; default 'default_user' for solo
+  dogfooding; multi-user scoping ready.**
 - Streaming assistant responses with incremental trace updates.
 - A policy layer that decides *when* to correct silently vs surface the
   conflict to the user.
 - Confidence calibration based on repeated verification outcomes (an
   observed contradiction from a python verifier is much more decisive
   than a retrieval miss).
+- Generalize the v0.6 unique-value-slot prototype (currently
+  spatial_temporal.was_born_in only) to a curated set of definitionally-
+  unique slots, OR move to YAML metadata (`unique_per_entity: true`
+  on slot definitions).
+- Entity-name canonicalization beyond the cache's case-folding +
+  whitespace normalization: alias tables, fuzzy match, embedding
+  similarity. Currently the cache misses semantically-equivalent
+  claims with different wording.
