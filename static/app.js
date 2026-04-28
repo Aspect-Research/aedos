@@ -308,22 +308,42 @@ function renderStage(event) {
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
     case "cache_lookup": {
-      // v0.6 — cache hit/miss event.
-      const meta = el("div", { className: "decision-meta" });
+      // v0.6 — cache hit/miss event. Hits get a green badge so they
+      // stand out in the trace (a hit short-circuits retrieval, which
+      // is the whole point of the cache).
       const result = d.result || (d.error ? "error" : "?");
-      let line = `${result.toUpperCase()}`;
-      if (d.canonical_key) {
-        line += ` · key=${d.canonical_key.slice(0, 80)}`;
-      }
+      stage.classList.add(`cache-${result}`);
+      const meta = el("div", { className: "decision-meta" });
+      const badge = el("span", {
+        className: `cache-badge cache-badge-${result}`,
+        textContent: result.toUpperCase(),
+      });
+      const head = el("div", {});
+      head.appendChild(badge);
       if (result === "hit") {
-        line += ` · ${d.verdict || "?"}`;
-        if (d.hit_count != null) line += ` · hits=${d.hit_count}`;
-        if (d.expires_at) line += ` · expires ${d.expires_at}`;
+        head.appendChild(document.createTextNode(
+          ` retrieval short-circuited · ${d.verdict || "?"}`
+          + (d.hit_count != null ? ` · entry hit_count=${d.hit_count}` : "")
+        ));
+      } else if (result === "miss") {
+        head.appendChild(document.createTextNode(
+          " no cached verdict — falling through to retrieval"));
+      } else if (d.error) {
+        head.appendChild(document.createTextNode(` · ${d.error}`));
       }
-      if (d.error) {
-        line += ` · error: ${d.error}`;
+      meta.appendChild(head);
+      if (d.canonical_key) {
+        meta.appendChild(el("div", {
+          className: "mono cache-key",
+          textContent: `key=${d.canonical_key.slice(0, 100)}`,
+        }));
       }
-      meta.appendChild(el("div", { textContent: line }));
+      if (result === "hit" && d.expires_at) {
+        meta.appendChild(el("div", {
+          className: "decision-meta-secondary",
+          textContent: `expires ${d.expires_at}`,
+        }));
+      }
       body.appendChild(meta);
       break;
     }
