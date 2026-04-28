@@ -558,7 +558,16 @@ class Router:
     ) -> Decision | None:
         """Look up the claim in the verification cache. On hit, return
         a Decision built from the cached verdict. On miss / no cache /
-        not eligible, return None — caller falls through to retrieval."""
+        not eligible, return None — caller falls through to retrieval.
+
+        Two-stage lookup:
+          1. Exact match on the canonical key.
+          2. Semantic-shape match on miss: fetch entries with the same
+             pattern + polarity + identity slots, Jaccard-rank predicate
+             tokens, accept best > 0.7 as a semantic hit. Catches
+             ``child_of`` ↔ ``son_of``-style synonymy that the stem
+             normalizer in canonicalize_claim_key doesn't reach.
+        """
         if self._verification_cache is None:
             return None
         from src.cache import canonicalize_claim_key
@@ -576,22 +585,55 @@ class Router:
             )
             return None
         if cached is None:
+            # Exact miss — try semantic-shape lookup before falling
+            # through to retrieval. Identity slots are pattern-specific.
+            pattern_name = claim.get("pattern", "")
+            identity_slots = KEY_SLOTS_BY_PATTERN.get(pattern_name, [])
+            semantic_hit = None
+            try:
+                semantic_hit = self._verification_cache.semantic_lookup(
+                    claim, identity_slots,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.store.insert_pipeline_event(
+                    source_turn_id, "cache_lookup",
+                    {"canonical_key": key,
+                     "error": (
+                         f"semantic_lookup raised: "
+                         f"{type(exc).__name__}: {exc}"
+                     )},
+                )
+                semantic_hit = None
+            if semantic_hit is None:
+                self.store.insert_pipeline_event(
+                    source_turn_id, "cache_lookup",
+                    {"canonical_key": key, "result": "miss"},
+                )
+                return None
+            # Semantic hit — promote to ``cached`` and log distinctly.
+            cached = semantic_hit.verdict
             self.store.insert_pipeline_event(
                 source_turn_id, "cache_lookup",
-                {"canonical_key": key, "result": "miss"},
+                {"canonical_key": key, "result": "semantic_hit",
+                 "matched_key": semantic_hit.matched_key,
+                 "score": round(semantic_hit.score, 3),
+                 "verdict": cached.verdict,
+                 "stability_class": cached.stability_class,
+                 "hit_count": cached.hit_count,
+                 "cached_at": cached.cached_at,
+                 "expires_at": cached.expires_at},
             )
-            return None
-
-        # Hit. Log it, build a Decision from the cached verdict.
-        self.store.insert_pipeline_event(
-            source_turn_id, "cache_lookup",
-            {"canonical_key": key, "result": "hit",
-             "verdict": cached.verdict,
-             "stability_class": cached.stability_class,
-             "hit_count": cached.hit_count,
-             "cached_at": cached.cached_at,
-             "expires_at": cached.expires_at},
-        )
+        else:
+            # Exact hit. Log it.
+            self.store.insert_pipeline_event(
+                source_turn_id, "cache_lookup",
+                {"canonical_key": key, "result": "hit",
+                 "verdict": cached.verdict,
+                 "stability_class": cached.stability_class,
+                 "hit_count": cached.hit_count,
+                 "cached_at": cached.cached_at,
+                 "expires_at": cached.expires_at},
+            )
 
         if cached.verdict == "verified":
             return Decision(

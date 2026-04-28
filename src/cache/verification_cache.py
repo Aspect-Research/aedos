@@ -31,6 +31,16 @@ from src.fact_store import FactStore, _now_iso
 
 
 @dataclass
+class SemanticHit:
+    """Result of VerificationCache.semantic_lookup. Distinct from
+    CachedVerdict so the caller can tell exact hits from
+    semantic-shape hits and log them differently in the trace."""
+    verdict: "CachedVerdict"
+    matched_key: str
+    score: float  # Jaccard similarity over predicate tokens, 0..1
+
+
+@dataclass
 class CachedVerdict:
     canonical_key: str
     pattern: str
@@ -89,6 +99,31 @@ def _normalize_predicate(p: str) -> str:
         if p.startswith(stem) and len(p) > len(stem):
             return p[len(stem):]
     return p
+
+
+def _predicate_tokens(predicate: str) -> set[str]:
+    """Tokenize a predicate string for Jaccard similarity. Lowercase,
+    strip stems, split on underscores. Empty / single-token predicates
+    return as-is. Used by VerificationCache.semantic_lookup."""
+    p = _normalize_predicate(predicate or "")
+    if not p:
+        return set()
+    return {tok for tok in p.split("_") if tok}
+
+
+def _parse_slots_block(slots_block: str) -> dict[str, str]:
+    """Reverse the ``key=val&key=val`` encoding from
+    canonicalize_claim_key. Used by semantic_lookup to filter cached
+    rows on identity-slot equality without needing a separate index."""
+    out: dict[str, str] = {}
+    if not slots_block:
+        return out
+    for pair in slots_block.split("&"):
+        if "=" not in pair:
+            continue
+        k, v = pair.split("=", 1)
+        out[k] = v
+    return out
 
 
 def canonicalize_claim_key(claim: dict) -> str:
@@ -242,6 +277,123 @@ class VerificationCache:
              stability_class, cached_at, expires_at, _now_iso()),
         )
         self.store._conn.commit()
+
+    def semantic_lookup(
+        self, claim: dict, identity_slot_names: list[str],
+        *, threshold: float = 0.5,
+    ) -> Optional["SemanticHit"]:
+        """Find a cache entry whose IDENTITY slots match the claim
+        exactly and whose predicate is similar enough by Jaccard token
+        overlap.
+
+        Anchoring on identity slots (subject, object, entity, etc.)
+        rules out the dangerous reversed-relation case
+        (parent_of(A,B) ↔ child_of(B,A)) — different identity-slot
+        values means different shape, no match.
+
+        Layer 2 of the semantic-cache strategy. Catches cases that
+        the canonicalize_claim_key stem normalizer doesn't reach
+        (e.g. ``child_of`` ↔ ``son_of`` when token overlap is high
+        enough). Pure Python — no LLM, no embedding.
+
+        Returns a SemanticHit (CachedVerdict + matched_key + score)
+        on match, or None on no candidate above threshold.
+        """
+        slots = claim.get("slots") or {}
+        pattern = str(claim.get("pattern", "")).strip().lower()
+        polarity = int(claim.get("polarity", 1))
+
+        # Need at least one identity slot to anchor; without anchoring
+        # we'd be doing pure-text similarity across the whole cache,
+        # which is unsafe.
+        identity_pairs = []
+        for name in identity_slot_names:
+            v = slots.get(name)
+            if isinstance(v, str) and v.strip():
+                identity_pairs.append((name, " ".join(v.split()).lower()))
+        if not identity_pairs:
+            return None
+
+        # Fetch candidate rows: same pattern + polarity. We filter on
+        # identity slot values in Python (the cache table doesn't index
+        # individual slots; the cache is small so a full scan within
+        # this pattern is fine).
+        rows = self.store._conn.execute(
+            "SELECT * FROM verification_cache WHERE pattern = ?",
+            (pattern,),
+        ).fetchall()
+        if not rows:
+            return None
+
+        my_pred_tokens = _predicate_tokens(claim.get("predicate", ""))
+        if not my_pred_tokens:
+            return None
+
+        best: Optional[SemanticHit] = None
+        for row in rows:
+            cached_key = row["canonical_key"]
+            # Polarity must match — encoded in the key as ``p=1``/``p=0``.
+            if f"|p={polarity}|" not in cached_key:
+                continue
+            # Identity slots must match exactly. Each identity pair
+            # appears in the slots block as ``name=value``.
+            slots_block = cached_key.rsplit("|", 1)[-1]
+            slot_dict = _parse_slots_block(slots_block)
+            if not all(slot_dict.get(name) == value
+                       for name, value in identity_pairs):
+                continue
+
+            # Jaccard token similarity on the predicate strings.
+            cached_pred = row["predicate"] or ""
+            cached_pred_tokens = _predicate_tokens(cached_pred)
+            if not cached_pred_tokens:
+                continue
+            inter = my_pred_tokens & cached_pred_tokens
+            union = my_pred_tokens | cached_pred_tokens
+            score = len(inter) / len(union) if union else 0.0
+            if score < threshold:
+                continue
+
+            # Skip expired entries (mirrors lookup() semantics).
+            expires_at = row["expires_at"]
+            if expires_at is not None:
+                try:
+                    if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
+                        continue
+                except ValueError:
+                    continue
+
+            if best is None or score > best.score:
+                verdict = CachedVerdict(
+                    canonical_key=cached_key,
+                    pattern=row["pattern"],
+                    predicate=row["predicate"],
+                    verdict=row["verdict"],
+                    evidence=json.loads(row["evidence"]) if row["evidence"] else None,
+                    stability_class=row["stability_class"],
+                    cached_at=row["cached_at"],
+                    expires_at=row["expires_at"],
+                    hit_count=int(row["hit_count"]),
+                )
+                best = SemanticHit(
+                    verdict=verdict, matched_key=cached_key, score=score,
+                )
+
+        # Bump hit_count on the matched row so semantic hits count
+        # toward the entry's lifetime utility — same accounting as
+        # exact lookup().
+        if best is not None:
+            try:
+                self.store._conn.execute(
+                    "UPDATE verification_cache SET hit_count = hit_count + 1 "
+                    "WHERE canonical_key = ?", (best.matched_key,),
+                )
+                self.store._conn.commit()
+                best.verdict.hit_count += 1
+            except Exception:
+                pass
+
+        return best
 
     def expire_now(self, canonical_key: str) -> None:
         """Force a cached entry to expire immediately. Test/admin tool."""

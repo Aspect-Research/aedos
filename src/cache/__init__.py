@@ -46,6 +46,7 @@ from src.cache.stability_classifier import (
 )
 from src.cache.verification_cache import (
     CachedVerdict,
+    SemanticHit,
     VerificationCache,
     canonicalize_claim_key,
 )
@@ -54,5 +55,6 @@ __all__ = [
     "classify_scope", "ScopingDecision", "SCOPING_METHODS",
     "classify_stability", "StabilityDecision",
     "STABILITY_CLASSES", "STABILITY_TTL_SECONDS",
-    "VerificationCache", "CachedVerdict", "canonicalize_claim_key",
+    "VerificationCache", "CachedVerdict", "SemanticHit",
+    "canonicalize_claim_key",
 ]
