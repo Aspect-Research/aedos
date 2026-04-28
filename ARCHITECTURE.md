@@ -494,15 +494,26 @@ For each model-asserted claim:
 
 ### Off by default
 
-The cache requires three env vars to enable, in order:
-`AEDOS_CACHE_SCOPING=1` (turns on the scoping classifier in observation
-mode), then `AEDOS_CACHE_STABILITY=1` (adds the stability classifier),
-then `AEDOS_CACHE_WRITES=1` (wires the actual cache reads/writes).
-Each step adds an LLM call per assistant claim — start small, calibrate
-the classifier prompts on real claims, then enable downstream steps.
+Single shortcut to enable the whole stack: `AEDOS_CACHE_TIER2=1`
+turns on scoping + stability + writes at once. For partial / observation
+modes, the granular env vars override the shortcut: e.g.
+`AEDOS_CACHE_TIER2=1 AEDOS_CACHE_WRITES=0` enables the classifiers but
+not the actual cache reads/writes — useful for measuring what the
+classifiers PRODUCE on real claims before risking served verdicts. The
+granular vars (`AEDOS_CACHE_SCOPING`, `AEDOS_CACHE_STABILITY`,
+`AEDOS_CACHE_WRITES`) can also be set independently in the original
+ratcheting order.
 
-The Cache tab in the trace UI inspects current state. Each cached
-entry shows verdict, stability class, hit count, expiry status.
+Each enabled layer adds one LLM call per assistant claim — opt-in for a
+reason. Calibrate the classifier prompts on real claims first, then
+enable writes.
+
+The Cache tab in the trace UI shows live hit rate, per-stability hit
+breakdown, and the most-recently-cached entries with verdict, stability
+class, hit count, and expiry status. Cached claims also surface as a
+green ↺ CACHED badge on the corresponding decision in the Detail View
+and a dashed border in the Flow View, so the operator can see at a
+glance which verdicts cost zero LLM calls.
 
 ## What v2 would add
 
