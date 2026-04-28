@@ -368,8 +368,12 @@ def test_chat_logs_pipeline_event_on_failure(tmp_path):
 
 def test_pipeline_caps_chat_max_tokens(tmp_path):
     """Phase-2 fix (commit 4d81d59): chat call uses Pipeline.CHAT_MAX_TOKENS
-    (1024), not 4096. The 4096 default let GLM's reasoning chain blow past
-    the 300s Modal timeout. Lock the cap in."""
+    instead of the legacy 4096 default. The 4096 cap let GLM's reasoning
+    chain blow past the 300s Modal timeout. The current cap is read from
+    AEDOS_CHAT_MAX_TOKENS (default 1024). The test asserts:
+      (a) the chat backend was called with whatever Pipeline.CHAT_MAX_TOKENS
+          is set to (consistency between class attr and call site), and
+      (b) the cap is reasonable for AEDOS chat use (≤ 4096)."""
     from src.corrector import Corrector
     from src.extractor import ClaimExtractor
     from src.fact_store import FactStore
@@ -413,7 +417,10 @@ def test_pipeline_caps_chat_max_tokens(tmp_path):
 
     p.run_turn("hi")
     assert captured == [Pipeline.CHAT_MAX_TOKENS]
-    assert Pipeline.CHAT_MAX_TOKENS == 1024
+    # Sanity: cap is a sensible value for chat use. NOT 4096 (the
+    # legacy default that caused the cold-start timeout regression).
+    assert 256 <= Pipeline.CHAT_MAX_TOKENS <= 4096
+    assert Pipeline.CHAT_MAX_TOKENS != 4096
 
 
 def test_pipeline_uses_chat_backend_and_logs_chat_model_call(tmp_path):
