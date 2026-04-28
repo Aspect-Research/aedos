@@ -196,8 +196,7 @@ class Router:
         # The lookup-eligibility check is the same scope+stability gate
         # the cache-write path uses, supplied by the Pipeline via
         # ``cache_eligible_keys`` (set of canonical_keys).
-        verification_cache: Any = None,
-        cache_eligible_keys: set[str] | None = None,
+        cache_gate: Any = None,
     ):
         self.store = store
         self.registry = registry
@@ -213,8 +212,10 @@ class Router:
         if code_gen_verifier is None and llm is not None:
             code_gen_verifier = CodeGenerationVerifier(store=store, llm=llm)
         self.code_gen_verifier = code_gen_verifier
-        self._verification_cache = verification_cache
-        self._cache_eligible_keys = cache_eligible_keys or set()
+        # CacheGate (v0.6 refactor) — single owner of cache lookup +
+        # write. None = no caching. Pipeline assigns this per-turn so
+        # the gate can stash classify state across the route() calls.
+        self._cache_gate = cache_gate
 
     # ---- entry point ---------------------------------------------------
 
@@ -556,84 +557,27 @@ class Router:
     def _maybe_cache_hit(
         self, claim: dict, source_turn_id: int,
     ) -> Decision | None:
-        """Look up the claim in the verification cache. On hit, return
-        a Decision built from the cached verdict. On miss / no cache /
-        not eligible, return None — caller falls through to retrieval.
+        """Try the cache via CacheGate. On hit (exact or semantic),
+        build the appropriate Decision. On miss / no gate / not
+        eligible, return None — caller falls through to retrieval.
 
-        Two-stage lookup:
-          1. Exact match on the canonical key.
-          2. Semantic-shape match on miss: fetch entries with the same
-             pattern + polarity + identity slots, Jaccard-rank predicate
-             tokens, accept best > 0.7 as a semantic hit. Catches
-             ``child_of`` ↔ ``son_of``-style synonymy that the stem
-             normalizer in canonicalize_claim_key doesn't reach.
+        Pure delegation to CacheGate.maybe_hit; the gate owns lookup
+        + event emission. The Decision-building logic stays here
+        because Decision shape depends on routing concepts the gate
+        doesn't know about (RoutingOutcome, _store, correction
+        payload).
         """
-        if self._verification_cache is None:
+        if self._cache_gate is None:
             return None
-        from src.cache import canonicalize_claim_key
-        key = canonicalize_claim_key(claim)
-        if key not in self._cache_eligible_keys:
-            # Not flagged as cache-eligible by Pipeline's scoping pass.
+        from src.router import KEY_SLOTS_BY_PATTERN as _KS
+        identity_slots = _KS.get(claim.get("pattern", ""), [])
+        hit = self._cache_gate.maybe_hit(
+            claim, identity_slots, turn_id=source_turn_id,
+        )
+        if hit is None:
             return None
-        try:
-            cached = self._verification_cache.lookup(key)
-        except Exception as exc:  # noqa: BLE001
-            self.store.insert_pipeline_event(
-                source_turn_id, "cache_lookup",
-                {"canonical_key": key,
-                 "error": f"{type(exc).__name__}: {exc}"},
-            )
-            return None
-        if cached is None:
-            # Exact miss — try semantic-shape lookup before falling
-            # through to retrieval. Identity slots are pattern-specific.
-            pattern_name = claim.get("pattern", "")
-            identity_slots = KEY_SLOTS_BY_PATTERN.get(pattern_name, [])
-            semantic_hit = None
-            try:
-                semantic_hit = self._verification_cache.semantic_lookup(
-                    claim, identity_slots,
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.store.insert_pipeline_event(
-                    source_turn_id, "cache_lookup",
-                    {"canonical_key": key,
-                     "error": (
-                         f"semantic_lookup raised: "
-                         f"{type(exc).__name__}: {exc}"
-                     )},
-                )
-                semantic_hit = None
-            if semantic_hit is None:
-                self.store.insert_pipeline_event(
-                    source_turn_id, "cache_lookup",
-                    {"canonical_key": key, "result": "miss"},
-                )
-                return None
-            # Semantic hit — promote to ``cached`` and log distinctly.
-            cached = semantic_hit.verdict
-            self.store.insert_pipeline_event(
-                source_turn_id, "cache_lookup",
-                {"canonical_key": key, "result": "semantic_hit",
-                 "matched_key": semantic_hit.matched_key,
-                 "score": round(semantic_hit.score, 3),
-                 "verdict": cached.verdict,
-                 "stability_class": cached.stability_class,
-                 "hit_count": cached.hit_count,
-                 "cached_at": cached.cached_at,
-                 "expires_at": cached.expires_at},
-            )
-        else:
-            # Exact hit. Log it.
-            self.store.insert_pipeline_event(
-                source_turn_id, "cache_lookup",
-                {"canonical_key": key, "result": "hit",
-                 "verdict": cached.verdict,
-                 "stability_class": cached.stability_class,
-                 "hit_count": cached.hit_count,
-                 "cached_at": cached.cached_at,
-                 "expires_at": cached.expires_at},
-            )
+        cached = hit.verdict
+        key = hit.matched_key or cached.canonical_key
 
         if cached.verdict == "verified":
             return Decision(
@@ -708,9 +652,8 @@ class Router:
 
         from src.verifiers.types import VerificationOutcome
 
-        # v0.6 — Tier 2 cache lookup BEFORE retrieval. The Pipeline
-        # populated _cache_eligible_keys for claims that scoping marked
-        # world_fact + stability marked non-volatile.
+        # v0.6 — Tier 2 cache lookup BEFORE retrieval. CacheGate (set
+        # by Pipeline per-turn) owns lookup + event emission.
         cached = self._maybe_cache_hit(claim, source_turn_id)
         if cached is not None:
             return cached

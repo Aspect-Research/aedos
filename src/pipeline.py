@@ -110,16 +110,21 @@ class Pipeline:
         self.router = router
         self.corrector = corrector
         self.user_id = user_id
-        # Lazy default — only construct the LLM-backed classifier when
-        # the caller didn't pass one and didn't pass a MockLLM (test
-        # doubles can opt in by passing scoping_classifier=fn).
+        # CacheGate consolidates scoping + stability + lookup + write.
+        # Pre-refactor these were three separate fields scattered
+        # across pipeline + router; now one owner.
+        from src.cache import CacheGate
+        self._cache_gate = CacheGate(
+            cache=verification_cache,
+            scoping_fn=scoping_classifier,
+            stability_fn=stability_classifier,
+            store=store,
+        )
+        # Backward-compat aliases for tests that read these fields
+        # directly. New code should reach for self._cache_gate.
         self._scoping_classifier = scoping_classifier
         self._stability_classifier = stability_classifier
         self._verification_cache = verification_cache
-        # Per-claim scope/stability decisions, populated in stage 5b
-        # and consumed in stage 7. Reset each turn (one entry per
-        # canonical_key encountered this turn).
-        self._cache_decisions: dict[str, dict[str, Any]] = {}
         # When no explicit backend is provided, use ``llm`` directly. This
         # preserves the long-standing test contract where MockLLM provides
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
@@ -256,72 +261,17 @@ class Pipeline:
         # Reset per-turn cache state.
         self._cache_decisions = {}
 
-        # Stage 5b — (v0.6, observation mode) classify each assistant
-        # claim's cache scope. Logs only — does not gate caching or
-        # routing. After two sessions of these logs we calibrate, then
-        # wire to actual cache writes. Failures here MUST NOT break the
-        # pipeline; observation mode is opt-in instrumentation.
-        if self._scoping_classifier is not None:
-            from src.cache import canonicalize_claim_key
-            for claim in asst_extraction.valid_facts:
-                claim_summary = {
-                    "pattern": claim.get("pattern"),
-                    "predicate": claim.get("predicate"),
-                    "slots": claim.get("slots"),
-                    "polarity": claim.get("polarity"),
-                }
-                try:
-                    scope_decision = self._scoping_classifier(claim)
-                    self.store.insert_pipeline_event(
-                        assistant_turn_id, "cache_scoping_decision",
-                        {"claim": claim_summary,
-                         "decision": scope_decision.to_dict()},
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    self.store.insert_pipeline_event(
-                        assistant_turn_id, "cache_scoping_decision",
-                        {"claim": claim_summary,
-                         "error": f"{type(exc).__name__}: {exc}"},
-                    )
-                    continue
+        # Stage 5b — cache classification (scoping + stability) for
+        # each assistant claim. CacheGate owns the per-claim state
+        # and event emission; failures stay observability-only.
+        self._cache_gate.reset_for_turn()
+        for claim in asst_extraction.valid_facts:
+            self._cache_gate.classify(claim, turn_id=assistant_turn_id)
 
-                # Stash for cache-write step. Only world_fact entries are
-                # cache-eligible — store nothing for the others.
-                if scope_decision.scope != "world_fact":
-                    continue
-
-                key = canonicalize_claim_key(claim)
-                self._cache_decisions[key] = {
-                    "scope": scope_decision.to_dict(),
-                    "claim_summary": claim_summary,
-                }
-
-                # Stability runs only for cache-eligible (world_fact) claims.
-                if self._stability_classifier is not None:
-                    try:
-                        stab_decision = self._stability_classifier(claim)
-                        self.store.insert_pipeline_event(
-                            assistant_turn_id, "cache_stability_decision",
-                            {"claim": claim_summary,
-                             "decision": stab_decision.to_dict()},
-                        )
-                        self._cache_decisions[key]["stability"] = (
-                            stab_decision.to_dict()
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        self.store.insert_pipeline_event(
-                            assistant_turn_id, "cache_stability_decision",
-                            {"claim": claim_summary,
-                             "error": f"{type(exc).__name__}: {exc}"},
-                        )
-
-        # Stage 6 — route each assistant claim through the appropriate verifier.
-        # Thread the per-turn cache eligibility (set of canonical_keys
-        # the scoping pass marked world_fact + non-volatile) into the
-        # router. The router uses this to gate cache lookups.
-        self.router._cache_eligible_keys = set(self._cache_decisions.keys())
-        if self._verification_cache is not None:
-            self.router._verification_cache = self._verification_cache
+        # Stage 6 — route each assistant claim through the appropriate
+        # verifier. Hand the gate to the router so it can short-circuit
+        # on a cache hit before invoking retrieval.
+        self.router._cache_gate = self._cache_gate
         verification_decisions: list[Decision] = [
             self.router.route(c, origin="model", source_turn_id=assistant_turn_id)
             for c in asst_extraction.valid_facts
@@ -332,15 +282,11 @@ class Pipeline:
             {"decisions": [d.to_dict() for d in verification_decisions]},
         )
 
-        # Stage 6b — (v0.6) opportunistic cache writes.
-        # For each claim that (a) was scope=world_fact, (b) had a
-        # stability decision, (c) verified or contradicted via the
-        # retrieval path, write the verdict to the cache. Skip claims
-        # whose stability is volatile (TTL=0) — caller-side gate.
-        if self._verification_cache is not None and self._cache_decisions:
-            self._maybe_write_cache(
-                verification_decisions, assistant_turn_id,
-            )
+        # Stage 6b — opportunistic cache writes for retrieval-path
+        # verdicts on cache-eligible claims. Gate decides eligibility
+        # from its stashed classify decisions.
+        for d, claim in zip(verification_decisions, asst_extraction.valid_facts):
+            self._cache_gate.maybe_write(d, claim, turn_id=assistant_turn_id)
 
         # Stage 7a — log routing anomalies as their own prominent event.
         # These signal extractor errors and don't trigger a content-level
@@ -521,65 +467,6 @@ class Pipeline:
         if provider == "anthropic":
             return self.CHAT_MAX_TOKENS_ANTHROPIC
         return self.CHAT_MAX_TOKENS_DEFAULT
-
-    def _maybe_write_cache(
-        self, verification_decisions: list[Decision], assistant_turn_id: int,
-    ) -> None:
-        """For each verified/contradicted retrieval claim that was
-        scoped world_fact + stability-classified, write the verdict
-        to the cache. Failures don't propagate."""
-        from src.cache import canonicalize_claim_key
-        for decision in verification_decisions:
-            claim = decision.claim
-            key = canonicalize_claim_key(claim)
-            entry = self._cache_decisions.get(key)
-            if entry is None:
-                continue  # not cache-eligible per scoping
-            stab = entry.get("stability")
-            if stab is None:
-                continue  # stability classifier didn't run / errored
-            ttl = stab.get("ttl_seconds")
-            if ttl == 0:
-                continue  # volatile — don't cache
-            verdict = decision.verification_status
-            # Cache only verdicts produced by the retrieval verifier.
-            # Python verifications are cheap to redo; user-authoritative
-            # is per-user; routing anomalies are already broken.
-            retrieval_verdicts = {
-                "verified", "contradicted",
-                "retrieval_inconclusive",
-            }
-            if verdict not in retrieval_verdicts:
-                continue
-            # Skip if the verdict came from the python (code-gen) path —
-            # cache_gen_result is set for python verifications.
-            if decision.code_gen_result is not None:
-                continue
-            evidence = None
-            if decision.retrieval_result is not None:
-                evidence = decision.retrieval_result.to_dict()
-            try:
-                self._verification_cache.write(
-                    canonical_key=key,
-                    pattern=claim.get("pattern", ""),
-                    predicate=claim.get("predicate", ""),
-                    verdict=verdict,
-                    stability_class=stab.get("stability_class", "unknown"),
-                    ttl_seconds=ttl,
-                    evidence=evidence,
-                )
-                self.store.insert_pipeline_event(
-                    assistant_turn_id, "cache_write",
-                    {"canonical_key": key, "verdict": verdict,
-                     "stability_class": stab.get("stability_class"),
-                     "ttl_seconds": ttl},
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.store.insert_pipeline_event(
-                    assistant_turn_id, "cache_write",
-                    {"canonical_key": key,
-                     "error": f"{type(exc).__name__}: {exc}"},
-                )
 
     def _select_chat_backend(self) -> Any:
         """Per-turn dispatch. ``glm-5.1`` → Modal backend (lazily

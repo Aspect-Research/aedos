@@ -50,6 +50,7 @@ from src.cache.verification_cache import (
     VerificationCache,
     canonicalize_claim_key,
 )
+from src.cache.gate import CacheGate, CacheHit, ClaimCacheState
 
 __all__ = [
     "classify_scope", "ScopingDecision", "SCOPING_METHODS",
@@ -57,4 +58,5 @@ __all__ = [
     "STABILITY_CLASSES", "STABILITY_TTL_SECONDS",
     "VerificationCache", "CachedVerdict", "SemanticHit",
     "canonicalize_claim_key",
+    "CacheGate", "CacheHit", "ClaimCacheState",
 ]
