@@ -57,6 +57,11 @@ PIPELINE_STAGES = {
     "routing_decision",
     "canonical_constants_cross_check",
     "canonical_constants_disagreement",
+    # v0.5.x — chat model under test (provider-pluggable via AEDOS_CHAT_MODEL_PROVIDER).
+    # One event per assistant draft generation. Captures provider/model, prompt
+    # shape, response, latency, and any error so the trace UI can show what the
+    # chat model did even when the rest of the pipeline is unchanged.
+    "chat_model_call",
 }
 
 # Confidence adjustments
