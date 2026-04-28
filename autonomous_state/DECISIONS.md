@@ -68,6 +68,67 @@ existing entries.
   can't process. The pipeline doesn't have a fallback path for chat
   failure — failing loudly is correct here.
 
+## 2026-04-28 — Phase 6 (Tier 2 cache) implementation order
+
+- Decision: ship in 7 commits in observation→action order, with
+  separate env-var gates at each stage. Rationale: spec is explicit
+  that the scoping classifier should run in observation mode first,
+  before being wired to actual cache writes. Each stage is one commit
+  so the operator can audit + revert independently. AEDOS_CACHE_*
+  env vars require all three (scoping, stability, writes) to enable
+  full caching — explicit opt-in.
+
+- Decision: cache python-routed verdicts? No. Code-gen verifications
+  cost ~$0.005 per claim (one rewrite call) — not worth the cache-
+  management overhead. Cache only retrieval verdicts (where DDG +
+  judge cost is the actual bottleneck). Test test_python_verdict_does
+  _not_cache_via_retrieval_path locks this in.
+
+- Decision: cache_writes for inconclusive verdicts? Yes, currently.
+  Rationale: serving 'inconclusive' from cache skips an expensive
+  retrieval re-attempt. The corrector hedges either way. But there's
+  a counter-argument (cached inconclusive prevents future retrieval
+  from succeeding on a now-easier case) — flagged in OBSERVATIONS for
+  operator consideration.
+
+- Decision: CROSS_CHECK_MODEL hardcoded to claude-sonnet-4-6. Opus 4.7
+  silently drops temperature, which would erase the cross-check
+  variation signal. Forcing Sonnet preserves the signal at the cost
+  of one cross-stage model dependency.
+
+## 2026-04-28 — CRITICAL: extractor was substituting truth for what model said
+
+- Discovered: the 'catches' celebrated yesterday (Saturn moons,
+  Yellowknife population, Marie Curie married_to) were NOT real
+  hallucination catches. The extractor (Opus 4.7) was rewriting
+  source_text to substitute its own world knowledge for what the
+  chat model literally said. Then the verifier compared the
+  substituted value against retrieval, retrieval returned the
+  model's actual original claim from the web, and AEDOS flagged the
+  SUBSTITUTED value as contradicted — masking that the extractor
+  introduced the wrong value in the first place.
+
+- Decision: aggressive verbatim rule in the extractor system prompt
+  (the 'CRITICAL: extract VERBATIM' section + 2 worked examples).
+  Plus defense-in-depth deterministic detector that flags facts
+  whose source_text isn't a substring of the input AND facts where
+  the slot value isn't in the source_text. Pipeline emits
+  extractor_substitution_warning events; trace UI surfaces them as
+  yellow banners. scripts/analyze_substitutions.py lets the operator
+  measure the rate ongoing.
+
+- Validation: post-hoc analysis of the existing 27-corpus dumps
+  showed 9 of 37 extracted facts (24.3%) had this issue. After the
+  rule + detector, the next corpus run should show this drop.
+
+- Why this matters: the pipeline's whole verification model assumes
+  the extractor is faithful to the chat model's actual output. The
+  extractor doing 'helpful corrections' violates that contract and
+  produces false-positive 'catches' that LOOK like the system
+  working. Discovery of this bug is genuinely paper-worthy — it
+  argues for more careful extractor calibration in any
+  verification-pipeline architecture.
+
 ## 2026-04-27 — Mistake: invoked /api/reset on operator's local DB without asking
 
 While verifying Phase 3 (Flow View) end-to-end, I started the dev
