@@ -152,3 +152,118 @@ constants verification is to catch the LLM emitting WRONG canonical
 reference data ("the New England states are: Maine, Vermont, NH, MA,
 RI, CT, Pennsylvania" — the LLM-generated trap is to add an extra
 state). If we don't extract list responses, we never catch that.
+
+## 2026-04-27 — Phase 6 (Tier 2 verification cache) — design sketch
+
+Not implementing yet (spec gates Phase 6 on a clean Phase 2 dogfood
+pass). Sketching the design here so the next session has clean pickup.
+
+### Why a cache, not a knowledge base
+
+Per spec: "the cache is a performance optimization for retrieval, not
+a knowledge base. Cached entries can be wrong, can go stale, and are
+subject to eviction. Every cached verdict is provisional."
+
+The key tension: retrieval is the slowest, most expensive step of the
+pipeline (DDG fetch + LLM judge). For repeated questions about
+stable facts ("when was Tokyo founded", "who painted Persistence of
+Memory"), re-running retrieval each time is wasteful. But cached
+verdicts can go stale ("47th president" was true on 2026-04-27 but
+won't be on 2029-01-20).
+
+### Components (per spec)
+
+1. **Scoping classifier** — LLM call per claim deciding:
+     - `user_specific` → Tier 1 only, never cache
+     - `session_specific` → don't cache (e.g. "it's raining outside")
+     - `world_fact` → cache eligible
+
+   Worked examples:
+     - "I like peanut butter" → user_specific
+     - "Tokyo is in Japan" → world_fact
+     - "It's raining" / "this sentence has 7 words" → session_specific
+
+2. **Stability classifier** — LLM call per cache-eligible claim,
+   choosing TTL class:
+     - `immutable` (mathematical, definitions): no expiration
+     - `decade_stable` (geographic): 10 years
+     - `years_stable` (political offices): 1 year
+     - `months_stable` (cultural facts that change slowly): 30 days
+     - `days_stable` (current events): 24 hours
+     - `volatile` (prices, weather): don't cache OR 1-hour cap
+
+3. **Cache table:**
+   ```sql
+   CREATE TABLE verification_cache (
+     id INTEGER PRIMARY KEY,
+     canonical_key TEXT NOT NULL,  -- subject + predicate + normalized object
+     pattern TEXT NOT NULL,
+     verdict TEXT NOT NULL,         -- verified / contradicted / inconclusive
+     evidence TEXT,                 -- JSON: snippets + judge justification
+     stability_class TEXT NOT NULL,
+     cached_at TEXT NOT NULL,
+     expires_at TEXT,               -- NULL = immutable
+     hit_count INTEGER DEFAULT 0,
+     created_at TEXT NOT NULL
+   );
+   CREATE UNIQUE INDEX idx_cache_key ON verification_cache(canonical_key);
+   CREATE INDEX idx_cache_expires ON verification_cache(expires_at);
+   ```
+
+4. **Lookup flow** (in retrieval_verifier or above it):
+     - Compute canonical_key from claim slots (subject + predicate +
+       normalized object)
+     - Run scoping classifier; if not cache-eligible, skip cache
+     - SELECT from cache where key = ? and (expires_at IS NULL OR
+       expires_at > now)
+     - HIT: increment hit_count, return cached verdict + evidence
+     - MISS or expired: run retrieval normally, run stability
+       classifier, INSERT into cache with computed expires_at
+
+5. **Entity canonicalization** (the hardest sub-problem):
+     - Start with a simple alias table maintained over time
+     - Fall back to LLM-assisted resolution as last resort
+     - Vector similarity is a fallback, not the primary lookup
+
+### Recommended sequencing
+
+1. Schema + cache table (no behavior change yet; just storage).
+2. Scoping classifier in OBSERVATION MODE first — log decisions to
+   pipeline_events for a few sessions, see what it produces on real
+   claims, calibrate its prompt before wiring it to actual cache
+   writes. **This is non-negotiable** — the spec is explicit:
+   "Build the scoping classifier first and run it in observation
+   mode for a session or two before wiring it to actual cache writes."
+3. Stability classifier in observation mode (similarly).
+4. Wire scoping → cache lookup (read-only first, no writes — measure
+   hit rate against retrieval results).
+5. Wire stability → cache writes.
+6. Add a cache inspector to the trace UI.
+
+### What doesn't go in the cache
+
+Per the "be aggressive about what doesn't go in" guidance:
+  - Anything the scoping classifier marks user_specific or session_specific
+  - Claims with confidence < some threshold from the verifier
+  - Claims where retrieval was inconclusive (we don't have a verdict
+    worth caching)
+  - Anything the stability classifier marks volatile
+
+### Architectural framing in ARCHITECTURE.md
+
+When this ships, add a section: "Verification cache (v0.6 / Tier 2).
+The cache is a performance optimization for retrieval. Cached entries
+can be wrong, can go stale, and are subject to eviction. Every cached
+verdict is provisional."
+
+### Open questions for the operator
+
+- Should the cache be per-user_id or shared across users? Sharing
+  amplifies the value (one user's "Tokyo is in Japan" lookup helps
+  another) but raises consistency questions if entity-canonicalization
+  is wrong. Lean toward shared with a "cache visible to admins" view.
+- What's the retention policy for expired entries? Vacuum on a
+  schedule, or just leave them with expires_at in the past?
+- Should the cache hit_count drive eviction (LRU) or pure TTL?
+  Recommend pure TTL for v0.6, add LRU later if cache size becomes a
+  problem.
