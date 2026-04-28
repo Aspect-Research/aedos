@@ -124,7 +124,12 @@ then graduate to SESSION_LOG.md after a few sessions.
 
 - [ ] Better entity resolution. Empty wishlist for now; will become
   load-bearing in Phase 6 (Tier 2 cache). Defer until first cache-
-  miss-on-equivalent-claim scenario surfaces.
+  miss-on-equivalent-claim scenario surfaces. **Tooling for this is
+  now in place:** `scripts/analyze_cache.py` reports hit rate,
+  by-stability breakdown, and top reused canonical keys — when run
+  against a real session DB, the most-reused keys are the canonical
+  candidates for entity-resolution work (a claim that should hit but
+  doesn't will look like a sibling miss in the same scope). 5 tests.
 
 - [x] **Failure-mode taxonomy.** Captured in OBSERVATIONS.md under
   the various 2026-04-28 sections. Notable: extractor substitution
