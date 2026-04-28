@@ -99,6 +99,19 @@ def test_canonical_constants_filtered_to_strings():
     assert d.canonical_constants_needed == ["list of US states", "7", "months"]
 
 
+def test_canonical_constants_all_garbage_collapses_to_none():
+    """If every entry in canonical_constants_needed is filtered out
+    (none are str/int/float — e.g. all dicts or None), the field
+    collapses to None rather than an empty list."""
+    llm = FakeLLM(response={
+        "method": "python_with_canonical_constants",
+        "reason": "x", "confidence": 0.7,
+        "canonical_constants_needed": [None, {"k": "v"}, [1, 2]],
+    })
+    d = route_claim({"pattern": "x", "predicate": "x", "slots": {}, "polarity": 1}, llm)
+    assert d.canonical_constants_needed is None
+
+
 def test_inputs_self_contained_only_bool_or_none():
     llm = FakeLLM(response={
         "method": "python", "reason": "x", "confidence": 0.9,
