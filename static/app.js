@@ -61,6 +61,38 @@ async function api(method, path, body) {
   return resp.json();
 }
 
+function renderCacheClaimHeader(claim) {
+  // Compact one-line claim identifier for cache decision events
+  // (cache_scoping_decision, cache_stability_decision). Without
+  // this header those events floated context-free in the trace —
+  // the operator couldn't tell which claim each decision pertained
+  // to. Format: ``pattern.predicate(key=val, ...)``.
+  const wrap = el("div", { className: "cache-claim-header" });
+  if (!claim || (!claim.pattern && !claim.predicate)) {
+    wrap.appendChild(el("span", { className: "cache-claim-missing",
+      textContent: "(claim not recorded on this event)" }));
+    return wrap;
+  }
+  wrap.appendChild(el("span", { className: "pattern-badge",
+    textContent: claim.pattern || "?" }));
+  wrap.appendChild(el("span", { className: "cache-claim-pred",
+    textContent: "." + (claim.predicate || "?") }));
+  const slots = claim.slots || {};
+  const slotKeys = Object.keys(slots);
+  if (slotKeys.length) {
+    const slotPairs = slotKeys.map((k) => {
+      const v = slots[k];
+      const vstr = typeof v === "object" ? JSON.stringify(v) : String(v);
+      const trimmed = vstr.length > 40 ? vstr.slice(0, 40) + "…" : vstr;
+      return `${k}=${trimmed}`;
+    }).join(", ");
+    wrap.appendChild(el("span", { className: "cache-claim-slots",
+      textContent: ` (${slotPairs})` }));
+  }
+  return wrap;
+}
+
+
 function triplify(claim) {
   // v0.3: claims have {pattern, predicate, slots, polarity, source_text}.
   // Render: pattern badge, predicate label, slot key-value table.
@@ -543,6 +575,7 @@ function renderStage(event) {
     }
     case "cache_scoping_decision": {
       const meta = el("div", { className: "decision-meta" });
+      meta.appendChild(renderCacheClaimHeader(d.claim));
       if (d.error) {
         meta.appendChild(el("div", {
           style: "color:var(--danger)",
@@ -560,6 +593,7 @@ function renderStage(event) {
     }
     case "cache_stability_decision": {
       const meta = el("div", { className: "decision-meta" });
+      meta.appendChild(renderCacheClaimHeader(d.claim));
       if (d.error) {
         meta.appendChild(el("div", {
           style: "color:var(--danger)",
