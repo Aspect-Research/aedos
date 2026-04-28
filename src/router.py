@@ -152,6 +152,13 @@ class Router:
         retrieval_verifier: RetrievalVerifier | None = None,
         code_gen_verifier: CodeGenerationVerifier | None = None,
         user_id: str = DEFAULT_USER_ID,
+        # v0.6 — when set, the router checks the cache BEFORE invoking
+        # the retrieval verifier. On hit (within TTL), short-circuits.
+        # The lookup-eligibility check is the same scope+stability gate
+        # the cache-write path uses, supplied by the Pipeline via
+        # ``cache_eligible_keys`` (set of canonical_keys).
+        verification_cache: Any = None,
+        cache_eligible_keys: set[str] | None = None,
     ):
         self.store = store
         self.registry = registry
@@ -167,6 +174,8 @@ class Router:
         if code_gen_verifier is None and llm is not None:
             code_gen_verifier = CodeGenerationVerifier(store=store, llm=llm)
         self.code_gen_verifier = code_gen_verifier
+        self._verification_cache = verification_cache
+        self._cache_eligible_keys = cache_eligible_keys or set()
 
     # ---- entry point ---------------------------------------------------
 
@@ -478,6 +487,96 @@ class Router:
             ],
         )
 
+    def _maybe_cache_hit(
+        self, claim: dict, source_turn_id: int,
+    ) -> Decision | None:
+        """Look up the claim in the verification cache. On hit, return
+        a Decision built from the cached verdict. On miss / no cache /
+        not eligible, return None — caller falls through to retrieval."""
+        if self._verification_cache is None:
+            return None
+        from src.cache import canonicalize_claim_key
+        key = canonicalize_claim_key(claim)
+        if key not in self._cache_eligible_keys:
+            # Not flagged as cache-eligible by Pipeline's scoping pass.
+            return None
+        try:
+            cached = self._verification_cache.lookup(key)
+        except Exception as exc:  # noqa: BLE001
+            self.store.insert_pipeline_event(
+                source_turn_id, "cache_lookup",
+                {"canonical_key": key,
+                 "error": f"{type(exc).__name__}: {exc}"},
+            )
+            return None
+        if cached is None:
+            self.store.insert_pipeline_event(
+                source_turn_id, "cache_lookup",
+                {"canonical_key": key, "result": "miss"},
+            )
+            return None
+
+        # Hit. Log it, build a Decision from the cached verdict.
+        self.store.insert_pipeline_event(
+            source_turn_id, "cache_lookup",
+            {"canonical_key": key, "result": "hit",
+             "verdict": cached.verdict,
+             "stability_class": cached.stability_class,
+             "hit_count": cached.hit_count,
+             "cached_at": cached.cached_at,
+             "expires_at": cached.expires_at},
+        )
+
+        if cached.verdict == "verified":
+            return Decision(
+                claim=claim,
+                outcome=RoutingOutcome.VERIFIED,
+                verification_status="verified",
+                confidence=CONF_RETRIEVAL_VERIFIED,
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
+                    confidence=CONF_RETRIEVAL_VERIFIED,
+                    verification_status="verified",
+                ),
+                notes=[f"served from cache (key={key!r}, "
+                       f"hit_count={cached.hit_count})"],
+            )
+        if cached.verdict == "contradicted":
+            return Decision(
+                claim=claim,
+                outcome=RoutingOutcome.CONTRADICTED,
+                verification_status="contradicted",
+                confidence=CONF_RETRIEVAL_CORRECTION,
+                stored_fact_id=self._store(
+                    claim, source_turn_id, asserted_by="model",
+                    confidence=CONF_RETRIEVAL_CORRECTION,
+                    verification_status="contradicted",
+                ),
+                notes=[f"served from cache (key={key!r})"],
+                correction={
+                    "original_object": claim.get("slots"),
+                    "corrected_object": (cached.evidence or {}).get(
+                        "actual_value"),
+                    "explanation": (cached.evidence or {}).get(
+                        "explanation", "from cache"),
+                    "source_text": claim.get("source_text", ""),
+                },
+            )
+        # Cached inconclusive — still serve so we don't redo retrieval
+        # on a known-tough claim.
+        return Decision(
+            claim=claim,
+            outcome=RoutingOutcome.UNVERIFIED,
+            verification_status="retrieval_inconclusive",
+            confidence=CONF_RETRIEVAL_INCONCLUSIVE,
+            stored_fact_id=self._store(
+                claim, source_turn_id, asserted_by="model",
+                confidence=CONF_RETRIEVAL_INCONCLUSIVE,
+                verification_status="retrieval_inconclusive",
+            ),
+            notes=[f"served from cache (inconclusive, key={key!r})"],
+        )
+
     def _route_retrieval(
         self, claim: dict, source_turn_id: int,
         *, query_hint: str | None = None,
@@ -497,6 +596,13 @@ class Router:
             )
 
         from src.verifiers.types import VerificationOutcome
+
+        # v0.6 — Tier 2 cache lookup BEFORE retrieval. The Pipeline
+        # populated _cache_eligible_keys for claims that scoping marked
+        # world_fact + stability marked non-volatile.
+        cached = self._maybe_cache_hit(claim, source_turn_id)
+        if cached is not None:
+            return cached
 
         # Note: query_hint is logged on the routing_decision event but not
         # threaded into the retrieval verifier's query plan in v0.5; the

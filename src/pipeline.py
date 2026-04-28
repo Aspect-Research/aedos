@@ -248,6 +248,12 @@ class Pipeline:
                         )
 
         # Stage 6 — route each assistant claim through the appropriate verifier.
+        # Thread the per-turn cache eligibility (set of canonical_keys
+        # the scoping pass marked world_fact + non-volatile) into the
+        # router. The router uses this to gate cache lookups.
+        self.router._cache_eligible_keys = set(self._cache_decisions.keys())
+        if self._verification_cache is not None:
+            self.router._verification_cache = self._verification_cache
         verification_decisions: list[Decision] = [
             self.router.route(c, origin="model", source_turn_id=assistant_turn_id)
             for c in asst_extraction.valid_facts
