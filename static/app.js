@@ -262,6 +262,28 @@ function renderStage(event) {
     case "assistant_draft":
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
+    case "chat_model_call": {
+      // v0.5.x: per-turn provenance row for the chat model under test.
+      // Whether the chat model was Claude or GLM, we get one of these.
+      const meta = el("div", { className: "decision-meta" });
+      const provider = d.provider || "?";
+      const model = d.model || "?";
+      const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
+      const status = d.status_code != null ? ` http=${d.status_code}` : "";
+      const sysChars = d.system_chars != null ? `, system=${d.system_chars}c` : "";
+      const respChars = d.response_chars != null ? `, response=${d.response_chars}c` : "";
+      meta.appendChild(el("div", {
+        textContent: `${provider}:${model} — ${dur}${status} (msgs=${d.message_count ?? "?"}${sysChars}${respChars})`,
+      }));
+      if (d.error) {
+        meta.appendChild(el("div", {
+          style: "color:var(--danger);font-weight:600",
+          textContent: `error: ${d.error}`,
+        }));
+      }
+      body.appendChild(meta);
+      break;
+    }
     case "correction": {
       const diff = el("div", { className: "diff-view" });
       const left = el("div");
