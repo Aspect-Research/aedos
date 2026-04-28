@@ -265,6 +265,56 @@ def test_chat_logs_pipeline_event_on_failure(tmp_path):
 # ---- end-to-end: pipeline routes the assistant draft via the backend ----
 
 
+def test_pipeline_caps_chat_max_tokens(tmp_path):
+    """Phase-2 fix (commit 4d81d59): chat call uses Pipeline.CHAT_MAX_TOKENS
+    (1024), not 4096. The 4096 default let GLM's reasoning chain blow past
+    the 300s Modal timeout. Lock the cap in."""
+    from src.corrector import Corrector
+    from src.extractor import ClaimExtractor
+    from src.fact_store import FactStore
+    from src.llm_router import RoutingDecision
+    from src.pattern_registry import load_default_registry, reset_cache
+    from src.pipeline import Pipeline
+    from src.router import Router
+
+    reset_cache()
+
+    @dataclass
+    class _MockLLM:
+        extracts: list = field(default_factory=list)
+        rewrites: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+            return self.extracts.pop(0)
+
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+            return self.rewrites.pop(0)
+
+    captured: list[int] = []
+
+    class CapturingBackend:
+        provider = "stub"
+        model = "stub"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            captured.append(max_tokens)
+            return "ok"
+
+    store = FactStore(tmp_path / "p.db")
+    registry = load_default_registry()
+    mock = _MockLLM(extracts=[{"facts": []}, {"facts": []}])
+    extractor = ClaimExtractor(mock, registry)
+    router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
+        method="unverifiable", reason="x", confidence=0.9))
+    p = Pipeline(store, registry, mock, extractor, router, Corrector(mock),
+                 chat_backend=CapturingBackend())
+
+    p.run_turn("hi")
+    assert captured == [Pipeline.CHAT_MAX_TOKENS]
+    assert Pipeline.CHAT_MAX_TOKENS == 1024
+
+
 def test_pipeline_uses_chat_backend_and_logs_chat_model_call(tmp_path):
     """Drive a Pipeline with a stub chat_backend instead of the legacy
     llm.chat path. The backend must be invoked, and a chat_model_call
