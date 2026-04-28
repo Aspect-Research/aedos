@@ -101,7 +101,7 @@ memory of the autonomous run.
 4. **Phase 6 (Tier 2 cache)** — spec says "after Tier 1 is solid and
    dogfooded." Needs at least one dogfood pass first.
 
-### Commits this session (in order)
+### Commits this session (in order, 27 total)
 1. `[p1] llm_clients: pluggable chat backend (anthropic | modal/GLM)`
 2. `[p1] modal_glm: 300s timeout, content=null hint, smoke test passes 3/3`
 3. `[p2] cleanup: drop v0.4 vestiges (broken /api/patterns, ...)`
@@ -119,4 +119,48 @@ memory of the autonomous run.
 15. `[p5] facts.user_id + router scoping — Tier 1 cross-session`
 16. `[state] sessions-1 progress + Phase-2 resume instructions`
 17. `[p2] dogfood: --provider flag for Anthropic fallback`
-18. (this session-log commit)
+18. `[state] session 1 log + Modal 503 status in HANDOFF`
+19. `[p2] cleanup: drop unused retrieval_verify() back-compat shim`
+20. `[obs] Phase 6 (Tier 2 verification cache) — design sketch`
+21. `[state] session 1 final timestamp`
+22. `[p2] cross-check: force Sonnet 4.6 to preserve temperature variation`
+23. `[state] mark cross-check Sonnet override done in NEXT_STEPS`
+24. `[p5] fact_store: reset() re-runs user_id migration so indexes survive`
+25. `[p2] judge parser: accept SUPPORT/CONTRADICT/INCONCLUSIVE abbreviations`
+26. `[p2] pipeline: cap chat max_tokens at 1024 (was 4096)`
+27. (this session-log final-update commit)
+
+### Phase-2 dogfood post-recovery details
+
+After the Modal 503 outage cleared, ran `dogfood_glm.py --start 6`.
+12 of 12 attempted turns ran (turns 6, 16 cold-start timeouts; the
+other 10 landed signal):
+
+| # | category | result | notes |
+|---|----------|--------|-------|
+| 6 | python_canonical | ERROR (cold-start) | re-run after warm |
+| 7 | python_canonical | facts=0 (extractor gap) | reproducible |
+| 8 | retrieval:art | verified | Salvador Dalí |
+| 9 | retrieval:geo | verified | Suriname/Dutch |
+| 10 | retrieval:tech | 3× verified | Cloudflare founders |
+| 11 | retrieval:history | retrieval_failed → fixed inline | judge parser bug |
+| 12 | mixed | 2v + 1 inconclusive + 1 hedge | extractor calibration item |
+| 13-15 | user_auth | all verified, fast | Phase 5 validated end-to-end |
+| 16 | confab | ERROR (cold-start) | reasoning chain timed out |
+| 17 | retrieval:obscure | verified | Belgium 1849 |
+
+**Key signal:** GLM produced **zero hallucinations** in this 10-turn
+sample. Every claim it made that we could verify was correct. Either
+the questions weren't hard enough or GLM is genuinely strong on these
+specific facts. Phase 7 work needs to curate prompts where GLM's
+training is stale or thin.
+
+**Bug fixed inline:** judge parser now accepts SUPPORT / CONTRADICT /
+INCONCLUSIVE as aliases for the canonical labels. Saved a real
+verdict that was being thrown away as "judge_parse_error".
+
+**Calibration items deferred:** lifespan/duration claim slot embedding,
+canonical-list extraction, chat max_tokens (last one shipped as
+commit 26).
+
+Final test status: **268 passed, 4 skipped**.
