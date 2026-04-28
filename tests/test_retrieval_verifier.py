@@ -233,6 +233,154 @@ def test_search_duckduckgo_first_ua_success_skips_rest(monkeypatch):
     assert len(calls) == 1
 
 
+# ---- direct tests for _ddg_attempt HTML parsing ----------------------
+
+
+def test_ddg_attempt_parses_results_from_html(monkeypatch):
+    """_ddg_attempt is the inner function that actually parses DDG's
+    HTML. The wrapping search_duckduckgo() retries-on-empty layer is
+    well-covered, but this is the actual parse logic. Mock httpx and
+    check the BeautifulSoup selectors find title/snippet/url."""
+    from src.verifiers import retrieval_verifier as rv
+
+    captured: dict = {}
+
+    class _StubResp:
+        text = (
+            "<html><body>"
+            "<div class='result'>"
+            "  <a class='result__a' href='https://example.com/1'>Title One</a>"
+            "  <span class='result__snippet'>First snippet body.</span>"
+            "</div>"
+            "<div class='result'>"
+            "  <a class='result__a' href='https://example.com/2'>Title Two</a>"
+            "  <span class='result__snippet'>Second snippet body.</span>"
+            "</div>"
+            "</body></html>"
+        )
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, *, data, headers, timeout, follow_redirects):
+        captured["url"] = url
+        captured["q"] = data["q"]
+        captured["ua"] = headers["User-Agent"]
+        return _StubResp()
+
+    monkeypatch.setattr(rv.httpx, "post", fake_post)
+
+    results = rv._ddg_attempt(
+        "marie curie nobel year",
+        rv._USER_AGENTS[0],
+        top_n=3,
+    )
+    assert len(results) == 2
+    assert results[0].title == "Title One"
+    assert results[0].snippet == "First snippet body."
+    assert results[0].url == "https://example.com/1"
+    # The request actually went to the DDG html endpoint with the query
+    # as POST data, and our chosen UA header.
+    assert captured["url"] == rv._DDG_URL
+    assert captured["q"] == "marie curie nobel year"
+    assert captured["ua"] == rv._USER_AGENTS[0]
+
+
+def test_ddg_attempt_skips_results_with_missing_pieces(monkeypatch):
+    """A real-world DDG hit list mixes well-formed result divs with
+    ones that are missing the title link, the snippet, or both. The
+    parser should silently skip those rather than producing partial
+    Snippets with empty fields."""
+    from src.verifiers import retrieval_verifier as rv
+
+    class _StubResp:
+        text = (
+            "<html><body>"
+            # Missing snippet (no .result__snippet child) — should be skipped.
+            "<div class='result'>"
+            "  <a class='result__a' href='https://x.com/a'>Title only</a>"
+            "</div>"
+            # Missing title link — should be skipped.
+            "<div class='result'>"
+            "  <span class='result__snippet'>Snippet only</span>"
+            "</div>"
+            # Empty strings even though the elements exist — should be skipped.
+            "<div class='result'>"
+            "  <a class='result__a' href='https://x.com/c'></a>"
+            "  <span class='result__snippet'></span>"
+            "</div>"
+            # Well-formed — kept.
+            "<div class='result'>"
+            "  <a class='result__a' href='https://x.com/d'>Real Title</a>"
+            "  <span class='result__snippet'>Real snippet</span>"
+            "</div>"
+            "</body></html>"
+        )
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(rv.httpx, "post",
+                        lambda *a, **kw: _StubResp())
+
+    results = rv._ddg_attempt("q", rv._USER_AGENTS[0], top_n=3)
+    assert len(results) == 1
+    assert results[0].title == "Real Title"
+
+
+def test_ddg_attempt_caps_at_top_n(monkeypatch):
+    """_ddg_attempt scans up to top_n*3 result divs but stops adding
+    after top_n usable Snippets. This guards against a rare DDG layout
+    that pushes 50+ results into the page."""
+    from src.verifiers import retrieval_verifier as rv
+
+    rows = "".join(
+        f"<div class='result'>"
+        f"  <a class='result__a' href='https://x.com/{i}'>T{i}</a>"
+        f"  <span class='result__snippet'>S{i}</span>"
+        f"</div>"
+        for i in range(20)
+    )
+
+    class _StubResp:
+        text = f"<html><body>{rows}</body></html>"
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(rv.httpx, "post",
+                        lambda *a, **kw: _StubResp())
+
+    results = rv._ddg_attempt("q", rv._USER_AGENTS[0], top_n=3)
+    assert len(results) == 3
+    assert [r.title for r in results] == ["T0", "T1", "T2"]
+
+
+def test_ddg_attempt_propagates_http_error(monkeypatch):
+    """If the DDG response is non-200, raise_for_status raises and
+    _ddg_attempt lets the exception propagate to its caller. The
+    caller (search_duckduckgo) doesn't currently wrap this — it
+    crashes the verifier turn — but it's worth pinning the contract
+    so anyone changing the wrapper sees the expected propagation."""
+    from src.verifiers import retrieval_verifier as rv
+
+    class _StubResp:
+        text = ""
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "503 Service Unavailable",
+                request=httpx.Request("POST", rv._DDG_URL),
+                response=httpx.Response(503),
+            )
+
+    monkeypatch.setattr(rv.httpx, "post",
+                        lambda *a, **kw: _StubResp())
+
+    with pytest.raises(httpx.HTTPStatusError):
+        rv._ddg_attempt("q", rv._USER_AGENTS[0], top_n=3)
+
+
 def test_search_serpapi_parses_response(monkeypatch):
     fake_response = type("R", (), {
         "raise_for_status": lambda self: None,
