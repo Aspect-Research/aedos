@@ -26,6 +26,46 @@ class RoutingOutcome(str, Enum):
     ROUTING_ANOMALY = "routing_anomaly"
 
 
+# Map from internal verification_status (8 distinct states for routing
+# logic) to a 4-bucket display_status the UI can render uniformly.
+# The internal statuses stay because the corrector + cache + tests
+# depend on the fine-grained distinction (e.g. retrieval_failed vs
+# retrieval_inconclusive flips the corrector between hedge and silence).
+# But the UI doesn't need 8 colors / 8 badges / 8 explanations — 4
+# buckets cover the operator's mental model:
+#
+#   verified        — claim was confirmed (any path)
+#   contradicted    — claim was disproven (any path)
+#   inconclusive    — verifier ran but couldn't decide
+#   not_applicable  — verification doesn't apply (user-asserted,
+#                     unverifiable_in_principle, routing_anomaly,
+#                     verifier failed entirely)
+#
+# Routing logic still keys off verification_status; the UI keys off
+# display_status. Adding a status to the internal enum just needs an
+# entry in this map.
+DISPLAY_STATUS_BY_VERIFICATION_STATUS: dict[str, str] = {
+    "verified": "verified",
+    "user_asserted": "not_applicable",
+    "contradicted": "contradicted",
+    "retrieval_inconclusive": "inconclusive",
+    "retrieval_failed": "not_applicable",  # not evidence of uncertainty
+    "unverifiable_in_principle": "not_applicable",
+    "unverifiable_pending_implementation": "inconclusive",
+    "routing_anomaly": "not_applicable",
+}
+
+
+def display_status_for(verification_status: str) -> str:
+    """Map an internal verification_status to its UI bucket. Unknown
+    statuses fall back to ``inconclusive`` rather than crashing — the
+    operator can spot something they don't recognize and the UI keeps
+    rendering."""
+    return DISPLAY_STATUS_BY_VERIFICATION_STATUS.get(
+        verification_status, "inconclusive",
+    )
+
+
 @dataclass
 class Decision:
     claim: dict
@@ -51,11 +91,18 @@ class Decision:
     # "served from cache" string.
     served_from_cache: bool = False
 
+    @property
+    def display_status(self) -> str:
+        """4-bucket UI-facing status. Computed from verification_status
+        via DISPLAY_STATUS_BY_VERIFICATION_STATUS — see that map."""
+        return display_status_for(self.verification_status)
+
     def to_dict(self) -> dict:
         return {
             "claim": self.claim,
             "outcome": self.outcome.value,
             "verification_status": self.verification_status,
+            "display_status": self.display_status,
             "confidence": self.confidence,
             "stored_fact_id": self.stored_fact_id,
             "boosted_fact_id": self.boosted_fact_id,
