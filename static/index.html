@@ -14,6 +14,7 @@
     <button class="tab" data-tab="flow">Flow View</button>
     <button class="tab" data-tab="facts">Fact Store</button>
     <button class="tab" data-tab="predicates">Patterns</button>
+    <button class="tab" data-tab="cache">Cache</button>
   </nav>
   <div class="header-actions">
     <button id="reset-btn" title="Wipe the database">Reset DB</button>
@@ -104,6 +105,15 @@
   <!-- Predicates tab ------------------------------------------------ -->
   <section id="tab-predicates" class="tab-panel">
     <div id="predicates-table" class="predicates-table"></div>
+  </section>
+
+  <!-- Cache tab ----------------------------------------------------- -->
+  <section id="tab-cache" class="tab-panel">
+    <div class="toolbar">
+      <span id="cache-stats" class="hint"></span>
+      <button id="cache-refresh">Refresh</button>
+    </div>
+    <div id="cache-table" class="facts-table"></div>
   </section>
 </main>
 
