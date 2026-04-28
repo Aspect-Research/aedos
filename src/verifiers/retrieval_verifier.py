@@ -314,19 +314,85 @@ _JUDGE_VERDICT_ALIASES = {
 
 
 def parse_judge_response(text: str) -> JudgeVerdict | None:
+    """Tolerant verdict parser.
+
+    The judge prompt asks for "VERDICT \\n Justification: ..." but real
+    Claude output is messy:
+
+      * ``**SUPPORTED**`` — markdown bolds around the verdict
+      * ``Verdict: SUPPORTED`` — labeled prefix instead of bare verdict
+      * ``## SUPPORTED`` — markdown heading
+      * ``Based on the snippets, the verdict is SUPPORTED.`` — preamble
+      * ``The claim is NOT SUPPORTED.`` — negation flips the meaning
+
+    Strategy:
+
+      1. Search the first 600 chars of the response for any aliased
+         verdict token, matched as a whole word (case-insensitive).
+      2. If the verdict is preceded immediately by ``not`` / ``no``
+         (within ~5 chars), flip the canonical label:
+         not-SUPPORTED → CONTRADICTED, not-CONTRADICTED → SUPPORTED.
+      3. The earliest-occurring (post-flip) verdict wins.
+      4. Justification = everything from the verdict onward, with
+         the verdict word removed and "Justification:" / markdown
+         stripped.
+
+    Returns None only when no aliased verdict word appears at all.
+    """
     if not text:
         return None
-    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-    if not lines:
+    head = text[:600]
+
+    candidates: list[tuple[int, str]] = []  # (position, canonical_label)
+    for token, label in _JUDGE_VERDICT_ALIASES.items():
+        for m in re.finditer(
+            rf"\b{re.escape(token)}\b", head, flags=re.IGNORECASE,
+        ):
+            # Negation flip: "NOT SUPPORTED" / "no SUPPORTED" reads as
+            # the opposite of the bare token. Look in the ~10 chars
+            # before the match for a negation cue.
+            preceding = head[max(0, m.start() - 10):m.start()].lower()
+            negated = bool(re.search(r"\b(not|no)\s*$", preceding))
+            actual = label
+            if negated:
+                if label == "SUPPORTED":
+                    actual = "CONTRADICTED"
+                elif label == "CONTRADICTED":
+                    actual = "SUPPORTED"
+                # INSUFFICIENT_EVIDENCE preceded by "not" stays
+                # INSUFFICIENT — it's not a polar verdict.
+            candidates.append((m.start(), actual))
+
+    if not candidates:
         return None
-    first = lines[0].split()[0].upper().rstrip(":.,")
-    canonical = _JUDGE_VERDICT_ALIASES.get(first)
-    if canonical is None:
-        return None
-    rest = " ".join(lines[1:]).strip()
-    if rest.lower().startswith("justification:"):
-        rest = rest.split(":", 1)[1].strip()
-    return JudgeVerdict(verdict=canonical, justification=rest or "(no justification)")
+    candidates.sort(key=lambda c: c[0])
+    pos, canonical = candidates[0]
+
+    # Justification: text after the verdict word.
+    # Find the end of the matched word; everything after is the
+    # justification (sans "Justification:" prefix and markdown).
+    rest = text[pos:]
+    # Drop the verdict word and any immediately-following bold/header
+    # markers.
+    rest = re.sub(
+        r"^\s*\*{0,2}_?[A-Z_]+_?\*{0,2}\s*[:.,]?\s*",
+        "",
+        rest,
+        count=1,
+    )
+    # Strip a "Justification:" lead.
+    rest = re.sub(
+        r"^\s*\**\s*[Jj]ustification\s*:?\s*\**\s*",
+        "",
+        rest,
+        count=1,
+    )
+    # Drop residual markdown markers and surrounding whitespace.
+    rest = rest.strip().strip("*_#>`-").strip()
+    return JudgeVerdict(
+        verdict=canonical,
+        justification=rest or "(no justification)",
+    )
 
 
 def _is_historical(claim: dict) -> bool:
