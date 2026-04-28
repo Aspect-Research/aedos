@@ -539,6 +539,70 @@ def test_build_queries_event_handles_participant_list():
     assert any("inauguration" in q and "Donald Trump" in q for q in queries)
 
 
+def test_build_queries_converts_snake_case_predicate_to_natural_language():
+    """AEDOS-internal snake_case predicates (parent_of, founded_by,
+    presidential_campaign, etc.) get converted to space-separated form
+    in the query templates so search engines rank correctly. Without
+    this, queries like 'Donald Trump parent_of Donald Jr.' return
+    junk; with it, 'Donald Trump parent of Donald Jr.' lands the
+    Donald Trump Jr. Wikipedia page.
+    """
+    reg = load_default_registry()
+    queries = build_queries(
+        reg.get("relational"),
+        {
+            "subject": "Donald Trump",
+            "relation": "parent_of",  # snake_case predicate
+            "object": "Donald Jr.",
+        },
+    )
+    # First template is "{subject} {relation} {object}" — must use
+    # natural-language form of relation.
+    assert "Donald Trump parent of Donald Jr." in queries
+    # No raw snake_case in any query.
+    for q in queries:
+        assert "parent_of" not in q, q
+
+
+def test_build_queries_event_type_converted_to_natural_language():
+    """event_type slot values are also AEDOS internal IDs
+    (presidential_campaign, etc.) — same conversion applies."""
+    reg = load_default_registry()
+    queries = build_queries(
+        reg.get("event"),
+        {
+            "event_type": "presidential_campaign",
+            "participants": ["Donald Trump"],
+            "occurred_at": "2024",
+        },
+    )
+    # Templates: {event_type} {participants_joined} → {event_type}
+    # {occurred_at} → {event_type}. All should use space-separated form.
+    for q in queries:
+        assert "presidential_campaign" not in q, q
+        assert "presidential campaign" in q.lower(), q
+
+
+def test_build_queries_natural_lang_conversion_is_query_only():
+    """The judge sees the original (raw) slot values; only the query
+    templates get the natural-language form. _enrich_slots returns a
+    NEW dict — the input slots dict is not mutated."""
+    from src.verifiers.retrieval_verifier import _enrich_slots
+    original = {
+        "subject": "Trump Organization",
+        "relation": "founded_by",
+        "object": "Donald Trump",
+    }
+    snapshot = dict(original)
+    enriched = _enrich_slots(original)
+    # Input not mutated.
+    assert original == snapshot
+    # Enriched has space-form.
+    assert enriched["relation"] == "founded by"
+    # Other slots untouched.
+    assert enriched["subject"] == "Trump Organization"
+
+
 # ---------- multi-attempt strategy ----------
 
 

@@ -378,14 +378,30 @@ def _slot_refs(template: str) -> list[str]:
 
 
 def _enrich_slots(slots: dict[str, Any]) -> dict[str, Any]:
-    """Add derived keys for query templates that need them.
+    """Add derived keys + natural-language conversion for query templates.
 
-    Currently: ``participants_joined`` for the event pattern's list slot.
+    Two transformations:
+
+    1. ``participants_joined`` — for the event pattern's list slot.
+    2. snake_case → space-separated for slots whose values are AEDOS-
+       internal predicate/category identifiers (``relation``,
+       ``property``, ``relation_kind``, ``event_type``). Without this,
+       query templates emit garbage like "Donald Trump parent_of
+       Donald Jr." or "presidential_campaign 2024" — search engines
+       (and Wikipedia in particular) rank pages much better against
+       "Donald Trump parent of Donald Jr." or "presidential campaign
+       2024". The judge always sees the original slot values; this
+       enrichment is query-only.
     """
     out = dict(slots)
     parts = slots.get("participants")
     if isinstance(parts, list):
         out["participants_joined"] = " ".join(str(p) for p in parts)
+    for key in ("relation", "property", "relation_kind", "event_type",
+                "predicate", "role"):
+        val = slots.get(key)
+        if isinstance(val, str) and "_" in val:
+            out[key] = val.replace("_", " ")
     return out
 
 
