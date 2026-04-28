@@ -10,7 +10,7 @@ Methods the LLM router can return:
   - ``python``                            — code-generation pipeline
   - ``python_with_canonical_constants``   — code-generation with cross-check
   - ``retrieval``                         — search + judge
-  - ``user_authoritative`` / ``store_lookup`` — store lookup (user is GT)
+  - ``user_authoritative``                — store lookup (user is GT)
   - ``unverifiable``                      — no method applies
 
 User-origin claims still go through the original boost / contradiction /
@@ -32,7 +32,7 @@ from typing import Any, Callable, Optional
 
 from src.fact_store import Fact, FactStore
 from src.llm_client import LLMClient
-from src.llm_router import RoutingDecision, route_claim
+from src.llm_router import ROUTING_METHODS, RoutingDecision, route_claim
 from src.pattern_registry import Pattern, PatternRegistry
 from src.verifiers.code_generation import (
     CodeGenerationVerifier,
@@ -305,7 +305,7 @@ class Router:
             return self._route_python(
                 claim, source_turn_id, use_canonical_constants=True,
             )
-        if method == "user_authoritative" or method == "store_lookup":
+        if method == "user_authoritative":
             return self._route_store(claim, pattern, source_turn_id)
         if method == "retrieval":
             return self._route_retrieval(
@@ -314,7 +314,10 @@ class Router:
         if method == "unverifiable":
             return self._route_unverifiable(claim, source_turn_id)
         # Coercion in route_claim should prevent this; surface loudly.
-        raise RuntimeError(f"router has no handler for verification_method={method!r}")
+        raise RuntimeError(
+            f"router has no handler for routing method {method!r}; "
+            f"valid methods are {ROUTING_METHODS}"
+        )
 
     def _maybe_anomaly(self, pattern: Pattern, slots: dict) -> dict | None:
         """Return {slot, expected, actual} if this is a routing anomaly, else None.

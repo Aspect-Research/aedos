@@ -115,23 +115,12 @@ def list_patterns() -> list[dict[str, Any]]:
                 {"name": s.name, "type": s.type, "required": s.required}
                 for s in p.slots
             ],
-            "verification_rules": [
-                {"when": r.when, "method": r.method} for r in p.verification_rules
-            ],
             "example_predicates": list(p.example_predicates),
             "query_strategy": list(p.query_strategy),
-            "flag_non_user_as_anomaly": p.flag_non_user_as_anomaly,
             "disambiguation_notes": p.disambiguation_notes,
         }
         for p in reg.all()
     ]
-
-
-# v0.2 alias kept so the old UI path still resolves; remove once the UI
-# stops fetching it.
-@app.get("/api/predicates")
-def list_predicates_v02_compat() -> list[dict[str, Any]]:
-    return list_patterns()
 
 
 @app.post("/api/reset")
