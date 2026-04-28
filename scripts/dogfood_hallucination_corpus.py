@@ -357,6 +357,18 @@ def _flatten_prompts() -> list[dict[str, Any]]:
 
 
 def main(argv: list[str]) -> int:
+    # Reconfigure stdout to UTF-8 so non-ASCII characters in chat
+    # responses (subscripts, em dashes, accented letters) don't crash
+    # the script on Windows where the default console encoding is
+    # cp1252. errors='replace' so any unmappable byte sequence
+    # gets a '?' rather than raising. Real persistence still goes to
+    # the JSON dump (utf-8 always).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
     import functools
     print_orig = print
     globals()["print"] = functools.partial(print_orig, flush=True)
