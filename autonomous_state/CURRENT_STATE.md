@@ -6,11 +6,23 @@ Updated by: autonomous instance — Session 2 (continuing)
 ## Status
 
 - Branch: experiment/autonomous-v0.5.x
-- Last green pytest: 2026-04-28 — 441 passed, 7 skipped (real-API gated)
+- Last green pytest: 2026-04-28 — 452 passed, 7 skipped (real-API gated)
 - Total project coverage: 95%
-- Last commit: [p7] test: chat-cap test resilient to AEDOS_CHAT_MAX_TOKENS env override
+- Last commit: [obs] REAL-API VALIDATION: verbatim rule works + AEDOS caught Claude's Saturn hallucination
 - Active work: continuing per-operator instructions to keep producing
-  improvements indefinitely. No stop condition. 87+ commits this session.
+  improvements indefinitely. No stop condition. 100+ commits this session.
+
+## 🎯 KEY VALIDATION 2026-04-28 (Anthropic, ~$0.10)
+
+  1. test_real_api_extractor_does_not_substitute_values PASSED.
+     The verbatim rule actually changed Opus's behavior. value=146
+     stays 146.
+
+  2. AEDOS caught a genuine Claude hallucination on the Saturn-moons
+     prompt (Claude said 146, snippets say 274, corrector REPLACED).
+     The whole pipeline working end-to-end on a real hallucination.
+
+  See OBSERVATIONS.md "REAL-API VALIDATION 2026-04-28" for full details.
 
 ## What shipped this session (Session 2 — 49 commits so far)
 
