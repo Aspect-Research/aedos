@@ -492,6 +492,27 @@ Concrete fixes (NEXT_STEPS items):
   Adversarial multi-turn prompts can exploit the gap. Worth a paper-
   worthy section.
 
+  **Predicted behavior after the interrogative-meta extractor fix
+  (commit 058f474) lands in real API:**
+
+    Turn 24 (user): 'I was born in Williamstown MA.'
+                    → stored as user fact (unchanged).
+    Turn 26 (user): 'I think I told you Williamsburg VA. Is that right?'
+                    → extractor returns facts=[] (NEW BEHAVIOR).
+                    → store still only has Williamstown.
+    Model: 'yes both!' (still confabulates).
+    Extractor pulls 2 model claims (Williamsburg + Williamstown).
+    Router for Williamsburg → store-lookup MISS (no Williamsburg)
+                            → unverifiable_pending_implementation
+                            → corrector HEDGES.
+    Router for Williamstown → store-lookup HIT → verified.
+
+  Better outcome: the confabulated Williamsburg claim is hedged, not
+  rubber-stamped. But the model is still saying both. A complete fix
+  would catch the contradiction (different birthplace for same user)
+  via unique-value slot semantics — see the architectural item in
+  NEXT_STEPS.
+
 ## 2026-04-27 — Phase-2 dogfood complete (12/17 turns landed signal)
 
 After Modal recovered from its multi-hour 503 outage, the resumed
