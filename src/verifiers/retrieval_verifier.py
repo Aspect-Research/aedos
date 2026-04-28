@@ -224,6 +224,34 @@ def search_serpapi(query: str, api_key: str, *, top_n: int = _TOP_N) -> list[Sni
 
 
 def default_search(query: str) -> list[Snippet]:
+    """Provider chain, in priority order:
+
+      1. Wikipedia — pure-Python lookup against the MediaWiki API.
+         Free, no key, no meaningful rate limit, and the highest-
+         quality factual source for the bulk of AEDOS's queries
+         (biographical / historical / definitional). Returns when
+         it has results; falls through silently when it doesn't or
+         when the request errors.
+      2. Tavily — paid search API; used when TAVILY_API_KEY is set.
+      3. SerpAPI — paid search API; used when SERPAPI_KEY is set.
+      4. DuckDuckGo HTML scrape — free fallback; brittle (DDG
+         frequently returns 0 results from bot fingerprinting).
+
+    The Wikipedia-first ordering eliminates most retrieval failures
+    on the corpus we actually care about while staying cost-free.
+    Pure DDG (the prior default) was getting 0 results on most queries
+    because the HTML endpoint blocks repeat scrapers.
+    """
+    # Wikipedia first — only providers below it pay $ or hit rate
+    # walls.
+    try:
+        from src.verifiers.scrapers import search_wikipedia
+        wiki = search_wikipedia(query)
+        if wiki:
+            return wiki
+    except Exception:
+        pass  # fall through to legacy providers
+
     if (key := os.getenv("TAVILY_API_KEY")):
         return search_tavily(query, key)
     if (key := os.getenv("SERPAPI_KEY")):
