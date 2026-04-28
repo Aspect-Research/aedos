@@ -1474,7 +1474,7 @@ async function refreshCache() {
 
   const table = el("table");
   table.appendChild(el("tr", {}, [
-    "id", "verdict", "stability", "hits", "expires", "key",
+    "id", "verdict", "pattern", "predicate", "stability", "hits", "expires", "key",
   ].map((h) => el("th", { textContent: h }))));
   entries.forEach((e) => {
     const row = el("tr", {});
@@ -1484,6 +1484,10 @@ async function refreshCache() {
 
     row.appendChild(el("td", { textContent: String(e.id) }));
     row.appendChild(el("td", { textContent: e.verdict || "?" }));
+    row.appendChild(el("td", { className: "mono",
+      textContent: e.pattern || "" }));
+    row.appendChild(el("td", { className: "mono",
+      textContent: e.predicate || "" }));
     row.appendChild(el("td", { textContent: e.stability_class || "?" }));
     row.appendChild(el("td", { textContent: String(e.hit_count ?? 0) }));
     const expires = e.expires_at
