@@ -161,8 +161,52 @@ _STABILITY_TOOL = {
 }
 
 
+def _historical_period_shortcut(claim: dict) -> StabilityDecision | None:
+    """Deterministic fast path: when a claim's ``valid_until`` slot is
+    a year strictly in the past, the period it describes is closed
+    and the fact about that period is permanent — Trump served as
+    45th President 2017–2021 will be true forever now that 2021 has
+    passed. Force ``immutable`` without an LLM call.
+
+    Saves a call (and a chance for the classifier to misjudge as
+    years_stable on a closed-period role assignment), and guarantees
+    the cache stores these as never-expiring.
+
+    Returns None when the shortcut doesn't apply — caller falls
+    through to the LLM classifier.
+    """
+    from datetime import datetime
+    slots = claim.get("slots") or {}
+    raw = slots.get("valid_until")
+    if raw is None or raw == "":
+        return None
+    # Accept int years and 4-digit strings; ignore anything else.
+    try:
+        year = int(str(raw)[:4])
+    except (TypeError, ValueError):
+        return None
+    if year >= datetime.utcnow().year:
+        return None  # period not yet closed; LLM decides
+    return StabilityDecision(
+        stability_class="immutable",
+        reason=(
+            f"closed historical period (valid_until={year}, in the past); "
+            "the fact about that period cannot change."
+        ),
+        confidence=0.99,
+        ttl_seconds=None,
+        raw={"shortcut": "historical_period"},
+    )
+
+
 def classify_stability(claim: dict, llm: LLMClient) -> StabilityDecision:
-    """One LLM call. Always returns a decision (raises on malformed)."""
+    """One LLM call (skipped when a deterministic shortcut applies).
+    Always returns a decision (raises on malformed LLM output)."""
+    # Fast path: closed historical periods → immutable, no LLM call.
+    shortcut = _historical_period_shortcut(claim)
+    if shortcut is not None:
+        return shortcut
+
     user_message = json.dumps(
         {
             "pattern": claim.get("pattern"),
