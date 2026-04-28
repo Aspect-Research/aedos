@@ -14,13 +14,14 @@ Updated by: autonomous instance — Session 2 (continuing)
 
 ## 🎯 COMPREHENSIVE REAL-API VALIDATION 2026-04-28
 
-All five LLM-bound components validated against Anthropic Opus 4.7
+Six LLM-bound components validated against Anthropic Opus 4.7
 (total cost ~$1):
 
   - test_router_calibration_against_worked_examples PASSED ≥ 14/16
   - test_scoping_calibration_against_worked_examples PASSED ≥ 3/4
   - test_stability_calibration_against_worked_examples PASSED ≥ 3/4
   - test_real_api_extractor_does_not_substitute_values PASSED
+  - test_real_api_interrogative_meta_returns_no_facts PASSED
   - Saturn moons corpus turn — AEDOS caught Claude's hallucination,
     corrector replaced 146 → 274
 
