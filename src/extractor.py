@@ -22,11 +22,27 @@ counterfactuals, complex causal claims).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from src.llm_client import LLMClient
 from src.pattern_registry import PatternRegistry
+
+
+# Punctuation strip for the source_text-in-input substring check.
+# We compare lowercase, whitespace-collapsed, punctuation-stripped
+# forms — only genuine rewrites should trip the warning, not trailing
+# periods or quote escaping differences. Keep word chars + whitespace
+# only.
+_PUNCT_STRIP_RE = re.compile(r"[^\w\s]")
+
+
+def _normalize_for_substring(s: str) -> str:
+    if not s:
+        return ""
+    s = _PUNCT_STRIP_RE.sub(" ", s.lower())
+    return " ".join(s.split())
 
 
 @dataclass
@@ -327,73 +343,43 @@ class ClaimExtractor:
     def _flag_substitutions(result: ExtractionResult, input_text: str) -> None:
         """Append warnings for likely extractor-substitution failures.
 
-        Two checks:
+        Single check: ``source_text_not_in_input``. The extractor's
+        source_text should be a verbatim slice of the input the model
+        produced — if it isn't, the extractor probably rewrote it
+        (the bug class behind the Saturn-moons false-positive
+        catches earlier in development).
 
-          1. ``source_text_not_in_input`` — strong signal that the
-             extractor rewrote the source_text (case-folded, whitespace-
-             collapsed substring check).
+        Comparison is FUZZY by design — case-folded, whitespace-
+        collapsed, and punctuation-stripped. Without the punctuation
+        strip, near-misses like ``'reality TV show "The Apprentice"'``
+        vs the input's ``'reality TV show "The Apprentice."'`` (one
+        trailing period) tripped the warning constantly. We only
+        want to catch genuine rewrites, not trivia.
 
-          2. ``value_not_in_source_text`` — the slot 'value' (when it's
-             a number or non-trivial string) doesn't appear literally
-             in the source_text. This catches the harder case where
-             the extractor kept the input source_text but substituted
-             a different value into the slot — e.g. source='Saturn has
-             274 moons' but slots.value=146.
-
-        Both warnings are advisory; the fact still goes through.
+        The earlier ``value_not_in_source_text`` check was removed:
+        it kept misfiring on natural human number forms ("five" vs
+        slot value 5) and the extractor's verbatim system-prompt
+        rule plus the downstream verification path already catch the
+        underlying bug class without this redundant tripwire.
         """
-        normalized_input = " ".join(input_text.split()).lower()
+        normalized_input = _normalize_for_substring(input_text)
         if not normalized_input:
             return
         for i, fact in enumerate(result.valid_facts):
             src = fact.get("source_text") or ""
-            if not src:
-                continue
-            normalized_src = " ".join(src.split()).lower()
+            normalized_src = _normalize_for_substring(src)
             if not normalized_src:
                 continue
-
-            # Check 1: source_text-in-input
             if normalized_src not in normalized_input:
                 result.warnings.append({
                     "fact_index": i,
                     "kind": "source_text_not_in_input",
                     "detail": (
                         f"source_text {src!r} is not a substring of the "
-                        f"input. Likely extractor rewrite — verify the "
-                        f"slot values weren't substituted with the "
-                        f"extractor's own world knowledge."
-                    ),
-                })
-                # If source_text was already rewritten, the value check
-                # below would just be noise. Skip it.
-                continue
-
-            # Check 2: value-in-source_text (only for verifier-relevant
-            # slots — the 'value' slot in quantitative claims is the
-            # most common substitution target).
-            value = (fact.get("slots") or {}).get("value")
-            if value is None:
-                continue
-            value_str = str(value).strip()
-            if len(value_str) < 1 or value_str in {"True", "False", "true", "false"}:
-                # Bool / very short — not useful to substring-check.
-                continue
-            # Numeric values in source_text might appear with commas
-            # (e.g. "5,280"); compare both forms.
-            normalized_src_no_punct = normalized_src.replace(",", "")
-            value_normalized = value_str.lower().replace(",", "")
-            if (value_str.lower() not in normalized_src
-                    and value_normalized not in normalized_src_no_punct):
-                result.warnings.append({
-                    "fact_index": i,
-                    "kind": "value_not_in_source_text",
-                    "detail": (
-                        f"slot value {value!r} doesn't appear in "
-                        f"source_text {src!r}. Likely extractor "
-                        f"substituted the value with its own world "
-                        f"knowledge while keeping the source_text from "
-                        f"the input."
+                        f"input (after fuzzy normalization). Likely "
+                        f"extractor rewrite — verify the slot values "
+                        f"weren't substituted with the extractor's "
+                        f"own world knowledge."
                     ),
                 })
 
