@@ -270,6 +270,16 @@ class Pipeline:
 
     # ---- internal helpers -----------------------------------------------
 
+    # Conversational chat responses are short by nature; 1024 tokens is
+    # ample. The earlier 4096 default mattered against reasoning models
+    # like GLM-5.1: a high cap let the model spend tokens on a long
+    # ``reasoning_content`` chain before the user-visible content,
+    # blowing past Modal's 300s timeout on cold starts. Two of two
+    # cold-starts in the Phase-2 dogfood timed out for this reason.
+    # Lowering the cap to 1024 caps the reasoning chain too, which is
+    # the right knob for AEDOS's chat use case.
+    CHAT_MAX_TOKENS = 1024
+
     def _invoke_chat_backend(
         self, system_prompt: str, history: list[ChatMessage], turn_id: int
     ) -> str:
@@ -280,7 +290,8 @@ class Pipeline:
         if hasattr(self.chat_backend, "provider"):
             return self.chat_backend.chat(
                 system_prompt, history,
-                max_tokens=4096, store=self.store, turn_id=turn_id,
+                max_tokens=self.CHAT_MAX_TOKENS,
+                store=self.store, turn_id=turn_id,
             )
         return self.chat_backend.chat(system_prompt, history)
 
