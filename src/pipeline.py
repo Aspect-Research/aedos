@@ -33,6 +33,12 @@ from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 al
 from src.router import Decision, Router, RoutingOutcome
 
 
+# A "chat backend" is anything with a chat(system, messages, *,
+# max_tokens, store, turn_id) -> str method. LLMClient itself satisfies
+# the older positional signature, so passing chat_backend=None falls back
+# to ``llm`` and preserves the test MockLLM contract.
+
+
 CHAT_SYSTEM_TEMPLATE = """You are a helpful assistant in a single-conversation demo.
 
 Facts the user has stated about themselves (ground truth — never contradict these):
@@ -78,6 +84,7 @@ class Pipeline:
         extractor: ClaimExtractor,
         router: Router,
         corrector: Corrector,
+        chat_backend: Any | None = None,
     ):
         self.store = store
         self.registry = registry
@@ -85,6 +92,11 @@ class Pipeline:
         self.extractor = extractor
         self.router = router
         self.corrector = corrector
+        # When no explicit backend is provided, use ``llm`` directly. This
+        # preserves the long-standing test contract where MockLLM provides
+        # ``chat(system, messages, max_tokens=...)`` and is passed in as
+        # the llm.
+        self.chat_backend = chat_backend if chat_backend is not None else llm
 
     def run_turn(self, user_message: str) -> TurnTrace:
         # Stage 1 — log the user turn.
@@ -108,11 +120,17 @@ class Pipeline:
         )
 
         # Stage 4 — generate the assistant draft with ground-truth context.
+        # The chat backend is the configurable seam: AEDOS_CHAT_MODEL_PROVIDER
+        # selects Anthropic (Claude) or Modal (GLM-5.1-FP8). The assistant
+        # turn must exist before the call so a chat_model_call event has a
+        # turn_id to attach to even if the backend raises.
         system_prompt = self._build_chat_system_prompt(self.store.all_user_facts())
         history = self._build_chat_history()
-        draft = self.llm.chat(system_prompt, history)
-
-        assistant_turn_id = self.store.insert_turn("assistant", draft)
+        assistant_turn_id = self.store.insert_turn("assistant", "")
+        draft = self._invoke_chat_backend(system_prompt, history, assistant_turn_id)
+        self.store.update_turn_content(
+            assistant_turn_id, draft, original_content=None
+        )
         self.store.insert_pipeline_event(
             assistant_turn_id, "assistant_draft", {"content": draft}
         )
@@ -244,6 +262,20 @@ class Pipeline:
 
     # ---- internal helpers -----------------------------------------------
 
+    def _invoke_chat_backend(
+        self, system_prompt: str, history: list[ChatMessage], turn_id: int
+    ) -> str:
+        """Call ``self.chat_backend.chat`` with provenance kwargs when the
+        backend exposes a ``provider`` attribute (the new backends do;
+        LLMClient and MockLLM don't). This routes the chat_model_call
+        event without forcing the test doubles to grow new arguments."""
+        if hasattr(self.chat_backend, "provider"):
+            return self.chat_backend.chat(
+                system_prompt, history,
+                max_tokens=4096, store=self.store, turn_id=turn_id,
+            )
+        return self.chat_backend.chat(system_prompt, history)
+
     def _build_chat_system_prompt(self, user_facts: list[Fact]) -> str:
         if not user_facts:
             facts_block = "(the user has not yet stated any facts about themselves)"
@@ -272,8 +304,15 @@ def build_pipeline(
     *,
     llm: LLMClient | None = None,
     registry: PredicateRegistry | None = None,
+    chat_backend: Any | None = None,
 ) -> Pipeline:
-    """Convenience constructor used by app.py and integration tests."""
+    """Convenience constructor used by app.py and integration tests.
+
+    Selects the chat backend (the model under test for hallucination
+    catching) by AEDOS_CHAT_MODEL_PROVIDER. Everything else stays on the
+    Anthropic ``LLMClient``.
+    """
+    from src.llm_clients import build_chat_backend
     from src.pattern_registry import load_default_registry
     from src.verifiers.code_generation import CodeGenerationVerifier
     from src.verifiers.retrieval_verifier import RetrievalVerifier
@@ -291,4 +330,8 @@ def build_pipeline(
         code_gen_verifier=code_gen_verifier,
     )
     corrector = Corrector(llm)
-    return Pipeline(store, registry, llm, extractor, router, corrector)
+    chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
+    return Pipeline(
+        store, registry, llm, extractor, router, corrector,
+        chat_backend=chat_backend,
+    )
