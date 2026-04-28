@@ -74,6 +74,8 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+DEFAULT_USER_ID = "default_user"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,20 +90,25 @@ CREATE TABLE IF NOT EXISTS facts (
     valid_until TEXT,
     source_turn_id INTEGER,
     source_text TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT 'default_user'  -- v0.5.x: cross-session scoping
 );
 
 CREATE INDEX IF NOT EXISTS idx_facts_pattern ON facts(pattern);
 CREATE INDEX IF NOT EXISTS idx_facts_predicate ON facts(predicate);
 CREATE INDEX IF NOT EXISTS idx_facts_valid_until ON facts(valid_until);
+-- idx_facts_user_id is created in _migrate_user_id (after the column
+-- exists on legacy DBs that didn't ship with it).
 
 CREATE TABLE IF NOT EXISTS turns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     original_content TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT 'default_user'  -- v0.5.x: cross-session scoping
 );
+-- idx_turns_user_id is created in _migrate_user_id.
 
 CREATE TABLE IF NOT EXISTS pipeline_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,6 +179,7 @@ class Fact:
     source_text: str | None = None
     created_at: str = field(default_factory=_now_iso)
     id: int | None = None
+    user_id: str = DEFAULT_USER_ID  # v0.5.x: cross-session scoping
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -193,7 +201,31 @@ class FactStore:
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        self._migrate_user_id()
         self._conn.commit()
+
+    def _migrate_user_id(self) -> None:
+        """v0.5.x: add user_id column to pre-existing facts/turns tables.
+
+        SQLite's CREATE TABLE IF NOT EXISTS doesn't backfill columns when
+        the table already exists with the older shape, so older databases
+        (v0.3 / v0.4 / pre-v0.5.x) need an explicit ALTER. The DEFAULT
+        clause on the column means existing rows get 'default_user'
+        automatically — solo dogfooding still works without further
+        migration. Indexes are created here regardless (idempotent on
+        new DBs that already have the column)."""
+        for table in ("facts", "turns"):
+            cols = {r["name"] for r in self._conn.execute(
+                f"PRAGMA table_info({table})"
+            ).fetchall()}
+            if "user_id" not in cols:
+                self._conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN user_id TEXT "
+                    f"NOT NULL DEFAULT '{DEFAULT_USER_ID}'"
+                )
+            self._conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)"
+            )
 
     # ---- facts ------------------------------------------------------------
 
@@ -205,8 +237,8 @@ class FactStore:
             INSERT INTO facts (
                 pattern, predicate, slots, polarity, confidence,
                 asserted_by, verification_status, valid_from, valid_until,
-                source_turn_id, source_text, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_turn_id, source_text, created_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 fact.pattern,
@@ -221,6 +253,7 @@ class FactStore:
                 fact.source_turn_id,
                 fact.source_text,
                 fact.created_at,
+                fact.user_id,
             ),
         )
         self._conn.commit()
@@ -236,14 +269,18 @@ class FactStore:
         predicate: str | None = None,
         slot_match: dict[str, Any] | None = None,
         polarity: int | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> list[Fact]:
         """Currently-valid facts matching pattern + optional predicate + slot subset.
 
         ``slot_match`` is ANDed against ``slots`` JSON via case-insensitive
         equality. The match values are stringified before comparison.
+
+        ``user_id`` scopes the lookup. Defaults to ``DEFAULT_USER_ID``
+        for solo dogfooding; multi-user deployments thread their own.
         """
-        clauses = ["pattern = ?", "valid_until IS NULL"]
-        params: list[Any] = [pattern]
+        clauses = ["pattern = ?", "valid_until IS NULL", "user_id = ?"]
+        params: list[Any] = [pattern, user_id]
         if predicate is not None:
             clauses.append("predicate = ?")
             params.append(predicate)
@@ -265,10 +302,12 @@ class FactStore:
         predicate: str,
         slot_match: dict[str, Any],
         polarity: int,
+        user_id: str = DEFAULT_USER_ID,
     ) -> list[Fact]:
         opposite = 0 if polarity == 1 else 1
         return self.find_currently_valid(
-            pattern, predicate=predicate, slot_match=slot_match, polarity=opposite
+            pattern, predicate=predicate, slot_match=slot_match,
+            polarity=opposite, user_id=user_id,
         )
 
     def boost_confidence(self, fact_id: int, amount: float = _CONFIDENCE_BOOST) -> float:
@@ -308,9 +347,15 @@ class FactStore:
         asserted_by: str | None = None,
         verification_status: str | None = None,
         only_valid: bool = False,
+        user_id: str | None = DEFAULT_USER_ID,
     ) -> list[Fact]:
+        """Query facts, scoped to ``user_id`` by default. Pass ``user_id=None``
+        to disable the filter (admin / inspector views only)."""
         clauses: list[str] = []
         params: list[Any] = []
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(user_id)
         if pattern is not None:
             clauses.append("pattern = ?")
             params.append(pattern)
@@ -333,26 +378,35 @@ class FactStore:
         rows = self._conn.execute(q, params).fetchall()
         return [_row_to_fact(r) for r in rows]
 
-    def all_user_facts(self) -> list[Fact]:
+    def all_user_facts(self, user_id: str = DEFAULT_USER_ID) -> list[Fact]:
         rows = self._conn.execute(
             """
             SELECT * FROM facts
             WHERE asserted_by = 'user'
               AND valid_until IS NULL
               AND verification_status = 'user_asserted'
+              AND user_id = ?
             ORDER BY id
-            """
+            """,
+            (user_id,),
         ).fetchall()
         return [_row_to_fact(r) for r in rows]
 
     # ---- turns ------------------------------------------------------------
 
-    def insert_turn(self, role: str, content: str, original_content: str | None = None) -> int:
+    def insert_turn(
+        self,
+        role: str,
+        content: str,
+        original_content: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
+    ) -> int:
         if role not in ("user", "assistant"):
             raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
         cur = self._conn.execute(
-            "INSERT INTO turns (role, content, original_content, created_at) VALUES (?, ?, ?, ?)",
-            (role, content, original_content, _now_iso()),
+            "INSERT INTO turns (role, content, original_content, created_at, user_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (role, content, original_content, _now_iso(), user_id),
         )
         self._conn.commit()
         return int(cur.lastrowid)
@@ -370,8 +424,16 @@ class FactStore:
         row = self._conn.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
         return dict(row) if row else None
 
-    def list_turns(self) -> list[dict[str, Any]]:
-        rows = self._conn.execute("SELECT * FROM turns ORDER BY id").fetchall()
+    def list_turns(self, user_id: str | None = DEFAULT_USER_ID) -> list[dict[str, Any]]:
+        """List turns, scoped to ``user_id`` by default. Pass ``user_id=None``
+        for the inspector view (all users)."""
+        if user_id is None:
+            rows = self._conn.execute("SELECT * FROM turns ORDER BY id").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM turns WHERE user_id = ? ORDER BY id",
+                (user_id,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     # ---- pipeline events --------------------------------------------------
@@ -490,4 +552,5 @@ def _row_to_fact(row: sqlite3.Row) -> Fact:
         source_turn_id=row["source_turn_id"],
         source_text=row["source_text"],
         created_at=row["created_at"],
+        user_id=row["user_id"],
     )
