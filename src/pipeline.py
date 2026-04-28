@@ -703,44 +703,26 @@ def build_pipeline(
         except Exception:
             modal_backend = None  # missing key / construct failure → no GLM
 
-    # v0.6 Phase 6 — scoping + stability classifiers + cache writes.
-    # Off by default to avoid burning the extra LLM calls on every turn
-    # while the pipeline is settling.
+    # v0.6 Tier 2 verification cache — always on. Scoping classifier
+    # decides per-claim eligibility (only world_fact is cached); the
+    # stability classifier picks the TTL; cache writes fill the cache
+    # after every successful retrieval verdict; cache reads
+    # short-circuit retrieval on hit.
     #
-    # The simple knob is AEDOS_CACHE_TIER2=1 — turns on all three
-    # layers (scoping, stability, writes) at once. Granular flags
-    # (AEDOS_CACHE_SCOPING / AEDOS_CACHE_STABILITY / AEDOS_CACHE_WRITES)
-    # remain available for power users who want partial / observation-
-    # only mode. When AEDOS_CACHE_TIER2=1 is set, granular flags act
-    # as overrides: e.g. AEDOS_CACHE_TIER2=1 + AEDOS_CACHE_WRITES=0
-    # enables observation (scoping + stability) without writes.
-    #
-    # Stability without scoping is meaningless (the scope determines
-    # cache eligibility), so stability requires scoping.
-    # Cache writes require both scoping and stability (the latter
-    # supplies the TTL).
-    tier2_default = os.getenv("AEDOS_CACHE_TIER2") == "1"
-
-    def _cache_layer_on(layer_env: str) -> bool:
-        v = os.getenv(layer_env)
-        if v is None:
-            return tier2_default  # unset → fall through to TIER2 default
-        return v == "1"           # explicit override (honours "0" too)
-
-    scoping_classifier = None
-    stability_classifier = None
-    verification_cache = None
-    if _cache_layer_on("AEDOS_CACHE_SCOPING"):
-        from src.cache import classify_scope
-        scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
-        if _cache_layer_on("AEDOS_CACHE_STABILITY"):
-            from src.cache import classify_stability
-            stability_classifier = (
-                lambda claim, _llm=llm: classify_stability(claim, _llm)
-            )
-            if _cache_layer_on("AEDOS_CACHE_WRITES"):
-                from src.cache import VerificationCache
-                verification_cache = VerificationCache(store)
+    # The cache should always be built up over time so the pipeline
+    # gets faster the more it runs. The earlier AEDOS_CACHE_*
+    # opt-in env vars are gone — callers that want a no-cache pipeline
+    # for testing can construct Pipeline directly with
+    # scoping_classifier=None / stability_classifier=None /
+    # verification_cache=None.
+    from src.cache import (
+        VerificationCache, classify_scope, classify_stability,
+    )
+    scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
+    stability_classifier = (
+        lambda claim, _llm=llm: classify_stability(claim, _llm)
+    )
+    verification_cache = VerificationCache(store)
 
     p = Pipeline(
         store, registry, llm, extractor, router, corrector,

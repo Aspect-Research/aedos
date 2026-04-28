@@ -379,54 +379,17 @@ def test_cache_write_failure_does_not_break_pipeline(tmp_path):
     assert "disk full" in write_events[0]["data"]["error"]
 
 
-def test_build_pipeline_cache_writes_off_by_default(tmp_path, monkeypatch):
+def test_build_pipeline_cache_is_always_on(tmp_path, monkeypatch):
+    """The Tier 2 cache always builds — no env opt-in. The previous
+    AEDOS_CACHE_* flags were removed because the cache should always
+    accumulate verdicts across turns; opting out would mean the
+    pipeline never gets faster from real usage."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_WRITES", raising=False)
-
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._verification_cache is None
-    p.store.close()
-
-
-def test_build_pipeline_cache_writes_on_when_all_three_env_vars_set(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("AEDOS_CACHE_SCOPING", "1")
-    monkeypatch.setenv("AEDOS_CACHE_STABILITY", "1")
-    monkeypatch.setenv("AEDOS_CACHE_WRITES", "1")
-
-    from src.cache import VerificationCache
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert isinstance(p._verification_cache, VerificationCache)
-    p.store.close()
-
-
-def test_build_pipeline_cache_writes_off_without_classifiers(tmp_path, monkeypatch):
-    """Cache writes need scope + stability to know what to write.
-    Setting only AEDOS_CACHE_WRITES=1 must NOT enable cache writes."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-    monkeypatch.setenv("AEDOS_CACHE_WRITES", "1")
-    monkeypatch.delenv("AEDOS_CACHE_TIER2", raising=False)
-
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._verification_cache is None
-    p.store.close()
-
-
-def test_aedos_cache_tier2_shortcut_enables_all_three_layers(tmp_path, monkeypatch):
-    """The single AEDOS_CACHE_TIER2=1 knob enables scoping, stability,
-    and writes — equivalent to setting all 3 granular flags."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("AEDOS_CACHE_TIER2", "1")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_WRITES", raising=False)
+    # Even with the old opt-in env vars unset (or set to 0), the
+    # cache must be wired.
+    for var in ("AEDOS_CACHE_TIER2", "AEDOS_CACHE_SCOPING",
+                "AEDOS_CACHE_STABILITY", "AEDOS_CACHE_WRITES"):
+        monkeypatch.delenv(var, raising=False)
 
     from src.cache import VerificationCache
     from src.pipeline import build_pipeline
@@ -437,55 +400,18 @@ def test_aedos_cache_tier2_shortcut_enables_all_three_layers(tmp_path, monkeypat
     p.store.close()
 
 
-def test_aedos_cache_tier2_does_not_apply_when_zero(tmp_path, monkeypatch):
-    """AEDOS_CACHE_TIER2=0 (or any non-1 value) leaves the cache off
-    — symmetric with the granular-flag semantics."""
+def test_build_pipeline_cache_ignores_legacy_off_flags(tmp_path, monkeypatch):
+    """Even if a stale .env still sets AEDOS_CACHE_TIER2=0 or any of
+    the granular flags to 0, the cache builds. Removing the opt-in
+    means there's no way to disable it from the env — by design."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("AEDOS_CACHE_TIER2", "0")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_WRITES", raising=False)
-
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._scoping_classifier is None
-    assert p._verification_cache is None
-    p.store.close()
-
-
-def test_granular_flag_overrides_tier2_default(tmp_path, monkeypatch):
-    """AEDOS_CACHE_TIER2=1 + AEDOS_CACHE_WRITES=0 → observation mode:
-    scoping + stability run, but no actual cache reads/writes. This
-    is the documented power-user pattern."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("AEDOS_CACHE_TIER2", "1")
-    monkeypatch.setenv("AEDOS_CACHE_WRITES", "0")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._scoping_classifier is not None
-    assert p._stability_classifier is not None
-    assert p._verification_cache is None
-    p.store.close()
-
-
-def test_granular_scoping_off_disables_all_downstream_under_tier2(
-    tmp_path, monkeypatch,
-):
-    """AEDOS_CACHE_TIER2=1 + AEDOS_CACHE_SCOPING=0 disables scoping —
-    and since stability/writes require scoping, the whole stack stays
-    off. The override goes top-to-bottom."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("AEDOS_CACHE_TIER2", "1")
     monkeypatch.setenv("AEDOS_CACHE_SCOPING", "0")
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_WRITES", raising=False)
+    monkeypatch.setenv("AEDOS_CACHE_STABILITY", "0")
+    monkeypatch.setenv("AEDOS_CACHE_WRITES", "0")
 
+    from src.cache import VerificationCache
     from src.pipeline import build_pipeline
     p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._scoping_classifier is None
-    assert p._stability_classifier is None
-    assert p._verification_cache is None
+    assert isinstance(p._verification_cache, VerificationCache)
     p.store.close()

@@ -22,9 +22,12 @@ The pipeline:
      writes the verdict + TTL to the cache. (See
      ``Pipeline._maybe_write_cache``.)
 
-OFF by default. Enable with ``AEDOS_CACHE_TIER2=1`` (single shortcut),
-or use the granular ``AEDOS_CACHE_SCOPING`` / ``AEDOS_CACHE_STABILITY``
-/ ``AEDOS_CACHE_WRITES`` env vars for partial / observation-only mode.
+Always on. ``build_pipeline`` wires all three components on every
+construction so the cache accumulates verdicts across sessions; that
+accumulation is the whole point. Tests that want a no-cache pipeline
+(for hermetic stages) construct ``Pipeline`` directly with
+``scoping_classifier=None`` / ``stability_classifier=None`` /
+``verification_cache=None``.
 
 Inspect with the Cache tab in the trace UI, ``/api/cache``, or
 ``scripts/analyze_cache.py``.

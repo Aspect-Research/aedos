@@ -247,44 +247,21 @@ def test_stability_skipped_when_scoping_failed(tmp_path):
     assert stability_calls == []  # never called
 
 
-# ---- env var gate ------------------------------------------------------
+# ---- always-on construction --------------------------------------------
 
 
-def test_build_pipeline_stability_off_by_default(tmp_path, monkeypatch):
+def test_build_pipeline_always_wires_stability_and_scoping(tmp_path, monkeypatch):
+    """Both classifiers always build now — no env-var gate. The cache
+    accumulates across turns by design."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.delenv("AEDOS_CACHE_STABILITY", raising=False)
-
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._scoping_classifier is None
-    assert p._stability_classifier is None
-    p.store.close()
-
-
-def test_build_pipeline_stability_on_with_both_env_vars(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("AEDOS_CACHE_SCOPING", "1")
-    monkeypatch.setenv("AEDOS_CACHE_STABILITY", "1")
+    for var in ("AEDOS_CACHE_TIER2", "AEDOS_CACHE_SCOPING",
+                "AEDOS_CACHE_STABILITY"):
+        monkeypatch.delenv(var, raising=False)
 
     from src.pipeline import build_pipeline
     p = build_pipeline(str(tmp_path / "x.db"))
     assert callable(p._scoping_classifier)
     assert callable(p._stability_classifier)
-    p.store.close()
-
-
-def test_build_pipeline_stability_off_without_scoping(tmp_path, monkeypatch):
-    """Stability without scoping is meaningless — gating depends on
-    scope. The env var combo SHOULD silently keep stability off."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("AEDOS_CACHE_SCOPING", raising=False)
-    monkeypatch.setenv("AEDOS_CACHE_STABILITY", "1")
-
-    from src.pipeline import build_pipeline
-    p = build_pipeline(str(tmp_path / "x.db"))
-    assert p._scoping_classifier is None
-    assert p._stability_classifier is None
     p.store.close()
 
 
