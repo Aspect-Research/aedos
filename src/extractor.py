@@ -215,6 +215,14 @@ Input: "The sunset was beautiful"
 Output: facts=[]
 Reasoning: aesthetic judgment, no pattern fits.
 
+Input: "I think I told you I was born in Williamsburg, Virginia. Is that right?"
+Output: facts=[]
+Reasoning: This is INTERROGATIVE-META — the user is asking whether they previously said something, not asserting a new fact about themselves. "I think I told you X" / "did I say X?" / "is it true I X?" / "you mentioned that I X — right?" are ALL questions, NOT assertions. The user is testing the model's recall, possibly adversarially. Extracting them as user assertions would (a) corrupt the user-fact store and (b) give the model a false confirmation to verify against. Always abstain on these forms.
+
+Input: "Remember when I said I prefer black coffee?"
+Output: facts=[]
+Reasoning: Same family — the user is REFERRING to a prior assertion, not making a new one. If they want to confirm or update, they'll say so directly ("yes, I still prefer black coffee").
+
 # Output
 
 Always call the `record_facts` tool exactly once. Never reply with prose."""
