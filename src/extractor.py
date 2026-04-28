@@ -325,11 +325,23 @@ class ClaimExtractor:
 
     @staticmethod
     def _flag_substitutions(result: ExtractionResult, input_text: str) -> None:
-        """Append a warning to ``result.warnings`` for each fact whose
-        ``source_text`` doesn't appear (case-folded, whitespace-collapsed)
-        in the input. This catches the extractor-substitution failure
-        mode where the LLM rewrites a number or phrase to match its
-        own world knowledge instead of the actual model output."""
+        """Append warnings for likely extractor-substitution failures.
+
+        Two checks:
+
+          1. ``source_text_not_in_input`` — strong signal that the
+             extractor rewrote the source_text (case-folded, whitespace-
+             collapsed substring check).
+
+          2. ``value_not_in_source_text`` — the slot 'value' (when it's
+             a number or non-trivial string) doesn't appear literally
+             in the source_text. This catches the harder case where
+             the extractor kept the input source_text but substituted
+             a different value into the slot — e.g. source='Saturn has
+             274 moons' but slots.value=146.
+
+        Both warnings are advisory; the fact still goes through.
+        """
         normalized_input = " ".join(input_text.split()).lower()
         if not normalized_input:
             return
@@ -340,6 +352,8 @@ class ClaimExtractor:
             normalized_src = " ".join(src.split()).lower()
             if not normalized_src:
                 continue
+
+            # Check 1: source_text-in-input
             if normalized_src not in normalized_input:
                 result.warnings.append({
                     "fact_index": i,
@@ -349,6 +363,37 @@ class ClaimExtractor:
                         f"input. Likely extractor rewrite — verify the "
                         f"slot values weren't substituted with the "
                         f"extractor's own world knowledge."
+                    ),
+                })
+                # If source_text was already rewritten, the value check
+                # below would just be noise. Skip it.
+                continue
+
+            # Check 2: value-in-source_text (only for verifier-relevant
+            # slots — the 'value' slot in quantitative claims is the
+            # most common substitution target).
+            value = (fact.get("slots") or {}).get("value")
+            if value is None:
+                continue
+            value_str = str(value).strip()
+            if len(value_str) < 1 or value_str in {"True", "False", "true", "false"}:
+                # Bool / very short — not useful to substring-check.
+                continue
+            # Numeric values in source_text might appear with commas
+            # (e.g. "5,280"); compare both forms.
+            normalized_src_no_punct = normalized_src.replace(",", "")
+            value_normalized = value_str.lower().replace(",", "")
+            if (value_str.lower() not in normalized_src
+                    and value_normalized not in normalized_src_no_punct):
+                result.warnings.append({
+                    "fact_index": i,
+                    "kind": "value_not_in_source_text",
+                    "detail": (
+                        f"slot value {value!r} doesn't appear in "
+                        f"source_text {src!r}. Likely extractor "
+                        f"substituted the value with its own world "
+                        f"knowledge while keeping the source_text from "
+                        f"the input."
                     ),
                 })
 

@@ -108,6 +108,91 @@ def test_empty_input_not_flagged():
     assert result.warnings == []
 
 
+def test_value_substituted_but_source_text_kept_flagged():
+    """Harder case: extractor used the right source_text but
+    substituted a different value into the slot. The value-not-in-
+    source-text check catches this."""
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"value": 146},
+        "source_text": "Saturn has 274 confirmed moons",
+    }])
+    ClaimExtractor._flag_substitutions(
+        result, "Saturn has 274 confirmed moons.",
+    )
+    # source_text IS in input → no source_text warning. But value
+    # 146 isn't in the source_text → value warning.
+    assert len(result.warnings) == 1
+    w = result.warnings[0]
+    assert w["kind"] == "value_not_in_source_text"
+    assert "146" in w["detail"]
+
+
+def test_value_with_commas_normalized():
+    """5280 in slots, '5,280' in source — should NOT flag (same number,
+    different formatting)."""
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "has_elevation",
+        "slots": {"value": 5280},
+        "source_text": "Denver is 5,280 feet above sea level",
+    }])
+    ClaimExtractor._flag_substitutions(
+        result, "Denver is 5,280 feet above sea level.",
+    )
+    assert result.warnings == []
+
+
+def test_value_with_commas_in_slot():
+    """22085 in slots, '22,085' in source — should NOT flag."""
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "has_population",
+        "slots": {"value": 22085},
+        "source_text": "Yellowknife population was 22,085 in 2021",
+    }])
+    ClaimExtractor._flag_substitutions(
+        result, "Yellowknife population was 22,085 in 2021.",
+    )
+    assert result.warnings == []
+
+
+def test_bool_value_not_checked():
+    """value=True / False shouldn't trigger the check; the source_text
+    might say 'is prime' which doesn't contain 'True'."""
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "is_prime",
+        "slots": {"value": True},
+        "source_text": "73 is prime",
+    }])
+    ClaimExtractor._flag_substitutions(result, "73 is prime.")
+    assert result.warnings == []
+
+
+def test_string_value_substituted_flagged():
+    """String value rewrite is also caught."""
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "day_of_week",
+        "slots": {"value": "Monday"},
+        "source_text": "January 20, 2025 was a Tuesday",
+    }])
+    ClaimExtractor._flag_substitutions(
+        result, "January 20, 2025 was a Tuesday.",
+    )
+    assert len(result.warnings) == 1
+    assert result.warnings[0]["kind"] == "value_not_in_source_text"
+
+
+def test_no_value_slot_no_check():
+    """Facts without a 'value' slot (e.g. preference.likes) skip the
+    value check."""
+    result = _make_result([{
+        "pattern": "preference", "predicate": "likes",
+        "slots": {"agent": "user", "object": "tea"},
+        "source_text": "I like tea",
+    }])
+    ClaimExtractor._flag_substitutions(result, "I like tea.")
+    assert result.warnings == []
+
+
 def test_multiple_facts_warned_independently():
     result = _make_result([
         {"pattern": "x", "predicate": "y", "slots": {},
