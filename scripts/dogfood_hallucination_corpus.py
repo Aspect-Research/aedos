@@ -383,6 +383,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--output-prefix", default=None,
     )
+    parser.add_argument(
+        "--db-path", default=None,
+        help="If set, write all traces into this single DB (and create "
+             "ONE pipeline for all sessions instead of one per session). "
+             "Useful for browsing traces afterward in the AEDOS UI: "
+             "`python -m src.app` with AEDOS_DB_PATH set to this file.",
+    )
     args = parser.parse_args(argv[1:])
 
     os.environ["AEDOS_CHAT_MODEL_PROVIDER"] = args.provider
@@ -479,11 +486,20 @@ def main(argv: list[str]) -> int:
 
         # New session → new pipeline (fresh DB / no cross-session state)
         # to keep unrelated prompts independent. Within-session continues.
+        # When --db-path is given, ONE pipeline serves all sessions
+        # (operator browses everything in the UI afterward).
         if current_session_id != session:
-            if current_pipeline is not None:
+            if current_pipeline is not None and args.db_path is None:
                 current_pipeline.store.close()
-            session_db = Path(tempfile.mkdtemp(prefix=f"aedos_hallu_s{session}_")) / "hallu.db"
-            current_pipeline = build_pipeline(str(session_db))
+            if args.db_path is not None:
+                if current_pipeline is None:
+                    current_pipeline = build_pipeline(args.db_path)
+                # else: reuse the existing pipeline.
+            else:
+                session_db = Path(
+                    tempfile.mkdtemp(prefix=f"aedos_hallu_s{session}_")
+                ) / "hallu.db"
+                current_pipeline = build_pipeline(str(session_db))
             current_session_id = session
 
         print(f"\n=== turn {i}/{len(flat)} [{entry['category']}] {slug} (session {session}) ===")
