@@ -354,6 +354,16 @@ def test_chat_stream_sse_emits_pipeline_events_then_done(tmp_path, monkeypatch):
     # assistant_turn_id and final_content.
     assert "\"assistant_turn_id\": 99" in body
     assert "\"final_content\": \"ok\"" in body
+    # Anti-buffering preamble: a >2KB padded SSE comment is sent
+    # before any real frames so browsers (Chrome especially) flush
+    # their initial buffer and the live Flow View starts updating
+    # immediately rather than waiting for ~2KB of real events to
+    # accumulate. Comments start with ":" — clients drop them but the
+    # bytes still trigger the flush.
+    assert body.startswith(": ")
+    # And a "started" event so the consumer's onEvent fires as soon
+    # as the connection is open.
+    assert "event: started\n" in body
 
 
 def test_chat_stream_emits_error_event_on_pipeline_failure(tmp_path, monkeypatch):

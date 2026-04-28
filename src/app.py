@@ -127,6 +127,20 @@ async def chat_stream(req: ChatRequest):
             await queue.put(("close", None))
 
     async def event_stream():
+        # Padded comment as the very first frame. Browsers (especially
+        # Chrome) buffer the initial bytes of a chunked HTTP response
+        # until they see ~2KB before they start delivering data to the
+        # fetch ReadableStream consumer. Without this preamble the live
+        # Flow View doesn't update until the first ~2KB of real
+        # pipeline events have accumulated — which can take 5+ seconds
+        # if the first stage is a slow LLM call. The ":" prefix marks
+        # an SSE comment; clients drop it but the bytes still flush
+        # the buffer.
+        yield ": " + (" " * 2048) + "\n\n"
+        # Initial "started" event so the consumer's onEvent fires
+        # immediately and the UI can move from "idle" to "running".
+        yield _sse_event("started", {"ts": None})
+
         runner = asyncio.create_task(_run_pipeline())
         try:
             while True:

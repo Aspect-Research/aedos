@@ -59,6 +59,11 @@ nav.tabs { display: flex; gap: 0.25rem; flex: 1; }
 main { height: calc(100vh - 46px); overflow: hidden; }
 .tab-panel { display: none; height: 100%; overflow: hidden; }
 .tab-panel.active { display: block; }
+/* The Trace tab needs flex so its child .trace can flex:1 / overflow-y
+   inside the constrained tab height. Without this, .trace grows to fit
+   its content and the page-level scrollbar takes over (i.e., it doesn't
+   scroll at all when the trace is the only thing in the viewport). */
+#tab-trace.active { display: flex; flex-direction: column; }
 
 /* Split view ------------------------------------------------- */
 .split {
@@ -835,14 +840,26 @@ tr.verified { background: #ecf7ef; }
   height: calc(100% - 56px);
   overflow: auto;
   padding: 1rem;
-  display: flex;
-  justify-content: center;
+  /* No flex / centering — the SVG should render at its declared width
+     and the container should scroll horizontally when there are too
+     many claims to fit. Centering inside a flex container shrinks the
+     SVG via min-content and makes 12-claim charts unreadable. */
+}
+.flow-pane #flow-live-container {
+  /* Override the height calc since the live container's parent is the
+     flow-pane (not a tab-panel). */
+  height: auto;
 }
 .flow-container svg {
   display: block;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 4px;
+  /* Honour the declared width attr — never shrink to fit. The
+     container scrolls horizontally if the chart is wider than the
+     viewport. */
+  flex-shrink: 0;
+  max-width: none;
 }
 .flow-container .flow-node-rect {
   fill: var(--panel);
