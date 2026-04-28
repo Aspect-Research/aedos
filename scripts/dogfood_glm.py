@@ -276,6 +276,38 @@ def main(argv: list[str]) -> int:
     print(f"chat backend: {type(pipeline.chat_backend).__name__} "
           f"(model={getattr(pipeline.chat_backend, 'model', '?')})")
 
+    # Warm-up ping: Modal containers idle out after ~5-10 min; the first
+    # request after idle is a cold start that loads GLM weights and
+    # reliably exceeds our 300s ModalGLMBackend timeout. Burning a tiny
+    # request here pays the cold-start cost before the real run starts,
+    # so the first real turn lands in the warm window.
+    if args.provider == "modal":
+        import httpx
+        print("warming up Modal endpoint (may take 90-300s on cold container)...")
+        try:
+            warmup_started = time.monotonic()
+            r = httpx.post(
+                "https://api.us-west-2.modal.direct/v1/chat/completions",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {os.getenv('MODAL_API_KEY')}",
+                },
+                json={"model": "zai-org/GLM-5.1-FP8",
+                      "messages": [{"role": "user", "content": "hi"}],
+                      "max_tokens": 16},
+                timeout=600.0,
+            )
+            print(f"  warm-up: status={r.status_code} "
+                  f"after {time.monotonic() - warmup_started:.1f}s")
+            if r.status_code != 200:
+                print("  WARNING: warm-up didn't return 200. First real turn "
+                      "may still cold-start.")
+        except httpx.TimeoutException:
+            print("  WARNING: warm-up itself timed out at 600s. Modal endpoint "
+                  "may be down. Continuing — turn 1 may also fail.")
+        except Exception as exc:
+            print(f"  WARNING: warm-up errored: {type(exc).__name__}: {exc}")
+
     summaries: list[dict[str, Any]] = []
     overall_ok = True
     last_was_error = False
