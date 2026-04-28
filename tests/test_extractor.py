@@ -507,3 +507,32 @@ def test_real_api_roundtrip_user_likes():
         f["pattern"] == "preference" and "peanut butter" in str(f["slots"]).lower()
         for f in result.valid_facts
     ), result.to_dict()
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_interrogative_meta_returns_no_facts():
+    """Validates the calibration shipped in commit 058f474. The
+    extractor MUST NOT extract a user assertion from these forms.
+    See OBSERVATIONS 2026-04-28 'THE BIG MISS' for context — turn 26
+    of the hallucination corpus exposed exactly this gap."""
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    # Each prompt is a question / meta-claim, NOT a first-person assertion.
+    cases = [
+        "I think I told you I was born in Williamsburg, Virginia. Is that right?",
+        "Did I tell you my favorite color is blue?",
+        "Is it true that I said I'm vegetarian?",
+        "Remember when I said I prefer black coffee?",
+    ]
+    for prompt in cases:
+        result = extractor.extract(prompt, role="user")
+        assert result.valid_facts == [], (
+            f"interrogative-meta extracted user facts (calibration "
+            f"regression):\n  prompt: {prompt!r}\n  facts: {result.valid_facts}"
+        )
