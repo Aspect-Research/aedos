@@ -635,26 +635,42 @@ def build_pipeline(
     corrector = Corrector(llm)
     chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
 
-    # v0.6 Phase 6 — scoping + stability classifiers in observation
-    # mode. Off by default to avoid burning the extra LLM calls on
-    # every turn while the pipeline is settling. AEDOS_CACHE_SCOPING=1
-    # turns on scoping; AEDOS_CACHE_STABILITY=1 turns on stability
-    # (only fires for claims scoping marked world_fact). Stability
-    # without scoping is meaningless, so we require both.
+    # v0.6 Phase 6 — scoping + stability classifiers + cache writes.
+    # Off by default to avoid burning the extra LLM calls on every turn
+    # while the pipeline is settling.
+    #
+    # The simple knob is AEDOS_CACHE_TIER2=1 — turns on all three
+    # layers (scoping, stability, writes) at once. Granular flags
+    # (AEDOS_CACHE_SCOPING / AEDOS_CACHE_STABILITY / AEDOS_CACHE_WRITES)
+    # remain available for power users who want partial / observation-
+    # only mode. When AEDOS_CACHE_TIER2=1 is set, granular flags act
+    # as overrides: e.g. AEDOS_CACHE_TIER2=1 + AEDOS_CACHE_WRITES=0
+    # enables observation (scoping + stability) without writes.
+    #
+    # Stability without scoping is meaningless (the scope determines
+    # cache eligibility), so stability requires scoping.
+    # Cache writes require both scoping and stability (the latter
+    # supplies the TTL).
+    tier2_default = os.getenv("AEDOS_CACHE_TIER2") == "1"
+
+    def _cache_layer_on(layer_env: str) -> bool:
+        v = os.getenv(layer_env)
+        if v is None:
+            return tier2_default  # unset → fall through to TIER2 default
+        return v == "1"           # explicit override (honours "0" too)
+
     scoping_classifier = None
     stability_classifier = None
     verification_cache = None
-    if os.getenv("AEDOS_CACHE_SCOPING") == "1":
+    if _cache_layer_on("AEDOS_CACHE_SCOPING"):
         from src.cache import classify_scope
         scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
-        if os.getenv("AEDOS_CACHE_STABILITY") == "1":
+        if _cache_layer_on("AEDOS_CACHE_STABILITY"):
             from src.cache import classify_stability
             stability_classifier = (
                 lambda claim, _llm=llm: classify_stability(claim, _llm)
             )
-            # Cache writes need both scoping and stability to know what
-            # to write (key) and when it expires (TTL).
-            if os.getenv("AEDOS_CACHE_WRITES") == "1":
+            if _cache_layer_on("AEDOS_CACHE_WRITES"):
                 from src.cache import VerificationCache
                 verification_cache = VerificationCache(store)
 

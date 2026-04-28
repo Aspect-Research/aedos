@@ -1360,21 +1360,57 @@ async function refreshCache() {
   const data = await api("GET", "/api/cache");
   const stats = data.stats || {};
   const statsEl = $("#cache-stats");
-  statsEl.textContent = (
+  statsEl.innerHTML = "";
+
+  // Static cache-table totals on the first line.
+  const totalsLine = el("div", { className: "cache-totals" });
+  totalsLine.textContent = (
     `${stats.total_entries || 0} entries · `
     + `${stats.immutable_entries || 0} immutable · `
-    + `${stats.total_hits || 0} total hits`
+    + `${stats.total_hits || 0} per-entry hits accumulated`
   );
+  statsEl.appendChild(totalsLine);
+
+  // Live hit-rate from pipeline_events. Only show if there have been
+  // lookups — a cache without lookups is pre-deployment.
+  const lookups = stats.lookups || 0;
+  if (lookups > 0) {
+    const rate = stats.hit_rate;
+    const ratePct = rate !== null && rate !== undefined
+      ? `${(rate * 100).toFixed(1)}%`
+      : "—";
+    const rateLine = el("div", { className: "cache-hit-rate" });
+    rateLine.appendChild(el("strong", { textContent: `Hit rate: ${ratePct}` }));
+    rateLine.appendChild(document.createTextNode(
+      ` · ${lookups} lookups (${stats.lookup_hits || 0} hits, `
+      + `${stats.lookup_misses || 0} misses`
+      + (stats.lookup_errors ? `, ${stats.lookup_errors} errors` : "")
+      + ")"
+    ));
+    statsEl.appendChild(rateLine);
+
+    // Per-stability hits, if any. Useful for spotting which class is
+    // most cache-effective.
+    const byStab = stats.hits_by_stability || {};
+    const stabKeys = Object.keys(byStab).sort();
+    if (stabKeys.length) {
+      const stabLine = el("div", { className: "cache-by-stability" });
+      stabLine.textContent = "  Hits by class: " + stabKeys
+        .map((k) => `${k}=${byStab[k]}`).join(" · ");
+      statsEl.appendChild(stabLine);
+    }
+  }
 
   const container = $("#cache-table");
   container.innerHTML = "";
   const entries = data.entries || [];
   if (!entries.length) {
     container.appendChild(el("p", { className: "hint",
-      textContent: "Cache is empty. Set AEDOS_CACHE_SCOPING=1 + "
-                   + "AEDOS_CACHE_STABILITY=1 + AEDOS_CACHE_WRITES=1 "
-                   + "and run some turns through retrieval-territory "
-                   + "questions to populate it." }));
+      textContent: "Cache is empty. Set AEDOS_CACHE_TIER2=1 (or the "
+                   + "granular AEDOS_CACHE_SCOPING / "
+                   + "AEDOS_CACHE_STABILITY / AEDOS_CACHE_WRITES "
+                   + "flags individually) and run some turns through "
+                   + "retrieval-territory questions to populate it." }));
     return;
   }
 

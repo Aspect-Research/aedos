@@ -34,9 +34,13 @@ design rationale.
        writes AFTER retrieval verdicts (verified / contradicted / 
        inconclusive). Canonical key is case/whitespace/slot-order
        independent, polarity-distinguishing.
-  Cache is OFF by default. Enable with `AEDOS_CACHE_SCOPING=1
-  AEDOS_CACHE_STABILITY=1 AEDOS_CACHE_WRITES=1`. New Cache tab in the
-  trace UI inspects state.
+  Cache is OFF by default. Enable with `AEDOS_CACHE_TIER2=1` (single
+  knob). The granular flags `AEDOS_CACHE_SCOPING` /
+  `AEDOS_CACHE_STABILITY` / `AEDOS_CACHE_WRITES` are still available
+  as overrides — e.g. `AEDOS_CACHE_TIER2=1 AEDOS_CACHE_WRITES=0`
+  enables observation mode (classifiers run, no writes). The Cache
+  tab in the trace UI shows live hit rate from pipeline_events plus
+  per-stability-class breakdown.
 - **Cost telemetry (`src/cost.py`).** Every Anthropic API call records
   tokens + USD cost. End-of-turn `turn_cost` event aggregates by model.
   Pricing table for opus/sonnet/haiku 4.x line + GLM free tier; unknown
