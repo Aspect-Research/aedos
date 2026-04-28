@@ -177,6 +177,21 @@ def test_chat_endpoint_rejects_empty_message(client_with_seed_data):
     assert r.status_code == 400
 
 
+def test_health_endpoint(client_with_seed_data):
+    """Health check confirms pipeline + DB + chat backend metadata."""
+    r = client_with_seed_data.get("/api/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["user_id"] == "default_user"  # or whatever default
+    assert "chat_provider" in body
+    assert "chat_model" in body
+    assert "db_path" in body
+    assert isinstance(body["turns_in_db"], int)
+    assert "cache_enabled" in body
+    assert "scoping_enabled" in body
+
+
 def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
     tmp_path, monkeypatch,
 ):

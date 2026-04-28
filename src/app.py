@@ -150,6 +150,35 @@ def list_patterns() -> list[dict[str, Any]]:
     ]
 
 
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    """Lightweight health check. Confirms the pipeline is constructed
+    and the DB is reachable. Useful for monitoring / readiness probes."""
+    p = _pipeline(app)
+    try:
+        # SQLite read — confirms the file is accessible + schema present.
+        n_turns = p.store._conn.execute(
+            "SELECT COUNT(*) AS n FROM turns"
+        ).fetchone()["n"]
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    return {
+        "ok": True,
+        "user_id": p.user_id,
+        "chat_provider": getattr(p.chat_backend, "provider", "anthropic"),
+        "chat_model": getattr(p.chat_backend, "model",
+                              getattr(p.llm, "model", "?")),
+        "db_path": p.store.db_path,
+        "turns_in_db": int(n_turns),
+        "cache_enabled": p._verification_cache is not None,
+        "scoping_enabled": p._scoping_classifier is not None,
+        "stability_enabled": p._stability_classifier is not None,
+    }
+
+
 @app.get("/api/cache")
 def list_cache_entries(limit: int = 200) -> dict[str, Any]:
     """v0.6 — Tier 2 verification cache inspector.
