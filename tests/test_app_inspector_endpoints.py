@@ -175,3 +175,27 @@ def test_chat_endpoint_rejects_empty_message(client_with_seed_data):
 
     r = client_with_seed_data.post("/api/chat", json={"message": "   "})
     assert r.status_code == 400
+
+
+def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
+    tmp_path, monkeypatch,
+):
+    """When the pipeline raises, /api/chat returns a 502 with a
+    structured body (error_type, error_message, hint) so the UI can
+    show a useful message instead of a generic 500."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "fail.db"))
+
+    from src.app import app
+
+    with TestClient(app) as c:
+        # Replace the pipeline's run_turn with one that raises.
+        c.app.state.pipeline.run_turn = lambda _msg: (_ for _ in ()).throw(
+            RuntimeError("backend down")
+        )
+        r = c.post("/api/chat", json={"message": "hi"})
+        assert r.status_code == 502
+        body = r.json()["detail"]
+        assert body["error_type"] == "RuntimeError"
+        assert "backend down" in body["error_message"]
+        assert "pipeline raised" in body["hint"].lower()
