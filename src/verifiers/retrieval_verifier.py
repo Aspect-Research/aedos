@@ -514,13 +514,3 @@ class RetrievalVerifier:
             pass
 
 
-# ---- back-compat ---------------------------------------------------
-
-
-def retrieval_verify(claim: dict[str, Any]) -> RetrievalResult:
-    """Stub for callers without a configured verifier."""
-    return RetrievalResult(
-        outcome=VerificationOutcome.INCONCLUSIVE,
-        error_flag="retrieval_not_configured",
-        explanation="RetrievalVerifier was not constructed",
-    )
