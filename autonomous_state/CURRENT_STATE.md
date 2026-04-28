@@ -12,17 +12,24 @@ Updated by: autonomous instance — Session 2 (continuing)
 - Active work: continuing per-operator instructions to keep producing
   improvements indefinitely. No stop condition. 100+ commits this session.
 
-## 🎯 KEY VALIDATION 2026-04-28 (Anthropic, ~$0.10)
+## 🎯 COMPREHENSIVE REAL-API VALIDATION 2026-04-28
 
-  1. test_real_api_extractor_does_not_substitute_values PASSED.
-     The verbatim rule actually changed Opus's behavior. value=146
-     stays 146.
+All five LLM-bound components validated against Anthropic Opus 4.7
+(total cost ~$1):
 
-  2. AEDOS caught a genuine Claude hallucination on the Saturn-moons
-     prompt (Claude said 146, snippets say 274, corrector REPLACED).
-     The whole pipeline working end-to-end on a real hallucination.
+  - test_router_calibration_against_worked_examples PASSED ≥ 14/16
+  - test_scoping_calibration_against_worked_examples PASSED ≥ 3/4
+  - test_stability_calibration_against_worked_examples PASSED ≥ 3/4
+  - test_real_api_extractor_does_not_substitute_values PASSED
+  - Saturn moons corpus turn — AEDOS caught Claude's hallucination,
+    corrector replaced 146 → 274
 
-  See OBSERVATIONS.md "REAL-API VALIDATION 2026-04-28" for full details.
+The verbatim rule is the load-bearing fix — without it, the
+extractor poisons the verification pipeline and renders the rest
+moot. With it shipped, the whole system works end-to-end.
+
+See OBSERVATIONS.md "COMPREHENSIVE REAL-API VALIDATION 2026-04-28"
+for the full table.
 
 ## What shipped this session (Session 2 — 49 commits so far)
 
