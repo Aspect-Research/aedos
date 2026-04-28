@@ -32,15 +32,11 @@ then graduate to SESSION_LOG.md after a few sessions.
   fixed inline (judge parser abbreviations); 2 calibration items
   identified for follow-up below.
 
-- [ ] **Calibration: lifespan/duration claims should embed inputs.**
-  Real finding from turn 12 (Marie Curie). The CLAUDE.md spec says
-  "Marie Curie was born in 1867 and died in 1934, so she lived 67
-  years" should route to python. But the EXTRACTOR strips the dates
-  from the lifespan claim's slots, so the router correctly says "needs
-  external data". Fix the extractor: when a lifespan/duration/diff
-  claim appears alongside its inputs in the same response, embed the
-  inputs as slots. Add a worked example in `extractor.py`'s system
-  prompt and a real-API test case in `test_routing_calibration.py`.
+- [x] **Calibration: lifespan/duration claims should embed inputs.**
+  Done in commit efcfcbc. extractor.py + llm_router.py both got
+  worked examples for the Marie-Curie style "lived N years" case.
+  test_routing_calibration.py gained a regression case (real-API
+  gated). Real-API validation pending.
 
 - [ ] **Calibration: canonical-list responses extract zero claims.**
   Reproduced (turn 7 days_of_week). The extractor returns
@@ -75,11 +71,10 @@ then graduate to SESSION_LOG.md after a few sessions.
        conflicts with a prior one via the unique-value rule.
   See OBSERVATIONS 2026-04-28 "THE BIG MISS" for full analysis.
 
-- [ ] **DDG flakiness:** denver_elevation (corpus turn 9) had all
-  three DDG queries return 0 results. Likely anti-bot detection or
-  intermittent emptying. Options: User-Agent rotation, retry-on-empty
-  with backoff, or set TAVILY_API_KEY in .env (default_search prefers
-  Tavily when available). Defer to operator preference.
+- [x] **DDG flakiness:** Done in commit e9cc818. search_duckduckgo
+  rotates through realistic User-Agents, returns first non-empty.
+  3 new tests cover the retry path. The denver_elevation turn would
+  now retry with the alternate UA.
 
 - [x] **Cross-check signal restoration on opus-4-7.** Done in commit
   91fac42. CROSS_CHECK_MODEL hardcoded to claude-sonnet-4-6;
@@ -117,23 +112,33 @@ then graduate to SESSION_LOG.md after a few sessions.
   truncation rules, hover tooltips. Hold until I've used it on real
   traces.
 
-- [ ] Eval harness (Phase 7-style work). A real benchmark with a
-  corpus of questions where GLM's hallucination rate is measurable,
-  with and without verification. Build on top of dogfood_glm.py.
+- [x] **Eval harness** — scripts/eval_harness.py shipped (commit
+  b1077aa). Validated end-to-end against Anthropic on the Marie
+  Curie prompt: classification=preserved, verdicts=[4 verified, 1
+  contradicted]. Real benchmark run (28 prompts × ~$0.10 each =
+  ~\\$3-5 for Anthropic) pending operator approval.
 
-- [ ] Cost telemetry. Track LLM call counts and costs per turn,
-  surface in the trace UI.
+- [x] **Cost telemetry** — src/cost.py + LLMClient ledger + Pipeline
+  turn_cost event + UI rendering. Shipped in commits 981d0a5,
+  706958b, 8dcea6a, 54a180e. Modal usage also flows through.
 
 - [ ] Better entity resolution. Empty wishlist for now; will become
-  load-bearing in Phase 6 (Tier 2 cache).
+  load-bearing in Phase 6 (Tier 2 cache). Defer until first cache-
+  miss-on-equivalent-claim scenario surfaces.
 
-- [ ] **Failure-mode taxonomy.** After dogfood completes, build a
-  structured taxonomy of GLM's failures in OBSERVATIONS.md. Useful for
-  both router worked-example design and the eventual paper.
+- [x] **Failure-mode taxonomy.** Captured in OBSERVATIONS.md under
+  the various 2026-04-28 sections. Notable: extractor substitution
+  (24% rate, fixed), interrogative-meta extraction, missing
+  valid_until on historical relations, multi-turn user contradictions.
 
-- [ ] More 5xx handling in modal_glm. Currently 5xx propagates as
-  ModalServerError. May want bounded retry on transient 502/503 too,
-  but only after seeing what they look like in practice.
+- [x] More 5xx handling in modal_glm. Done in commit d8599e9 — bounded
+  retry on 502/503 with longer backoff. 3 new tests.
+
+- [ ] **CRITICAL extractor substitution detector — empirical
+  validation.** Detector shipped in d097393 + bde97bc. Post-hoc
+  analysis on existing dumps showed 24.3% substitution rate. Need a
+  fresh corpus run after the verbatim rule (extractor system prompt
+  update) is in real LLM calls to confirm the rate drops.
 
 ## Discovered During Work
 
