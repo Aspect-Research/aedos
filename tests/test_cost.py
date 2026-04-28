@@ -65,6 +65,32 @@ def test_empty_model_string_unknown():
     assert c.total_usd == 0.0
 
 
+def test_negative_tokens_clamped_to_zero():
+    """Defensive: a malformed response with negative tokens shouldn't
+    produce negative cost (would credit the operator with -$$)."""
+    c = cost_for_call("claude-opus-4-7",
+                      input_tokens=-100, output_tokens=-50)
+    assert c.input_tokens == 0
+    assert c.output_tokens == 0
+    assert c.total_usd == 0.0
+
+
+def test_float_tokens_truncated():
+    """Float tokens (would only happen on a buggy upstream) get int()'d."""
+    c = cost_for_call("claude-opus-4-7",
+                      input_tokens=100.7, output_tokens=50.3)
+    assert c.input_tokens == 100
+    assert c.output_tokens == 50
+
+
+def test_none_tokens_treated_as_zero():
+    """None token counts (from getattr(.., default=None)) should not crash."""
+    c = cost_for_call("claude-opus-4-7", input_tokens=None, output_tokens=None)
+    assert c.input_tokens == 0
+    assert c.output_tokens == 0
+    assert c.total_usd == 0.0
+
+
 # ---- aggregate_costs ----
 
 

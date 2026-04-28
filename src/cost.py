@@ -75,25 +75,33 @@ def cost_for_call(
 
     Unknown models report ``pricing_known=False`` and total_usd=0 so
     aggregations don't poison the per-turn total when a new model
-    appears that we haven't priced yet."""
+    appears that we haven't priced yet.
+
+    Tokens are clamped to non-negative integers — a malformed response
+    that reported negative tokens shouldn't credit the operator with
+    negative cost.
+    """
+    # Defensive: clamp to non-negative integers.
+    in_toks = max(int(input_tokens or 0), 0)
+    out_toks = max(int(output_tokens or 0), 0)
     pricing = _lookup_pricing(model)
     if pricing is None:
         return CallCost(
             model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=in_toks,
+            output_tokens=out_toks,
             input_usd=0.0,
             output_usd=0.0,
             total_usd=0.0,
             pricing_known=False,
         )
     input_per_mtok, output_per_mtok = pricing
-    in_usd = (input_tokens / 1_000_000) * input_per_mtok
-    out_usd = (output_tokens / 1_000_000) * output_per_mtok
+    in_usd = (in_toks / 1_000_000) * input_per_mtok
+    out_usd = (out_toks / 1_000_000) * output_per_mtok
     return CallCost(
         model=model,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
+        input_tokens=in_toks,
+        output_tokens=out_toks,
         input_usd=in_usd,
         output_usd=out_usd,
         total_usd=in_usd + out_usd,
