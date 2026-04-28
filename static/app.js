@@ -497,21 +497,32 @@ function renderStage(event) {
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
     case "cache_lookup": {
-      // v0.6 — cache hit/miss event. Hits get a green badge so they
-      // stand out in the trace (a hit short-circuits retrieval, which
-      // is the whole point of the cache).
+      // v0.6 — cache hit/miss event. Three result types: ``hit``
+      // (exact-key match), ``semantic_hit`` (Jaccard predicate
+      // match anchored on identity slots — different key, same
+      // shape), and ``miss``. Each gets a distinct badge so the
+      // operator can see at a glance which path served the verdict.
       const result = d.result || (d.error ? "error" : "?");
       stage.classList.add(`cache-${result}`);
       const meta = el("div", { className: "decision-meta" });
+      const badgeLabel = result === "semantic_hit"
+        ? "SEMANTIC HIT" : result.toUpperCase();
       const badge = el("span", {
         className: `cache-badge cache-badge-${result}`,
-        textContent: result.toUpperCase(),
+        textContent: badgeLabel,
       });
       const head = el("div", {});
       head.appendChild(badge);
       if (result === "hit") {
         head.appendChild(document.createTextNode(
           ` retrieval short-circuited · ${d.verdict || "?"}`
+          + (d.hit_count != null ? ` · entry hit_count=${d.hit_count}` : "")
+        ));
+      } else if (result === "semantic_hit") {
+        const score = d.score != null ? ` · Jaccard=${d.score}` : "";
+        head.appendChild(document.createTextNode(
+          ` retrieval short-circuited via shape match · `
+          + `${d.verdict || "?"}${score}`
           + (d.hit_count != null ? ` · entry hit_count=${d.hit_count}` : "")
         ));
       } else if (result === "miss") {
@@ -521,13 +532,24 @@ function renderStage(event) {
         head.appendChild(document.createTextNode(` · ${d.error}`));
       }
       meta.appendChild(head);
-      if (d.canonical_key) {
+      // For semantic hits, show BOTH keys (lookup + matched) so the
+      // operator can see what shape merged with what.
+      if (result === "semantic_hit" && d.matched_key) {
+        meta.appendChild(el("div", {
+          className: "mono cache-key",
+          textContent: `lookup_key=${(d.canonical_key || "").slice(0, 100)}`,
+        }));
+        meta.appendChild(el("div", {
+          className: "mono cache-key",
+          textContent: `matched_key=${d.matched_key.slice(0, 100)}`,
+        }));
+      } else if (d.canonical_key) {
         meta.appendChild(el("div", {
           className: "mono cache-key",
           textContent: `key=${d.canonical_key.slice(0, 100)}`,
         }));
       }
-      if (result === "hit" && d.expires_at) {
+      if ((result === "hit" || result === "semantic_hit") && d.expires_at) {
         meta.appendChild(el("div", {
           className: "decision-meta-secondary",
           textContent: `expires ${d.expires_at}`,
