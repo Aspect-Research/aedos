@@ -19,7 +19,7 @@ $$(".tab").forEach((btn) => {
     $(`#tab-${btn.dataset.tab}`).classList.add("active");
     if (btn.dataset.tab === "facts") refreshFacts();
     if (btn.dataset.tab === "predicates") refreshPredicates();
-    if (btn.dataset.tab === "flow") refreshFlow();
+    if (btn.dataset.tab === "trace") refreshTraceTab();
     if (btn.dataset.tab === "cache") refreshCache();
   });
 });
@@ -100,6 +100,8 @@ function triplify(claim) {
 
 const messagesEl = $("#messages");
 const traceEl = $("#trace");
+const flowLiveContainer = $("#flow-live-container");
+const flowLiveStatus = $("#flow-live-status");
 const form = $("#chat-form");
 const input = $("#input");
 
@@ -110,9 +112,15 @@ async function hydrate() {
     messagesEl.innerHTML = "";
     turns.forEach((t) => appendMessage(t));
     if (turns.length) {
-      // Fetch trace for the most recent assistant turn we saw.
+      // Most recent assistant turn → render its events as the live
+      // flow + populate the Trace tab so the user sees state on
+      // reload.
       const lastAsst = [...turns].reverse().find((t) => t.role === "assistant");
-      if (lastAsst) renderTrace(await api("GET", `/api/trace/${lastAsst.id}`));
+      if (lastAsst) {
+        const events = await api("GET", `/api/trace/${lastAsst.id}`);
+        renderTrace(events);
+        renderLiveFlow(lastAsst.id, events);
+      }
     }
   } catch (e) {
     console.error(e);
@@ -177,6 +185,67 @@ function appendMessage(turn) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+// ---- live SSE consumer ----
+//
+// POST /api/chat/stream returns Server-Sent Events. We read the
+// response body as a stream and parse SSE frames manually (EventSource
+// only supports GET). Each pipeline_event arrival appends to the
+// liveEvents accumulator and re-renders the Flow View. Final ``done``
+// event carries the TurnTrace; ``error`` carries error info.
+
+function parseSseFrame(block) {
+  const out = { event: "message", data: "" };
+  const lines = block.split("\n");
+  for (const line of lines) {
+    if (!line) continue;
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).replace(/^ /, "");
+    if (key === "event") out.event = value;
+    else if (key === "data") out.data += value;
+  }
+  return out;
+}
+
+async function streamChat(body, handlers) {
+  const resp = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = "";
+    try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+    throw new Error(`stream rejected (${resp.status}): ${detail}`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      if (!block.trim()) continue;
+      const frame = parseSseFrame(block);
+      if (!frame.data) continue;
+      let parsed;
+      try { parsed = JSON.parse(frame.data); }
+      catch (_) { continue; }
+      if (frame.event === "pipeline_event" && handlers.onEvent)
+        handlers.onEvent(parsed);
+      else if (frame.event === "done" && handlers.onDone)
+        handlers.onDone(parsed);
+      else if (frame.event === "error" && handlers.onError)
+        handlers.onError(parsed);
+    }
+  }
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
@@ -190,22 +259,53 @@ form.addEventListener("submit", async (e) => {
   messagesEl.appendChild(thinking);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
+  // Reset the live flow chart for the new turn.
+  let assistantTurnId = null;
+  const liveEvents = [];
+  flowLiveStatus.textContent = "running…";
+  flowLiveContainer.innerHTML = "";
+  flowLiveContainer.appendChild(
+    el("p", { className: "hint", textContent: "starting pipeline…" })
+  );
+
   try {
-    const trace = await api("POST", "/api/chat", {
-      message: text,
-      model: modelSelect.value || null,
-    });
-    messagesEl.removeChild(thinking);
-    appendMessage({
-      role: "assistant",
-      content: trace.final_content,
-      original_content: trace.original_content,
-    });
-    const events = await api("GET", `/api/trace/${trace.assistant_turn_id}`);
-    renderTrace(events);
+    await streamChat(
+      { message: text, model: modelSelect.value || null },
+      {
+        onEvent: (ev) => {
+          if (assistantTurnId === null) assistantTurnId = ev.turn_id;
+          liveEvents.push({
+            turn_id: ev.turn_id,
+            stage: ev.stage,
+            data: ev.data,
+            created_at: new Date().toISOString(),
+          });
+          renderLiveFlow(assistantTurnId, liveEvents);
+          flowLiveStatus.textContent =
+            `running… (${liveEvents.length} events)`;
+        },
+        onDone: (trace) => {
+          messagesEl.removeChild(thinking);
+          appendMessage({
+            role: "assistant",
+            content: trace.final_content,
+            original_content: trace.original_content,
+          });
+          flowLiveStatus.textContent =
+            `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
+        },
+        onError: (errInfo) => {
+          thinking.textContent =
+            `⚠ ${errInfo.error_type}: ${errInfo.error_message}`;
+          thinking.style.color = "var(--bad)";
+          flowLiveStatus.textContent = "error";
+        },
+      },
+    );
   } catch (err) {
     thinking.textContent = `⚠ ${err.message}`;
     thinking.style.color = "var(--bad)";
+    flowLiveStatus.textContent = "error";
   } finally {
     sendBtn.disabled = false;
     input.focus();
@@ -1138,15 +1238,35 @@ function flowEdgeClass(status) {
   return "";
 }
 
-async function refreshFlow() {
-  const turnSelect = $("#flow-turn-select");
-  const status = $("#flow-status");
-  const container = $("#flow-container");
+// Render the live flow chart in the chat panel for ``turnId`` from
+// ``events`` (any partial subset is OK — buildFlowSvg fills missing
+// stages with placeholders). Used both by hydrate (with completed
+// events) and by the SSE handler (with incrementally-arriving events).
+function renderLiveFlow(turnId, events) {
+  flowLiveContainer.innerHTML = "";
+  if (!events || !events.length) {
+    flowLiveContainer.appendChild(
+      el("p", { className: "hint", textContent: "No events yet." })
+    );
+    return;
+  }
+  const svg = buildFlowSvg(events, turnId);
+  flowLiveContainer.appendChild(svg);
+}
+
+// ---- trace tab --------------------------------------------
+//
+// The Trace tab is the new home for the detailed pipeline trace.
+// Picks an assistant turn from the dropdown; renders the trace
+// (and a small flow chart at the top) for that turn.
+
+async function refreshTraceTab() {
+  const turnSelect = $("#trace-turn-select");
+  const status = $("#trace-status");
   status.textContent = "loading…";
 
   const turns = await api("GET", "/api/turns");
   const assistantTurns = turns.filter((t) => t.role === "assistant");
-  // Refresh the dropdown.
   const prev = turnSelect.value;
   turnSelect.innerHTML = "";
   assistantTurns.forEach((t) => {
@@ -1156,31 +1276,22 @@ async function refreshFlow() {
     turnSelect.appendChild(opt);
   });
   if (!assistantTurns.length) {
-    container.innerHTML = "";
-    container.appendChild(el("p", { className: "hint",
-      textContent: "No assistant turns yet. Send a message first." }));
+    traceEl.innerHTML = "";
+    traceEl.appendChild(el("p", { className: "hint",
+      textContent: "No assistant turns yet. Send a message in Chat + Flow." }));
     status.textContent = "";
     return;
   }
-  // Default: previously-selected turn if still present, else the latest.
   const desired = prev && assistantTurns.find((t) => String(t.id) === prev)
     ? prev : String(assistantTurns[assistantTurns.length - 1].id);
   turnSelect.value = desired;
-  await renderFlowFor(parseInt(desired, 10));
+  await renderTraceForTurn(parseInt(desired, 10));
   status.textContent = "";
 }
 
-async function renderFlowFor(turnId) {
-  const container = $("#flow-container");
-  container.innerHTML = "";
+async function renderTraceForTurn(turnId) {
   const events = await api("GET", `/api/trace/${turnId}`);
-  if (!events || !events.length) {
-    container.appendChild(el("p", { className: "hint",
-      textContent: "No events for this turn." }));
-    return;
-  }
-  const svg = buildFlowSvg(events, turnId);
-  container.appendChild(svg);
+  renderTrace(events);
 }
 
 function buildFlowSvg(events, turnId) {
@@ -1430,13 +1541,13 @@ function formatChatMeta(d) {
 }
 
 function jumpToStage(stage) {
-  // Switch to the Chat + Trace tab and scroll the matching stage into view.
-  const chatTab = document.querySelector('.tab[data-tab="chat"]');
-  if (chatTab) chatTab.click();
+  // Switch to the Trace tab and scroll the matching stage into view.
+  // The detailed trace lives there now; the chat panel only shows the
+  // live flow chart.
+  const traceTab = document.querySelector('.tab[data-tab="trace"]');
+  if (traceTab) traceTab.click();
   // Defer one frame so the tab activation has rendered.
   requestAnimationFrame(() => {
-    // The Detail View's renderStage labels the header with the stage name
-    // verbatim; find the first stage whose first child <span> matches.
     const headers = traceEl.querySelectorAll(".stage-header > span:first-child");
     for (const h of headers) {
       if (h.textContent.trim() === stage) {
@@ -1449,9 +1560,9 @@ function jumpToStage(stage) {
   });
 }
 
-$("#flow-refresh").addEventListener("click", refreshFlow);
-$("#flow-turn-select").addEventListener("change", async (e) => {
-  await renderFlowFor(parseInt(e.target.value, 10));
+$("#trace-refresh").addEventListener("click", refreshTraceTab);
+$("#trace-turn-select").addEventListener("change", async (e) => {
+  await renderTraceForTurn(parseInt(e.target.value, 10));
 });
 
 // ---- cache inspector --------------------------------------
@@ -1557,8 +1668,14 @@ $("#reset-btn").addEventListener("click", async () => {
   messagesEl.innerHTML = "";
   traceEl.innerHTML = "";
   traceEl.appendChild(el("p", { className: "hint", textContent: "Database reset. Send a message to start fresh." }));
+  flowLiveContainer.innerHTML = "";
+  flowLiveContainer.appendChild(
+    el("p", { className: "hint",
+      textContent: "Database reset. Send a message to start fresh." })
+  );
+  flowLiveStatus.textContent = "idle";
   const active = $(".tab.active")?.dataset.tab;
   if (active === "facts") refreshFacts();
-  if (active === "flow") refreshFlow();
+  if (active === "trace") refreshTraceTab();
   if (active === "cache") refreshCache();
 });

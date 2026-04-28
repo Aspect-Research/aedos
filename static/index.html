@@ -10,8 +10,8 @@
 <header>
   <h1>Aedos</h1>
   <nav class="tabs">
-    <button class="tab active" data-tab="chat">Chat + Trace</button>
-    <button class="tab" data-tab="flow">Flow View</button>
+    <button class="tab active" data-tab="chat">Chat + Flow</button>
+    <button class="tab" data-tab="trace">Trace</button>
     <button class="tab" data-tab="facts">Fact Store</button>
     <button class="tab" data-tab="predicates">Patterns</button>
     <button class="tab" data-tab="cache">Cache</button>
@@ -22,7 +22,7 @@
 </header>
 
 <main>
-  <!-- Chat + Trace tab ---------------------------------------------- -->
+  <!-- Chat + live Flow View tab ------------------------------------- -->
   <section id="tab-chat" class="tab-panel active">
     <div class="split">
       <div class="chat-pane">
@@ -39,28 +39,32 @@
           <button type="submit">Send</button>
         </form>
       </div>
-      <div class="trace-pane">
-        <h2>Pipeline trace — latest turn</h2>
-        <div id="trace" class="trace">
-          <p class="hint">No turns yet. Send a message to see the extraction → verification → correction pipeline.</p>
+      <div class="flow-pane">
+        <div class="flow-pane-header">
+          <h2>Pipeline flow — live</h2>
+          <span id="flow-live-status" class="hint">idle</span>
+        </div>
+        <div id="flow-live-container" class="flow-container">
+          <p class="hint">Send a message — each pipeline stage will
+            appear here as it lands. Click any box to jump to that
+            stage in the Trace tab.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Flow View tab ------------------------------------------------- -->
-  <section id="tab-flow" class="tab-panel">
-    <div class="flow-toolbar">
+  <!-- Trace tab ----------------------------------------------------- -->
+  <section id="tab-trace" class="tab-panel">
+    <div class="toolbar">
       <label>Turn
-        <select id="flow-turn-select"></select>
+        <select id="trace-turn-select"></select>
       </label>
-      <button id="flow-refresh">Refresh</button>
-      <span id="flow-status" class="hint"></span>
+      <button id="trace-refresh">Refresh</button>
+      <span id="trace-status" class="hint"></span>
     </div>
-    <div id="flow-container" class="flow-container">
-      <p class="hint">Send a message, then come back here to see a single
-        turn as a flowchart. Click any box to jump to its full detail in
-        the Chat + Trace tab.</p>
+    <div id="trace" class="trace">
+      <p class="hint">No turns yet. Send a message in the Chat + Flow
+        tab to see the extraction → verification → correction pipeline.</p>
     </div>
   </section>
 

@@ -16,6 +16,8 @@ or:
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,7 +25,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -67,6 +69,94 @@ class ChatRequest(BaseModel):
 
 
 # ---- chat endpoint ---------------------------------------------------
+
+
+def _sse_event(event: str, data: Any) -> str:
+    """Format an SSE frame. Always JSON-encodes ``data`` so the client
+    can ``JSON.parse`` uniformly."""
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """Streaming variant of /api/chat. Server-Sent Events:
+
+      * ``event: pipeline_event`` — fired for every pipeline_events
+        row as the pipeline runs. ``data`` is
+        ``{turn_id, stage, data, created_at}``. The Flow View in the
+        chat panel renders these incrementally so the operator sees
+        the chart expand in real time.
+      * ``event: done`` — fired once when the turn completes. ``data``
+        is the full ``TurnTrace.to_dict()``.
+      * ``event: error`` — fired if the pipeline raises. ``data`` is
+        ``{error_type, error_message}``.
+
+    Single-process subscriber registry on FactStore — fine for
+    single-user dogfooding; a multi-user deployment would need
+    per-request thread-local subscribers.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="message must not be empty")
+
+    p = _pipeline(app)
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def subscriber(turn_id: int, stage: str, data: Any) -> None:
+        # Fires from the worker thread that runs run_turn. Cross to
+        # the event loop with a thread-safe call.
+        loop.call_soon_threadsafe(
+            queue.put_nowait,
+            ("event", {"turn_id": turn_id, "stage": stage, "data": data}),
+        )
+
+    token = p.store.register_event_subscriber(subscriber)
+
+    async def _run_pipeline() -> None:
+        try:
+            trace = await asyncio.to_thread(
+                p.run_turn, req.message, model=req.model,
+            )
+            await queue.put(("done", trace.to_dict()))
+        except Exception as exc:
+            await queue.put(("error", {
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }))
+        finally:
+            await queue.put(("close", None))
+
+    async def event_stream():
+        runner = asyncio.create_task(_run_pipeline())
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "close":
+                    break
+                yield _sse_event(kind if kind != "event" else "pipeline_event",
+                                 payload)
+                if kind in ("done", "error"):
+                    # Wait for the close sentinel so the runner finishes
+                    # cleanly before we tear down.
+                    while True:
+                        k2, _ = await queue.get()
+                        if k2 == "close":
+                            break
+                    break
+        finally:
+            p.store.unregister_event_subscriber(token)
+            try:
+                await runner
+            except Exception:
+                pass
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",  # disable proxy buffering for live updates
+    }
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=headers,
+    )
 
 
 @app.post("/api/chat")
