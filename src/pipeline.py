@@ -29,7 +29,7 @@ from src.corrector import Corrector, Intervention
 from src.extractor import ClaimExtractor
 from src.fact_store import Fact, FactStore
 from src.llm_client import ChatMessage, LLMClient
-from src.pattern_registry import PatternRegistry as PredicateRegistry  # v0.3 alias
+from src.pattern_registry import PatternRegistry
 from src.router import Decision, Router, RoutingOutcome
 
 
@@ -79,7 +79,7 @@ class Pipeline:
     def __init__(
         self,
         store: FactStore,
-        registry: PredicateRegistry,
+        registry: PatternRegistry,
         llm: LLMClient,
         extractor: ClaimExtractor,
         router: Router,
@@ -303,7 +303,7 @@ def build_pipeline(
     db_path: str,
     *,
     llm: LLMClient | None = None,
-    registry: PredicateRegistry | None = None,
+    registry: PatternRegistry | None = None,
     chat_backend: Any | None = None,
 ) -> Pipeline:
     """Convenience constructor used by app.py and integration tests.

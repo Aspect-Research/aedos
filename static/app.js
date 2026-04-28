@@ -797,8 +797,6 @@ async function refreshPredicates() {
     const card = el("div", { className: "stage" });
     const header = el("div", { className: "stage-header" }, [
       el("span", { className: "pattern-badge", textContent: p.name }),
-      el("span", { className: "turn-role",
-        textContent: p.flag_non_user_as_anomaly ? "flags non-user agents as anomalies" : "" }),
     ]);
     card.appendChild(header);
     const body = el("div", { className: "stage-body" });
@@ -818,19 +816,8 @@ async function refreshPredicates() {
     });
     body.appendChild(slotsTbl);
 
-    // Verification rules.
-    body.appendChild(el("h4", { textContent: "Verification rules" }));
-    const rulesTbl = el("table");
-    rulesTbl.appendChild(el("tr", {}, ["when", "method"].map(
-      (h) => el("th", { textContent: h }))));
-    (p.verification_rules || []).forEach((r) => {
-      const when = r.when ? Object.entries(r.when).map(([k, v]) => `${k}=${v}`).join(", ") : "(default)";
-      rulesTbl.appendChild(el("tr", {}, [
-        el("td", { className: "mono", textContent: when }),
-        el("td", { className: "mono", textContent: r.method }),
-      ]));
-    });
-    body.appendChild(rulesTbl);
+    // (v0.5) Per-pattern verification rules and the user-anomaly flag are
+    // gone — routing is decided per-claim by the LLM router.
 
     if ((p.example_predicates || []).length) {
       body.appendChild(el("h4", { textContent: "Example predicates (free-form, not exhaustive)" }));
