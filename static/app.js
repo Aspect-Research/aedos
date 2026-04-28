@@ -1304,6 +1304,10 @@ function addEdge(svg, x1, y1, x2, y2, cls) {
 
 function formatChatMeta(d) {
   if (!d) return "(no chat data)";
+  if (d.error) {
+    return `⚠ ${d.provider || "?"}:${d.model || "?"} — ERROR: `
+      + d.error.slice(0, 80);
+  }
   const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
   const status = d.status_code ? ` http=${d.status_code}` : "";
   const respc = d.response_chars != null ? `, response=${d.response_chars}c` : "";
