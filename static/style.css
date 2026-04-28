@@ -191,6 +191,8 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .cache-badge-hit   { background: var(--ok, #2a8b3e); color: white; }
 .cache-badge-miss  { background: #d8d8d4; color: var(--muted); }
 .cache-badge-error { background: var(--bad, #b3261e); color: white; }
+.cache-badge-write { background: var(--accent, #1f5fb8); color: white; }
+.stage.cache-write .stage-header { background: #e6eef9; color: #1f5fb8; }
 .cache-key { font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem; }
 .decision-meta-secondary {
   font-size: 0.7rem;
@@ -649,6 +651,10 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   padding: 0.4rem 0.6rem;
   border-left: 3px solid var(--border);
   background: #fafaf7;
+}
+.decision.decision-cached {
+  border-left-color: var(--ok, #1a7a3b);
+  background: #f5fbf7;
 }
 .decision-header {
   display: flex;
