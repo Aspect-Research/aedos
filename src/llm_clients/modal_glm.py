@@ -49,6 +49,14 @@ MODAL_MODEL = "zai-org/GLM-5.1-FP8"
 # isn't blocked behind a runaway one.
 MODAL_REQUEST_TIMEOUT = 300.0
 
+# Modal endpoint enforces ~1 concurrent request per model. A timed-out
+# request can occupy the slot for a while after our client gives up,
+# causing subsequent requests to get 429 'Too many concurrent requests'.
+# Retry handles that transient state without making the caller deal
+# with it. On 429: sleep and try again, up to MODAL_429_MAX_RETRIES.
+MODAL_429_MAX_RETRIES = 3
+MODAL_429_BACKOFF_S = (30.0, 60.0, 120.0)  # one entry per retry
+
 
 class ModalError(RuntimeError):
     """Base class for Modal/GLM endpoint failures.
@@ -127,7 +135,7 @@ class ModalGLMBackend:
         text = ""
         response_id: str | None = None
         try:
-            text, status_code, response_id = self._post(payload)
+            text, status_code, response_id = self._post_with_retry(payload)
             return text
         except ModalError as exc:
             error = f"{type(exc).__name__}: {exc}"
@@ -182,6 +190,27 @@ class ModalGLMBackend:
             "messages": oai_messages,
             "max_tokens": max_tokens,
         }
+
+    def _post_with_retry(self, payload: dict[str, Any]) -> tuple[str, int, str | None]:
+        """Wrap ``_post`` with bounded retry on 429.
+
+        429 'Too many concurrent requests' is transient — usually the
+        previous request's slot hasn't been released yet. Backoff and
+        retry. All other errors propagate immediately (don't retry on
+        401, 5xx, timeout, malformed response — those are not transient
+        in a way that retrying within seconds would fix)."""
+        last_exc: ModalRateLimitError | None = None
+        for attempt in range(MODAL_429_MAX_RETRIES + 1):
+            try:
+                return self._post(payload)
+            except ModalRateLimitError as exc:
+                last_exc = exc
+                if attempt >= MODAL_429_MAX_RETRIES:
+                    break
+                backoff = MODAL_429_BACKOFF_S[min(attempt, len(MODAL_429_BACKOFF_S) - 1)]
+                time.sleep(backoff)
+        assert last_exc is not None
+        raise last_exc
 
     def _post(self, payload: dict[str, Any]) -> tuple[str, int, str | None]:
         headers = {

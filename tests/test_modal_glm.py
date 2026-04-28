@@ -129,11 +129,31 @@ def test_401_raises_auth_error():
         backend.chat(system="", messages=[ChatMessage("user", "hi")])
 
 
-def test_429_raises_rate_limit_error():
-    bad = StubResponse(status_code=429, body="slow down", text="slow down")
-    backend = ModalGLMBackend(api_key="k", client=StubClient([bad]))
+def test_429_raises_rate_limit_error_after_retries(monkeypatch):
+    # Exhaust retries: 4 total attempts (initial + 3 retries) all 429.
+    monkeypatch.setattr(
+        "src.llm_clients.modal_glm.MODAL_429_BACKOFF_S", (0.0, 0.0, 0.0),
+    )
+    bads = [StubResponse(status_code=429, body="slow down", text="slow down")
+            for _ in range(4)]
+    client = StubClient(list(bads))
+    backend = ModalGLMBackend(api_key="k", client=client)
     with pytest.raises(ModalRateLimitError):
         backend.chat(system="", messages=[ChatMessage("user", "hi")])
+    assert len(client.calls) == 4  # all retries consumed
+
+
+def test_429_then_200_succeeds_via_retry(monkeypatch):
+    monkeypatch.setattr(
+        "src.llm_clients.modal_glm.MODAL_429_BACKOFF_S", (0.0, 0.0, 0.0),
+    )
+    bad = StubResponse(status_code=429, body="slow down", text="slow down")
+    good = _ok_response("recovered")
+    client = StubClient([bad, bad, good])
+    backend = ModalGLMBackend(api_key="k", client=client)
+    out = backend.chat(system="", messages=[ChatMessage("user", "hi")])
+    assert out == "recovered"
+    assert len(client.calls) == 3
 
 
 def test_5xx_raises_server_error():
