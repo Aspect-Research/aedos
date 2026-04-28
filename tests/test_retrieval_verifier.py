@@ -102,6 +102,95 @@ def test_parse_malformed_returns_none():
     assert parse_judge_response("") is None
 
 
+# ---- tolerant judge parser (real-world Claude output shapes) ----
+
+
+def test_parse_handles_markdown_bold_verdict():
+    """Claude often wraps the verdict in ** for emphasis. Strip
+    markdown markers and accept the verdict word."""
+    v = parse_judge_response("**SUPPORTED**\nJustification: matches snippet 1")
+    assert v.verdict == "SUPPORTED"
+    assert "matches snippet 1" in v.justification
+
+
+def test_parse_handles_verdict_label_prefix():
+    """``Verdict: SUPPORTED`` is a common shape — the model
+    interprets the prompt's "VERDICT" placeholder as a label."""
+    v = parse_judge_response(
+        "Verdict: SUPPORTED\nJustification: page confirms"
+    )
+    assert v.verdict == "SUPPORTED"
+
+
+def test_parse_handles_markdown_heading_verdict():
+    """``## SUPPORTED`` heading. Strip # and accept."""
+    v = parse_judge_response("## SUPPORTED\n\nThe page confirms it.")
+    assert v.verdict == "SUPPORTED"
+
+
+def test_parse_handles_short_preamble():
+    """Despite the prompt asking for "no preamble", Claude sometimes
+    leads with a sentence. The verdict mid-text should still be
+    found via the search-based parser."""
+    v = parse_judge_response(
+        "Based on the snippets, the verdict is SUPPORTED.\n"
+        "Justification: The Marie Curie page mentions both Nobels."
+    )
+    assert v.verdict == "SUPPORTED"
+
+
+def test_parse_negation_flips_supported_to_contradicted():
+    """``NOT SUPPORTED`` should parse as CONTRADICTED, not SUPPORTED.
+    Without negation handling the search-based parser would mis-read
+    the literal word."""
+    v = parse_judge_response(
+        "The claim is NOT SUPPORTED.\nJustification: opposite is true."
+    )
+    assert v.verdict == "CONTRADICTED"
+
+
+def test_parse_negation_flips_contradicted_to_supported():
+    """Symmetric — ``not contradicted`` reads as SUPPORTED."""
+    v = parse_judge_response(
+        "The evidence is not CONTRADICTED here.\nJustification: aligned."
+    )
+    assert v.verdict == "SUPPORTED"
+
+
+def test_parse_lowercase_verdict():
+    """Case-insensitive — ``supported`` works too."""
+    v = parse_judge_response("supported\nJustification: ok")
+    assert v.verdict == "SUPPORTED"
+
+
+def test_parse_first_verdict_wins():
+    """If multiple verdicts appear, the earliest one is chosen.
+    The judge sometimes lists alternatives ('not CONTRADICTED but
+    SUPPORTED') — first wins ensures determinism."""
+    v = parse_judge_response(
+        "INSUFFICIENT_EVIDENCE\nJustification: could be SUPPORTED or "
+        "CONTRADICTED but the snippets don't say."
+    )
+    assert v.verdict == "INSUFFICIENT_EVIDENCE"
+
+
+def test_parse_word_boundary_no_partial_match():
+    """``SUPPORTED`` must match as a whole word. Random text like
+    ``the support team`` should not trigger SUPPORTED via 'support'
+    being substring; the alias map has both SUPPORT and SUPPORTED so
+    'support' WOULD match — but only as a whole word, not inside
+    'unsupported'."""
+    # 'unsupported' contains 'supported' as a substring but not as a
+    # whole word. The parser should NOT match.
+    assert parse_judge_response(
+        "The claim is unsupported by anything.\nJustification: x"
+    ) is None
+    # Bare "support" IS a word and IS aliased to SUPPORTED — that's
+    # the intended forgiving behavior.
+    v = parse_judge_response("I support this.\nJustification: yes")
+    assert v.verdict == "SUPPORTED"
+
+
 def test_default_search_prefers_tavily(monkeypatch):
     """When Wikipedia is empty and TAVILY_API_KEY is set, default_search
     calls Tavily — not SerpAPI or DDG. (Wikipedia is now the *first*
