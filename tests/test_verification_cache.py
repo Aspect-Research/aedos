@@ -233,6 +233,50 @@ def test_expire_now(tmp_path):
     store.close()
 
 
+def test_malformed_expires_at_treated_as_expired(tmp_path):
+    """If expires_at can't be parsed (corrupt DB row), treat the entry
+    as expired and return None — re-derive on next call."""
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="decade_stable",
+        ttl_seconds=10 * 365 * 24 * 3600,
+    )
+    # Corrupt the expires_at field.
+    store._conn.execute(
+        "UPDATE verification_cache SET expires_at = ? WHERE canonical_key = ?",
+        ("not-a-valid-iso-timestamp", "k1"),
+    )
+    store._conn.commit()
+    assert cache.lookup("k1") is None
+    store.close()
+
+
+def test_cached_verdict_to_dict_shape(tmp_path):
+    """CachedVerdict.to_dict serializes the full payload — field
+    rename safety."""
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    cache.write(
+        canonical_key="k1", pattern="spatial_temporal",
+        predicate="located_in", verdict="verified",
+        stability_class="immutable",
+        ttl_seconds=None,
+        evidence={"snippets": ["x", "y"]},
+    )
+    hit = cache.lookup("k1")
+    d = hit.to_dict()
+    assert set(d.keys()) == {
+        "canonical_key", "pattern", "predicate", "verdict", "evidence",
+        "stability_class", "cached_at", "expires_at", "hit_count",
+    }
+    assert d["verdict"] == "verified"
+    assert d["evidence"] == {"snippets": ["x", "y"]}
+    assert d["expires_at"] is None
+    store.close()
+
+
 def test_stats_aggregates_correctly(tmp_path):
     store = FactStore(tmp_path / "v.db")
     cache = VerificationCache(store)
