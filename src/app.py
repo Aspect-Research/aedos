@@ -66,7 +66,28 @@ class ChatRequest(BaseModel):
 def chat(req: ChatRequest) -> dict[str, Any]:
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
-    trace = _pipeline(app).run_turn(req.message)
+    try:
+        trace = _pipeline(app).run_turn(req.message)
+    except Exception as exc:
+        # Return a structured error rather than letting FastAPI's
+        # generic 500-with-no-body propagate. The chat backend
+        # raising (Modal down, Anthropic 429, etc.) is the most
+        # common failure here; surface the type so the UI can show
+        # something useful.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "hint": (
+                    "The pipeline raised. Common causes: chat backend "
+                    "down (Modal upstream / Anthropic rate limit), "
+                    "extractor LLM unreachable, or retrieval verifier "
+                    "network timeout. Check the most recent assistant "
+                    "turn's pipeline_events for details."
+                ),
+            },
+        ) from exc
     return trace.to_dict()
 
 

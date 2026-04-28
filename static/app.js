@@ -41,7 +41,21 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const resp = await fetch(path, opts);
   if (!resp.ok) {
-    const detail = await resp.text();
+    let detail;
+    try {
+      const j = await resp.json();
+      // FastAPI puts the detail at j.detail. Sometimes it's a string,
+      // sometimes a dict (our /api/chat 502 returns a dict).
+      if (j && typeof j.detail === "object") {
+        const d = j.detail;
+        detail = `${d.error_type || "Error"}: ${d.error_message || ""}`;
+        if (d.hint) detail += ` — ${d.hint}`;
+      } else {
+        detail = j?.detail || JSON.stringify(j);
+      }
+    } catch {
+      detail = await resp.text();
+    }
     throw new Error(`${method} ${path} failed (${resp.status}): ${detail}`);
   }
   return resp.json();
