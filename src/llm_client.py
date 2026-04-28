@@ -15,6 +15,7 @@ extractor's system prompt is the largest reused prefix and benefits most.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -24,6 +25,20 @@ import anthropic
 # Per the Claude API skill, claude-opus-4-7 is the recommended default.
 # User spec listed claude-sonnet-4-5 or claude-opus-4-7 as options.
 DEFAULT_MODEL = "claude-opus-4-7"
+
+# Models that no longer accept the ``temperature`` parameter (Anthropic
+# deprecated it for the reasoning-heavy Opus 4.7 line). Calls that pass
+# temperature against one of these get a 400. We silently drop the
+# parameter and log a warning rather than crash the request — the worst
+# case is the canonical-constants cross-check loses its temperature-
+# variation signal, which is documented in OBSERVATIONS.md.
+_TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
+
+_log = logging.getLogger(__name__)
+
+
+def _model_accepts_temperature(model: str) -> bool:
+    return not any(model.startswith(p) for p in _TEMPERATURE_DEPRECATED_PREFIXES)
 
 
 @dataclass
@@ -125,7 +140,14 @@ class LLMClient:
             "messages": [{"role": "user", "content": user_message}],
         }
         if temperature is not None:
-            kwargs["temperature"] = temperature
+            if _model_accepts_temperature(self.corrector_model):
+                kwargs["temperature"] = temperature
+            else:
+                _log.warning(
+                    "rewrite: dropping temperature=%s — model %s no longer "
+                    "accepts it; cross-check will not see temperature variation",
+                    temperature, self.corrector_model,
+                )
         response = self._client.messages.create(**kwargs)
         return _first_text(response)
 
