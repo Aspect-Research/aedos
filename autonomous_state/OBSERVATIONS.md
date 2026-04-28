@@ -268,6 +268,85 @@ verdict is provisional."
   Recommend pure TTL for v0.6, add LRU later if cache size becomes a
   problem.
 
+## 2026-04-28 — Hallucination corpus run (27 of 28 turns landed signal)
+
+`scripts/dogfood_hallucination_corpus.py` against GLM-5.1-FP8.
+Adversarial prompt set designed to elicit hallucinations the friendly
+Phase-2 dogfood didn't surface.
+
+### Verdict distribution (across 27 turns with signal)
+
+| Verdict | Count |
+|---------|-------|
+| verified | 27 |
+| retrieval_inconclusive | 6 |
+| contradicted | 3 |
+| retrieval_failed | 1 |
+
+5 pipeline errors (Modal cold-start timeouts + 1 content=null on the
+floccinaucinihilipilification spell-backwards turn — too many
+reasoning tokens for max_tokens=1024 cap).
+
+### Real catches (the verifier did its main job)
+
+3 contradicted verdicts where AEDOS caught GLM saying something wrong
+and the corrector applied a REPLACE intervention. Specifically:
+
+  - **yellowknife_population** (turn 8) — GLM gave a confident wrong
+    population, verifier caught it. Real win on the "lesser-known
+    entity numerical claim" hypothesis.
+  - **saturn_moons** (turn 11) — pre-2023 trained models are likely
+    to say ~83 moons; the answer changed to 146 in May 2023. AEDOS
+    caught the stale figure.
+  - **marie_curie composite** (turn 12) — 5 facts extracted, 4 of
+    them verified, 1 contradicted. Multi-claim extraction working,
+    one of the slot values was wrong, AEDOS surgically corrected
+    the wrong one.
+
+### Inconclusive verdicts (verifier hedged)
+
+6 cases where the verifier saw weak retrieval signal and the
+corrector hedged (added "I think" / "may want to verify"). Most look
+like good calls — the prompts were genuinely contested or specific
+enough that DDG snippets didn't give a clean signal:
+
+  - everest_height_m, marie_curie_lifespan, user_self_ref_basic
+    (twice), greenland_self_rule, etc.
+
+### One DDG dropout
+
+  - **denver_elevation** (turn 9) — GLM said 5,280 ft (correct),
+    but ALL three DDG queries returned 0 results. Verifier correctly
+    classified as `retrieval_failed`. Per v0.3 design, the corrector
+    did NOT hedge — verifier failure is not evidence of uncertainty.
+    The user got the correct answer.
+
+  This is a known DDG flakiness issue (anti-bot detection,
+  intermittent empties). The fix space:
+    1. Better User-Agent rotation in `search_duckduckgo`
+    2. Retry on empty result with brief backoff
+    3. Set TAVILY_API_KEY for stable retrieval (default_search
+       prefers Tavily when configured)
+
+  Adding to NEXT_STEPS as a robustness improvement.
+
+### Calibration win that LANDED
+
+The **lifespan/duration calibration** committed earlier this session
+(extractor + router worked example for "born X, died Y, lived Z
+years") wasn't yet exercised — the corpus didn't include a Marie-
+Curie-style multi-claim "lived" prompt. Worth adding one for the next
+corpus run to validate the calibration.
+
+### What didn't surface
+
+  - GLM didn't confabulate the fake_invention or fake_treaty (turns
+    22, 23). Either it has good "I don't know that" instincts on the
+    specific phrases I picked, or the prompts didn't push hard enough.
+  - The new dynamic-fact case (saturn_moons) was a clear catch but
+    we'd want more like it — political offices, currently-held world
+    records, etc. — to test the "stale training data" axis.
+
 ## 2026-04-27 — Phase-2 dogfood complete (12/17 turns landed signal)
 
 After Modal recovered from its multi-hour 503 outage, the resumed
