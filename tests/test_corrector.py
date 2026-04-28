@@ -199,6 +199,18 @@ def test_apply_with_interventions_calls_llm_once_for_batch():
     assert "[replace]" in user_msg
 
 
+def test_unknown_verification_status_returns_no_intervention():
+    """plan_intervention returns None for an unknown status — be
+    conservative, don't intervene if we don't know what the verifier
+    meant. Locks in the catch-all branch."""
+    from src.corrector import Corrector
+
+    c = Corrector(FakeLLM(rewrite_responses=[]))
+    decisions = [_decision(verification_status="some_new_status_we_dont_know")]
+    interventions = c.plan_interventions(decisions)
+    assert interventions == []
+
+
 def test_corrector_system_prompt_lists_intervention_types():
     from src.corrector import CORRECTOR_SYSTEM
     for kw in ("hedge", "replace", "soften", "remove"):
