@@ -137,6 +137,21 @@ class Pipeline:
         self.store.insert_pipeline_event(
             user_turn_id, "user_extraction", user_extraction.to_dict()
         )
+        # Surface substitution warnings on the user side too — same
+        # extractor-rewrite class that affects assistant claims could
+        # corrupt the user-fact store. Less critical (user inputs are
+        # typically what the user actually said) but worth observability.
+        for w in user_extraction.warnings:
+            fact_index = w.get("fact_index")
+            if fact_index is None or fact_index >= len(user_extraction.valid_facts):
+                fact = None
+            else:
+                fact = user_extraction.valid_facts[fact_index]
+            self.store.insert_pipeline_event(
+                user_turn_id, "extractor_substitution_warning",
+                {"warning": w, "fact": fact, "user_input": user_message,
+                 "side": "user"},
+            )
 
         # Stage 3 — route each user claim (store / boost / close-and-reopen).
         user_decisions: list[Decision] = [
