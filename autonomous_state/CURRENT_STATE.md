@@ -6,11 +6,11 @@ Updated by: autonomous instance — Session 2 (continuing)
 ## Status
 
 - Branch: experiment/autonomous-v0.5.x
-- Last green pytest: 2026-04-28 — 420 passed, 7 skipped (real-API gated)
-- Total project coverage: 94%
-- Last commit: [p7] retrieval: rotate User-Agent on empty DDG result
+- Last green pytest: 2026-04-28 — 441 passed, 7 skipped (real-API gated)
+- Total project coverage: 95%
+- Last commit: [p7] test: chat-cap test resilient to AEDOS_CHAT_MAX_TOKENS env override
 - Active work: continuing per-operator instructions to keep producing
-  improvements indefinitely. No stop condition. 59+ commits this session.
+  improvements indefinitely. No stop condition. 87+ commits this session.
 
 ## What shipped this session (Session 2 — 49 commits so far)
 
