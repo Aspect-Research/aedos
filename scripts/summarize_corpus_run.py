@@ -55,6 +55,8 @@ def main(argv: list[str]) -> int:
     hedges = []       # retrieval_inconclusive / retrieval_failed
     failures = []     # pipeline error
     clean = 0         # all-verified turns
+    routing_method_counts: dict[str, int] = {}
+    verdict_counts: dict[str, int] = {}
 
     for f in files:
         d = json.load(f.open(encoding="utf-8"))
@@ -75,6 +77,11 @@ def main(argv: list[str]) -> int:
             v in {"retrieval_inconclusive", "retrieval_failed"}
             for v in verdicts
         )
+        for v in verdicts:
+            verdict_counts[v] = verdict_counts.get(v, 0) + 1
+        for r in s.get("routings", []):
+            method = r.get("method", "?")
+            routing_method_counts[method] = routing_method_counts.get(method, 0) + 1
 
         # Pull the trace for richer context.
         trace = d.get("trace", {})
@@ -113,7 +120,17 @@ def main(argv: list[str]) -> int:
     print(f"  catches:           {len(catches)}")
     print(f"  hedges:            {len(hedges)}")
     print(f"  pipeline failures: {len(failures)}")
-    print(f"  clean (verified):  {clean}\n")
+    print(f"  clean (verified):  {clean}")
+    if routing_method_counts:
+        print(f"\n  routing methods (across all claims):")
+        for m, n in sorted(routing_method_counts.items(),
+                           key=lambda x: -x[1]):
+            print(f"    {m}: {n}")
+    if verdict_counts:
+        print(f"\n  verdicts:")
+        for v, n in sorted(verdict_counts.items(), key=lambda x: -x[1]):
+            print(f"    {v}: {n}")
+    print()
 
     if catches:
         print("\n=== CATCHES (verifier said contradicted) ===\n")
