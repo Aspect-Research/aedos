@@ -323,6 +323,25 @@ Implications:
 clean numbers. This is THE most important Phase-2 calibration finding
 of the whole autonomous run so far.
 
+### Validation: ran the new substitution detector against the existing dumps
+
+After shipping the source_text-not-in-input check, applied it
+post-hoc to the 27 existing corpus diagnostic dumps. Found:
+
+  | turn | warnings | confirmation |
+  |------|----------|--------------|
+  | yellowknife_population | 1 | confirmed bug — '20,340' not in input |
+  | saturn_moons | 1 | confirmed bug — '146' not in input |
+  | marie_curie_first_nobel | 3 | source_text rewritten on 3 of 5 facts |
+  | everest_height_m | 1 | likely innocent paraphrase |
+  | user_self_ref_basic | 3 | assistant ad-libbed beyond input |
+
+  5 of 27 turns flagged → 18% substitution rate. Not isolated.
+
+  This validates that the detector works on real data and confirms
+  the bug is widespread. The detector would have caught Saturn /
+  Yellowknife / Marie-Curie at write-time if it had been in place.
+
 ---
 
 ## 2026-04-28 — Hallucination corpus run (27 of 28 turns landed signal)
