@@ -66,7 +66,7 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   grid-template-columns: 1fr 1fr;
   height: 100%;
 }
-.chat-pane, .trace-pane {
+.chat-pane, .trace-pane, .flow-pane {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -75,6 +75,25 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   background: var(--panel);
 }
 .trace-pane { border-right: none; background: var(--bg); }
+.flow-pane { border-right: none; background: var(--bg); overflow: hidden; }
+.flow-pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.flow-pane-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.flow-pane #flow-live-container {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem;
+}
 
 .chat-toolbar {
   display: flex;

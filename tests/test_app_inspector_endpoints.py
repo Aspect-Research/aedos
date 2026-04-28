@@ -298,6 +298,101 @@ def test_chat_endpoint_omitted_model_passes_none(tmp_path, monkeypatch):
         assert captured["model"] is None
 
 
+def test_chat_stream_sse_emits_pipeline_events_then_done(tmp_path, monkeypatch):
+    """POST /api/chat/stream returns Server-Sent Events: one
+    pipeline_event per pipeline_events row as the turn runs, then a
+    final ``done`` frame carrying the trace. The Flow View in the
+    chat panel consumes these to draw the chart live."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("MODAL_API_KEY", raising=False)
+    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "stream.db"))
+
+    from src.app import app
+
+    class _FakeTrace:
+        assistant_turn_id = 99
+        original_content = None
+        final_content = "ok"
+
+        def to_dict(self):
+            return {
+                "user_turn_id": 98,
+                "assistant_turn_id": 99,
+                "final_content": "ok",
+                "original_content": None,
+                "verification_decisions": [],
+                "interventions": [],
+                "routing_anomalies": [],
+            }
+
+    def _fake_run_turn(msg, *, model=None):
+        # Emit a few pipeline events so the SSE stream has content.
+        store = app.state.pipeline.store
+        turn_id = store.insert_turn("assistant", "draft")
+        store.insert_pipeline_event(turn_id, "chat_model_call",
+                                    {"provider": "anthropic", "model": "x"})
+        store.insert_pipeline_event(turn_id, "assistant_extraction",
+                                    {"valid_facts": [], "rejected_facts": []})
+        store.insert_pipeline_event(turn_id, "verification",
+                                    {"decisions": []})
+        store.insert_pipeline_event(turn_id, "final", {"content": "ok"})
+        return _FakeTrace()
+
+    with TestClient(app) as c:
+        c.app.state.pipeline.run_turn = _fake_run_turn
+        with c.stream(
+            "POST", "/api/chat/stream", json={"message": "hi"},
+        ) as r:
+            assert r.status_code == 200
+            assert r.headers["content-type"].startswith("text/event-stream")
+            body = b"".join(r.iter_bytes()).decode("utf-8", errors="replace")
+
+    # Expect 4 pipeline_event frames + 1 done frame.
+    pipeline_event_count = body.count("event: pipeline_event\n")
+    assert pipeline_event_count == 4, body
+    assert "event: done\n" in body
+    # The done frame carries the trace dict — must include
+    # assistant_turn_id and final_content.
+    assert "\"assistant_turn_id\": 99" in body
+    assert "\"final_content\": \"ok\"" in body
+
+
+def test_chat_stream_emits_error_event_on_pipeline_failure(tmp_path, monkeypatch):
+    """If run_turn raises, the SSE stream emits an ``error`` frame
+    with error_type + error_message instead of a ``done`` frame."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("MODAL_API_KEY", raising=False)
+    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "err.db"))
+
+    from src.app import app
+
+    def _raise(_msg, **_kw):
+        raise RuntimeError("backend exploded")
+
+    with TestClient(app) as c:
+        c.app.state.pipeline.run_turn = _raise
+        with c.stream(
+            "POST", "/api/chat/stream", json={"message": "hi"},
+        ) as r:
+            assert r.status_code == 200
+            body = b"".join(r.iter_bytes()).decode("utf-8")
+
+    assert "event: error\n" in body
+    assert "RuntimeError" in body
+    assert "backend exploded" in body
+    assert "event: done\n" not in body
+
+
+def test_chat_stream_rejects_empty_message(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("MODAL_API_KEY", raising=False)
+    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "e.db"))
+    from src.app import app
+    with TestClient(app) as c:
+        r = c.post("/api/chat/stream", json={"message": "   "})
+        assert r.status_code == 400
+
+
 def test_health_endpoint_reports_db_error_with_ok_false(
     client_with_seed_data, monkeypatch,
 ):

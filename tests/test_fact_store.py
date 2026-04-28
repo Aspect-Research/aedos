@@ -235,6 +235,62 @@ def test_pipeline_event_rejects_unknown_stage(store):
         store.insert_pipeline_event(tid, "unknown_stage", {})
 
 
+# ---------- subscriber registry (live SSE flow view) ----------
+
+
+def test_pipeline_event_subscriber_fires_on_insert(store):
+    """A registered subscriber receives every successful insert with
+    (turn_id, stage, data). This is what /api/chat/stream uses to
+    push events to the SSE consumer in real time."""
+    tid = store.insert_turn("user", "hi")
+    received: list[tuple] = []
+    token = store.register_event_subscriber(
+        lambda t, s, d: received.append((t, s, d))
+    )
+    store.insert_pipeline_event(tid, "user_extraction", {"x": 1})
+    store.insert_pipeline_event(tid, "verification", {"decisions": []})
+    assert received == [
+        (tid, "user_extraction", {"x": 1}),
+        (tid, "verification", {"decisions": []}),
+    ]
+    store.unregister_event_subscriber(token)
+
+
+def test_pipeline_event_subscriber_unregister_stops_callbacks(store):
+    tid = store.insert_turn("user", "hi")
+    received: list = []
+    token = store.register_event_subscriber(lambda t, s, d: received.append(s))
+    store.insert_pipeline_event(tid, "user_extraction", {})
+    store.unregister_event_subscriber(token)
+    store.insert_pipeline_event(tid, "verification", {})
+    assert received == ["user_extraction"]
+
+
+def test_pipeline_event_subscriber_exception_does_not_break_insert(store):
+    """A buggy subscriber must not crash the turn — insert still
+    succeeds, the row is durable, other subscribers still fire."""
+    tid = store.insert_turn("user", "hi")
+    other_received: list = []
+    store.register_event_subscriber(
+        lambda t, s, d: (_ for _ in ()).throw(RuntimeError("bad sub"))
+    )
+    store.register_event_subscriber(
+        lambda t, s, d: other_received.append(s)
+    )
+    # Should not raise.
+    store.insert_pipeline_event(tid, "user_extraction", {})
+    # Row is persisted.
+    events = store.get_pipeline_events(tid)
+    assert len(events) == 1
+    # Healthy subscriber still got the call.
+    assert other_received == ["user_extraction"]
+
+
+def test_pipeline_event_unregister_unknown_token_is_safe(store):
+    # Idempotent — no error if the token isn't currently registered.
+    store.unregister_event_subscriber(lambda: None)
+
+
 # ---------- turns ----------
 
 

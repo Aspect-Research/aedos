@@ -247,6 +247,25 @@ class FactStore:
         self._conn.executescript(SCHEMA)
         self._migrate_user_id()
         self._conn.commit()
+        # v0.6: per-event subscribers (set by /api/chat/stream so the
+        # SSE handler can push pipeline_events to the client as they
+        # land). Single-process, single-user dev tool — for multi-user
+        # concurrency this needs to become per-request thread-local.
+        self._event_subscribers: list[Any] = []
+
+    def register_event_subscriber(self, cb: Any) -> Any:
+        """Add ``cb`` to the list of callables fired on every
+        pipeline_events insert. Returns ``cb`` as the unregister
+        token. ``cb(turn_id, stage, data)`` — exceptions are swallowed
+        so a buggy subscriber can't crash a turn."""
+        self._event_subscribers.append(cb)
+        return cb
+
+    def unregister_event_subscriber(self, token: Any) -> None:
+        try:
+            self._event_subscribers.remove(token)
+        except ValueError:
+            pass
 
     def _migrate_user_id(self) -> None:
         """v0.5.x: add user_id column to pre-existing facts/turns tables.
@@ -494,6 +513,15 @@ class FactStore:
             (turn_id, stage, json.dumps(data, default=str), _now_iso()),
         )
         self._conn.commit()
+        # Fan out to subscribers AFTER commit so consumers see the
+        # data is durably stored. Iterate over a copy so a subscriber
+        # registering/unregistering during the call doesn't mutate
+        # mid-iteration.
+        for sub in list(self._event_subscribers):
+            try:
+                sub(turn_id, stage, data)
+            except Exception:
+                pass  # subscribers are observers — never break the turn
         return int(cur.lastrowid)
 
     def get_pipeline_events(self, turn_id: int) -> list[dict[str, Any]]:
