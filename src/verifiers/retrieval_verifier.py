@@ -42,8 +42,6 @@ _USER_AGENTS = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) "
     "Gecko/20100101 Firefox/121.0",
 )
-# Back-compat name kept for any external imports.
-_USER_AGENT = _USER_AGENTS[0]
 _DDG_URL = "https://html.duckduckgo.com/html/"
 _TAVILY_URL = "https://api.tavily.com/search"
 _SERPAPI_URL = "https://serpapi.com/search.json"
@@ -109,14 +107,6 @@ class RetrievalResult:
     historical: bool = False  # True if judge used the historical-claim prompt
 
     @property
-    def query(self) -> str:
-        """Return the query attempt that was actually used (for back-compat)."""
-        for a in self.attempts:
-            if a.used:
-                return a.query
-        return self.attempts[-1].query if self.attempts else ""
-
-    @property
     def from_cache(self) -> bool:
         for a in self.attempts:
             if a.used:
@@ -139,7 +129,6 @@ class RetrievalResult:
         return {
             "outcome": self.outcome.value,
             "attempts": [a.to_dict() for a in self.attempts],
-            "query": self.query,
             "from_cache": self.from_cache,
             "snippets": [s.to_dict() for s in self.snippets],
             "verdict": self.verdict.to_dict() if self.verdict else None,
