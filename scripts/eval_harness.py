@@ -177,7 +177,12 @@ def main(argv: list[str]) -> int:
 
     corpus = _load_corpus(args.corpus)
     if args.limit:
-        corpus = corpus[: args.limit]
+        # Limit applies AFTER start so '--start 12 --limit 1' runs
+        # exactly prompt 12, not prompt 1.
+        start_idx = max(args.start - 1, 0)
+        corpus = corpus[start_idx : start_idx + args.limit]
+        # Reset start since we already sliced.
+        args.start = 1
 
     out_dir = _eval_dir()
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
