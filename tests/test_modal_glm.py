@@ -617,6 +617,65 @@ def test_per_backend_max_tokens_global_override_wins(tmp_path, monkeypatch):
         "Global override should win over per-backend default")
 
 
+def test_pipeline_retries_chat_without_cost_recorder_on_typeerror(tmp_path):
+    """If the backend is older / a stub that doesn't accept the
+    cost_recorder kwarg, _invoke_chat_backend catches the TypeError
+    and retries without the kwarg. Pins the back-compat path so
+    nobody removes it without intending to."""
+    from src.corrector import Corrector
+    from src.extractor import ClaimExtractor
+    from src.fact_store import FactStore
+    from src.llm_router import RoutingDecision
+    from src.pattern_registry import load_default_registry, reset_cache
+    from src.pipeline import Pipeline
+    from src.router import Router
+
+    reset_cache()
+
+    @dataclass
+    class _LLMWithRecorder:
+        extracts: list = field(default_factory=list)
+        rewrites: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+            return self.extracts.pop(0)
+
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+            return self.rewrites.pop(0)
+
+        def record_external_call(self, model, in_tok, out_tok):
+            pass  # presence is what matters; pipeline binds it as recorder
+
+    call_count = [0]
+
+    class OldStubBackend:
+        provider = "stub-no-recorder"
+        model = "old"
+
+        # Note: signature has NO cost_recorder. The first call will get
+        # a kwarg the function doesn't accept and raise TypeError.
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            call_count[0] += 1
+            return "ok"
+
+    store = FactStore(tmp_path / "p.db")
+    registry = load_default_registry()
+    llm = _LLMWithRecorder(extracts=[{"facts": []}, {"facts": []}])
+    extractor = ClaimExtractor(llm, registry)
+    router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
+        method="unverifiable", reason="x", confidence=0.9))
+    p = Pipeline(store, registry, llm, extractor, router, Corrector(llm),
+                 chat_backend=OldStubBackend())
+
+    # Should not raise — pipeline catches TypeError, retries without
+    # cost_recorder.
+    p.run_turn("hi")
+    # The successful retry counts as one usable invocation; the first
+    # call raised before reaching the body, so call_count[0] should be 1.
+    assert call_count[0] == 1
+
+
 def test_per_backend_max_tokens_unknown_provider_uses_default(tmp_path, monkeypatch):
     """An unfamiliar provider falls back to CHAT_MAX_TOKENS_DEFAULT
     (1024) rather than picking one of the per-backend values
