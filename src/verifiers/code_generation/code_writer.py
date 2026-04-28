@@ -118,6 +118,7 @@ def write_code(
     llm: LLMClient,
     *,
     temperature: float | None = None,
+    model: str | None = None,
 ) -> GeneratedCode:
     """Generate python from a neutral prompt.
 
@@ -127,12 +128,22 @@ def write_code(
 
     ``temperature`` (v0.5) lets the canonical-constants cross-check run
     two generations at different temperatures and compare their outputs.
+
+    ``model`` (v0.5.x) overrides ``llm.corrector_model`` for this call.
+    The cross-check uses this to force Sonnet 4.6 when the default is
+    Opus 4.7 (which deprecated ``temperature``), preserving the
+    variation signal.
     """
     user_message = (
         f"Question: {neutral_prompt}\n"
         f"expected_output_type: {expected_output_type}\n\n"
         "Reply with the complete Python script and nothing else."
     )
-    raw = llm.rewrite(_CODE_WRITER_SYSTEM, user_message, temperature=temperature)
+    # Only pass `model` when explicitly overridden — many test doubles
+    # (MockLLM in tests/test_integration.py) don't accept it as a kwarg.
+    rewrite_kwargs: dict[str, Any] = {"temperature": temperature}
+    if model is not None:
+        rewrite_kwargs["model"] = model
+    raw = llm.rewrite(_CODE_WRITER_SYSTEM, user_message, **rewrite_kwargs)
     code = _strip_markdown_fences(raw)
-    return GeneratedCode(code=code, model=llm.corrector_model)
+    return GeneratedCode(code=code, model=model or llm.corrector_model)
