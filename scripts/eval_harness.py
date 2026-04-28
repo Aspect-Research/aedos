@@ -142,6 +142,14 @@ def _serialize_events(events):
 
 
 def main(argv: list[str]) -> int:
+    # UTF-8 stdout for non-ASCII chat responses (Windows cp1252
+    # default would crash on subscripts/em dashes/accents).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
     import functools
     print_orig = print
     globals()["print"] = functools.partial(print_orig, flush=True)

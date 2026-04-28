@@ -229,6 +229,15 @@ def _summarize_turn(trace, events) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
+    # Reconfigure stdout to UTF-8 so non-ASCII characters in chat
+    # responses don't crash the script on Windows (cp1252 default
+    # console encoding). errors='replace' as a safety net.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
     # Long-running script — flush every print so the log file (or
     # operator's terminal) shows progress in real time.
     import functools
