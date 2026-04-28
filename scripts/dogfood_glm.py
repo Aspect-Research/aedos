@@ -229,6 +229,13 @@ def _summarize_turn(trace, events) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
+    # Long-running script — flush every print so the log file (or
+    # operator's terminal) shows progress in real time.
+    import functools
+    print_orig = print
+    builtins_print = functools.partial(print_orig, flush=True)
+    globals()["print"] = builtins_print
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--only", type=int, default=None)
@@ -252,6 +259,7 @@ def main(argv: list[str]) -> int:
 
     summaries: list[dict[str, Any]] = []
     overall_ok = True
+    last_was_error = False
 
     for i, entry in enumerate(PROMPTS, start=1):
         if i < args.start:
@@ -260,7 +268,15 @@ def main(argv: list[str]) -> int:
             continue
 
         if i > args.start:
-            time.sleep(args.inter_turn_sleep)
+            # After a pipeline error (typically a Modal timeout that holds
+            # the concurrency slot), the next call is much more likely to
+            # 429 unless we wait. Backoff long enough that the slot has
+            # almost certainly released. The Modal client now retries 429
+            # internally too, but this avoids burning retry budget on the
+            # first call.
+            sleep_s = 90.0 if last_was_error else args.inter_turn_sleep
+            print(f"  (sleeping {sleep_s:.0f}s before next turn...)")
+            time.sleep(sleep_s)
 
         slug = entry["id"]
         prompt = entry["prompt"]
@@ -271,9 +287,11 @@ def main(argv: list[str]) -> int:
         started = time.monotonic()
         try:
             trace = pipeline.run_turn(prompt)
+            last_was_error = False
         except Exception as exc:  # noqa: BLE001
             print(f"  PIPELINE ERROR: {type(exc).__name__}: {exc}")
             overall_ok = False
+            last_was_error = True
             summary = {
                 "id": slug, "category": entry["category"], "prompt": prompt,
                 "expected": entry["expected"], "notes": entry["notes"],
