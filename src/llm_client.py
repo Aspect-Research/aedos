@@ -132,21 +132,29 @@ class LLMClient:
         user_message: str,
         max_tokens: int = 2048,
         temperature: float | None = None,
+        model: str | None = None,
     ) -> str:
+        """Single-shot text-rewrite call.
+
+        ``model`` overrides ``self.corrector_model`` for this call only.
+        Used by the canonical-constants cross-check to force Sonnet 4.6
+        (which still accepts ``temperature``) when the default is
+        Opus 4.7 (which doesn't), preserving the variation signal."""
+        chosen_model = model or self.corrector_model
         kwargs: dict[str, Any] = {
-            "model": self.corrector_model,
+            "model": chosen_model,
             "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user_message}],
         }
         if temperature is not None:
-            if _model_accepts_temperature(self.corrector_model):
+            if _model_accepts_temperature(chosen_model):
                 kwargs["temperature"] = temperature
             else:
                 _log.warning(
                     "rewrite: dropping temperature=%s — model %s no longer "
                     "accepts it; cross-check will not see temperature variation",
-                    temperature, self.corrector_model,
+                    temperature, chosen_model,
                 )
         response = self._client.messages.create(**kwargs)
         return _first_text(response)

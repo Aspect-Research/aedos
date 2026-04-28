@@ -34,6 +34,14 @@ from src.verifiers.code_generation.sandbox import run_code
 CodeGenStatus = str  # Literal so router can string-compare
 
 
+# Model used for the canonical-constants cross-check. Hardcoded to a
+# temperature-accepting model (Sonnet 4.6) so the two cross-check
+# iterations actually run at different temperatures and can disagree.
+# Default corrector_model (Opus 4.7) silently drops temperature, which
+# would erase the cross-check signal.
+CROSS_CHECK_MODEL = "claude-sonnet-4-6"
+
+
 @dataclass
 class CodeGenVerificationResult:
     """Rich result of a code-generation verification.
@@ -85,12 +93,19 @@ def verify_via_code_generation(
     source_turn_id: int | None = None,
     sandbox_timeout_seconds: int = 5,
     code_writer_temperature: float | None = None,
+    code_writer_model: str | None = None,
 ) -> CodeGenVerificationResult:
     """Run the pipeline. Returns a CodeGenVerificationResult.
 
     ``code_writer_temperature`` (v0.5) is threaded through to the code
     writer so the canonical-constants cross-check can run two
     generations at different temperatures and compare.
+
+    ``code_writer_model`` (v0.5.x) overrides the default corrector
+    model for the code-writing call. The cross-check uses this to force
+    a temperature-accepting model (Sonnet 4.6) when the default
+    (Opus 4.7) silently drops temperature, preserving the cross-check
+    variation signal.
     """
 
     # ---- Stage 1: neutral prompt ---------------------------------
@@ -121,6 +136,7 @@ def verify_via_code_generation(
     generated = write_code(
         code_prompt.prompt, code_prompt.expected_output_type, llm,
         temperature=code_writer_temperature,
+        model=code_writer_model,
     )
     _safe_log(
         store, source_turn_id, "code_generated",
@@ -230,6 +246,11 @@ class CodeGenerationVerifier:
         so the router can fall back to retrieval (or surface the
         discrepancy in the trace).
         """
+        # Force Sonnet 4.6 for the cross-check so ``temperature`` actually
+        # takes effect. Opus 4.7 (the default corrector_model) silently
+        # drops temperature, which would make both iterations identical
+        # and erase the cross-check signal.
+        cross_check_model = CROSS_CHECK_MODEL
         result_a = verify_via_code_generation(
             claim,
             self.llm,
@@ -237,6 +258,7 @@ class CodeGenerationVerifier:
             source_turn_id=source_turn_id,
             sandbox_timeout_seconds=self.sandbox_timeout_seconds,
             code_writer_temperature=0.0,
+            code_writer_model=cross_check_model,
         )
         result_b = verify_via_code_generation(
             claim,
@@ -245,6 +267,7 @@ class CodeGenerationVerifier:
             source_turn_id=source_turn_id,
             sandbox_timeout_seconds=self.sandbox_timeout_seconds,
             code_writer_temperature=0.3,
+            code_writer_model=cross_check_model,
         )
 
         cross_check_payload = {
