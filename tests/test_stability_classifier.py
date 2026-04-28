@@ -286,3 +286,53 @@ def test_build_pipeline_stability_off_without_scoping(tmp_path, monkeypatch):
     assert p._scoping_classifier is None
     assert p._stability_classifier is None
     p.store.close()
+
+
+# ---- real-API calibration (gated) --------------------------------------
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API stability classifier calibration gated behind RUN_API_TESTS=1",
+)
+def test_stability_calibration_against_worked_examples():
+    """Smoke-check that the stability classifier picks the expected
+    bin on its own worked examples. Real API; one call per case."""
+    from src.llm_client import LLMClient
+
+    cases = [
+        # (claim, expected_class)
+        ({"pattern": "quantitative", "predicate": "has_count",
+          "slots": {"subject": "strawberry", "property": "letter_r", "value": 3},
+          "polarity": 1, "source_text": "3 r's in strawberry"},
+         "immutable"),
+        ({"pattern": "spatial_temporal", "predicate": "located_in",
+          "slots": {"entity": "Tokyo", "location": "Japan"},
+          "polarity": 1, "source_text": "Tokyo is in Japan"},
+         "decade_stable"),
+        ({"pattern": "quantitative", "predicate": "stock_price",
+          "slots": {"subject": "Apple", "property": "closing_price",
+                    "value": 175.50, "unit": "USD"},
+          "polarity": 1, "source_text": "Apple closed at 175.50"},
+         "volatile"),
+        ({"pattern": "quantitative", "predicate": "birth_year",
+          "slots": {"subject": "Marie Curie", "property": "birth_year",
+                    "value": 1867},
+          "polarity": 1, "source_text": "Marie Curie was born in 1867"},
+         "immutable"),
+    ]
+
+    llm = LLMClient()
+    correct = 0
+    misses: list[str] = []
+    for claim, expected in cases:
+        d = classify_stability(claim, llm)
+        if d.stability_class == expected:
+            correct += 1
+        else:
+            misses.append(f"  claim={claim['source_text']!r} expected="
+                          f"{expected} got={d.stability_class} reason={d.reason}")
+    assert correct >= 3, (
+        f"stability classifier calibration: only {correct}/{len(cases)} correct\n"
+        + "\n".join(misses)
+    )
