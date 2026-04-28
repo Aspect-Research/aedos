@@ -93,6 +93,10 @@ class Pipeline:
         # writes. Set to a callable for tests; defaults to the LLM
         # implementation when ``llm`` is real.
         scoping_classifier: Any | None = None,
+        # v0.6 — runs only when scoping_classifier marked the claim
+        # world_fact. Returns a StabilityDecision; logged but not
+        # acted on yet.
+        stability_classifier: Any | None = None,
     ):
         self.store = store
         self.registry = registry
@@ -105,6 +109,7 @@ class Pipeline:
         # the caller didn't pass one and didn't pass a MockLLM (test
         # doubles can opt in by passing scoping_classifier=fn).
         self._scoping_classifier = scoping_classifier
+        self._stability_classifier = stability_classifier
         # When no explicit backend is provided, use ``llm`` directly. This
         # preserves the long-standing test contract where MockLLM provides
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
@@ -177,26 +182,43 @@ class Pipeline:
         # pipeline; observation mode is opt-in instrumentation.
         if self._scoping_classifier is not None:
             for claim in asst_extraction.valid_facts:
+                claim_summary = {
+                    "pattern": claim.get("pattern"),
+                    "predicate": claim.get("predicate"),
+                    "slots": claim.get("slots"),
+                    "polarity": claim.get("polarity"),
+                }
                 try:
-                    decision = self._scoping_classifier(claim)
+                    scope_decision = self._scoping_classifier(claim)
                     self.store.insert_pipeline_event(
-                        assistant_turn_id,
-                        "cache_scoping_decision",
-                        {"claim": {"pattern": claim.get("pattern"),
-                                   "predicate": claim.get("predicate"),
-                                   "slots": claim.get("slots"),
-                                   "polarity": claim.get("polarity")},
-                         "decision": decision.to_dict()},
+                        assistant_turn_id, "cache_scoping_decision",
+                        {"claim": claim_summary,
+                         "decision": scope_decision.to_dict()},
                     )
                 except Exception as exc:  # noqa: BLE001
-                    # Surface but don't propagate — observation mode.
                     self.store.insert_pipeline_event(
-                        assistant_turn_id,
-                        "cache_scoping_decision",
-                        {"claim": {"pattern": claim.get("pattern"),
-                                   "predicate": claim.get("predicate")},
+                        assistant_turn_id, "cache_scoping_decision",
+                        {"claim": claim_summary,
                          "error": f"{type(exc).__name__}: {exc}"},
                     )
+                    continue
+
+                # Stability runs only for cache-eligible (world_fact) claims.
+                if (self._stability_classifier is not None
+                        and scope_decision.scope == "world_fact"):
+                    try:
+                        stab_decision = self._stability_classifier(claim)
+                        self.store.insert_pipeline_event(
+                            assistant_turn_id, "cache_stability_decision",
+                            {"claim": claim_summary,
+                             "decision": stab_decision.to_dict()},
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        self.store.insert_pipeline_event(
+                            assistant_turn_id, "cache_stability_decision",
+                            {"claim": claim_summary,
+                             "error": f"{type(exc).__name__}: {exc}"},
+                        )
 
         # Stage 6 — route each assistant claim through the appropriate verifier.
         verification_decisions: list[Decision] = [
@@ -397,18 +419,26 @@ def build_pipeline(
     corrector = Corrector(llm)
     chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
 
-    # v0.6 Phase 6 — scoping classifier in observation mode. Off by
-    # default to avoid burning the extra LLM call on every turn while
-    # the pipeline is settling. Enable with AEDOS_CACHE_SCOPING=1 to
-    # collect the observation logs that calibrate the classifier
-    # before we wire it to actual cache writes.
+    # v0.6 Phase 6 — scoping + stability classifiers in observation
+    # mode. Off by default to avoid burning the extra LLM calls on
+    # every turn while the pipeline is settling. AEDOS_CACHE_SCOPING=1
+    # turns on scoping; AEDOS_CACHE_STABILITY=1 turns on stability
+    # (only fires for claims scoping marked world_fact). Stability
+    # without scoping is meaningless, so we require both.
     scoping_classifier = None
+    stability_classifier = None
     if os.getenv("AEDOS_CACHE_SCOPING") == "1":
         from src.cache import classify_scope
         scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
+        if os.getenv("AEDOS_CACHE_STABILITY") == "1":
+            from src.cache import classify_stability
+            stability_classifier = (
+                lambda claim, _llm=llm: classify_stability(claim, _llm)
+            )
 
     return Pipeline(
         store, registry, llm, extractor, router, corrector,
         chat_backend=chat_backend, user_id=user_id,
         scoping_classifier=scoping_classifier,
+        stability_classifier=stability_classifier,
     )

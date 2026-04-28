@@ -28,5 +28,15 @@ from src.cache.scoping_classifier import (
     ScopingDecision,
     classify_scope,
 )
+from src.cache.stability_classifier import (
+    STABILITY_CLASSES,
+    STABILITY_TTL_SECONDS,
+    StabilityDecision,
+    classify_stability,
+)
 
-__all__ = ["classify_scope", "ScopingDecision", "SCOPING_METHODS"]
+__all__ = [
+    "classify_scope", "ScopingDecision", "SCOPING_METHODS",
+    "classify_stability", "StabilityDecision",
+    "STABILITY_CLASSES", "STABILITY_TTL_SECONDS",
+]
