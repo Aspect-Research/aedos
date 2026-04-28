@@ -460,3 +460,53 @@ def test_key_slots_defined_for_every_pattern():
     reg = load_default_registry()
     for name in reg.names():
         assert name in KEY_SLOTS_BY_PATTERN, f"no key slots for {name!r}"
+
+
+# ---- display_status mapping (4-bucket UI projection) ----
+
+
+def test_display_status_buckets_for_every_internal_status():
+    """The 8 internal verification statuses each map to one of 4 UI
+    buckets. Pins the contract so adding a new status forces an
+    explicit decision about which bucket it shows in."""
+    from src.router.types import (
+        DISPLAY_STATUS_BY_VERIFICATION_STATUS, display_status_for,
+    )
+    expected = {
+        "verified": "verified",
+        "user_asserted": "not_applicable",
+        "contradicted": "contradicted",
+        "retrieval_inconclusive": "inconclusive",
+        "retrieval_failed": "not_applicable",
+        "unverifiable_in_principle": "not_applicable",
+        "unverifiable_pending_implementation": "inconclusive",
+        "routing_anomaly": "not_applicable",
+    }
+    assert DISPLAY_STATUS_BY_VERIFICATION_STATUS == expected
+    for status, bucket in expected.items():
+        assert display_status_for(status) == bucket
+
+
+def test_display_status_unknown_falls_back_to_inconclusive():
+    """Unknown statuses don't crash the UI — they show as
+    'inconclusive' so the operator notices something unfamiliar
+    without losing the rest of the trace."""
+    from src.router.types import display_status_for
+    assert display_status_for("totally_made_up_status") == "inconclusive"
+    assert display_status_for("") == "inconclusive"
+
+
+def test_decision_to_dict_includes_display_status():
+    """Decision.to_dict carries display_status so the UI can render
+    without re-running the mapping client-side."""
+    from src.router.types import Decision, RoutingOutcome
+    d = Decision(
+        claim={}, outcome=RoutingOutcome.VERIFIED,
+        verification_status="verified",
+    )
+    assert d.to_dict()["display_status"] == "verified"
+    d2 = Decision(
+        claim={}, outcome=RoutingOutcome.UNVERIFIED,
+        verification_status="retrieval_failed",
+    )
+    assert d2.to_dict()["display_status"] == "not_applicable"
