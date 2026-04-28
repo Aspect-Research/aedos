@@ -58,6 +58,13 @@ design rationale.
   only — operator decides whether to extend. New `RoutingOutcome.
   USER_CONTRADICTED_SELF` value when triggered.
 
+> **Real-API validation 2026-04-28** (Anthropic Opus 4.7, ~$1 total):
+> all five LLM components (router, scoping classifier, stability
+> classifier, extractor verbatim rule, end-to-end Saturn-moons
+> hallucination catch) PASSED. The whole v0.5/v0.6 pipeline works
+> on real LLM calls. See `autonomous_state/OBSERVATIONS.md`
+> "COMPREHENSIVE REAL-API VALIDATION 2026-04-28" for the full table.
+
 ## What's new in v0.5
 
 - **LLM-based verification routing.** Patterns no longer determine the
