@@ -157,10 +157,39 @@ def test_429_then_200_succeeds_via_retry(monkeypatch):
 
 
 def test_5xx_raises_server_error():
-    bad = StubResponse(status_code=503, body="oops", text="oops")
+    # 500 is not retried; raises immediately.
+    bad = StubResponse(status_code=500, body="oops", text="oops")
     backend = ModalGLMBackend(api_key="k", client=StubClient([bad]))
     with pytest.raises(ModalServerError):
         backend.chat(system="", messages=[ChatMessage("user", "hi")])
+
+
+def test_502_retried_then_recovers(monkeypatch):
+    monkeypatch.setattr(
+        "src.llm_clients.modal_glm.MODAL_5XX_BACKOFF_S", (0.0, 0.0),
+    )
+    bad = StubResponse(status_code=502, body="bad gateway", text="bad gateway")
+    good = _ok_response("recovered after 502")
+    client = StubClient([bad, good])
+    backend = ModalGLMBackend(api_key="k", client=client)
+    out = backend.chat(system="", messages=[ChatMessage("user", "hi")])
+    assert out == "recovered after 502"
+    assert len(client.calls) == 2
+
+
+def test_503_exhausts_retries(monkeypatch):
+    monkeypatch.setattr(
+        "src.llm_clients.modal_glm.MODAL_5XX_BACKOFF_S", (0.0, 0.0),
+    )
+    # 3 attempts (initial + 2 retries) all 503.
+    bads = [StubResponse(status_code=503, body="down", text="down")
+            for _ in range(3)]
+    client = StubClient(list(bads))
+    backend = ModalGLMBackend(api_key="k", client=client)
+    with pytest.raises(ModalServerError) as excinfo:
+        backend.chat(system="", messages=[ChatMessage("user", "hi")])
+    assert excinfo.value.status_code == 503
+    assert len(client.calls) == 3  # 1 initial + 2 retries
 
 
 def test_timeout_raises_timeout_error():
