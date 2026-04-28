@@ -20,6 +20,7 @@ $$(".tab").forEach((btn) => {
     if (btn.dataset.tab === "facts") refreshFacts();
     if (btn.dataset.tab === "predicates") refreshPredicates();
     if (btn.dataset.tab === "flow") refreshFlow();
+    if (btn.dataset.tab === "cache") refreshCache();
   });
 });
 
@@ -1184,6 +1185,61 @@ $("#flow-turn-select").addEventListener("change", async (e) => {
   await renderFlowFor(parseInt(e.target.value, 10));
 });
 
+// ---- cache inspector --------------------------------------
+//
+// v0.6 Tier 2 verification cache. Shows aggregate stats + the most
+// recent cached entries with verdict, stability class, hit count,
+// and expiry status.
+
+async function refreshCache() {
+  const data = await api("GET", "/api/cache");
+  const stats = data.stats || {};
+  const statsEl = $("#cache-stats");
+  statsEl.textContent = (
+    `${stats.total_entries || 0} entries · `
+    + `${stats.immutable_entries || 0} immutable · `
+    + `${stats.total_hits || 0} total hits`
+  );
+
+  const container = $("#cache-table");
+  container.innerHTML = "";
+  const entries = data.entries || [];
+  if (!entries.length) {
+    container.appendChild(el("p", { className: "hint",
+      textContent: "Cache is empty. Set AEDOS_CACHE_SCOPING=1 + "
+                   + "AEDOS_CACHE_STABILITY=1 + AEDOS_CACHE_WRITES=1 "
+                   + "and run some turns through retrieval-territory "
+                   + "questions to populate it." }));
+    return;
+  }
+
+  const table = el("table");
+  table.appendChild(el("tr", {}, [
+    "id", "verdict", "stability", "hits", "expires", "key",
+  ].map((h) => el("th", { textContent: h }))));
+  entries.forEach((e) => {
+    const row = el("tr", {});
+    if (e.is_expired) row.classList.add("closed");
+    if (e.verdict === "verified") row.classList.add("verified");
+    if (e.verdict === "contradicted") row.classList.add("contradicted");
+
+    row.appendChild(el("td", { textContent: String(e.id) }));
+    row.appendChild(el("td", { textContent: e.verdict || "?" }));
+    row.appendChild(el("td", { textContent: e.stability_class || "?" }));
+    row.appendChild(el("td", { textContent: String(e.hit_count ?? 0) }));
+    const expires = e.expires_at
+      ? (e.is_expired ? `${e.expires_at} (EXPIRED)` : e.expires_at)
+      : "(never)";
+    row.appendChild(el("td", { className: "mono", textContent: expires }));
+    row.appendChild(el("td", { className: "mono",
+      textContent: e.canonical_key || "" }));
+    table.appendChild(row);
+  });
+  container.appendChild(table);
+}
+
+$("#cache-refresh").addEventListener("click", refreshCache);
+
 // ---- reset ------------------------------------------------
 
 $("#reset-btn").addEventListener("click", async () => {
@@ -1195,4 +1251,5 @@ $("#reset-btn").addEventListener("click", async () => {
   const active = $(".tab.active")?.dataset.tab;
   if (active === "facts") refreshFacts();
   if (active === "flow") refreshFlow();
+  if (active === "cache") refreshCache();
 });

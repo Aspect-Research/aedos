@@ -129,6 +129,54 @@ def list_patterns() -> list[dict[str, Any]]:
     ]
 
 
+@app.get("/api/cache")
+def list_cache_entries(limit: int = 200) -> dict[str, Any]:
+    """v0.6 — Tier 2 verification cache inspector.
+
+    Returns aggregate stats + the most-recently-cached entries (capped
+    at ``limit``). The cache table is small for solo dogfooding;
+    serving everything is fine. Adds a server-side ``is_expired`` flag
+    so the UI doesn't have to do datetime parsing in JS.
+    """
+    from datetime import datetime, timezone
+
+    store = _pipeline(app).store
+    rows = store._conn.execute(
+        "SELECT * FROM verification_cache ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    now = datetime.now(timezone.utc)
+    entries = []
+    for r in rows:
+        d = dict(r)
+        expires_at = d.get("expires_at")
+        is_expired = False
+        if expires_at:
+            try:
+                if datetime.fromisoformat(expires_at) < now:
+                    is_expired = True
+            except ValueError:
+                is_expired = True  # malformed → treat as expired
+        d["is_expired"] = is_expired
+        entries.append(d)
+
+    # Aggregate stats.
+    stats_row = store._conn.execute(
+        "SELECT COUNT(*) AS total, "
+        "       COUNT(CASE WHEN expires_at IS NULL THEN 1 END) AS immutable, "
+        "       SUM(hit_count) AS total_hits "
+        "FROM verification_cache"
+    ).fetchone()
+    return {
+        "stats": {
+            "total_entries": int(stats_row["total"] or 0),
+            "immutable_entries": int(stats_row["immutable"] or 0),
+            "total_hits": int(stats_row["total_hits"] or 0),
+        },
+        "entries": entries,
+    }
+
+
 @app.post("/api/reset")
 def reset() -> dict[str, bool]:
     _pipeline(app).store.reset()
