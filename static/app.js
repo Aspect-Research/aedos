@@ -293,6 +293,79 @@ function renderStage(event) {
     case "assistant_draft":
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
+    case "cache_lookup": {
+      // v0.6 — cache hit/miss event.
+      const meta = el("div", { className: "decision-meta" });
+      const result = d.result || (d.error ? "error" : "?");
+      let line = `${result.toUpperCase()}`;
+      if (d.canonical_key) {
+        line += ` · key=${d.canonical_key.slice(0, 80)}`;
+      }
+      if (result === "hit") {
+        line += ` · ${d.verdict || "?"}`;
+        if (d.hit_count != null) line += ` · hits=${d.hit_count}`;
+        if (d.expires_at) line += ` · expires ${d.expires_at}`;
+      }
+      if (d.error) {
+        line += ` · error: ${d.error}`;
+      }
+      meta.appendChild(el("div", { textContent: line }));
+      body.appendChild(meta);
+      break;
+    }
+    case "cache_write": {
+      // v0.6 — cache write event.
+      const meta = el("div", { className: "decision-meta" });
+      let line;
+      if (d.error) {
+        line = `error: ${d.error}`;
+      } else {
+        line = `wrote · ${d.verdict || "?"} · ${d.stability_class || "?"}`;
+        if (d.ttl_seconds === null) line += " · never expires";
+        else if (d.ttl_seconds != null) line += ` · ttl=${d.ttl_seconds}s`;
+        if (d.canonical_key) line += ` · key=${d.canonical_key.slice(0, 80)}`;
+      }
+      meta.appendChild(el("div", { textContent: line }));
+      body.appendChild(meta);
+      break;
+    }
+    case "cache_scoping_decision": {
+      const meta = el("div", { className: "decision-meta" });
+      if (d.error) {
+        meta.appendChild(el("div", {
+          style: "color:var(--danger)",
+          textContent: `error: ${d.error}`,
+        }));
+      } else {
+        const dec = d.decision || {};
+        meta.appendChild(el("div", {
+          textContent: `scope=${dec.scope || "?"} (conf=${
+            (dec.confidence ?? 0).toFixed(2)}) — ${dec.reason || ""}`,
+        }));
+      }
+      body.appendChild(meta);
+      break;
+    }
+    case "cache_stability_decision": {
+      const meta = el("div", { className: "decision-meta" });
+      if (d.error) {
+        meta.appendChild(el("div", {
+          style: "color:var(--danger)",
+          textContent: `error: ${d.error}`,
+        }));
+      } else {
+        const dec = d.decision || {};
+        const ttl = dec.ttl_seconds === null ? "never expires"
+          : dec.ttl_seconds === 0 ? "don't cache (volatile)"
+          : `ttl=${dec.ttl_seconds}s`;
+        meta.appendChild(el("div", {
+          textContent: `${dec.stability_class || "?"} (conf=${
+            (dec.confidence ?? 0).toFixed(2)}) · ${ttl} — ${dec.reason || ""}`,
+        }));
+      }
+      body.appendChild(meta);
+      break;
+    }
     case "turn_cost": {
       // v0.6 — end-of-turn cost aggregate. Show total + by-model breakdown.
       const meta = el("div", { className: "decision-meta" });
