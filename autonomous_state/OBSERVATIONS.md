@@ -689,3 +689,32 @@ timeout. This suggests either:
 The right answer is probably "lower max_tokens to ~1024 for chat" —
 chat responses are inherently short, and reducing the cap forces the
 reasoning chain to wrap up faster too.
+
+## 2026-04-28 — max_tokens=1024 was wrong for reasoning models, fixed
+
+Update on the reasoning-model max_tokens question above. Lowering the
+chat cap to 1024 fixed the cold-start timeout but broke a different
+case: turn 4 of the hallucination corpus
+('spell `floccinaucinihilipilification` backwards') returned
+content=null because GLM spent the entire 1024-token budget inside
+reasoning_content before emitting any user-visible content. This is
+the spell-29-letter-word edge case — a reasoning model needs more
+headroom on hard prompts because the cap counts reasoning + output,
+not output alone.
+
+The 1024 cap was right for Anthropic chat (no reasoning_content) but
+too tight for Modal/GLM. The fix is per-backend: anthropic stays at
+1024; Modal/GLM gets 4096 (~3K headroom for the answer after a
+typical reasoning chain). Both knobs env-overridable as
+AEDOS_CHAT_MAX_TOKENS_{ANTHROPIC,MODAL}; legacy AEDOS_CHAT_MAX_TOKENS
+still wins as a global override.
+
+Implementation: Pipeline._max_tokens_for_chat() switches on
+backend.provider. Tested by both per-backend assertion and the
+existing single-knob CHAT_MAX_TOKENS alias (resolves to anthropic
+default) for backward compat. 3 new tests in test_modal_glm.py.
+
+The lesson: caps that count "reasoning + output" can't be set the
+same way as caps that only count output. Anytime AEDOS adds a new
+chat backend, this question needs a deliberate answer per backend
+rather than a global default.
