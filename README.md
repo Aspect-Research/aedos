@@ -222,23 +222,38 @@ Or click **Reset DB** in the UI header.
 ## Layout
 
 ```
-patterns.yaml       — eight structural patterns; predicates free-form within each
+patterns.yaml         — 8 structural patterns; predicates free-form within each
 src/
-  fact_store.py     — SQLite wrapper (facts, turns, pipeline_events)
+  fact_store.py       — SQLite wrapper (facts + user_id, turns + user_id,
+                        pipeline_events, retrieval_cache, verification_cache)
   pattern_registry.py
-  extractor.py      — LLM claim extraction via forced tool use
-  llm_router.py     — v0.5 LLM-based per-claim routing classifier
-  router.py         — dispatches claims to verifiers; writes to store
+  extractor.py        — LLM claim extraction via forced tool use
+                        (with verbatim rule + substitution detector)
+  llm_router.py       — v0.5 LLM-based per-claim routing classifier
+  router.py           — dispatches claims to verifiers; writes to store
+  pipeline.py         — orchestrates a full turn; logs pipeline_events
+  corrector.py        — rewrites assistant responses to reflect corrections
+  llm_client.py       — Anthropic SDK wrapper + cost ledger
+  cost.py             — per-call cost accounting (Anthropic + Modal pricing)
+  app.py              — FastAPI backend (chat + inspector + cache endpoints)
+  llm_clients/        — chat-model backends (anthropic, modal/GLM-5.1-FP8)
+  cache/              — v0.6 Tier 2 verification cache
+    scoping_classifier.py    — user / session / world classifier
+    stability_classifier.py  — TTL bin classifier
+    verification_cache.py    — canonicalize + lookup + write
   verifiers/
-    types.py            — shared VerificationOutcome / VerificationResult
-    store_verifier.py   — matches model claims against user-asserted facts
-    retrieval_verifier.py
-    code_generation/    — v0.4 triage → prompt → code → sandbox → compare
-  corrector.py      — rewrites assistant responses to reflect corrections
-  pipeline.py       — orchestrates a full turn; logs pipeline_events
-  llm_client.py     — Anthropic SDK wrapper with prompt caching
-  app.py            — FastAPI backend
-static/             — single-page UI (vanilla JS)
-tests/              — one test file per component + integration scenarios
-scripts/reset_db.py
+    types.py                  — VerificationOutcome / VerificationResult
+    store_verifier.py         — match against user-asserted facts
+    retrieval_verifier.py     — slots-aware retrieval + judge (DDG/Tavily/SerpAPI)
+    code_generation/          — v0.5 prompt → code → sandbox → compare
+static/                — single-page UI (vanilla JS, vanilla CSS, no build step)
+tests/                 — one test file per component + integration scenarios
+scripts/
+  reset_db.py                   — wipe + recreate schema
+  smoke_test_glm.py             — 3-prompt smoke test against GLM
+  dogfood_glm.py                — 17-prompt dogfood (provider-flagged)
+  dogfood_hallucination_corpus.py — 28 adversarial prompts
+  eval_harness.py               — raw vs aedos comparison
+  summarize_corpus_run.py       — analyze a run's catches/hedges
+  analyze_substitutions.py      — extractor substitution rate measurement
 ```
