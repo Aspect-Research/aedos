@@ -1,9 +1,8 @@
-"""Verification dispatcher (v0.5 — LLM-routed).
+"""Verification dispatcher.
 
-The pattern + predicate-override dispatch from v0.4 is gone. A per-claim
-LLM router (``src/llm_router.py``) decides which method to use; this file
-is a thin shim that calls that router, logs the decision, and dispatches
-to the matching verifier.
+Per-claim LLM router (``src/llm_router.py``) decides which method to
+use; this file is a thin shim that calls that router, logs the
+decision, and dispatches to the matching verifier.
 
 Methods the LLM router can return:
 
@@ -19,165 +18,48 @@ store path; the LLM router only runs for model-origin claims.
 Routing anomaly: a small sanity check that catches upstream EXTRACTOR
 errors. If the extractor binds an attitude- or preference-class claim
 to a non-user agent, that's almost always a slot-binding bug rather
-than a coherent claim about a third party. The LLM router would route
-such claims to ``unverifiable`` anyway, but flagging them prominently
-alerts the operator to fix the extractor.
+than a coherent claim about a third party.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Callable, Optional
 
 from src.fact_store import DEFAULT_USER_ID, Fact, FactStore
 from src.llm_client import LLMClient
 from src.llm_router import ROUTING_METHODS, RoutingDecision, route_claim
 from src.pattern_registry import Pattern, PatternRegistry
+from src.router.constants import (
+    CONF_PENDING_IMPLEMENTATION,
+    CONF_PYTHON_CORRECTION,
+    CONF_PYTHON_VERIFIED,
+    CONF_RETRIEVAL_CORRECTION,
+    CONF_RETRIEVAL_FAILED,
+    CONF_RETRIEVAL_INCONCLUSIVE,
+    CONF_RETRIEVAL_VERIFIED,
+    CONF_ROUTING_ANOMALY,
+    CONF_STORE_VERIFIED,
+    CONF_UNVERIFIABLE_IN_PRINCIPLE,
+    CONF_USER_ASSERTED,
+    KEY_SLOTS_BY_PATTERN,
+    UNIQUE_VALUE_SLOTS,
+    USER_SUBJECT_PATTERNS,
+    is_user,
+    unique_value_slots_enabled,
+)
+from src.router.types import Decision, RoutingOutcome
 from src.verifiers.code_generation import (
     CodeGenerationVerifier,
     CodeGenVerificationResult,
 )
-from src.verifiers.retrieval_verifier import RetrievalResult, RetrievalVerifier
+from src.verifiers.retrieval_verifier import RetrievalVerifier
 from src.verifiers.store_verifier import (
     StoreLookupOutcome,
     store_lookup_verify,
 )
 
-# Confidence levels.
-CONF_USER_ASSERTED = 0.95
-CONF_PYTHON_VERIFIED = 0.99
-CONF_PYTHON_CORRECTION = 0.99
-CONF_RETRIEVAL_VERIFIED = 0.95
-CONF_RETRIEVAL_CORRECTION = 0.95
-CONF_STORE_VERIFIED = 0.95
-CONF_PENDING_IMPLEMENTATION = 0.4
-CONF_RETRIEVAL_INCONCLUSIVE = 0.4
-CONF_RETRIEVAL_FAILED = 0.4
-CONF_UNVERIFIABLE_IN_PRINCIPLE = 0.3
-CONF_ROUTING_ANOMALY = 0.2
-
-
-class RoutingOutcome(str, Enum):
-    USER_STORED = "user_stored"
-    USER_DUPLICATE = "user_duplicate"
-    USER_CONTRADICTED_PRIOR = "user_contradicted_prior"
-    USER_CONTRADICTED_SELF = "user_contradicted_self"  # v0.6 prototype
-    VERIFIED = "verified"
-    CONTRADICTED = "contradicted"
-    UNVERIFIED = "unverified"
-    UNVERIFIABLE_IN_PRINCIPLE = "unverifiable_in_principle"
-    ROUTING_ANOMALY = "routing_anomaly"
-
-
-# Slots that define identity for each pattern's store-lookup key.
-KEY_SLOTS_BY_PATTERN: dict[str, list[str]] = {
-    "preference": ["agent", "object"],
-    "propositional_attitude": ["agent", "proposition"],
-    "spatial_temporal": ["entity", "location"],
-    "categorical": ["entity", "category"],
-    "role_assignment": ["agent", "role", "org"],
-    "relational": ["subject", "object"],
-    "quantitative": ["subject", "property"],
-    "event": ["event_type", "occurred_at"],
-}
-
-
-# Patterns whose subject must be the user. If the extractor produced one
-# of these patterns with a non-user agent, that's almost always an
-# upstream slot-binding error — flag it as a routing anomaly. (v0.4 used
-# a per-pattern YAML flag for this; v0.5 inlines the rule.)
-_USER_SUBJECT_PATTERNS: dict[str, str] = {
-    "preference": "agent",
-    "propositional_attitude": "agent",
-}
-
-
-# v0.6 PROTOTYPE — unique-value-slot detection. Opt-in via env var.
-#
-# The default contradiction model in v0.3+ catches polarity flips
-# (same key slots, opposite polarity). It does NOT catch "user said
-# X about themselves in turn N, then says Y about themselves in turn
-# M" when X and Y are different values on a slot that's biologically/
-# definitionally unique per entity (one birthplace, one biological
-# mother, one native language at birth).
-#
-# This map says: "for THIS pattern + THIS predicate + THIS key-slot
-# combination, the value-slot is unique-per-entity." A new user
-# assertion with the same key-slots but a different value-slot value
-# is flagged as user_contradicted_self.
-#
-# Format: (pattern, predicate, identity_slot, value_slot) → True
-#
-# Empty by default — the operator opts in by setting the env var
-# AEDOS_UNIQUE_VALUE_SLOTS=1. Even when enabled, the rule only applies
-# to patterns explicitly listed here. Adding new entries is intended
-# as a careful, considered design decision — see CLAUDE.md's
-# "Bounded predicate vocabulary" invariant for the design philosophy.
-_UNIQUE_VALUE_SLOTS: dict[tuple[str, str, str, str], bool] = {
-    ("spatial_temporal", "was_born_in", "entity", "location"): True,
-}
-
-
-def _unique_value_slots_enabled() -> bool:
-    """Reads the env var live so tests can monkeypatch."""
-    import os
-    return os.getenv("AEDOS_UNIQUE_VALUE_SLOTS") == "1"
-
-
-def _is_user(value: Any) -> bool:
-    return isinstance(value, str) and value.strip().lower() in {"user", "me", "i"}
-
 
 RoutingFn = Callable[[dict], RoutingDecision]
-
-
-@dataclass
-class Decision:
-    claim: dict
-    outcome: RoutingOutcome
-    verification_status: str = ""
-    confidence: float = 0.0
-    stored_fact_id: Optional[int] = None
-    boosted_fact_id: Optional[int] = None
-    closed_fact_ids: list[int] = field(default_factory=list)
-    contradicting_fact_id: Optional[int] = None
-    matching_fact_id: Optional[int] = None
-    code_gen_result: Optional[dict] = None
-    retrieval_result: Optional[RetrievalResult] = None
-    correction: Optional[dict] = None
-    notes: list[str] = field(default_factory=list)
-    anomaly_slot: Optional[dict] = None  # {slot, expected, actual} for routing anomalies
-    # v0.5: routing decision payload from the LLM router. Surfaces in the
-    # trace UI as the leading section of every model-origin Decision.
-    routing_decision: Optional[dict] = None
-    # v0.6: True when the verdict came from the Tier 2 verification
-    # cache (short-circuited the retrieval verifier). Lets the UI mark
-    # cached claims distinctly without having to grep notes for the
-    # "served from cache" string.
-    served_from_cache: bool = False
-
-    def to_dict(self) -> dict:
-        return {
-            "claim": self.claim,
-            "outcome": self.outcome.value,
-            "verification_status": self.verification_status,
-            "confidence": self.confidence,
-            "stored_fact_id": self.stored_fact_id,
-            "boosted_fact_id": self.boosted_fact_id,
-            "closed_fact_ids": self.closed_fact_ids,
-            "contradicting_fact_id": self.contradicting_fact_id,
-            "matching_fact_id": self.matching_fact_id,
-            "code_gen_result": self.code_gen_result,
-            "retrieval_result": (
-                self.retrieval_result.to_dict() if self.retrieval_result else None
-            ),
-            "correction": self.correction,
-            "notes": self.notes,
-            "anomaly_slot": self.anomaly_slot,
-            "routing_decision": self.routing_decision,
-            "served_from_cache": self.served_from_cache,
-        }
 
 
 class Router:
@@ -191,11 +73,6 @@ class Router:
         retrieval_verifier: RetrievalVerifier | None = None,
         code_gen_verifier: CodeGenerationVerifier | None = None,
         user_id: str = DEFAULT_USER_ID,
-        # v0.6 — when set, the router checks the cache BEFORE invoking
-        # the retrieval verifier. On hit (within TTL), short-circuits.
-        # The lookup-eligibility check is the same scope+stability gate
-        # the cache-write path uses, supplied by the Pipeline via
-        # ``cache_eligible_keys`` (set of canonical_keys).
         cache_gate: Any = None,
     ):
         self.store = store
@@ -268,13 +145,8 @@ class Router:
             self.store.close_fact(f.id)
             closed.append(f.id)
 
-        # v0.6 PROTOTYPE — unique-value-slot detection. If the operator
-        # has opted in (AEDOS_UNIQUE_VALUE_SLOTS=1), check whether this
-        # user assertion contradicts a prior assertion on a slot that
-        # is unique-per-entity (e.g. birthplace). Same identity slot,
-        # different value slot, same polarity → user_contradicted_self.
         prior_self_contradictions: list[dict] = []
-        if _unique_value_slots_enabled():
+        if unique_value_slots_enabled():
             prior_self_contradictions = self._find_unique_value_conflicts(
                 pattern.name, claim["predicate"], slots, polarity,
             )
@@ -320,9 +192,6 @@ class Router:
     # ---- model-origin claims -------------------------------------------
 
     def _route_model(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
-        # Routing anomaly check (hardcoded in _USER_SUBJECT_PATTERNS — v0.5
-        # replaced the per-pattern YAML opt-in). Catches upstream extractor
-        # errors regardless of how the LLM router would have routed the claim.
         slots = claim.get("slots", {})
         anomaly = self._maybe_anomaly(pattern, slots)
         if anomaly is not None:
@@ -330,7 +199,6 @@ class Router:
             self._log_routing_decision(decision, source_turn_id, routing=None)
             return decision
 
-        # Ask the LLM router how to verify this claim.
         if self.routing_fn is None:
             raise RuntimeError(
                 "Router needs an llm or a routing_fn to handle model-origin claims"
@@ -346,10 +214,6 @@ class Router:
         self, decision: Decision, source_turn_id: int,
         routing: RoutingDecision | None,
     ) -> None:
-        """Emit a ``routing_decision`` pipeline event so the trace UI can
-        render the chosen method, reason, and confidence above the
-        verification block.
-        """
         try:
             self.store.insert_pipeline_event(
                 source_turn_id,
@@ -363,8 +227,7 @@ class Router:
                 },
             )
         except Exception:
-            # Logging must never crash routing.
-            pass
+            pass  # Logging must never crash routing.
 
     def _dispatch_method(
         self,
@@ -390,24 +253,17 @@ class Router:
             )
         if method == "unverifiable":
             return self._route_unverifiable(claim, source_turn_id)
-        # Coercion in route_claim should prevent this; surface loudly.
         raise RuntimeError(
             f"router has no handler for routing method {method!r}; "
             f"valid methods are {ROUTING_METHODS}"
         )
 
     def _maybe_anomaly(self, pattern: Pattern, slots: dict) -> dict | None:
-        """Return {slot, expected, actual} if this is a routing anomaly, else None.
-
-        v0.5: applies to the patterns in ``_USER_SUBJECT_PATTERNS``.
-        These patterns are ill-formed when the subject slot is a
-        non-user agent — such claims are almost always extractor errors.
-        """
-        slot_name = _USER_SUBJECT_PATTERNS.get(pattern.name)
+        slot_name = USER_SUBJECT_PATTERNS.get(pattern.name)
         if slot_name is None:
             return None
         actual = slots.get(slot_name)
-        if _is_user(actual):
+        if is_user(actual):
             return None
         return {"slot": slot_name, "expected": "user", "actual": actual}
 
@@ -440,10 +296,6 @@ class Router:
                 claim, source_turn_id=source_turn_id,
             )
 
-        # v0.5: triage is gone. The LLM router has already decided this is
-        # python-verifiable; if the code can't actually compute the answer,
-        # surfaces as ``code_execution_failed`` or ``comparison_error`` —
-        # not ``not_python_verifiable``.
         if result.status == "verified":
             return Decision(
                 claim=claim,
@@ -458,14 +310,14 @@ class Router:
             )
 
         if result.status == "contradicted":
-            corrected_slots = self._apply_correction_to_slots(claim, result)
+            corrected_slots = _apply_correction_to_slots(claim, result)
             corrected_claim = dict(claim)
             corrected_claim["slots"] = corrected_slots
             corrected_id = self._store(
                 corrected_claim, source_turn_id, asserted_by="python_verifier",
                 confidence=CONF_PYTHON_CORRECTION, verification_status="verified",
             )
-            original_value = self._extract_displayed_claim_value(claim)
+            original_value = _extract_displayed_claim_value(claim)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
@@ -482,7 +334,6 @@ class Router:
             )
 
         # comparison_error / code_execution_failed / canonical_constants_disagreement
-        # all map to pending. The trace carries the rich diagnostic.
         notes = [
             f"code generation produced status {result.status!r}: {result.explanation}"
         ]
@@ -564,13 +415,11 @@ class Router:
         Pure delegation to CacheGate.maybe_hit; the gate owns lookup
         + event emission. The Decision-building logic stays here
         because Decision shape depends on routing concepts the gate
-        doesn't know about (RoutingOutcome, _store, correction
-        payload).
+        doesn't know about.
         """
         if self._cache_gate is None:
             return None
-        from src.router import KEY_SLOTS_BY_PATTERN as _KS
-        identity_slots = _KS.get(claim.get("pattern", ""), [])
+        identity_slots = KEY_SLOTS_BY_PATTERN.get(claim.get("pattern", ""), [])
         hit = self._cache_gate.maybe_hit(
             claim, identity_slots, turn_id=source_turn_id,
         )
@@ -616,8 +465,7 @@ class Router:
                 },
                 served_from_cache=True,
             )
-        # Cached inconclusive — still serve so we don't redo retrieval
-        # on a known-tough claim.
+        # Cached inconclusive — still serve.
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
@@ -658,10 +506,6 @@ class Router:
         if cached is not None:
             return cached
 
-        # Note: query_hint is logged on the routing_decision event but not
-        # threaded into the retrieval verifier's query plan in v0.5; the
-        # verifier still uses its own slot-aware query strategy. Threading
-        # the hint through is a future improvement.
         result = self.retrieval_verifier.verify(claim, source_turn_id=source_turn_id)
 
         if result.outcome is VerificationOutcome.VERIFIED:
@@ -756,32 +600,6 @@ class Router:
             ],
         )
 
-    # ---- correction helpers --------------------------------------------
-
-    def _apply_correction_to_slots(
-        self, claim: dict, result: CodeGenVerificationResult
-    ) -> dict:
-        """Project the computed value into the right slot for a contradiction."""
-        slots = dict(claim.get("slots") or {})
-        pattern = claim.get("pattern")
-        predicate = claim.get("predicate") or ""
-        if pattern == "quantitative":
-            slots["value"] = result.actual_value
-        elif pattern == "relational" and predicate == "reverse_of":
-            slots["subject"] = result.actual_value
-        return slots
-
-    def _extract_displayed_claim_value(self, claim: dict) -> Any:
-        """Pull the slot value most useful for the correction payload UI."""
-        slots = claim.get("slots") or {}
-        pattern = claim.get("pattern")
-        predicate = claim.get("predicate") or ""
-        if pattern == "quantitative":
-            return slots.get("value")
-        if pattern == "relational" and predicate == "reverse_of":
-            return slots.get("subject")
-        return slots
-
     # ---- helpers --------------------------------------------------------
 
     def _find_unique_value_conflicts(
@@ -789,11 +607,9 @@ class Router:
         slots: dict, polarity: int,
     ) -> list[dict]:
         """v0.6 prototype. Look up any prior facts where the identity-
-        slot is the same but the value-slot is different. Returns a
-        list of {prior_value, slot_name} dicts. Only checks pattern/
-        predicate combinations explicitly in _UNIQUE_VALUE_SLOTS."""
+        slot is the same but the value-slot is different."""
         conflicts: list[dict] = []
-        for (p_name, pred, id_slot, val_slot), enabled in _UNIQUE_VALUE_SLOTS.items():
+        for (p_name, pred, id_slot, val_slot), enabled in UNIQUE_VALUE_SLOTS.items():
             if not enabled:
                 continue
             if p_name != pattern_name or pred != predicate:
@@ -802,8 +618,6 @@ class Router:
             new_value = slots.get(val_slot)
             if id_value is None or new_value is None:
                 continue
-            # Find ALL currently-valid facts with same identity value,
-            # any value-slot value, same polarity.
             prior = self.store.find_currently_valid(
                 pattern_name, predicate=predicate,
                 slot_match={id_slot: id_value},
@@ -852,3 +666,32 @@ class Router:
                 user_id=self.user_id,
             )
         )
+
+
+# ---- module-level helpers ------------------------------------------
+
+
+def _apply_correction_to_slots(
+    claim: dict, result: CodeGenVerificationResult
+) -> dict:
+    """Project the computed value into the right slot for a contradiction."""
+    slots = dict(claim.get("slots") or {})
+    pattern = claim.get("pattern")
+    predicate = claim.get("predicate") or ""
+    if pattern == "quantitative":
+        slots["value"] = result.actual_value
+    elif pattern == "relational" and predicate == "reverse_of":
+        slots["subject"] = result.actual_value
+    return slots
+
+
+def _extract_displayed_claim_value(claim: dict) -> Any:
+    """Pull the slot value most useful for the correction payload UI."""
+    slots = claim.get("slots") or {}
+    pattern = claim.get("pattern")
+    predicate = claim.get("predicate") or ""
+    if pattern == "quantitative":
+        return slots.get("value")
+    if pattern == "relational" and predicate == "reverse_of":
+        return slots.get("subject")
+    return slots
