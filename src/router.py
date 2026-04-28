@@ -151,6 +151,11 @@ class Decision:
     # v0.5: routing decision payload from the LLM router. Surfaces in the
     # trace UI as the leading section of every model-origin Decision.
     routing_decision: Optional[dict] = None
+    # v0.6: True when the verdict came from the Tier 2 verification
+    # cache (short-circuited the retrieval verifier). Lets the UI mark
+    # cached claims distinctly without having to grep notes for the
+    # "served from cache" string.
+    served_from_cache: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -171,6 +176,7 @@ class Decision:
             "notes": self.notes,
             "anomaly_slot": self.anomaly_slot,
             "routing_decision": self.routing_decision,
+            "served_from_cache": self.served_from_cache,
         }
 
 
@@ -600,6 +606,7 @@ class Router:
                 ),
                 notes=[f"served from cache (key={key!r}, "
                        f"hit_count={cached.hit_count})"],
+                served_from_cache=True,
             )
         if cached.verdict == "contradicted":
             return Decision(
@@ -621,6 +628,7 @@ class Router:
                         "explanation", "from cache"),
                     "source_text": claim.get("source_text", ""),
                 },
+                served_from_cache=True,
             )
         # Cached inconclusive — still serve so we don't redo retrieval
         # on a known-tough claim.
@@ -635,6 +643,7 @@ class Router:
                 verification_status="retrieval_inconclusive",
             ),
             notes=[f"served from cache (inconclusive, key={key!r})"],
+            served_from_cache=True,
         )
 
     def _route_retrieval(
