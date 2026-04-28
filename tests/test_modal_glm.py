@@ -307,6 +307,87 @@ def test_content_null_raises_response_error_with_reasoning_hint():
         backend.chat(system="", messages=[ChatMessage("user", "hi")])
 
 
+def test_from_env_reads_modal_api_key(monkeypatch):
+    """from_env() classmethod constructs from MODAL_API_KEY env var.
+    Cheap to test, has been silently uncovered."""
+    monkeypatch.setenv("MODAL_API_KEY", "env-supplied-key")
+    backend = ModalGLMBackend.from_env()
+    assert backend._api_key == "env-supplied-key"
+    assert backend._endpoint == MODAL_ENDPOINT
+    assert backend.model == MODAL_MODEL
+
+
+def test_400_raises_generic_modal_error_with_status():
+    """400 (and other unmapped 4xx, e.g. 403/404) bypass the special
+    401/429 handlers and surface as a plain ModalError carrying the
+    status code so the caller can branch on it."""
+    bad = StubResponse(status_code=400, body="bad request",
+                       text="bad request")
+    backend = ModalGLMBackend(api_key="k", client=StubClient([bad]))
+    from src.llm_clients.modal_glm import ModalError
+    with pytest.raises(ModalError) as excinfo:
+        backend.chat(system="", messages=[ChatMessage("user", "hi")])
+    assert excinfo.value.status_code == 400
+    # And it should NOT be one of the more specific subclasses.
+    assert not isinstance(excinfo.value, ModalAuthError)
+    assert not isinstance(excinfo.value, ModalRateLimitError)
+    assert not isinstance(excinfo.value, ModalServerError)
+
+
+def test_content_non_str_raises_response_error():
+    """If GLM ever returns a structured (list) content (which happens
+    for some OpenAI-shape responses), surface it as a ModalResponseError
+    rather than passing it through and crashing downstream string ops."""
+    body = {
+        "id": "x",
+        "choices": [{"message": {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hi"}],  # list, not str
+        }}],
+    }
+    bad = StubResponse(status_code=200, body=body, text=json.dumps(body))
+    backend = ModalGLMBackend(api_key="k", client=StubClient([bad]))
+    with pytest.raises(ModalResponseError, match="expected str"):
+        backend.chat(system="", messages=[ChatMessage("user", "hi")])
+
+
+def test_cost_recorder_exception_does_not_break_chat():
+    """The cost_recorder is best-effort — if the recorder itself
+    raises, chat must still return the response. This protects the
+    happy path from observability bugs."""
+    body = {
+        "id": "x",
+        "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    good = StubResponse(status_code=200, body=body, text=json.dumps(body))
+    backend = ModalGLMBackend(api_key="k", client=StubClient([good]))
+
+    def recorder(model, in_tok, out_tok):
+        raise RuntimeError("recorder went bang")
+
+    text = backend.chat(
+        system="", messages=[ChatMessage("user", "hi")],
+        cost_recorder=recorder,
+    )
+    assert text == "hi"
+
+
+def test_httpx_http_error_wrapped_as_modal_error():
+    """A non-timeout httpx error (e.g. ConnectError, NetworkError,
+    proxy auth failure) gets wrapped into ModalError so callers only
+    have to catch our own exception family."""
+    import httpx as _httpx
+
+    backend = ModalGLMBackend(
+        api_key="k",
+        client=StubClient([_httpx.ConnectError("name resolution failed")]),
+    )
+    from src.llm_clients.modal_glm import ModalError
+    with pytest.raises(ModalError, match="HTTP error"):
+        backend.chat(system="", messages=[ChatMessage("user", "hi")])
+
+
 # ---- pipeline event logging ---------------------------------------------
 
 
