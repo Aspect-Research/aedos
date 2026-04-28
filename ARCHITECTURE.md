@@ -432,6 +432,74 @@ corrector if needed).
   routing logic). `reset_db.py` is the intended workflow for this;
   production would need a re-verify pass.
 
+## Verification cache (v0.6 / Tier 2)
+
+The cache is a performance optimization for retrieval, not a knowledge
+base. **Cached entries can be wrong, can go stale, and are subject to
+eviction. Every cached verdict is provisional.** The framing is load-
+bearing: hosting the cache as "fast lookups for things we already
+verified" lets us be aggressive about TTLs (cache miss = 1 extra
+retrieval call); hosting it as "things AEDOS knows" would push us to
+trust stale entries.
+
+### Pipeline
+
+For each model-asserted claim:
+
+1. **Scoping classifier** (one LLM call per claim) → one of
+   `user_specific`, `session_specific`, `world_fact`. Only world_fact
+   is cache-eligible. user_specific is Tier 1's job; session_specific
+   ("this sentence has 7 words", "the previous turn said X") is true-
+   only-in-context.
+2. **Stability classifier** (only for world_fact) → TTL bin: immutable
+   (math, definitions), decade_stable (geography), years_stable
+   (political offices), months_stable (recent pop culture), days_stable
+   (current events), volatile (prices, weather — don't cache).
+3. **Cache lookup** before retrieval. Canonical key is case/whitespace/
+   slot-order independent and polarity-distinguishing. Hit → serve the
+   cached verdict, skip retrieval. Miss → fall through.
+4. **Cache write** after retrieval. verified / contradicted /
+   inconclusive verdicts get cached with the stability TTL. Volatile
+   doesn't write. Python verdicts don't write (cheap to redo).
+
+### What's deliberately not cached
+
+- User-specific claims (preferences, biography, opinion). Tier 1 is the
+  per-user store; the Tier 2 cache is shared.
+- Session-specific claims (literal-text counts, "now" / "today" claims).
+- Volatile claims (prices, weather).
+- Python-routed verdicts. The cost of a cache miss is one DDG search +
+  one judge call (~$0.005-0.02). Re-running python verification is a
+  subprocess invocation + LLM code-write call (~$0.005). The savings
+  from caching python don't justify the cache-management overhead.
+
+### Failure modes
+
+- **Stale entries serving wrong answers.** Bias toward shorter TTLs
+  when uncertain — wrong-and-confident is worse than slow-and-correct.
+  Stability classifier prompt explicitly biases toward tighter bins.
+- **Canonical-key collisions across non-equivalent claims.** Polarity
+  is in the key so positive/negative don't collide. But "Tokyo is
+  in Japan" and "Tokyo, Japan exists" hash differently — the first
+  cached lookup misses the second. Acceptable for v0.6; entity-
+  alias resolution is future work.
+- **Canonical-key MISSES across semantically-equivalent claims.** Same
+  as above. A miss costs one extra retrieval; a wrong-key hit serves
+  a wrong answer for the entire TTL window. The asymmetry justifies
+  the v0.6 conservative posture.
+
+### Off by default
+
+The cache requires three env vars to enable, in order:
+`AEDOS_CACHE_SCOPING=1` (turns on the scoping classifier in observation
+mode), then `AEDOS_CACHE_STABILITY=1` (adds the stability classifier),
+then `AEDOS_CACHE_WRITES=1` (wires the actual cache reads/writes).
+Each step adds an LLM call per assistant claim — start small, calibrate
+the classifier prompts on real claims, then enable downstream steps.
+
+The Cache tab in the trace UI inspects current state. Each cached
+entry shows verdict, stability class, hit count, expiry status.
+
 ## What v2 would add
 
 - A retrieval layer that fetches full pages on demand, ranks sources,
