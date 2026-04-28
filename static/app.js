@@ -19,6 +19,7 @@ $$(".tab").forEach((btn) => {
     $(`#tab-${btn.dataset.tab}`).classList.add("active");
     if (btn.dataset.tab === "facts") refreshFacts();
     if (btn.dataset.tab === "predicates") refreshPredicates();
+    if (btn.dataset.tab === "flow") refreshFlow();
   });
 });
 
@@ -861,6 +862,328 @@ async function refreshPredicates() {
   });
 }
 
+// ---- flow view --------------------------------------------
+//
+// At-a-glance per-turn flowchart. Vertical SVG. Linear stages stack;
+// the router branches into one column per assistant claim and the
+// corrector merges them back. Each node is clickable — clicking flips
+// to the Chat + Trace tab and scrolls the corresponding stage into view.
+//
+// Source of truth is the same pipeline_events stream the Detail View
+// uses; this renderer just lays it out structurally.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const FLOW_NODE_W = 340;
+const FLOW_CLAIM_W = 170;
+const FLOW_NODE_H = 56;
+const FLOW_GAP = 32;
+const FLOW_MARGIN = 24;
+
+function svgEl(tag, attrs = {}, children = []) {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  children.forEach((c) => n.appendChild(c));
+  return n;
+}
+
+function flowEdgeClass(status) {
+  if (status === "verified" || status === "user_asserted") return "verified";
+  if (status === "contradicted") return "contradicted";
+  if (
+    status === "retrieval_inconclusive" ||
+    status === "retrieval_failed" ||
+    status === "unverifiable_pending_implementation" ||
+    status === "routing_anomaly"
+  ) return "inconclusive";
+  if (status === "unverifiable_in_principle") return "unverifiable";
+  return "";
+}
+
+async function refreshFlow() {
+  const turnSelect = $("#flow-turn-select");
+  const status = $("#flow-status");
+  const container = $("#flow-container");
+  status.textContent = "loading…";
+
+  const turns = await api("GET", "/api/turns");
+  const assistantTurns = turns.filter((t) => t.role === "assistant");
+  // Refresh the dropdown.
+  const prev = turnSelect.value;
+  turnSelect.innerHTML = "";
+  assistantTurns.forEach((t) => {
+    const opt = el("option", {});
+    opt.value = String(t.id);
+    opt.textContent = `turn ${t.id} — ${(t.content || "").slice(0, 60)}`;
+    turnSelect.appendChild(opt);
+  });
+  if (!assistantTurns.length) {
+    container.innerHTML = "";
+    container.appendChild(el("p", { className: "hint",
+      textContent: "No assistant turns yet. Send a message first." }));
+    status.textContent = "";
+    return;
+  }
+  // Default: previously-selected turn if still present, else the latest.
+  const desired = prev && assistantTurns.find((t) => String(t.id) === prev)
+    ? prev : String(assistantTurns[assistantTurns.length - 1].id);
+  turnSelect.value = desired;
+  await renderFlowFor(parseInt(desired, 10));
+  status.textContent = "";
+}
+
+async function renderFlowFor(turnId) {
+  const container = $("#flow-container");
+  container.innerHTML = "";
+  const events = await api("GET", `/api/trace/${turnId}`);
+  if (!events || !events.length) {
+    container.appendChild(el("p", { className: "hint",
+      textContent: "No events for this turn." }));
+    return;
+  }
+  const svg = buildFlowSvg(events, turnId);
+  container.appendChild(svg);
+}
+
+function buildFlowSvg(events, turnId) {
+  // The pipeline emits events for both the user turn and the assistant
+  // turn, but the trace endpoint returns only events for the assistant
+  // turn. Linear stages we expect to see, in order:
+  //
+  //   chat_model_call → assistant_extraction → verification → correction → final
+  //
+  // The user message is fetched separately so we can show it as the entry.
+  // For simplicity we read the user side from list_turns when needed.
+  const stageMap = {};
+  events.forEach((e) => { stageMap[e.stage] = e; });
+
+  const chatEv = stageMap["chat_model_call"];
+  const extractEv = stageMap["assistant_extraction"];
+  const verificationEv = stageMap["verification"];
+  const correctionEv = stageMap["correction"];
+  const finalEv = stageMap["final"];
+
+  const claims = (verificationEv?.data?.decisions) || [];
+  const totalClaims = claims.length;
+
+  // Linear stages above the router.
+  const linearTop = [
+    {
+      stage: "assistant_draft",
+      title: "User → Chat Model",
+      meta: chatEv ? formatChatMeta(chatEv.data) : "(legacy turn — no chat_model_call event)",
+      jumpStage: "chat_model_call",
+    },
+    {
+      stage: "assistant_extraction",
+      title: "Assistant Extraction",
+      meta: extractEv
+        ? `${(extractEv.data?.valid_facts || []).length} valid, `
+          + `${(extractEv.data?.rejected_facts || []).length} rejected`
+        : "(no extraction event)",
+      jumpStage: "assistant_extraction",
+    },
+    {
+      stage: "router",
+      title: totalClaims === 0
+        ? "Router (no claims to verify)"
+        : `Router (${totalClaims} claim${totalClaims === 1 ? "" : "s"})`,
+      meta: "LLM router decided per-claim verification method",
+      jumpStage: "verification",
+    },
+  ];
+
+  const linearBottom = [
+    {
+      stage: "corrector",
+      title: correctionEv
+        ? `Corrector (${(correctionEv.data?.interventions || []).length} interventions)`
+        : "Corrector (no interventions)",
+      meta: correctionEv
+        ? "draft was rewritten — green = applied"
+        : "draft passed through unchanged",
+      jumpStage: correctionEv ? "correction" : null,
+    },
+    {
+      stage: "final",
+      title: "Final Response",
+      meta: ((finalEv?.data?.content || "").slice(0, 80)) || "(no final event)",
+      jumpStage: "final",
+    },
+  ];
+
+  // Layout calculation.
+  const branchW = Math.max(
+    FLOW_NODE_W,
+    totalClaims * FLOW_CLAIM_W + (totalClaims - 1) * 24,
+  );
+  const totalW = Math.max(FLOW_NODE_W, branchW) + FLOW_MARGIN * 2;
+  const linearTopH = linearTop.length * (FLOW_NODE_H + FLOW_GAP);
+  const branchH = totalClaims > 0 ? FLOW_NODE_H + FLOW_GAP : 0;
+  const linearBottomH = linearBottom.length * (FLOW_NODE_H + FLOW_GAP);
+  const totalH = linearTopH + branchH + linearBottomH + FLOW_MARGIN * 2;
+
+  const svg = svgEl("svg", {
+    width: String(totalW),
+    height: String(totalH),
+    viewBox: `0 0 ${totalW} ${totalH}`,
+    role: "img",
+    "aria-label": `pipeline flow for turn ${turnId}`,
+  });
+
+  let y = FLOW_MARGIN;
+  const cx = totalW / 2;
+
+  // Linear stages above the router.
+  linearTop.forEach((st, i) => {
+    addNode(svg, cx - FLOW_NODE_W / 2, y, FLOW_NODE_W, FLOW_NODE_H,
+      st.title, st.meta, st.jumpStage);
+    if (i < linearTop.length - 1) {
+      addEdge(svg, cx, y + FLOW_NODE_H, cx, y + FLOW_NODE_H + FLOW_GAP, "");
+    }
+    y += FLOW_NODE_H + FLOW_GAP;
+  });
+
+  // Branch into claims.
+  if (totalClaims > 0) {
+    const claimsRowY = y;
+    const totalClaimW = totalClaims * FLOW_CLAIM_W + (totalClaims - 1) * 24;
+    const startX = cx - totalClaimW / 2;
+    claims.forEach((d, idx) => {
+      const x = startX + idx * (FLOW_CLAIM_W + 24);
+      const status = d.verification_status || "?";
+      const method = d.routing_decision?.method || "(no routing)";
+      const claim = d.claim || {};
+      const label = `${claim.predicate || "?"} (${method})`;
+      const cls = flowEdgeClass(status);
+      // edge from router-bottom to claim-top
+      addEdge(svg,
+        cx, claimsRowY - FLOW_GAP,
+        x + FLOW_CLAIM_W / 2, claimsRowY,
+        cls,
+      );
+      // claim node with status colorization
+      addClaimNode(svg, x, claimsRowY, FLOW_CLAIM_W, FLOW_NODE_H,
+        label, status, cls);
+      // edge from claim-bottom to corrector-top
+      addEdge(svg,
+        x + FLOW_CLAIM_W / 2, claimsRowY + FLOW_NODE_H,
+        cx, claimsRowY + FLOW_NODE_H + FLOW_GAP,
+        cls,
+      );
+    });
+    y = claimsRowY + FLOW_NODE_H + FLOW_GAP;
+  } else {
+    // No claims: keep the linear edge.
+    addEdge(svg, cx, y - FLOW_GAP, cx, y, "");
+  }
+
+  // Linear stages below the router.
+  linearBottom.forEach((st, i) => {
+    addNode(svg, cx - FLOW_NODE_W / 2, y, FLOW_NODE_W, FLOW_NODE_H,
+      st.title, st.meta, st.jumpStage);
+    if (i < linearBottom.length - 1) {
+      addEdge(svg, cx, y + FLOW_NODE_H, cx, y + FLOW_NODE_H + FLOW_GAP, "");
+    }
+    y += FLOW_NODE_H + FLOW_GAP;
+  });
+
+  return svg;
+}
+
+function addNode(svg, x, y, w, h, title, meta, jumpStage) {
+  const g = svgEl("g", { class: "flow-node" });
+  if (jumpStage) g.dataset.jumpStage = jumpStage;
+  g.appendChild(svgEl("rect", {
+    x: String(x), y: String(y), width: String(w), height: String(h),
+    rx: "6", ry: "6", class: "flow-node-rect",
+  }));
+  const titleText = svgEl("text", {
+    x: String(x + w / 2), y: String(y + 22),
+    "text-anchor": "middle", class: "flow-node-text",
+  });
+  titleText.textContent = title;
+  g.appendChild(titleText);
+  if (meta) {
+    const metaText = svgEl("text", {
+      x: String(x + w / 2), y: String(y + 40),
+      "text-anchor": "middle", class: "flow-node-meta",
+    });
+    metaText.textContent = meta.length > 60 ? meta.slice(0, 60) + "…" : meta;
+    g.appendChild(metaText);
+  }
+  if (jumpStage) {
+    g.style.cursor = "pointer";
+    g.addEventListener("click", () => jumpToStage(jumpStage));
+  }
+  svg.appendChild(g);
+}
+
+function addClaimNode(svg, x, y, w, h, label, status, cls) {
+  const g = svgEl("g", { class: "flow-node" });
+  g.dataset.jumpStage = "verification";
+  g.appendChild(svgEl("rect", {
+    x: String(x), y: String(y), width: String(w), height: String(h),
+    rx: "6", ry: "6", class: `flow-node-rect flow-claim-rect ${cls}`,
+  }));
+  const labelText = svgEl("text", {
+    x: String(x + w / 2), y: String(y + 22),
+    "text-anchor": "middle", class: "flow-node-text",
+  });
+  labelText.textContent = label.length > 22 ? label.slice(0, 22) + "…" : label;
+  g.appendChild(labelText);
+  const statusText = svgEl("text", {
+    x: String(x + w / 2), y: String(y + 40),
+    "text-anchor": "middle", class: "flow-node-meta",
+  });
+  statusText.textContent = status;
+  g.appendChild(statusText);
+  g.style.cursor = "pointer";
+  g.addEventListener("click", () => jumpToStage("verification"));
+  svg.appendChild(g);
+}
+
+function addEdge(svg, x1, y1, x2, y2, cls) {
+  // Slightly curved path from (x1,y1) to (x2,y2). Vertical-dominant.
+  const dy = (y2 - y1) / 2;
+  const path = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+  svg.appendChild(svgEl("path", {
+    d: path, class: `flow-edge ${cls}`,
+  }));
+}
+
+function formatChatMeta(d) {
+  if (!d) return "(no chat data)";
+  const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
+  const status = d.status_code ? ` http=${d.status_code}` : "";
+  const respc = d.response_chars != null ? `, response=${d.response_chars}c` : "";
+  return `${d.provider || "?"}:${d.model || "?"} — ${dur}${status}${respc}`;
+}
+
+function jumpToStage(stage) {
+  // Switch to the Chat + Trace tab and scroll the matching stage into view.
+  const chatTab = document.querySelector('.tab[data-tab="chat"]');
+  if (chatTab) chatTab.click();
+  // Defer one frame so the tab activation has rendered.
+  requestAnimationFrame(() => {
+    // The Detail View's renderStage labels the header with the stage name
+    // verbatim; find the first stage whose first child <span> matches.
+    const headers = traceEl.querySelectorAll(".stage-header > span:first-child");
+    for (const h of headers) {
+      if (h.textContent.trim() === stage) {
+        h.parentElement.scrollIntoView({ behavior: "smooth", block: "start" });
+        h.parentElement.style.boxShadow = "0 0 0 2px var(--accent)";
+        setTimeout(() => { h.parentElement.style.boxShadow = ""; }, 1500);
+        return;
+      }
+    }
+  });
+}
+
+$("#flow-refresh").addEventListener("click", refreshFlow);
+$("#flow-turn-select").addEventListener("change", async (e) => {
+  await renderFlowFor(parseInt(e.target.value, 10));
+});
+
 // ---- reset ------------------------------------------------
 
 $("#reset-btn").addEventListener("click", async () => {
@@ -871,4 +1194,5 @@ $("#reset-btn").addEventListener("click", async () => {
   traceEl.appendChild(el("p", { className: "hint", textContent: "Database reset. Send a message to start fresh." }));
   const active = $(".tab.active")?.dataset.tab;
   if (active === "facts") refreshFacts();
+  if (active === "flow") refreshFlow();
 });

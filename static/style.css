@@ -717,3 +717,75 @@ td.mono { font-family: var(--mono); font-size: 0.8rem; }
 tr.closed { opacity: 0.55; }
 tr.contradicted { background: #faeaea; }
 tr.verified { background: #ecf7ef; }
+
+/* ---- Flow View ----------------------------------------------------- */
+
+.flow-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.flow-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.flow-toolbar select, .flow-toolbar button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+}
+.flow-container {
+  height: calc(100% - 56px);
+  overflow: auto;
+  padding: 1rem;
+  display: flex;
+  justify-content: center;
+}
+.flow-container svg {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.flow-container .flow-node-rect {
+  fill: var(--panel);
+  stroke: var(--border);
+  stroke-width: 1;
+  cursor: pointer;
+  transition: fill 0.1s ease;
+}
+.flow-container .flow-node:hover .flow-node-rect {
+  fill: #eef2f8;
+  stroke: var(--accent);
+}
+.flow-container .flow-node-text {
+  font-family: inherit;
+  font-size: 0.78rem;
+  fill: var(--ink);
+  pointer-events: none;
+}
+.flow-container .flow-node-meta {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  fill: var(--muted);
+  pointer-events: none;
+}
+.flow-container .flow-edge {
+  stroke: #999;
+  stroke-width: 1.5;
+  fill: none;
+}
+.flow-container .flow-edge.verified { stroke: #2d8e4a; }
+.flow-container .flow-edge.contradicted { stroke: #c33; }
+.flow-container .flow-edge.inconclusive { stroke: #c87000; }
+.flow-container .flow-edge.unverifiable { stroke: #888; stroke-dasharray: 4 3; }
+.flow-container .flow-claim-rect.verified { fill: #ecf7ef; }
+.flow-container .flow-claim-rect.contradicted { fill: #faeaea; }
+.flow-container .flow-claim-rect.inconclusive { fill: #fff4e1; }
+.flow-container .flow-claim-rect.unverifiable { fill: #efefef; }
