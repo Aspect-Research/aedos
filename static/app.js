@@ -265,14 +265,15 @@ form.addEventListener("submit", async (e) => {
   messagesEl.appendChild(thinking);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  // Reset the live flow chart for the new turn.
+  // Reset the live flow chart and immediately render a "thinking"
+  // bubble for the first stage (Chat Model) — gives the operator
+  // visual feedback the moment they hit Send, before any event
+  // lands. Subsequent renders pass running=true so the next
+  // expected stage shows as a thinking placeholder.
   let assistantTurnId = null;
   const liveEvents = [];
   flowLiveStatus.textContent = "running…";
-  flowLiveContainer.innerHTML = "";
-  flowLiveContainer.appendChild(
-    el("p", { className: "hint", textContent: "starting pipeline…" })
-  );
+  renderLiveFlow(null, [], { running: true });
 
   try {
     await streamChat(
@@ -286,7 +287,7 @@ form.addEventListener("submit", async (e) => {
             data: ev.data,
             created_at: new Date().toISOString(),
           });
-          renderLiveFlow(assistantTurnId, liveEvents);
+          renderLiveFlow(assistantTurnId, liveEvents, { running: true });
           flowLiveStatus.textContent =
             `running… (${liveEvents.length} events)`;
         },
@@ -297,6 +298,10 @@ form.addEventListener("submit", async (e) => {
             content: trace.final_content,
             original_content: trace.original_content,
           });
+          // Final render with running=false so any lingering
+          // "thinking" bubble disappears.
+          renderLiveFlow(trace.assistant_turn_id, liveEvents,
+            { running: false });
           flowLiveStatus.textContent =
             `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
         },
@@ -1217,20 +1222,6 @@ async function refreshPredicates() {
 // Source of truth is the same pipeline_events stream the Detail View
 // uses; this renderer just lays it out structurally.
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-const FLOW_NODE_W = 340;
-const FLOW_CLAIM_W = 170;
-const FLOW_NODE_H = 56;
-const FLOW_GAP = 32;
-const FLOW_MARGIN = 24;
-
-function svgEl(tag, attrs = {}, children = []) {
-  const n = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) n.setAttribute(k, attrs[k]);
-  children.forEach((c) => n.appendChild(c));
-  return n;
-}
-
 function flowEdgeClass(status) {
   if (status === "verified" || status === "user_asserted") return "verified";
   if (status === "contradicted") return "contradicted";
@@ -1244,20 +1235,179 @@ function flowEdgeClass(status) {
   return "";
 }
 
+// The five progress steps of a turn, in the order they fire. The
+// flow chart renders ONLY the steps whose events have landed, plus
+// (when the run is still in progress) one animated "thinking" bubble
+// for the next expected step. The chart fills in like a progress
+// bar — no template, no misleading defaults like "draft passed
+// through unchanged" rendered before the corrector even runs.
+const PIPELINE_STEPS = [
+  {
+    stage: "chat_model_call",
+    title: "Chat Model",
+    metaFn: (ev) => formatChatMeta(ev.data || {}),
+  },
+  {
+    stage: "assistant_extraction",
+    title: "Extraction",
+    metaFn: (ev) => {
+      const d = ev.data || {};
+      const v = (d.valid_facts || []).length;
+      const r = (d.rejected_facts || []).length;
+      return `${v} valid · ${r} rejected`;
+    },
+  },
+  {
+    stage: "verification",
+    title: "Verification",
+    isClaimList: true,
+  },
+  {
+    stage: "correction",
+    title: "Correction",
+    metaFn: (ev) => {
+      const n = ((ev.data || {}).interventions || []).length;
+      return n === 0 ? "no corrections needed"
+        : `${n} intervention${n === 1 ? "" : "s"} applied`;
+    },
+  },
+  {
+    stage: "final",
+    title: "Final Response",
+    metaFn: (ev) => ((ev.data || {}).content || "").slice(0, 80),
+  },
+];
+
 // Render the live flow chart in the chat panel for ``turnId`` from
-// ``events`` (any partial subset is OK — buildFlowSvg fills missing
-// stages with placeholders). Used both by hydrate (with completed
-// events) and by the SSE handler (with incrementally-arriving events).
-function renderLiveFlow(turnId, events) {
+// ``events`` (any partial subset is OK — only landed stages render
+// as bubbles; the next expected stage shows as an animated "thinking"
+// placeholder). Used both by hydrate (with completed events) and by
+// the SSE handler (with incrementally-arriving events).
+function renderLiveFlow(turnId, events, { running = false } = {}) {
   flowLiveContainer.innerHTML = "";
-  if (!events || !events.length) {
-    flowLiveContainer.appendChild(
-      el("p", { className: "hint", textContent: "No events yet." })
-    );
-    return;
+  flowLiveContainer.appendChild(buildFlowChart(events || [], turnId, running));
+}
+
+function buildFlowChart(events, turnId, running) {
+  const stageMap = {};
+  events.forEach((e) => { stageMap[e.stage] = e; });
+
+  // Collect landed steps in pipeline order. (Cache events and other
+  // intermediate fires — assistant_draft, scoping/stability decisions
+  // — are visible in the Trace tab; the flow chart shows only the
+  // five main progress markers.)
+  const landed = [];
+  for (const step of PIPELINE_STEPS) {
+    if (stageMap[step.stage]) landed.push({ step, event: stageMap[step.stage] });
   }
-  const svg = buildFlowSvg(events, turnId);
-  flowLiveContainer.appendChild(svg);
+
+  // Next expected step is the one immediately after the last landed
+  // step (or the very first step if nothing has landed yet). Only
+  // shown while ``running`` AND there's a next step left.
+  let nextStep = null;
+  const lastLandedIdx = landed.length > 0
+    ? PIPELINE_STEPS.indexOf(landed[landed.length - 1].step)
+    : -1;
+  if (running && lastLandedIdx + 1 < PIPELINE_STEPS.length) {
+    nextStep = PIPELINE_STEPS[lastLandedIdx + 1];
+  }
+
+  const chart = el("div", { className: "flow-chart" });
+
+  if (landed.length === 0 && !nextStep) {
+    chart.appendChild(el("p", { className: "hint",
+      textContent: "Send a message — each stage will appear here as it lands." }));
+    return chart;
+  }
+
+  // Render landed steps.
+  landed.forEach(({ step, event }, idx) => {
+    if (idx > 0) chart.appendChild(arrowDown());
+    chart.appendChild(renderStepNode(step, event));
+  });
+
+  // Render thinking placeholder for next step.
+  if (nextStep) {
+    if (landed.length > 0) chart.appendChild(arrowDown());
+    chart.appendChild(renderThinkingNode(nextStep));
+  }
+
+  return chart;
+}
+
+function renderStepNode(step, event) {
+  if (step.isClaimList) return renderVerificationNode(step, event);
+
+  const node = el("div", { className: "flow-step flow-step-done",
+    dataset: { stage: step.stage } });
+  node.addEventListener("click", () => jumpToStage(step.stage));
+  node.appendChild(el("div", { className: "flow-step-title",
+    textContent: step.title }));
+  const meta = step.metaFn ? step.metaFn(event) : "";
+  if (meta) {
+    node.appendChild(el("div", { className: "flow-step-meta",
+      textContent: meta }));
+  }
+  return node;
+}
+
+function renderVerificationNode(step, event) {
+  const decisions = (event.data || {}).decisions || [];
+  const node = el("div", { className: "flow-step flow-step-done flow-step-verification",
+    dataset: { stage: step.stage } });
+  node.appendChild(el("div", { className: "flow-step-title",
+    textContent: `${step.title} · ${decisions.length} claim${decisions.length === 1 ? "" : "s"}` }));
+  if (decisions.length === 0) {
+    node.appendChild(el("div", { className: "flow-step-meta",
+      textContent: "no claims to verify" }));
+    node.addEventListener("click", () => jumpToStage(step.stage));
+    return node;
+  }
+  // One lean row per claim — single bubble, not a bubble-per-claim.
+  const list = el("ul", { className: "claim-list" });
+  decisions.forEach((d) => {
+    const status = d.verification_status || "?";
+    const cls = flowEdgeClass(status);
+    const claim = d.claim || {};
+    const method = (d.routing_decision || {}).method || "?";
+    const cached = d.served_from_cache === true;
+    const row = el("li", {
+      className: `claim-row claim-${cls}` + (cached ? " claim-cached" : ""),
+      title: `${claim.predicate || "?"} (${claim.pattern || "?"}) via ${method}\n`
+             + `→ ${status}` + (cached ? "\n(served from cache)" : ""),
+    });
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      jumpToStage(step.stage);
+    });
+    row.appendChild(el("span", { className: "claim-dot",
+      title: status }));
+    const labelText = claim.predicate || "?";
+    row.appendChild(el("span", { className: "claim-label",
+      textContent: (cached ? "↺ " : "") + labelText }));
+    row.appendChild(el("span", { className: "claim-method",
+      textContent: method }));
+    list.appendChild(row);
+  });
+  node.appendChild(list);
+  return node;
+}
+
+function renderThinkingNode(step) {
+  const node = el("div", { className: "flow-step flow-step-thinking",
+    dataset: { stage: step.stage } });
+  node.appendChild(el("div", { className: "flow-step-title",
+    textContent: step.title }));
+  // Animated "thinking" indicator — CSS pulses the dots.
+  const meta = el("div", { className: "flow-step-meta thinking-dots" });
+  meta.appendChild(document.createTextNode("thinking"));
+  meta.appendChild(el("span", { className: "thinking-anim" }));
+  node.appendChild(meta);
+  return node;
+}
+
+function arrowDown() {
+  return el("div", { className: "flow-arrow", textContent: "↓" });
 }
 
 // ---- trace tab --------------------------------------------
@@ -1298,273 +1448,6 @@ async function refreshTraceTab() {
 async function renderTraceForTurn(turnId) {
   const events = await api("GET", `/api/trace/${turnId}`);
   renderTrace(events);
-}
-
-function buildFlowSvg(events, turnId) {
-  // The pipeline emits events for both the user turn and the assistant
-  // turn, but the trace endpoint returns only events for the assistant
-  // turn. Linear stages we expect to see, in order:
-  //
-  //   chat_model_call → assistant_extraction → verification → correction → final
-  //
-  // The user message is fetched separately so we can show it as the entry.
-  // For simplicity we read the user side from list_turns when needed.
-  const stageMap = {};
-  events.forEach((e) => { stageMap[e.stage] = e; });
-
-  const chatEv = stageMap["chat_model_call"];
-  const extractEv = stageMap["assistant_extraction"];
-  const verificationEv = stageMap["verification"];
-  const correctionEv = stageMap["correction"];
-  const finalEv = stageMap["final"];
-
-  const claims = (verificationEv?.data?.decisions) || [];
-  const totalClaims = claims.length;
-
-  // Linear stages above the router.
-  const linearTop = [
-    {
-      stage: "assistant_draft",
-      title: "User → Chat Model",
-      meta: chatEv ? formatChatMeta(chatEv.data) : "(legacy turn — no chat_model_call event)",
-      jumpStage: "chat_model_call",
-    },
-    {
-      stage: "assistant_extraction",
-      title: "Assistant Extraction",
-      meta: extractEv
-        ? (() => {
-            const valid = (extractEv.data?.valid_facts || []).length;
-            const rejected = (extractEv.data?.rejected_facts || []).length;
-            const warnings = events.filter(
-              (e) => e.stage === "extractor_substitution_warning"
-                     && e.data?.side !== "user"
-            ).length;
-            let m = `${valid} valid, ${rejected} rejected`;
-            if (warnings > 0) m += ` · ⚠ ${warnings} substitution warning(s)`;
-            return m;
-          })()
-        : "(no extraction event)",
-      jumpStage: "assistant_extraction",
-    },
-    {
-      stage: "router",
-      title: totalClaims === 0
-        ? "Router (no claims to verify)"
-        : `Router (${totalClaims} claim${totalClaims === 1 ? "" : "s"})`,
-      meta: "LLM router decided per-claim verification method",
-      jumpStage: "verification",
-    },
-  ];
-
-  const linearBottom = [
-    {
-      stage: "corrector",
-      title: correctionEv
-        ? `Corrector (${(correctionEv.data?.interventions || []).length} interventions)`
-        : "Corrector (no interventions)",
-      meta: correctionEv
-        ? "draft was rewritten — green = applied"
-        : "draft passed through unchanged",
-      jumpStage: correctionEv ? "correction" : null,
-    },
-    {
-      stage: "final",
-      title: "Final Response",
-      meta: ((finalEv?.data?.content || "").slice(0, 80)) || "(no final event)",
-      jumpStage: "final",
-    },
-  ];
-
-  // Layout: claims wrap into multiple rows so wide-claim turns don't
-  // create a horizontal scrollbar. Per-row count is capped so each
-  // claim node stays at its full readable width; the chart grows
-  // vertically instead.
-  const FLOW_CLAIMS_PER_ROW = 4;
-  const FLOW_CLAIM_GAP_X = 24;
-  const FLOW_CLAIM_GAP_Y = 18;
-  const claimsPerRow = totalClaims > 0
-    ? Math.min(totalClaims, FLOW_CLAIMS_PER_ROW)
-    : 0;
-  const claimRowCount = totalClaims > 0
-    ? Math.ceil(totalClaims / FLOW_CLAIMS_PER_ROW)
-    : 0;
-
-  const branchW = Math.max(
-    FLOW_NODE_W,
-    claimsPerRow * FLOW_CLAIM_W + Math.max(0, claimsPerRow - 1) * FLOW_CLAIM_GAP_X,
-  );
-  const totalW = Math.max(FLOW_NODE_W, branchW) + FLOW_MARGIN * 2;
-  const linearTopH = linearTop.length * (FLOW_NODE_H + FLOW_GAP);
-  const branchH = claimRowCount > 0
-    ? claimRowCount * FLOW_NODE_H
-      + Math.max(0, claimRowCount - 1) * FLOW_CLAIM_GAP_Y
-      + FLOW_GAP  // gap before corrector
-    : 0;
-  const linearBottomH = linearBottom.length * (FLOW_NODE_H + FLOW_GAP);
-  const totalH = linearTopH + branchH + linearBottomH + FLOW_MARGIN * 2;
-
-  const svg = svgEl("svg", {
-    width: String(totalW),
-    height: String(totalH),
-    viewBox: `0 0 ${totalW} ${totalH}`,
-    role: "img",
-    "aria-label": `pipeline flow for turn ${turnId}`,
-  });
-
-  let y = FLOW_MARGIN;
-  const cx = totalW / 2;
-
-  // Linear stages above the router.
-  linearTop.forEach((st, i) => {
-    addNode(svg, cx - FLOW_NODE_W / 2, y, FLOW_NODE_W, FLOW_NODE_H,
-      st.title, st.meta, st.jumpStage);
-    if (i < linearTop.length - 1) {
-      addEdge(svg, cx, y + FLOW_NODE_H, cx, y + FLOW_NODE_H + FLOW_GAP, "");
-    }
-    y += FLOW_NODE_H + FLOW_GAP;
-  });
-
-  // Branch into claim rows. Each row has up to FLOW_CLAIMS_PER_ROW
-  // claims; rows stack vertically. Edges go router → each claim and
-  // each claim → corrector regardless of row, so the operator can
-  // see every claim's lineage even with crossings on tall charts.
-  if (totalClaims > 0) {
-    const firstClaimRowY = y;
-    const lastClaimRowY = firstClaimRowY
-      + (claimRowCount - 1) * (FLOW_NODE_H + FLOW_CLAIM_GAP_Y);
-    const correctorTopY = lastClaimRowY + FLOW_NODE_H + FLOW_GAP;
-
-    claims.forEach((d, idx) => {
-      const row = Math.floor(idx / FLOW_CLAIMS_PER_ROW);
-      const col = idx % FLOW_CLAIMS_PER_ROW;
-      // Centre each row independently. Last row may be partial — its
-      // claims still center under the chart's midline.
-      const rowSize = (row < claimRowCount - 1)
-        ? FLOW_CLAIMS_PER_ROW
-        : (totalClaims - row * FLOW_CLAIMS_PER_ROW);
-      const rowWidth = rowSize * FLOW_CLAIM_W
-        + Math.max(0, rowSize - 1) * FLOW_CLAIM_GAP_X;
-      const rowStartX = cx - rowWidth / 2;
-      const x = rowStartX + col * (FLOW_CLAIM_W + FLOW_CLAIM_GAP_X);
-      const claimY = firstClaimRowY + row * (FLOW_NODE_H + FLOW_CLAIM_GAP_Y);
-
-      const status = d.verification_status || "?";
-      const method = d.routing_decision?.method || "(no routing)";
-      const claim = d.claim || {};
-      const cached = d.served_from_cache === true;
-      const labelCore = `${claim.predicate || "?"} (${method})`;
-      const label = cached ? `↺ ${labelCore}` : labelCore;
-      const cls = flowEdgeClass(status);
-
-      // Edge from router (above firstClaimRowY) to this claim's top.
-      addEdge(svg,
-        cx, firstClaimRowY - FLOW_GAP,
-        x + FLOW_CLAIM_W / 2, claimY,
-        cls,
-      );
-      // Claim node.
-      addClaimNode(svg, x, claimY, FLOW_CLAIM_W, FLOW_NODE_H,
-        label, status, cls, { cached });
-      // Edge from this claim's bottom to corrector top.
-      addEdge(svg,
-        x + FLOW_CLAIM_W / 2, claimY + FLOW_NODE_H,
-        cx, correctorTopY,
-        cls,
-      );
-    });
-    y = correctorTopY;
-  } else {
-    // No claims: keep the linear edge.
-    addEdge(svg, cx, y - FLOW_GAP, cx, y, "");
-  }
-
-  // Linear stages below the router.
-  linearBottom.forEach((st, i) => {
-    addNode(svg, cx - FLOW_NODE_W / 2, y, FLOW_NODE_W, FLOW_NODE_H,
-      st.title, st.meta, st.jumpStage);
-    if (i < linearBottom.length - 1) {
-      addEdge(svg, cx, y + FLOW_NODE_H, cx, y + FLOW_NODE_H + FLOW_GAP, "");
-    }
-    y += FLOW_NODE_H + FLOW_GAP;
-  });
-
-  return svg;
-}
-
-function addNode(svg, x, y, w, h, title, meta, jumpStage) {
-  const g = svgEl("g", { class: "flow-node" });
-  if (jumpStage) g.dataset.jumpStage = jumpStage;
-  // Native browser tooltip on hover (SVG <title>). Always full text,
-  // even when not truncated — useful for confirming what a node is.
-  const fullTip = meta ? `${title}\n${meta}` : title;
-  const tipEl = svgEl("title", {});
-  tipEl.textContent = fullTip;
-  g.appendChild(tipEl);
-  g.appendChild(svgEl("rect", {
-    x: String(x), y: String(y), width: String(w), height: String(h),
-    rx: "6", ry: "6", class: "flow-node-rect",
-  }));
-  const titleText = svgEl("text", {
-    x: String(x + w / 2), y: String(y + 22),
-    "text-anchor": "middle", class: "flow-node-text",
-  });
-  titleText.textContent = title;
-  g.appendChild(titleText);
-  if (meta) {
-    const metaText = svgEl("text", {
-      x: String(x + w / 2), y: String(y + 40),
-      "text-anchor": "middle", class: "flow-node-meta",
-    });
-    metaText.textContent = meta.length > 60 ? meta.slice(0, 60) + "…" : meta;
-    g.appendChild(metaText);
-  }
-  if (jumpStage) {
-    g.style.cursor = "pointer";
-    g.addEventListener("click", () => jumpToStage(jumpStage));
-  }
-  svg.appendChild(g);
-}
-
-function addClaimNode(svg, x, y, w, h, label, status, cls, opts = {}) {
-  const g = svgEl("g", { class: "flow-node" });
-  g.dataset.jumpStage = "verification";
-  // Tooltip carries the un-truncated label + status; the visible text
-  // is severely clipped (22 chars) for the small claim rectangles.
-  const tipEl = svgEl("title", {});
-  const cachedTip = opts.cached ? "\n(served from Tier 2 cache)" : "";
-  tipEl.textContent = `${label}\nstatus: ${status}${cachedTip}`;
-  g.appendChild(tipEl);
-  const rectClasses = ["flow-node-rect", "flow-claim-rect", cls];
-  if (opts.cached) rectClasses.push("flow-claim-cached");
-  g.appendChild(svgEl("rect", {
-    x: String(x), y: String(y), width: String(w), height: String(h),
-    rx: "6", ry: "6", class: rectClasses.join(" "),
-  }));
-  const labelText = svgEl("text", {
-    x: String(x + w / 2), y: String(y + 22),
-    "text-anchor": "middle", class: "flow-node-text",
-  });
-  labelText.textContent = label.length > 22 ? label.slice(0, 22) + "…" : label;
-  g.appendChild(labelText);
-  const statusText = svgEl("text", {
-    x: String(x + w / 2), y: String(y + 40),
-    "text-anchor": "middle", class: "flow-node-meta",
-  });
-  statusText.textContent = status;
-  g.appendChild(statusText);
-  g.style.cursor = "pointer";
-  g.addEventListener("click", () => jumpToStage("verification"));
-  svg.appendChild(g);
-}
-
-function addEdge(svg, x1, y1, x2, y2, cls) {
-  // Slightly curved path from (x1,y1) to (x2,y2). Vertical-dominant.
-  const dy = (y2 - y1) / 2;
-  const path = `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
-  svg.appendChild(svgEl("path", {
-    d: path, class: `flow-edge ${cls}`,
-  }));
 }
 
 function formatChatMeta(d) {
