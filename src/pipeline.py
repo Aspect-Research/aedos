@@ -466,13 +466,30 @@ class Pipeline:
         """Call ``self.chat_backend.chat`` with provenance kwargs when the
         backend exposes a ``provider`` attribute (the new backends do;
         LLMClient and MockLLM don't). This routes the chat_model_call
-        event without forcing the test doubles to grow new arguments."""
+        event without forcing the test doubles to grow new arguments.
+
+        Also passes ``cost_recorder`` (when LLMClient exposes one) so
+        the chat backend can report its tokens into the per-turn
+        cost ledger. AnthropicChatBackend doesn't need this — it goes
+        through LLMClient.chat which records natively. ModalGLMBackend
+        does — its responses contain usage info that would otherwise
+        be dropped."""
         if hasattr(self.chat_backend, "provider"):
-            return self.chat_backend.chat(
-                system_prompt, history,
-                max_tokens=self.CHAT_MAX_TOKENS,
-                store=self.store, turn_id=turn_id,
-            )
+            kwargs: dict[str, Any] = {
+                "max_tokens": self.CHAT_MAX_TOKENS,
+                "store": self.store,
+                "turn_id": turn_id,
+            }
+            recorder = getattr(self.llm, "record_external_call", None)
+            if recorder is not None:
+                kwargs["cost_recorder"] = recorder
+            try:
+                return self.chat_backend.chat(system_prompt, history, **kwargs)
+            except TypeError:
+                # Backend may not accept cost_recorder yet (older
+                # versions or stubs in tests). Retry without it.
+                kwargs.pop("cost_recorder", None)
+                return self.chat_backend.chat(system_prompt, history, **kwargs)
         return self.chat_backend.chat(system_prompt, history)
 
     def _build_chat_system_prompt(self, user_facts: list[Fact]) -> str:

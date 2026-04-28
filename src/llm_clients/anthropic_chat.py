@@ -9,7 +9,7 @@ trace UI can show the same provenance row regardless of provider.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 if TYPE_CHECKING:  # pragma: no cover
     from src.fact_store import FactStore
@@ -34,6 +34,9 @@ class AnthropicChatBackend:
         max_tokens: int = 4096,
         store: "FactStore | None" = None,
         turn_id: int | None = None,
+        cost_recorder: Any | None = None,  # accepted but unused — LLMClient
+                                            # records cost natively for
+                                            # Anthropic calls
     ) -> str:
         msg_list = list(messages)
         started = time.monotonic()

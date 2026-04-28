@@ -177,6 +177,78 @@ def test_502_retried_then_recovers(monkeypatch):
     assert len(client.calls) == 2
 
 
+def test_chat_calls_cost_recorder_with_usage():
+    """ModalGLMBackend extracts prompt/completion tokens from the
+    GLM response and feeds them to the cost_recorder callable."""
+    body = {
+        "id": "x",
+        "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+        "usage": {
+            "prompt_tokens": 42, "completion_tokens": 17,
+            "reasoning_tokens": 100,
+        },
+    }
+    good = StubResponse(status_code=200, body=body, text=json.dumps(body))
+    backend = ModalGLMBackend(api_key="k", client=StubClient([good]))
+
+    captured: list[tuple] = []
+    def recorder(model, in_tok, out_tok):
+        captured.append((model, in_tok, out_tok))
+
+    backend.chat(system="", messages=[ChatMessage("user", "hi")],
+                 cost_recorder=recorder)
+
+    assert captured == [(MODAL_MODEL, 42, 17)]
+
+
+def test_chat_event_includes_usage():
+    """The chat_model_call event payload should include the usage
+    fields when present, so the trace UI / cost telemetry can use them."""
+    body = {
+        "id": "x",
+        "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5,
+                  "reasoning_tokens": 3},
+    }
+    good = StubResponse(status_code=200, body=body, text=json.dumps(body))
+    store = FactStore(":memory:")
+    turn_id = store.insert_turn("assistant", "")
+    backend = ModalGLMBackend(api_key="k", client=StubClient([good]))
+    backend.chat(system="", messages=[ChatMessage("user", "hi")],
+                 store=store, turn_id=turn_id)
+
+    events = store.get_pipeline_events(turn_id)
+    chat_event = next(e for e in events if e["stage"] == "chat_model_call")
+    data = chat_event["data"]
+    assert data["input_tokens"] == 10
+    assert data["output_tokens"] == 5
+    assert data["reasoning_tokens"] == 3
+
+
+def test_chat_works_without_usage_field():
+    """A response without a usage block (older endpoint version)
+    should still chat normally — usage values just come back as 0."""
+    body = {
+        "id": "x",
+        "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+        # No usage field.
+    }
+    good = StubResponse(status_code=200, body=body, text=json.dumps(body))
+    backend = ModalGLMBackend(api_key="k", client=StubClient([good]))
+
+    captured: list[tuple] = []
+    text = backend.chat(
+        system="", messages=[ChatMessage("user", "hi")],
+        cost_recorder=lambda m, i, o: captured.append((m, i, o)),
+    )
+    assert text == "hi"
+    # No usage field → recorder is called with zeros (we record the
+    # call happened, just with no token counts to bill against). The
+    # cost module will then report total_usd=0.0 for that call, which
+    # is the correct accounting.
+    assert captured == [(MODAL_MODEL, 0, 0)]
+
+
 def test_503_exhausts_retries(monkeypatch):
     monkeypatch.setattr(
         "src.llm_clients.modal_glm.MODAL_5XX_BACKOFF_S", (0.0, 0.0),
