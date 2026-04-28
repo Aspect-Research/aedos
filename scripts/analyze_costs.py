@@ -86,6 +86,9 @@ def main(argv: list[str]) -> int:
     if turn_costs:
         print(f"  avg cost / turn:      ${total_usd / len(turn_costs):.4f}")
     print(f"  total LLM calls:      {total_calls}")
+    if total_calls:
+        print(f"  avg cost / call:      ${total_usd / total_calls:.4f}")
+        print(f"  avg calls / turn:     {total_calls / len(turn_costs):.1f}")
     print(f"  total input tokens:   {total_in:,}")
     print(f"  total output tokens:  {total_out:,}\n")
 
