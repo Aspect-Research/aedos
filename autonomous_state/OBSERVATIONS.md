@@ -323,7 +323,40 @@ Implications:
 clean numbers. This is THE most important Phase-2 calibration finding
 of the whole autonomous run so far.
 
-### Validation: ran the new substitution detector against the existing dumps
+### REAL-API VALIDATION 2026-04-28 (post-fix)
+
+Two confirmations in one run:
+
+**1. The verbatim rule actually works in the LLM.**
+Real-API regression test test_real_api_extractor_does_not_substitute_values
+PASSED. Input "Saturn has 146 confirmed moons." → Opus 4.7 extractor
+returned value=146 (NOT the actual count of 274) and source_text
+contained the literal "146". Before the verbatim rule shipped, Opus
+was substituting 146→274. After: faithful extraction.
+
+**2. AEDOS catches Claude's actual hallucinations.**
+Ran corpus turn 11 (Saturn moons) against Anthropic via
+`py scripts/dogfood_hallucination_corpus.py --only 11 --provider anthropic`.
+
+  Claude (chat model) said: "As of 2024, Saturn has 146 confirmed
+  moons." (hallucination — actual is 274 per NASA/Wikipedia)
+  Extractor: 4 facts pulled, value=146 faithfully (no substitution!)
+  Verifier: contradicted — snippets say 274
+  Corrector: REPLACED — final assistant response says
+            "Saturn has 274 confirmed moons" with hedge:
+            "I believe in May 2023, when astronomers announced..."
+
+  This is the whole point of AEDOS working. A real chat-model
+  hallucination caught by retrieval verification and surgically
+  corrected. Total cost: ~$0.10 for the validation, but the signal
+  is paper-worthy.
+
+  Note: this also means **Anthropic's Claude Opus 4.7 hallucinates
+  on dynamic facts** (specifically, the May 2023 IAU update of
+  Saturn moon counts). Pre-2024 training data, common confabulation
+  pattern. AEDOS catches it.
+
+
 
 After shipping the source_text-not-in-input check, applied it
 post-hoc to the 27 existing corpus diagnostic dumps. Found:
