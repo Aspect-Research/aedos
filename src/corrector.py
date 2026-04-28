@@ -60,16 +60,35 @@ Intervention types:
   ("I believe...", "as of my last training data...", "you may want to
   verify with a current source"). Do NOT delete the claim itself.
 - replace: the claim is wrong. Replace the wrong value with the verified
-  one. Preserve everything around it.
+  one wherever it appears in the response.
 - soften: the claim is an unverifiable prediction stated as if certain.
   Soften with words like "might", "could", "is expected to". If the
   source text is already adequately hedged, leave it alone.
 - remove: rare; only delete the claim if the instruction explicitly says
   remove. Otherwise prefer hedge.
 
-Rules:
-- MINIMAL CHANGES. Preserve everything not directly affected by an
-  intervention. Match tone and structure.
+CRITICAL — internal consistency for ``replace`` interventions:
+
+When you change a verified_value, you MUST also fix every adjacent
+sentence in the response that contradicts the new value. The wrong
+value often gets restated, expanded, or used as a premise nearby —
+those sentences become internally inconsistent the moment you change
+the number/name/list at the named source_text.
+
+Concrete example: original draft says "there are 2 words with 3+
+vowels in your prompt. These are likely: 'Donald,' 'children,'
+'prompt,' 'vowels'." The verified_value is 0. You must rewrite BOTH
+the count AND the listing — leaving "These are likely: ..." untouched
+produces a response that says "0" and then immediately enumerates 4
+words. That's worse than no correction.
+
+When in doubt, rewrite the smallest enclosing paragraph (or section,
+if the contradiction spans paragraphs) so the verified value is the
+single source of truth.
+
+Other rules:
+- Preserve voice, tone, and structure where you can. Don't restructure
+  unaffected sections.
 - Do NOT apologize, narrate the correction, or add "actually" / "to be
   precise" preludes.
 - Output ONLY the rewritten response. No preamble, no explanation.
@@ -198,8 +217,29 @@ def _format_user_message(draft: str, interventions: list[Intervention]) -> str:
             lines.append(f"   verified_value: {iv.verified_value!r}")
         lines.append(f"   reason: {iv.reason}")
         lines.append("")
+    # If any intervention is a replace, prominently restate the verified
+    # values at the bottom so the model has a checklist to consult while
+    # scanning the rest of the response for contradicting prose.
+    replaces = [iv for iv in interventions
+                if iv.intervention_type == INTERVENTION_REPLACE
+                and iv.verified_value is not None]
+    if replaces:
+        lines.append("Verified values that the rewritten response must agree with:")
+        for iv in replaces:
+            c = iv.claim
+            slot_subj = (c.get("slots") or {}).get("subject") or c.get("subject")
+            slot_prop = (c.get("slots") or {}).get("property") or c.get("predicate")
+            descriptor = (
+                f"{slot_subj}.{slot_prop}" if slot_subj and slot_prop
+                else c.get("predicate", "?")
+            )
+            lines.append(f"  - {descriptor} = {iv.verified_value!r}")
+        lines.append("")
     lines.append(
-        "Make minimal changes. Preserve everything not affected by an "
-        "intervention. Return only the rewritten response."
+        "Apply the interventions and ensure the response is internally "
+        "consistent with each verified value. Fix adjacent sentences "
+        "that would contradict the new value (counts, lists, examples, "
+        "premises). Preserve voice and structure where you can. Return "
+        "ONLY the rewritten response."
     )
     return "\n".join(lines)
