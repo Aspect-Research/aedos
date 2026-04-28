@@ -9,6 +9,49 @@ This is a research prototype — clarity, observability, and ease of
 modification matter more than performance. See `ARCHITECTURE.md` for the
 design rationale.
 
+## What's new in v0.6 (experimental — autonomous-v0.5.x branch)
+
+- **Pluggable chat-model backend.** `AEDOS_CHAT_MODEL_PROVIDER` selects
+  the model under test for hallucination catching: `anthropic` (default,
+  any Claude model) or `modal` (GLM-5.1-FP8 served via Modal). The
+  infrastructure LLMs (extractor, router, code-writer, judge, corrector)
+  always use Anthropic. New `chat_model_call` pipeline event captures
+  provider/model/latency uniformly across providers. See
+  `src/llm_clients/`.
+- **Tier 1 cross-session user store.** `facts.user_id` and `turns.user_id`
+  columns. Routing, store lookups, and inserts are all user-scoped. Old
+  DBs migrate transparently via ALTER TABLE on first open. Default
+  `default_user` for solo dogfooding; multi-user deployments can thread
+  any `user_id` through `Pipeline(user_id=...)`.
+- **Tier 2 verification cache (`src/cache/`).** Three-stage observation-
+  to-action sequence:
+    1. Scoping classifier per claim → `user_specific` /
+       `session_specific` / `world_fact`. Only world_fact is cache-eligible.
+    2. Stability classifier for cache-eligible claims → six TTL bins
+       (immutable / decade_stable / years_stable / months_stable /
+       days_stable / volatile).
+    3. Cache lookup BEFORE retrieval (short-circuits on hit). Cache
+       writes AFTER retrieval verdicts (verified / contradicted / 
+       inconclusive). Canonical key is case/whitespace/slot-order
+       independent, polarity-distinguishing.
+  Cache is OFF by default. Enable with `AEDOS_CACHE_SCOPING=1
+  AEDOS_CACHE_STABILITY=1 AEDOS_CACHE_WRITES=1`. New Cache tab in the
+  trace UI inspects state.
+- **Cost telemetry (`src/cost.py`).** Every Anthropic API call records
+  tokens + USD cost. End-of-turn `turn_cost` event aggregates by model.
+  Pricing table for opus/sonnet/haiku 4.x line + GLM free tier; unknown
+  models report pricing_known=False without poisoning the total.
+- **Flow View tab.** Single-turn vertical SVG flowchart: chat → extract →
+  router (branches per claim) → corrector → final. Color-coded edges by
+  outcome. Click any node → switch to Detail View at that stage.
+- **Eval harness (`scripts/eval_harness.py`).** Run a corpus through both
+  raw chat and full AEDOS pipeline; classify each turn as caught /
+  preserved / broken / missed / uncertain. Save to `eval_results/`.
+- **Hallucination corpus (`scripts/dogfood_hallucination_corpus.py`).**
+  28 adversarial prompts across counting traps, numerical claims about
+  obscure entities, composite claims with one wrong detail, fake
+  inventions, multi-turn user_authoritative recall, long-tail trivia.
+
 ## What's new in v0.5
 
 - **LLM-based verification routing.** Patterns no longer determine the
