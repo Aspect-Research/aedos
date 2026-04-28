@@ -101,7 +101,61 @@ memory of the autonomous run.
 4. **Phase 6 (Tier 2 cache)** — spec says "after Tier 1 is solid and
    dogfooded." Needs at least one dogfood pass first.
 
-### Commits this session (in order, 27 total)
+## Session 2 — 2026-04-28, in progress
+
+Resumed after session 1's premature wrap-up. Operator's correction
+prompt: keep going indefinitely; no wrap-up summaries; checkpoint
+every 30-60 min via state files; the run continues until stopped by
+rate limit / infra failure / operator intervention.
+
+### Items completed (67+ commits so far)
+
+  - **Hallucination corpus** (28 prompts, scripts/dogfood_hallucination_
+    corpus.py). Ran end-to-end against GLM. Findings dominated by the
+    extractor bug below.
+  - **Phase 6 (Tier 2 verification cache) FULLY SHIPPED.** Schema +
+    scoping classifier + stability classifier (both in observation
+    mode per spec) + canonicalize_claim_key + VerificationCache class
+    + cache writes + cache lookups + Cache inspector tab. Off by
+    default; gated on three env vars.
+  - **Cost telemetry.** src/cost.py with pricing table + per-call
+    accounting. LLMClient records cost on every API call; Pipeline
+    emits a turn_cost event at end-of-turn. Modal/GLM usage flows
+    through too.
+  - **Eval harness** (scripts/eval_harness.py). Runs corpus through
+    raw chat AND aedos pipeline; classifies caught/preserved/broken/
+    missed/uncertain.
+  - **Multiple bug fixes.** Judge parser accepts SUPPORT/CONTRADICT
+    abbreviations (was throwing away clear verdicts as parse_error).
+    UTF-8 stdout in dogfood scripts. 502/503 retry in modal_glm.
+    DDG User-Agent rotation on empty result.
+  - **CRITICAL EXTRACTOR BUG FIXED.** The 'catches' originally
+    celebrated were extractor substitutions: the extractor (Opus
+    4.7) was rewriting source_text and slot values to match its own
+    world knowledge instead of what the chat model actually said.
+    9 of 37 corpus extracted facts (24.3%) had this issue. Fix:
+    aggressive verbatim rule in extractor system prompt + 2 worked
+    examples + defense-in-depth detector that flags
+    source_text-not-in-input AND value-not-in-source-text +
+    extractor_substitution_warning pipeline event + UI banner +
+    scripts/analyze_substitutions.py for ongoing measurement.
+  - **Test coverage:** 229 → 426+ tests passing. 87% → 100% for
+    llm_client, 91% → 100% for pattern_registry, 86% → 99% for
+    comparator, 75% → 89% for app, 83% → 100% for verifier types.
+    Total project coverage: 92% → 94%.
+  - **Documentation:** README v0.6 section, ARCHITECTURE.md Tier 2
+    cache section, .env.example v0.6 cache knobs.
+
+### Mistakes
+  - Initially celebrated 3 'hallucination catches' that were
+    actually false-positive corrections caused by the extractor
+    substituting the operator's expected values. Discovered the
+    truth via detailed trace analysis, fixed the bug, documented
+    the discovery prominently in OBSERVATIONS.md.
+
+### Test status: 426 passing, 7 skipped (real-API gated)
+
+### Commits this session (session 1, in order, 27 total)
 1. `[p1] llm_clients: pluggable chat backend (anthropic | modal/GLM)`
 2. `[p1] modal_glm: 300s timeout, content=null hint, smoke test passes 3/3`
 3. `[p2] cleanup: drop v0.4 vestiges (broken /api/patterns, ...)`
