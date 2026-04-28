@@ -22,6 +22,7 @@ straight from that table.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -86,6 +87,12 @@ class Pipeline:
         corrector: Corrector,
         chat_backend: Any | None = None,
         user_id: str = DEFAULT_USER_ID,
+        # v0.6 Phase 6 — when set, the scoping classifier runs on every
+        # model-origin claim and logs a cache_scoping_decision event.
+        # Pure observation: no behavior change, no cache reads, no cache
+        # writes. Set to a callable for tests; defaults to the LLM
+        # implementation when ``llm`` is real.
+        scoping_classifier: Any | None = None,
     ):
         self.store = store
         self.registry = registry
@@ -94,6 +101,10 @@ class Pipeline:
         self.router = router
         self.corrector = corrector
         self.user_id = user_id
+        # Lazy default — only construct the LLM-backed classifier when
+        # the caller didn't pass one and didn't pass a MockLLM (test
+        # doubles can opt in by passing scoping_classifier=fn).
+        self._scoping_classifier = scoping_classifier
         # When no explicit backend is provided, use ``llm`` directly. This
         # preserves the long-standing test contract where MockLLM provides
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
@@ -158,6 +169,34 @@ class Pipeline:
             "assistant_extraction",
             asst_extraction.to_dict(),
         )
+
+        # Stage 5b — (v0.6, observation mode) classify each assistant
+        # claim's cache scope. Logs only — does not gate caching or
+        # routing. After two sessions of these logs we calibrate, then
+        # wire to actual cache writes. Failures here MUST NOT break the
+        # pipeline; observation mode is opt-in instrumentation.
+        if self._scoping_classifier is not None:
+            for claim in asst_extraction.valid_facts:
+                try:
+                    decision = self._scoping_classifier(claim)
+                    self.store.insert_pipeline_event(
+                        assistant_turn_id,
+                        "cache_scoping_decision",
+                        {"claim": {"pattern": claim.get("pattern"),
+                                   "predicate": claim.get("predicate"),
+                                   "slots": claim.get("slots"),
+                                   "polarity": claim.get("polarity")},
+                         "decision": decision.to_dict()},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # Surface but don't propagate — observation mode.
+                    self.store.insert_pipeline_event(
+                        assistant_turn_id,
+                        "cache_scoping_decision",
+                        {"claim": {"pattern": claim.get("pattern"),
+                                   "predicate": claim.get("predicate")},
+                         "error": f"{type(exc).__name__}: {exc}"},
+                    )
 
         # Stage 6 — route each assistant claim through the appropriate verifier.
         verification_decisions: list[Decision] = [
@@ -357,7 +396,19 @@ def build_pipeline(
     )
     corrector = Corrector(llm)
     chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
+
+    # v0.6 Phase 6 — scoping classifier in observation mode. Off by
+    # default to avoid burning the extra LLM call on every turn while
+    # the pipeline is settling. Enable with AEDOS_CACHE_SCOPING=1 to
+    # collect the observation logs that calibrate the classifier
+    # before we wire it to actual cache writes.
+    scoping_classifier = None
+    if os.getenv("AEDOS_CACHE_SCOPING") == "1":
+        from src.cache import classify_scope
+        scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
+
     return Pipeline(
         store, registry, llm, extractor, router, corrector,
         chat_backend=chat_backend, user_id=user_id,
+        scoping_classifier=scoping_classifier,
     )
