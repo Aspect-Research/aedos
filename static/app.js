@@ -1119,8 +1119,17 @@ function buildFlowSvg(events, turnId) {
       stage: "assistant_extraction",
       title: "Assistant Extraction",
       meta: extractEv
-        ? `${(extractEv.data?.valid_facts || []).length} valid, `
-          + `${(extractEv.data?.rejected_facts || []).length} rejected`
+        ? (() => {
+            const valid = (extractEv.data?.valid_facts || []).length;
+            const rejected = (extractEv.data?.rejected_facts || []).length;
+            const warnings = events.filter(
+              (e) => e.stage === "extractor_substitution_warning"
+                     && e.data?.side !== "user"
+            ).length;
+            let m = `${valid} valid, ${rejected} rejected`;
+            if (warnings > 0) m += ` · ⚠ ${warnings} substitution warning(s)`;
+            return m;
+          })()
         : "(no extraction event)",
       jumpStage: "assistant_extraction",
     },
