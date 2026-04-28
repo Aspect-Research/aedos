@@ -97,6 +97,19 @@ class LLMClient:
         except Exception:
             pass
 
+    def record_external_call(
+        self, model: str, input_tokens: int, output_tokens: int,
+    ) -> None:
+        """Public hook for non-Anthropic chat backends (e.g. ModalGLMBackend)
+        to feed their token usage into the per-turn cost ledger.
+        Best-effort — never raises."""
+        try:
+            self._recorded_calls.append(
+                cost_for_call(model, int(input_tokens), int(output_tokens))
+            )
+        except Exception:
+            pass
+
     # ---- chat ------------------------------------------------------------
 
     def chat(

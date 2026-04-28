@@ -135,7 +135,12 @@ class ModalGLMBackend:
         max_tokens: int = 4096,
         store: "FactStore | None" = None,
         turn_id: int | None = None,
+        cost_recorder: Any | None = None,
     ) -> str:
+        """``cost_recorder`` is an optional callable
+        ``(model, input_tokens, output_tokens) -> None`` for cost
+        telemetry. The Pipeline binds this to LLMClient.record_external_call
+        so Modal usage flows into the turn_cost aggregate."""
         msg_list = list(messages)
         payload = self._build_payload(system, msg_list, max_tokens)
         started = time.monotonic()
@@ -143,8 +148,18 @@ class ModalGLMBackend:
         status_code: int | None = None
         text = ""
         response_id: str | None = None
+        usage: dict[str, int] = {}
         try:
-            text, status_code, response_id = self._post_with_retry(payload)
+            text, status_code, response_id, usage = self._post_with_retry(payload)
+            if cost_recorder is not None and usage:
+                try:
+                    cost_recorder(
+                        self.model,
+                        usage.get("input_tokens", 0),
+                        usage.get("output_tokens", 0),
+                    )
+                except Exception:
+                    pass
             return text
         except ModalError as exc:
             error = f"{type(exc).__name__}: {exc}"
@@ -171,6 +186,9 @@ class ModalGLMBackend:
                         "response_chars": len(text),
                         "response_id": response_id,
                         "duration_ms": int((time.monotonic() - started) * 1000),
+                        "input_tokens": usage.get("input_tokens"),
+                        "output_tokens": usage.get("output_tokens"),
+                        "reasoning_tokens": usage.get("reasoning_tokens"),
                         "error": error,
                     },
                 )
@@ -200,7 +218,7 @@ class ModalGLMBackend:
             "max_tokens": max_tokens,
         }
 
-    def _post_with_retry(self, payload: dict[str, Any]) -> tuple[str, int, str | None]:
+    def _post_with_retry(self, payload: dict[str, Any]) -> tuple[str, int, str | None, dict[str, int]]:
         """Wrap ``_post`` with bounded retry on transient errors.
 
         429 'Too many concurrent requests' — slot held by previous
@@ -246,7 +264,7 @@ class ModalGLMBackend:
         assert last_exc is not None
         raise last_exc
 
-    def _post(self, payload: dict[str, Any]) -> tuple[str, int, str | None]:
+    def _post(self, payload: dict[str, Any]) -> tuple[str, int, str | None, dict[str, int]]:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self._api_key}",
@@ -328,4 +346,14 @@ class ModalGLMBackend:
                 status_code=status,
             )
 
-        return content, status, body.get("id")
+        # GLM returns usage with input_tokens, output_tokens, and
+        # (for reasoning models) reasoning_tokens. We capture all three;
+        # cost telemetry treats output_tokens as the billable count
+        # since reasoning_tokens are bundled in the same field upstream.
+        usage_in = body.get("usage") or {}
+        usage = {
+            "input_tokens": int(usage_in.get("prompt_tokens", 0) or 0),
+            "output_tokens": int(usage_in.get("completion_tokens", 0) or 0),
+            "reasoning_tokens": int(usage_in.get("reasoning_tokens", 0) or 0),
+        }
+        return content, status, body.get("id"), usage
