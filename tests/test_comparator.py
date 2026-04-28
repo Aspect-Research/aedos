@@ -186,3 +186,75 @@ def test_unknown_pattern_yields_comparison_error():
     c = _claim("propositional_attitude", "feels", {"agent": "user", "proposition": "x"})
     r = compare(c, "5\n", "int")
     assert r.verdict == "comparison_error"
+
+
+# ---------- additional coverage gaps ----------
+
+
+def test_string_preserves_internal_whitespace():
+    """The string parser strips only the trailing newline — internal
+    whitespace must be preserved verbatim."""
+    c = _claim("relational", "reverse_of",
+               {"subject": "  hello  world  ", "object": "x"})
+    r = compare(c, "  hello  world  \n", "string")
+    # The trailing \n is stripped; the leading/internal whitespace stays.
+    assert r.computed_value == "  hello  world  "
+
+
+def test_string_preserves_no_trailing_newline():
+    """When stdout doesn't end with \\n, return as-is."""
+    c = _claim("relational", "reverse_of", {"subject": "abc", "object": "x"})
+    r = compare(c, "abc", "string")
+    assert r.computed_value == "abc"
+
+
+def test_string_strips_crlf():
+    """Windows-style CRLF should be stripped just like LF."""
+    c = _claim("relational", "reverse_of", {"subject": "abc", "object": "x"})
+    r = compare(c, "abc\r\n", "string")
+    assert r.computed_value == "abc"
+
+
+def test_int_tolerates_fractional_zero():
+    """'42.0' should parse as 42 — generated code sometimes prints as
+    float."""
+    c = _claim("quantitative", "has_count", {"value": 42})
+    r = compare(c, "42.0\n", "int")
+    assert r.verdict == "verified"
+    assert r.computed_value == 42
+
+
+def test_int_rejects_non_integer_float():
+    c = _claim("quantitative", "has_count", {"value": 3})
+    r = compare(c, "3.5\n", "int")
+    assert r.verdict == "comparison_error"
+
+
+def test_bool_accepts_yes_no():
+    c = _claim("quantitative", "is_true", {"value": True})
+    assert compare(c, "yes\n", "bool").computed_value is True
+    assert compare(c, "no\n", "bool").computed_value is False
+
+
+def test_bool_accepts_1_0():
+    c = _claim("quantitative", "is_true", {"value": True})
+    assert compare(c, "1\n", "bool").computed_value is True
+    assert compare(c, "0\n", "bool").computed_value is False
+
+
+def test_bool_rejects_garbage():
+    c = _claim("quantitative", "is_true", {"value": True})
+    r = compare(c, "maybe\n", "bool")
+    assert r.verdict == "comparison_error"
+
+
+def test_list_non_list_json_yields_comparison_error():
+    c = _claim("quantitative", "list_thing", {"value": [1, 2, 3]})
+    r = compare(c, '"not a list"\n', "list")
+    assert r.verdict == "comparison_error"
+
+
+def test_unknown_expected_type_yields_comparison_error():
+    c = _claim("quantitative", "has_count", {"value": 3})
+    r = compare(c, "3\n", "tuple")  # not a supported type
+    assert r.verdict == "comparison_error"
