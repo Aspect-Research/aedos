@@ -51,6 +51,12 @@ design rationale.
   28 adversarial prompts across counting traps, numerical claims about
   obscure entities, composite claims with one wrong detail, fake
   inventions, multi-turn user_authoritative recall, long-tail trivia.
+- **PROTOTYPE: unique-value-slot detection.**
+  `AEDOS_UNIQUE_VALUE_SLOTS=1` enables a hardcoded check that catches
+  the 'user said born in MA in turn N, then said born in VA in turn M'
+  adversarial pattern. Currently covers `spatial_temporal.was_born_in`
+  only — operator decides whether to extend. New `RoutingOutcome.
+  USER_CONTRADICTED_SELF` value when triggered.
 
 ## What's new in v0.5
 
