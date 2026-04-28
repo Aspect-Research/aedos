@@ -264,6 +264,31 @@ function renderStage(event) {
     case "assistant_draft":
       body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
       break;
+    case "turn_cost": {
+      // v0.6 — end-of-turn cost aggregate. Show total + by-model breakdown.
+      const meta = el("div", { className: "decision-meta" });
+      const totalUsd = (d.total_usd ?? 0).toFixed(6);
+      const totalCalls = d.total_calls ?? 0;
+      const totalIn = d.total_input_tokens ?? 0;
+      const totalOut = d.total_output_tokens ?? 0;
+      meta.appendChild(el("div", {
+        textContent: `$${totalUsd} · ${totalCalls} calls · `
+          + `${totalIn} in / ${totalOut} out tokens`
+          + (d.any_unknown_pricing ? " (some unknown pricing)" : ""),
+      }));
+      const byModel = d.by_model || {};
+      Object.keys(byModel).sort().forEach((m) => {
+        const slot = byModel[m];
+        meta.appendChild(el("div", {
+          className: "mono",
+          style: "font-size:0.75rem;padding-left:0.8rem",
+          textContent: `${m}: ${slot.calls} calls, $${(slot.total_usd ?? 0).toFixed(6)}`
+            + ` (${slot.input_tokens || 0} in / ${slot.output_tokens || 0} out)`,
+        }));
+      });
+      body.appendChild(meta);
+      break;
+    }
     case "chat_model_call": {
       // v0.5.x: per-turn provenance row for the chat model under test.
       // Whether the chat model was Claude or GLM, we get one of these.
