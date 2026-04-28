@@ -1,20 +1,17 @@
-"""Smoke test for the Modal-hosted GLM-5.1-FP8 chat backend.
+"""Smoke test for the chat backend (Modal/GLM by default; --provider
+anthropic for fallback).
 
-Forces AEDOS_CHAT_MODEL_PROVIDER=modal, runs three turns through the
-full AEDOS pipeline, dumps the per-turn pipeline_events to
-diagnostic_output/glm_smoke_<n>.json, and prints a one-line summary
-per turn so the operator can tell at a glance whether the plumbing
-works.
+Runs three short prompts through the full AEDOS pipeline, dumps
+per-turn pipeline_events to diagnostic_output/, and prints a one-line
+summary per turn.
 
 Usage:
     python scripts/smoke_test_glm.py
+    python scripts/smoke_test_glm.py --provider anthropic
 
 Exit code 0 means each turn produced a non-empty assistant draft and
 landed at least one chat_model_call event; non-zero means something
-broke. Read the JSON dumps for the full picture.
-
-This script writes to diagnostic_output/, which is gitignored — the
-files are for the operator's local inspection, not for the repo.
+broke.
 """
 
 from __future__ import annotations
@@ -60,18 +57,25 @@ def _serialize_events(events):
 
 
 def main() -> int:
-    os.environ["AEDOS_CHAT_MODEL_PROVIDER"] = "modal"
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--provider", choices=["modal", "anthropic"],
+                        default="modal")
+    args = parser.parse_args()
 
-    if not os.getenv("MODAL_API_KEY"):
+    os.environ["AEDOS_CHAT_MODEL_PROVIDER"] = args.provider
+
+    if args.provider == "modal" and not os.getenv("MODAL_API_KEY"):
         print(
-            "ERROR: MODAL_API_KEY not set. Add it to .env (see .env.example).",
+            "ERROR: MODAL_API_KEY not set. Add it to .env (see .env.example) "
+            "or use --provider anthropic.",
             file=sys.stderr,
         )
         return 2
     if not os.getenv("ANTHROPIC_API_KEY"):
         print(
             "ERROR: ANTHROPIC_API_KEY not set — the infra LLMs (extractor, "
-            "router, etc.) still run on Anthropic.",
+            "router, etc.) always use Anthropic.",
             file=sys.stderr,
         )
         return 2
