@@ -347,6 +347,78 @@ corpus run to validate the calibration.
     we'd want more like it — political offices, currently-held world
     records, etc. — to test the "stale training data" axis.
 
+### THE BIG MISS: turn 26 user_self_ref_partial_wrong
+
+The most interesting failure of the whole run. Setup:
+
+  - Turn 24 (session 24, in same conversation): user said "I was born
+    in the city of Williamstown, Massachusetts." → stored as
+    user-asserted fact (spatial_temporal.was_born_in,
+    location=Williamstown MA).
+  - Turn 26 (same session): user prompts "I think I told you I was
+    born in Williamsburg, Virginia. Is that right?"
+
+What AEDOS did:
+  - Extractor pulled "I was born in Williamsburg, Virginia" as a NEW
+    user assertion (polarity=1, location=Williamsburg VA).
+  - Router stored the new assertion as user_stored. **No contradiction
+    detected** with the prior Williamstown MA fact. Both are now in
+    the store.
+  - Model responded: "Yes, you did mention that you were born in
+    Williamsburg, Virginia. I apologize for only mentioning
+    Williamstown, Massachusetts earlier — you've actually told me
+    about both locations as your birthplace." (CONFABULATION)
+  - AEDOS verified BOTH model claims because both birthplaces are now
+    in the store.
+
+Multiple failures cascaded:
+
+  1. **Extractor shouldn't extract "I think I told you X. Is that
+     right?" as the user asserting X.** This is an interrogative /
+     meta-claim, not a first-person assertion. Adversarial trap class:
+     prompts that LOOK like assertions but are actually questions
+     testing the model. The extractor needs to recognize verb
+     framings like "I think I said", "did I say", "you told me" as
+     non-assertion forms.
+
+  2. **The router's contradiction model is per-key-slot exact match.**
+     spatial_temporal's key slots are entity + location + relation_kind.
+     Different location → different key → not a contradiction in the
+     current model. But semantically a person has ONE birthplace.
+     For a class of "uniquely valued per entity" predicates
+     (birthplace, biological mother, native language, blood type),
+     different value on the value slot WITH same entity SHOULD be
+     a contradiction.
+
+  3. **Cross-turn user contradiction not surfaced as an event.** Even
+     if the router can't catch this automatically, "user said X in
+     turn 24, then said NOT-X in turn 26" is a strong signal worth
+     flagging. There's no event for this.
+
+Concrete fixes (NEXT_STEPS items):
+
+  - **Extractor calibration:** add worked examples for "I think I
+    said X. Is that right?" and similar interrogative-meta forms →
+    `facts=[]`. Also "did I tell you X" → `facts=[]`. The user is
+    asking, not asserting.
+
+  - **Pattern metadata for unique-value slots:** mark certain slots
+    in patterns.yaml as `unique_per_entity: true`. The router would
+    treat a same-entity, different-value claim on these slots as a
+    contradiction even at same polarity. This is an architectural
+    decision — defer to the operator.
+
+  - **user_contradicted_self event:** when the router detects a new
+    user fact that conflicts with a prior user fact (via the
+    unique-value rule above), emit a prominent event so the operator
+    can see "user is making conflicting claims about themselves" —
+    that's interesting signal regardless of which one is true.
+
+  This is a meaningful research finding: the contradiction-detection
+  model in v0.3+ assumes polarity as the only contradiction axis.
+  Adversarial multi-turn prompts can exploit the gap. Worth a paper-
+  worthy section.
+
 ## 2026-04-27 — Phase-2 dogfood complete (12/17 turns landed signal)
 
 After Modal recovered from its multi-hour 503 outage, the resumed

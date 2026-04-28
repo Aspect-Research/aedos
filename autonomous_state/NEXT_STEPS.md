@@ -51,12 +51,35 @@ then graduate to SESSION_LOG.md after a few sessions.
   ability to catch "the New England states are: ME, NH, VT, MA, RI,
   CT, Pennsylvania" — the LLM-trap hallucination).
 
-- [ ] **Reduce chat max_tokens.** Two of two Modal cold-starts
-  (turns 6 and 16) exceeded the 300s timeout. With max_tokens=4096
-  and GLM's reasoning chain, requests can blow past the timeout.
-  Chat responses are inherently short — try max_tokens=1024 in
-  `pipeline._invoke_chat_backend`. Trade-off: occasionally truncates
-  a long answer, but probably never matters for AEDOS chat use.
+- [x] **Reduce chat max_tokens.** Done in commit 4d81d59 — capped at
+  1024. Caveat: turn 4 (floccinaucinihilipilification spell-backwards)
+  hit content=null because GLM spent the full 1024 tokens on
+  reasoning. For very-long-output prompts the cap is too low. Could
+  make it per-prompt-class or accept the truncation. Defer.
+
+- [ ] **Extractor calibration: contradiction-prone slots are
+  unique-per-entity.** A real architectural gap surfaced in turn 26
+  of the hallucination corpus. User said "born in Williamstown MA"
+  in turn 24, then in turn 26 prompted "I think I told you I was
+  born in Williamsburg VA. Is that right?" — the model confabulated
+  ("yes, both!") and AEDOS verified BOTH because the per-key-slot
+  exact-match contradiction model only catches polarity flips.
+  Three-part fix:
+    1. Extractor: "I think I told you X" / "did I say X" → facts=[]
+       (shipped in commit c3ff286 as worked examples — needs RUN_API
+       validation to confirm GLM/Opus behavior changes).
+    2. Pattern metadata: mark certain slots as `unique_per_entity`
+       (birthplace, native_language, blood_type, biological_mother).
+       Architectural decision; defer to operator.
+    3. user_contradicted_self pipeline event when a new user fact
+       conflicts with a prior one via the unique-value rule.
+  See OBSERVATIONS 2026-04-28 "THE BIG MISS" for full analysis.
+
+- [ ] **DDG flakiness:** denver_elevation (corpus turn 9) had all
+  three DDG queries return 0 results. Likely anti-bot detection or
+  intermittent emptying. Options: User-Agent rotation, retry-on-empty
+  with backoff, or set TAVILY_API_KEY in .env (default_search prefers
+  Tavily when available). Defer to operator preference.
 
 - [x] **Cross-check signal restoration on opus-4-7.** Done in commit
   91fac42. CROSS_CHECK_MODEL hardcoded to claude-sonnet-4-6;
