@@ -70,6 +70,88 @@ def test_returns_volatile_with_zero_ttl():
     assert d.ttl_seconds == 0  # don't cache
 
 
+# ---- historical-period shortcut (deterministic, no LLM call) ----
+
+
+def test_historical_period_shortcut_forces_immutable():
+    """A claim whose ``valid_until`` slot is a year strictly in the
+    past gets immutable + ttl=None without an LLM call. The role
+    Trump held 2017–2021 is permanent now that 2021 has passed; the
+    cache stores it forever.
+
+    Pins the deterministic shortcut so future regressions don't push
+    these into years_stable (where they'd expire after a year)."""
+    # MockLLM with a CANNED wrong answer — if shortcut fires, this
+    # never gets read. Test asserts shortcut wins.
+    llm = _MockLLM(canned={
+        "stability_class": "years_stable",
+        "reason": "wrong",
+        "confidence": 0.5,
+    })
+    claim = _claim(
+        pattern="role_assignment",
+        predicate="served_as",
+        slots={
+            "agent": "Donald Trump", "role": "45th President",
+            "org": "United States",
+            "valid_from": "2017", "valid_until": "2021",
+        },
+    )
+    d = classify_stability(claim, llm)
+    assert d.stability_class == "immutable"
+    assert d.ttl_seconds is None
+    assert "closed historical period" in d.reason
+    assert d.confidence == 0.99
+    # Shortcut marker — useful for trace inspection.
+    assert d.raw == {"shortcut": "historical_period"}
+
+
+def test_historical_period_shortcut_skipped_for_open_period():
+    """When ``valid_until`` is the current year or later, the period
+    isn't closed and the LLM is consulted normally."""
+    from datetime import datetime
+    llm = _MockLLM(canned={
+        "stability_class": "years_stable",
+        "reason": "still in office",
+        "confidence": 0.9,
+    })
+    future_year = datetime.utcnow().year + 1
+    claim = _claim(
+        pattern="role_assignment",
+        predicate="serves_as",
+        slots={
+            "agent": "X", "role": "Y", "org": "Z",
+            "valid_until": str(future_year),
+        },
+    )
+    d = classify_stability(llm=llm, claim=claim)
+    assert d.stability_class == "years_stable"
+
+
+def test_historical_period_shortcut_handles_missing_valid_until():
+    """No valid_until → fall through to the LLM."""
+    llm = _MockLLM(canned={
+        "stability_class": "decade_stable",
+        "reason": "geographic",
+        "confidence": 0.95,
+    })
+    d = classify_stability(_claim(), llm)
+    assert d.stability_class == "decade_stable"
+
+
+def test_historical_period_shortcut_ignores_unparseable_year():
+    """``valid_until`` of 'not-a-year' → fall through to LLM (don't
+    crash, don't mis-shortcut)."""
+    llm = _MockLLM(canned={
+        "stability_class": "decade_stable",
+        "reason": "fallback",
+        "confidence": 0.5,
+    })
+    claim = _claim(slots={**_claim()["slots"], "valid_until": "not-a-year"})
+    d = classify_stability(claim, llm)
+    assert d.stability_class == "decade_stable"
+
+
 def test_invalid_stability_class_raises():
     llm = _MockLLM(canned={
         "stability_class": "made_up", "reason": "junk", "confidence": 0.5,
