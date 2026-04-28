@@ -148,11 +148,12 @@ then graduate to SESSION_LOG.md after a few sessions.
   the UI. (See OBSERVATIONS 2026-04-27.)
 - **Modal concurrency=1.** Can't parallelize evaluation against a
   single Modal endpoint. (See OBSERVATIONS 2026-04-27.)
-- **Reasoning models change the max_tokens calculus.** With GLM the
-  effective max_tokens for assistant content is reduced by however many
-  tokens go into reasoning_content. May want to make max_tokens
-  per-backend configurable so the GLM path can request more headroom
-  than Anthropic without changing both.
+- ~~**Reasoning models change the max_tokens calculus.**~~ Fixed.
+  Pipeline now picks max_tokens per backend: Anthropic gets 1024
+  (short answers), Modal gets 4096 (reasoning headroom). Both knobs
+  are env-configurable (AEDOS_CHAT_MAX_TOKENS_{ANTHROPIC,MODAL}); the
+  legacy AEDOS_CHAT_MAX_TOKENS still wins as a global override.
+  3 new tests in test_modal_glm.py.
 - **Modal 503 outages happen.** Saw extended (~30 min) 503 from the
   Modal upstream during this session. Per MISSION.md fallback, switch
   AEDOS_CHAT_MODEL_PROVIDER=anthropic if it persists.

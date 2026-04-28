@@ -421,18 +421,65 @@ class Pipeline:
     # ---- internal helpers -----------------------------------------------
 
     # Conversational chat responses are short by nature; 1024 tokens is
-    # ample. The earlier 4096 default mattered against reasoning models
-    # like GLM-5.1: a high cap let the model spend tokens on a long
-    # ``reasoning_content`` chain before the user-visible content,
-    # blowing past Modal's 300s timeout on cold starts. Two of two
-    # cold-starts in the Phase-2 dogfood timed out for this reason.
-    # Lowering the cap to 1024 caps the reasoning chain too, which is
-    # the right knob for AEDOS's chat use case.
+    # ample for non-reasoning chat models. The earlier 4096 default
+    # mattered against reasoning models like GLM-5.1: a high cap let
+    # the model spend tokens on a long ``reasoning_content`` chain
+    # before the user-visible content, blowing past Modal's 300s
+    # timeout on cold starts. Two of two cold-starts in the Phase-2
+    # dogfood timed out for this reason.
     #
-    # Override via AEDOS_CHAT_MAX_TOKENS for prompts that need a longer
-    # answer (e.g. spell-29-letter-word-backwards needs more headroom
-    # for the reasoning chain to finish before the content is emitted).
-    CHAT_MAX_TOKENS = int(os.getenv("AEDOS_CHAT_MAX_TOKENS", "1024"))
+    # But 1024 is too tight for reasoning models on hard prompts:
+    # turn 4 of the hallucination corpus (spell
+    # ``floccinaucinihilipilification`` backwards) returned
+    # ``content=null`` because GLM spent the full 1024 tokens inside
+    # the reasoning chain. Reasoning models need more headroom because
+    # the cap counts reasoning + output, not output alone.
+    #
+    # The fix: per-backend defaults.
+    #
+    #   * Anthropic chat (no reasoning_content): 1024 — short answers.
+    #   * Modal/GLM (reasoning_content burns tokens): 4096 — leaves
+    #     ~3K for the answer after a typical chain.
+    #
+    # Both can be overridden via AEDOS_CHAT_MAX_TOKENS_ANTHROPIC and
+    # AEDOS_CHAT_MAX_TOKENS_MODAL respectively. The global
+    # AEDOS_CHAT_MAX_TOKENS still wins if set (backward compat).
+    CHAT_MAX_TOKENS_ANTHROPIC = int(
+        os.getenv("AEDOS_CHAT_MAX_TOKENS_ANTHROPIC", "1024")
+    )
+    CHAT_MAX_TOKENS_MODAL = int(
+        os.getenv("AEDOS_CHAT_MAX_TOKENS_MODAL", "4096")
+    )
+    CHAT_MAX_TOKENS_DEFAULT = 1024
+    CHAT_MAX_TOKENS_GLOBAL_OVERRIDE = (
+        int(os.getenv("AEDOS_CHAT_MAX_TOKENS"))
+        if os.getenv("AEDOS_CHAT_MAX_TOKENS") is not None
+        else None
+    )
+
+    # Backward-compat alias kept for callers (and the existing test)
+    # that read the historical single-value attribute. Resolves to the
+    # global override if set, else the anthropic default (matching the
+    # pre-split behaviour for the Anthropic-by-default deployment).
+    CHAT_MAX_TOKENS = (
+        CHAT_MAX_TOKENS_GLOBAL_OVERRIDE
+        if CHAT_MAX_TOKENS_GLOBAL_OVERRIDE is not None
+        else CHAT_MAX_TOKENS_ANTHROPIC
+    )
+
+    def _max_tokens_for_chat(self) -> int:
+        """Per-backend cap selection. Global env override wins; else
+        provider-specific default; else 1024. Reasoning-content models
+        get more headroom because the cap counts reasoning tokens
+        too."""
+        if self.CHAT_MAX_TOKENS_GLOBAL_OVERRIDE is not None:
+            return self.CHAT_MAX_TOKENS_GLOBAL_OVERRIDE
+        provider = getattr(self.chat_backend, "provider", None)
+        if provider == "modal":
+            return self.CHAT_MAX_TOKENS_MODAL
+        if provider == "anthropic":
+            return self.CHAT_MAX_TOKENS_ANTHROPIC
+        return self.CHAT_MAX_TOKENS_DEFAULT
 
     def _maybe_write_cache(
         self, verification_decisions: list[Decision], assistant_turn_id: int,
@@ -509,7 +556,7 @@ class Pipeline:
         be dropped."""
         if hasattr(self.chat_backend, "provider"):
             kwargs: dict[str, Any] = {
-                "max_tokens": self.CHAT_MAX_TOKENS,
+                "max_tokens": self._max_tokens_for_chat(),
                 "store": self.store,
                 "turn_id": turn_id,
             }
