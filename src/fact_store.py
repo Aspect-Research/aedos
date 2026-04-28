@@ -62,6 +62,14 @@ PIPELINE_STAGES = {
     # shape, response, latency, and any error so the trace UI can show what the
     # chat model did even when the rest of the pipeline is unchanged.
     "chat_model_call",
+    # v0.6 — Tier 2 verification cache. The scoping classifier decides
+    # whether each claim is user_specific / session_specific / world_fact;
+    # only world_fact claims are eligible for caching. Stability classifies
+    # eligible claims into TTL buckets. Lookup hits/misses log here too.
+    "cache_scoping_decision",       # per claim: scope + reason + confidence
+    "cache_stability_decision",     # per claim: stability_class + TTL + reason
+    "cache_lookup",                 # per claim: hit/miss + cached_key + age
+    "cache_write",                  # per claim: insert/update + canonical_key
 }
 
 # Confidence adjustments
@@ -125,6 +133,31 @@ CREATE TABLE IF NOT EXISTS retrieval_cache (
     snippets TEXT NOT NULL,
     fetched_at TEXT NOT NULL
 );
+
+-- Tier 2 verification cache (v0.6 — see ARCHITECTURE.md when wired up).
+-- Caches per-claim VERDICTS (not raw retrieval snippets — that's the
+-- table above). Keyed by a canonicalized claim shape so equivalent
+-- claims hit. Every cached verdict is provisional; cached_at + TTL
+-- via stability_class (immutable / decade_stable / years_stable /
+-- months_stable / days_stable / volatile). The cache is a
+-- performance optimization for retrieval, not a knowledge base.
+CREATE TABLE IF NOT EXISTS verification_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    canonical_key TEXT NOT NULL,             -- subject + predicate + normalized object
+    pattern TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    verdict TEXT NOT NULL,                   -- verified / contradicted / inconclusive
+    evidence TEXT,                           -- JSON: snippets + judge justification
+    stability_class TEXT NOT NULL,           -- immutable | decade_stable | ... | volatile
+    cached_at TEXT NOT NULL,
+    expires_at TEXT,                         -- NULL = immutable (never expires)
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_cache_key
+    ON verification_cache(canonical_key);
+CREATE INDEX IF NOT EXISTS idx_verification_cache_expires
+    ON verification_cache(expires_at);
 
 -- A flat projection of facts for the UI / quick inspection. The pattern
 -- determines which slot fills "subject" and "object" semantically.
