@@ -423,6 +423,137 @@ def test_pipeline_caps_chat_max_tokens(tmp_path):
     assert Pipeline.CHAT_MAX_TOKENS != 4096
 
 
+def _build_pipeline_with_backend(tmp_path, backend):
+    """Helper for the per-backend max_tokens tests below — builds a
+    minimal Pipeline plumbed to ``backend`` and runs one turn."""
+    from src.corrector import Corrector
+    from src.extractor import ClaimExtractor
+    from src.fact_store import FactStore
+    from src.llm_router import RoutingDecision
+    from src.pattern_registry import load_default_registry, reset_cache
+    from src.pipeline import Pipeline
+    from src.router import Router
+
+    reset_cache()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    @dataclass
+    class _MockLLM:
+        extracts: list = field(default_factory=list)
+        rewrites: list = field(default_factory=list)
+        corrector_model: str = "mock"
+
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+            return self.extracts.pop(0)
+
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+            return self.rewrites.pop(0)
+
+    store = FactStore(tmp_path / "p.db")
+    registry = load_default_registry()
+    mock = _MockLLM(extracts=[{"facts": []}, {"facts": []}])
+    extractor = ClaimExtractor(mock, registry)
+    router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
+        method="unverifiable", reason="x", confidence=0.9))
+    p = Pipeline(store, registry, mock, extractor, router, Corrector(mock),
+                 chat_backend=backend)
+    p.run_turn("hi")
+
+
+def test_per_backend_max_tokens_modal_gets_more_headroom(tmp_path, monkeypatch):
+    """Reasoning models (provider='modal') need more max_tokens because
+    the cap counts reasoning_content too. Anthropic chat doesn't.
+
+    With the per-backend split, a Modal backend should receive the
+    CHAT_MAX_TOKENS_MODAL default (4096) while an Anthropic backend
+    receives CHAT_MAX_TOKENS_ANTHROPIC (1024). This was the floccinau-
+    cinihilipilification fix: turn 4 of the corpus returned content=null
+    because GLM spent all 1024 tokens inside the reasoning chain."""
+    from src.pipeline import Pipeline
+
+    # Force the per-backend defaults regardless of the env at test run.
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_GLOBAL_OVERRIDE", None,
+                        raising=False)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_MODAL", 4096)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_ANTHROPIC", 1024)
+
+    captured_modal: list[int] = []
+    captured_anthropic: list[int] = []
+
+    class ModalBackend:
+        provider = "modal"
+        model = "GLM"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            captured_modal.append(max_tokens)
+            return "ok"
+
+    class AnthropicBackend:
+        provider = "anthropic"
+        model = "claude"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            captured_anthropic.append(max_tokens)
+            return "ok"
+
+    _build_pipeline_with_backend(tmp_path / "modal", ModalBackend())
+    _build_pipeline_with_backend(tmp_path / "anthropic", AnthropicBackend())
+
+    assert captured_modal == [4096], (
+        "Modal/reasoning backend should get the larger cap")
+    assert captured_anthropic == [1024], (
+        "Anthropic chat backend should get the smaller cap")
+
+
+def test_per_backend_max_tokens_global_override_wins(tmp_path, monkeypatch):
+    """If AEDOS_CHAT_MAX_TOKENS is set, it overrides per-backend
+    defaults — backward compat with the pre-split single-knob world."""
+    from src.pipeline import Pipeline
+
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_GLOBAL_OVERRIDE", 2048)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_MODAL", 4096)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_ANTHROPIC", 1024)
+
+    captured: list[int] = []
+
+    class ModalBackend:
+        provider = "modal"
+        model = "GLM"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            captured.append(max_tokens)
+            return "ok"
+
+    _build_pipeline_with_backend(tmp_path / "ovr", ModalBackend())
+    assert captured == [2048], (
+        "Global override should win over per-backend default")
+
+
+def test_per_backend_max_tokens_unknown_provider_uses_default(tmp_path, monkeypatch):
+    """An unfamiliar provider falls back to CHAT_MAX_TOKENS_DEFAULT
+    (1024) rather than picking one of the per-backend values
+    arbitrarily."""
+    from src.pipeline import Pipeline
+
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_GLOBAL_OVERRIDE", None)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_MODAL", 4096)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_ANTHROPIC", 1024)
+    monkeypatch.setattr(Pipeline, "CHAT_MAX_TOKENS_DEFAULT", 1024)
+
+    captured: list[int] = []
+
+    class UnknownBackend:
+        provider = "some-future-model-host"
+        model = "?"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id):
+            captured.append(max_tokens)
+            return "ok"
+
+    _build_pipeline_with_backend(tmp_path / "u", UnknownBackend())
+    assert captured == [1024]
+
+
 def test_pipeline_uses_chat_backend_and_logs_chat_model_call(tmp_path):
     """Drive a Pipeline with a stub chat_backend instead of the legacy
     llm.chat path. The backend must be invoked, and a chat_model_call
