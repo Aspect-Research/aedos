@@ -74,3 +74,22 @@ def test_to_dict_includes_all_fields():
     d = r.to_dict()
     for k in ("success", "stdout", "stderr", "exit_code", "duration_ms", "timed_out", "slow"):
         assert k in d
+
+
+def test_subprocess_oserror_returns_failed_result(monkeypatch):
+    """If subprocess.run itself raises OSError (e.g. python interpreter
+    missing, fork failure), the sandbox returns a failed
+    ExecutionResult rather than crashing the verifier turn."""
+    from src.verifiers.code_generation import sandbox as sb
+
+    def fake_run(*a, **kw):
+        raise OSError("fork failed: no resources")
+
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+
+    r = sb.run_code("print(1)")
+    assert r.success is False
+    assert r.exit_code == -1
+    assert r.timed_out is False
+    assert r.error and "OSError" in r.error
+    assert "fork failed" in r.error
