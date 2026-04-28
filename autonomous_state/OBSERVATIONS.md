@@ -268,6 +268,63 @@ verdict is provisional."
   Recommend pure TTL for v0.6, add LRU later if cache size becomes a
   problem.
 
+## 2026-04-28 — CRITICAL: extractor was substituting "correct" values
+
+After analyzing the hallucination-corpus diagnostic dumps in detail,
+the "3 catches" celebrated below are NOT genuine hallucination
+catches. They're the EXTRACTOR (Opus 4.7) silently substituting its
+own world knowledge for what the chat model literally said.
+
+Concrete evidence — Saturn moons (corpus turn 11):
+  Model said:    "As of 2024, Saturn has 274 confirmed moons."
+  Extracted as:  value=146 (operator-expected count from older data)
+  source_text:   "As of 2024, Saturn has 146 confirmed moons."
+                 ← LITERALLY REWRITTEN. The string "146" doesn't
+                   appear in the model's response at all.
+
+Same pattern in Yellowknife (turn 8):
+  Model said:    "the population was 21,455"
+  Extracted as:  value=20340 (close to actual census figure)
+  source_text:   "the population was 20,340" (rewritten)
+
+Same likely happened on Marie Curie's married_to claim — needs
+re-investigation.
+
+**The extractor is doing the verifier's job, badly.** It looks at
+what the model said, decides "actually that's wrong, the right answer
+is X", then writes X as the extracted value AND rewrites source_text
+to match. Then the verifier compares X against retrieval, retrieval
+returns the model's actual claim from the source web, and AEDOS
+flags X as contradicted — masking that the extractor was the one
+who introduced X in the first place.
+
+This is a SEVERE violation of the firewall principle. Fixed in commit
+TBD with an aggressive 'CRITICAL: extract VERBATIM' rule in the
+extractor system prompt + 2 worked examples (Saturn 274, Yellowknife
+22085) showing the rule. Real-API regression test added (skipped by
+default behind RUN_API_TESTS=1) that asserts a literal '146' in the
+input produces value=146 in the extracted slots, not the model's
+guess at the truth.
+
+Implications:
+  - The "GLM produced 3 hallucinations caught" finding is wrong. The
+    actual GLM hallucination rate on the 28-prompt corpus needs
+    re-measurement after the extractor fix lands and the corpus is
+    re-run.
+  - The verification pipeline IS catching real things — but the
+    contradictions in those 3 cases were AEDOS's own extractor bug
+    showing up as a verifier success. False-positive corrections.
+  - Past Phase-2 dogfood numbers (zero hallucinations from GLM)
+    might also have been wrong in the other direction — maybe GLM
+    DID hallucinate, but the extractor substituted truth, and the
+    verifier rubber-stamped it.
+
+**Re-run the full dogfood + corpus once Modal is healthy** to get
+clean numbers. This is THE most important Phase-2 calibration finding
+of the whole autonomous run so far.
+
+---
+
 ## 2026-04-28 — Hallucination corpus run (27 of 28 turns landed signal)
 
 `scripts/dogfood_hallucination_corpus.py` against GLM-5.1-FP8.

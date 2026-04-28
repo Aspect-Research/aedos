@@ -513,6 +513,53 @@ def test_real_api_roundtrip_user_likes():
     os.getenv("RUN_API_TESTS") != "1",
     reason="real API test gated behind RUN_API_TESTS=1",
 )
+def test_real_api_extractor_does_not_substitute_values():
+    """**Critical regression test.** The hallucination corpus exposed
+    the extractor (Opus 4.7) silently substituting 'correct' values
+    for what the model actually said:
+
+      Saturn moons: model said 274, extractor wrote 146 (the operator's
+                    expected). source_text was rewritten to match.
+      Yellowknife population: model said 21,455, extractor wrote 20,340.
+
+    These false-positive 'catches' look like AEDOS doing its job but
+    are actually the extractor poisoning the verification pipeline
+    with its own world knowledge. Extractor = STRUCTURAL ONLY.
+
+    This test: extract from a sentence containing a deliberately
+    wrong-but-plausible number. Assert the extracted value matches
+    the LITERAL number in the source, not the actual correct number."""
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    # Saturn has 146 confirmed moons (deliberately a lower count than
+    # the actual 274). Extractor must extract 146, NOT 274 or any
+    # other "corrected" value.
+    result = extractor.extract(
+        "Saturn has 146 confirmed moons.",
+        role="assistant",
+    )
+    quant_facts = [f for f in result.valid_facts
+                   if f["pattern"] == "quantitative"]
+    assert quant_facts, f"no quantitative claim extracted: {result.valid_facts}"
+    f = quant_facts[0]
+    assert f["slots"].get("value") == 146, (
+        f"extractor substituted a value: expected 146 (literal), got "
+        f"{f['slots'].get('value')!r}. source_text={f.get('source_text')!r}"
+    )
+    # source_text MUST be the literal substring, not a rewrite.
+    assert "146" in (f.get("source_text") or ""), (
+        f"source_text was rewritten — must contain literal '146': "
+        f"{f.get('source_text')!r}"
+    )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
 def test_real_api_interrogative_meta_returns_no_facts():
     """Validates the calibration shipped in commit 058f474. The
     extractor MUST NOT extract a user assertion from these forms.

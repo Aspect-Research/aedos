@@ -131,6 +131,16 @@ SYSTEM_PROMPT_TEMPLATE = """You extract structured facts from text by mapping ea
 
 # Slot rules
 
+- **CRITICAL: extract VERBATIM what the source text says. Never
+  substitute, correct, round, normalize, or "improve" a value. If
+  the text says "the population is 21,455", the value MUST be
+  21455 — even if you know the actual population is 20,340. The
+  source_text MUST be the literal substring of the input you
+  extracted from. Substituting your own world knowledge for what
+  the source said breaks the verification pipeline: the verifier
+  then catches YOUR substitution as a contradiction, masking the
+  actual model claim. This rule is non-negotiable. Your job is
+  STRUCTURAL extraction; correctness is the verifier's job.**
 - Required slots must be populated from the source text or from
   unambiguous inference (e.g. "I" → agent="user").
 - Optional slots — populate when the source text supplies them. Do NOT
@@ -180,6 +190,16 @@ Output: facts=[{{"pattern":"preference","predicate":"loves","slots":{{"agent":"u
 Input: "Strawberry has 2 p's"
 Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"strawberry","property":"letter_p","value":2}},"polarity":1,"source_text":"Strawberry has 2 p's"}}]
 Reasoning: structural extraction only. The verifier checks correctness.
+
+Input: "Saturn has 274 confirmed moons."
+Output: facts=[{{"pattern":"quantitative","predicate":"has_count","slots":{{"subject":"Saturn","property":"confirmed_moons","value":274}},"polarity":1,"source_text":"Saturn has 274 confirmed moons"}}]
+Reasoning: VERBATIM extraction. The text says 274; extract 274 — even though you may "know" the actual count is different (it changes over time as the IAU recognizes new moons). DO NOT substitute your own value. The verifier's job is to compare 274 against external sources and produce a contradiction if it disagrees.
+
+Input: "The 2021 census recorded Yellowknife's population at 22,085, though earlier figures suggested ~20,000."
+Output: facts=[
+  {{"pattern":"quantitative","predicate":"has_population","slots":{{"subject":"Yellowknife","property":"population_2021_census","value":22085}},"polarity":1,"source_text":"2021 census recorded Yellowknife's population at 22,085"}}
+]
+Reasoning: extract the VERBATIM census figure (22085). Even if the actual census number was 20,340, extract what the text says. The verifier will catch the discrepancy via retrieval. DO NOT correct the value during extraction.
 
 Preceding context: "How many words in 'the quick brown fox' have the letter o?"
 Input (assistant's text): "Two words contain the letter 'o'."
