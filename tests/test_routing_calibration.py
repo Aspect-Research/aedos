@@ -1,10 +1,10 @@
 """Calibration test for the v0.5 LLM router.
 
 Runs the router against the worked examples from the system prompt and
-checks that the LLM picks the expected method on at least 13/15 cases.
+checks that the LLM picks the expected method on at least 14/16 cases.
 
 Gated behind ``RUN_API_TESTS=1`` because every case is a real API call.
-A drift below 13/15 means the prompt or worked examples need attention.
+A drift below 14/16 means the prompt or worked examples need attention.
 """
 
 from __future__ import annotations
@@ -56,6 +56,23 @@ CALIBRATION_CASES: list[tuple[str, dict, str]] = [
             },
             "polarity": 1,
             "source_text": "Trump's first term lasted 4 years (2017-2021)",
+        },
+        "python",
+    ),
+    (
+        # Phase-2 dogfood (turn 12, Marie Curie). Lifespan claim with
+        # the dates as embedded slots — should route python, not retrieval.
+        # Calibration commit added a worked example for this; this case
+        # locks the routing in.
+        "lifespan from embedded birth/death years",
+        {
+            "pattern": "quantitative", "predicate": "lifespan_years",
+            "slots": {
+                "subject": "Marie Curie", "property": "years_lived", "value": 67,
+                "birth_year": 1867, "death_year": 1934,
+            },
+            "polarity": 1,
+            "source_text": "Marie Curie was born in 1867 and died in 1934, so she lived 67 years",
         },
         "python",
     ),
@@ -167,10 +184,10 @@ CALIBRATION_CASES: list[tuple[str, dict, str]] = [
     ),
 ]
 
-# A few of the cases above are deliberate boundary calls — at least 13
-# of 15 must match. The two acceptable misses are usually the
+# A few of the cases above are deliberate boundary calls — at least 14
+# of 16 must match. The two acceptable misses are usually the
 # Gettysburg edge and the canonical-constants vs. python boundary.
-MIN_CORRECT = 13
+MIN_CORRECT = 14
 
 
 @pytest.mark.skipif(

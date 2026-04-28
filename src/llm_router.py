@@ -175,8 +175,20 @@ Order of these examples is deliberate. Edge cases come first.
 
 ## Edge: arithmetic-around-retrieved-values
 
-Claim: pattern=quantitative, predicate=lifespan, slots={subject:'Marie Curie', property:'years_lived', value:67, derived_from:'born 1867, died 1934'}, polarity=1
-→ method: python, reason: "Arithmetic on stated dates (1934-1867=67); take the dates as inputs the claim provides.", confidence: 0.85, python_inputs_self_contained: true.
+Claim: pattern=quantitative, predicate=lifespan_years, slots={subject:'Marie Curie', property:'years_lived', value:67, birth_year:1867, death_year:1934}, polarity=1
+→ method: python, reason: "Arithmetic on stated dates (death_year - birth_year); take the dates as inputs the claim provides.", confidence: 0.9, python_inputs_self_contained: true.
+
+## Edge: arithmetic-around-retrieved-values, alternate slot names
+
+The extractor may use different slot names depending on the duration kind. Treat ANY slot whose value is a number-like input the python code can use as evidence of self-containment. Examples that should ALL route to python:
+
+  - lifespan_years with birth_year + death_year slots
+  - age_years with birth_date + reference_date slots
+  - term_duration with valid_from + valid_until slots
+  - elapsed_days with start_date + end_date slots
+  - distance_km with origin_coords + destination_coords slots
+
+The shape is: a numeric `value` claimed AS the result of an operation on OTHER numeric/date slots present in the same claim. That's python territory regardless of the predicate label.
 
 ## Edge: external-string-verification looks like python but isn't
 
