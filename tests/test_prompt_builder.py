@@ -191,6 +191,41 @@ def test_bool_value_never_flagged():
     assert detect_leak(p, claim) is False
 
 
+def test_float_with_integer_value_flagged_as_both_forms():
+    """A float value 25.0 should leak-detect against both '25.0' and '25'."""
+    p = "Compute count. Print 25 (or 25.0)."
+    claim = _claim("quantitative", "has_count",
+                   {"subject": "x", "property": "y", "value": 25.0})
+    assert detect_leak(p, claim) is True
+
+
+def test_list_value_serialized_for_leak_check():
+    """A list value gets json.dumps'd; leak detection looks for that
+    serialization. Catches code-writers that emit the literal list."""
+    p = "Compute the result. Print [1, 2, 3]."
+    claim = _claim("quantitative", "list_thing",
+                   {"subject": "x", "property": "y", "value": [1, 2, 3]})
+    assert detect_leak(p, claim) is True
+
+
+def test_unserializable_list_value_does_not_crash():
+    """If a list contains something json.dumps can't handle, the leak
+    detector returns no candidates rather than raising."""
+    # An object() can't be JSON-serialized.
+    p = "Anything"
+    claim = _claim("quantitative", "x",
+                   {"subject": "x", "property": "y", "value": [object()]})
+    # Should not raise; just no leak detected.
+    assert detect_leak(p, claim) is False
+
+
+def test_none_value_no_leak():
+    p = "Anything that mentions None or null"
+    claim = _claim("quantitative", "x",
+                   {"subject": "x", "property": "y", "value": None})
+    assert detect_leak(p, claim) is False
+
+
 # ---------- expected_output_type validation ----------
 
 
