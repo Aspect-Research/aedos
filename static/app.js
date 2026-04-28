@@ -348,18 +348,39 @@ function renderStage(event) {
       break;
     }
     case "cache_write": {
-      // v0.6 — cache write event.
+      // v0.6 — cache write event. A write fills the cache so the
+      // next equivalent claim is a hit; mark errors red but don't
+      // belabor successes (they're the expected steady-state outcome
+      // when Tier 2 is enabled).
       const meta = el("div", { className: "decision-meta" });
-      let line;
       if (d.error) {
-        line = `error: ${d.error}`;
+        stage.classList.add("cache-error");
+        const head = el("div", {});
+        head.appendChild(el("span", {
+          className: "cache-badge cache-badge-error",
+          textContent: "WRITE ERR",
+        }));
+        head.appendChild(document.createTextNode(` ${d.error}`));
+        meta.appendChild(head);
       } else {
-        line = `wrote · ${d.verdict || "?"} · ${d.stability_class || "?"}`;
-        if (d.ttl_seconds === null) line += " · never expires";
-        else if (d.ttl_seconds != null) line += ` · ttl=${d.ttl_seconds}s`;
-        if (d.canonical_key) line += ` · key=${d.canonical_key.slice(0, 80)}`;
+        stage.classList.add("cache-write");
+        const head = el("div", {});
+        head.appendChild(el("span", {
+          className: "cache-badge cache-badge-write",
+          textContent: "WROTE",
+        }));
+        const ttlText = d.ttl_seconds === null ? "never expires"
+          : d.ttl_seconds != null ? `ttl=${d.ttl_seconds}s` : "no ttl";
+        head.appendChild(document.createTextNode(
+          ` ${d.verdict || "?"} · ${d.stability_class || "?"} · ${ttlText}`));
+        meta.appendChild(head);
+        if (d.canonical_key) {
+          meta.appendChild(el("div", {
+            className: "mono cache-key",
+            textContent: `key=${d.canonical_key.slice(0, 100)}`,
+          }));
+        }
       }
-      meta.appendChild(el("div", { textContent: line }));
       body.appendChild(meta);
       break;
     }
