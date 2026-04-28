@@ -97,6 +97,11 @@ class Pipeline:
         # world_fact. Returns a StabilityDecision; logged but not
         # acted on yet.
         stability_classifier: Any | None = None,
+        # v0.6 — when set AND scoping/stability are also set, the
+        # pipeline writes successful retrieval verdicts to this cache.
+        # No lookups yet (this is the "fill the cache" stage; lookups
+        # come in a follow-up commit so we can measure hit rate first).
+        verification_cache: Any | None = None,
     ):
         self.store = store
         self.registry = registry
@@ -110,6 +115,11 @@ class Pipeline:
         # doubles can opt in by passing scoping_classifier=fn).
         self._scoping_classifier = scoping_classifier
         self._stability_classifier = stability_classifier
+        self._verification_cache = verification_cache
+        # Per-claim scope/stability decisions, populated in stage 5b
+        # and consumed in stage 7. Reset each turn (one entry per
+        # canonical_key encountered this turn).
+        self._cache_decisions: dict[str, dict[str, Any]] = {}
         # When no explicit backend is provided, use ``llm`` directly. This
         # preserves the long-standing test contract where MockLLM provides
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
@@ -175,12 +185,16 @@ class Pipeline:
             asst_extraction.to_dict(),
         )
 
+        # Reset per-turn cache state.
+        self._cache_decisions = {}
+
         # Stage 5b — (v0.6, observation mode) classify each assistant
         # claim's cache scope. Logs only — does not gate caching or
         # routing. After two sessions of these logs we calibrate, then
         # wire to actual cache writes. Failures here MUST NOT break the
         # pipeline; observation mode is opt-in instrumentation.
         if self._scoping_classifier is not None:
+            from src.cache import canonicalize_claim_key
             for claim in asst_extraction.valid_facts:
                 claim_summary = {
                     "pattern": claim.get("pattern"),
@@ -203,15 +217,28 @@ class Pipeline:
                     )
                     continue
 
+                # Stash for cache-write step. Only world_fact entries are
+                # cache-eligible — store nothing for the others.
+                if scope_decision.scope != "world_fact":
+                    continue
+
+                key = canonicalize_claim_key(claim)
+                self._cache_decisions[key] = {
+                    "scope": scope_decision.to_dict(),
+                    "claim_summary": claim_summary,
+                }
+
                 # Stability runs only for cache-eligible (world_fact) claims.
-                if (self._stability_classifier is not None
-                        and scope_decision.scope == "world_fact"):
+                if self._stability_classifier is not None:
                     try:
                         stab_decision = self._stability_classifier(claim)
                         self.store.insert_pipeline_event(
                             assistant_turn_id, "cache_stability_decision",
                             {"claim": claim_summary,
                              "decision": stab_decision.to_dict()},
+                        )
+                        self._cache_decisions[key]["stability"] = (
+                            stab_decision.to_dict()
                         )
                     except Exception as exc:  # noqa: BLE001
                         self.store.insert_pipeline_event(
@@ -230,6 +257,16 @@ class Pipeline:
             "verification",
             {"decisions": [d.to_dict() for d in verification_decisions]},
         )
+
+        # Stage 6b — (v0.6) opportunistic cache writes.
+        # For each claim that (a) was scope=world_fact, (b) had a
+        # stability decision, (c) verified or contradicted via the
+        # retrieval path, write the verdict to the cache. Skip claims
+        # whose stability is volatile (TTL=0) — caller-side gate.
+        if self._verification_cache is not None and self._cache_decisions:
+            self._maybe_write_cache(
+                verification_decisions, assistant_turn_id,
+            )
 
         # Stage 7a — log routing anomalies as their own prominent event.
         # These signal extractor errors and don't trigger a content-level
@@ -341,6 +378,65 @@ class Pipeline:
     # the right knob for AEDOS's chat use case.
     CHAT_MAX_TOKENS = 1024
 
+    def _maybe_write_cache(
+        self, verification_decisions: list[Decision], assistant_turn_id: int,
+    ) -> None:
+        """For each verified/contradicted retrieval claim that was
+        scoped world_fact + stability-classified, write the verdict
+        to the cache. Failures don't propagate."""
+        from src.cache import canonicalize_claim_key
+        for decision in verification_decisions:
+            claim = decision.claim
+            key = canonicalize_claim_key(claim)
+            entry = self._cache_decisions.get(key)
+            if entry is None:
+                continue  # not cache-eligible per scoping
+            stab = entry.get("stability")
+            if stab is None:
+                continue  # stability classifier didn't run / errored
+            ttl = stab.get("ttl_seconds")
+            if ttl == 0:
+                continue  # volatile — don't cache
+            verdict = decision.verification_status
+            # Cache only verdicts produced by the retrieval verifier.
+            # Python verifications are cheap to redo; user-authoritative
+            # is per-user; routing anomalies are already broken.
+            retrieval_verdicts = {
+                "verified", "contradicted",
+                "retrieval_inconclusive",
+            }
+            if verdict not in retrieval_verdicts:
+                continue
+            # Skip if the verdict came from the python (code-gen) path —
+            # cache_gen_result is set for python verifications.
+            if decision.code_gen_result is not None:
+                continue
+            evidence = None
+            if decision.retrieval_result is not None:
+                evidence = decision.retrieval_result.to_dict()
+            try:
+                self._verification_cache.write(
+                    canonical_key=key,
+                    pattern=claim.get("pattern", ""),
+                    predicate=claim.get("predicate", ""),
+                    verdict=verdict,
+                    stability_class=stab.get("stability_class", "unknown"),
+                    ttl_seconds=ttl,
+                    evidence=evidence,
+                )
+                self.store.insert_pipeline_event(
+                    assistant_turn_id, "cache_write",
+                    {"canonical_key": key, "verdict": verdict,
+                     "stability_class": stab.get("stability_class"),
+                     "ttl_seconds": ttl},
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.store.insert_pipeline_event(
+                    assistant_turn_id, "cache_write",
+                    {"canonical_key": key,
+                     "error": f"{type(exc).__name__}: {exc}"},
+                )
+
     def _invoke_chat_backend(
         self, system_prompt: str, history: list[ChatMessage], turn_id: int
     ) -> str:
@@ -427,6 +523,7 @@ def build_pipeline(
     # without scoping is meaningless, so we require both.
     scoping_classifier = None
     stability_classifier = None
+    verification_cache = None
     if os.getenv("AEDOS_CACHE_SCOPING") == "1":
         from src.cache import classify_scope
         scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
@@ -435,10 +532,16 @@ def build_pipeline(
             stability_classifier = (
                 lambda claim, _llm=llm: classify_stability(claim, _llm)
             )
+            # Cache writes need both scoping and stability to know what
+            # to write (key) and when it expires (TTL).
+            if os.getenv("AEDOS_CACHE_WRITES") == "1":
+                from src.cache import VerificationCache
+                verification_cache = VerificationCache(store)
 
     return Pipeline(
         store, registry, llm, extractor, router, corrector,
         chat_backend=chat_backend, user_id=user_id,
         scoping_classifier=scoping_classifier,
         stability_classifier=stability_classifier,
+        verification_cache=verification_cache,
     )
