@@ -143,10 +143,16 @@ async function populateModelSelect() {
     const data = await api("GET", "/api/models");
     modelSelect.innerHTML = "";
     (data.models || []).forEach((m) => {
+      // ``el()`` doesn't propagate ``value`` (it only handles
+      // className/title/textContent/dataset). Set it directly so the
+      // <option>'s value attribute is the canonical model id, not the
+      // human-readable label — otherwise <select>.value returns the
+      // textContent and the server gets "Claude Haiku 4.5" as a model
+      // name and rejects it.
       const opt = el("option", {
-        value: m.id,
         textContent: m.label + (m.available ? "" : " — unavailable"),
       });
+      opt.value = m.id;
       if (!m.available) opt.disabled = true;
       modelSelect.appendChild(opt);
     });
@@ -1621,11 +1627,11 @@ async function refreshCache() {
   const entries = data.entries || [];
   if (!entries.length) {
     container.appendChild(el("p", { className: "hint",
-      textContent: "Cache is empty. Set AEDOS_CACHE_TIER2=1 (or the "
-                   + "granular AEDOS_CACHE_SCOPING / "
-                   + "AEDOS_CACHE_STABILITY / AEDOS_CACHE_WRITES "
-                   + "flags individually) and run some turns through "
-                   + "retrieval-territory questions to populate it." }));
+      textContent: "Cache is empty. Run some turns with retrieval-"
+                   + "territory questions (world facts, anything that "
+                   + "isn't user-specific or already python-verifiable) "
+                   + "and successful retrieval verdicts will land here "
+                   + "automatically." }));
     return;
   }
 
