@@ -40,7 +40,14 @@ if TYPE_CHECKING:  # pragma: no cover
 
 MODAL_ENDPOINT = "https://api.us-west-2.modal.direct/v1/chat/completions"
 MODAL_MODEL = "zai-org/GLM-5.1-FP8"
-MODAL_REQUEST_TIMEOUT = 60.0
+# Modal containers cold-start; first request after idle can take 90+ seconds
+# while the GLM weights load. GLM-5.1-FP8 is also a reasoning model whose
+# completion includes a long ``reasoning_content`` chain before the actual
+# message content, so even warm requests with high max_tokens can run for
+# minutes. 300s covers cold-start + a long reasoning chain at max_tokens=4096.
+# A timeout here also frees the upstream concurrency slot so the next request
+# isn't blocked behind a runaway one.
+MODAL_REQUEST_TIMEOUT = 300.0
 
 
 class ModalError(RuntimeError):
@@ -229,7 +236,8 @@ class ModalGLMBackend:
             ) from exc
 
         try:
-            content = body["choices"][0]["message"]["content"]
+            message = body["choices"][0]["message"]
+            content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ModalResponseError(
                 f"missing choices[0].message.content in response: "
@@ -237,6 +245,19 @@ class ModalGLMBackend:
                 status_code=status,
             ) from exc
 
+        # GLM-5.1 emits ``reasoning_content`` separately and ``content`` is
+        # null when the response was truncated mid-reasoning (max_tokens cap
+        # hit before the model produced any user-facing content). Surface
+        # this as an explicit error rather than returning an empty string —
+        # the pipeline can't extract claims from no content.
+        if content is None:
+            reasoning_chars = len(message.get("reasoning_content") or "")
+            raise ModalResponseError(
+                f"GLM returned content=null (likely truncated mid-reasoning; "
+                f"reasoning_content was {reasoning_chars} chars). Try a "
+                f"larger max_tokens.",
+                status_code=status,
+            )
         if not isinstance(content, str):
             raise ModalResponseError(
                 f"choices[0].message.content was {type(content).__name__}, "
