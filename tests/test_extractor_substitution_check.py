@@ -108,10 +108,11 @@ def test_empty_input_not_flagged():
     assert result.warnings == []
 
 
-def test_value_substituted_but_source_text_kept_flagged():
-    """Harder case: extractor used the right source_text but
-    substituted a different value into the slot. The value-not-in-
-    source-text check catches this."""
+def test_value_substitution_alone_no_longer_flagged():
+    """The value-not-in-source check was removed (too noisy on
+    natural number forms like 'five' vs 5). When the source_text
+    IS in the input, the absence of the slot value in the
+    source_text alone is no longer a warning."""
     result = _make_result([{
         "pattern": "quantitative", "predicate": "has_count",
         "slots": {"value": 146},
@@ -120,70 +121,45 @@ def test_value_substituted_but_source_text_kept_flagged():
     ClaimExtractor._flag_substitutions(
         result, "Saturn has 274 confirmed moons.",
     )
-    # source_text IS in input → no source_text warning. But value
-    # 146 isn't in the source_text → value warning.
-    assert len(result.warnings) == 1
-    w = result.warnings[0]
-    assert w["kind"] == "value_not_in_source_text"
-    assert "146" in w["detail"]
+    assert result.warnings == []
 
 
-def test_value_with_commas_normalized():
-    """5280 in slots, '5,280' in source — should NOT flag (same number,
-    different formatting)."""
+def test_word_form_number_no_warning():
+    """The previous check tripped on 'Donald Trump has five children'
+    (input) + slot value=5 (extractor's normalized integer). With the
+    value check removed, this is silent — the source_text matches,
+    that's enough."""
     result = _make_result([{
-        "pattern": "quantitative", "predicate": "has_elevation",
-        "slots": {"value": 5280},
-        "source_text": "Denver is 5,280 feet above sea level",
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"subject": "Donald Trump", "property": "children", "value": 5},
+        "source_text": "Donald Trump has five children",
     }])
     ClaimExtractor._flag_substitutions(
-        result, "Denver is 5,280 feet above sea level.",
+        result, "Donald Trump has five children.",
     )
     assert result.warnings == []
 
 
-def test_value_with_commas_in_slot():
-    """22085 in slots, '22,085' in source — should NOT flag."""
+def test_punctuation_difference_no_warning():
+    """The substring check is FUZZY — punctuation/quotes don't trip
+    it. The user reported 'reality TV show \"The Apprentice\"' as a
+    false positive when the input ended in a period; punctuation-strip
+    fixes this."""
     result = _make_result([{
-        "pattern": "quantitative", "predicate": "has_population",
-        "slots": {"value": 22085},
-        "source_text": "Yellowknife population was 22,085 in 2021",
+        "pattern": "relational", "predicate": "involved_in",
+        "slots": {},
+        "source_text": 'reality TV show "The Apprentice"',
     }])
     ClaimExtractor._flag_substitutions(
-        result, "Yellowknife population was 22,085 in 2021.",
+        result,
+        'He hosted the reality TV show "The Apprentice." on NBC.',
     )
     assert result.warnings == []
 
 
-def test_bool_value_not_checked():
-    """value=True / False shouldn't trigger the check; the source_text
-    might say 'is prime' which doesn't contain 'True'."""
-    result = _make_result([{
-        "pattern": "quantitative", "predicate": "is_prime",
-        "slots": {"value": True},
-        "source_text": "73 is prime",
-    }])
-    ClaimExtractor._flag_substitutions(result, "73 is prime.")
-    assert result.warnings == []
-
-
-def test_string_value_substituted_flagged():
-    """String value rewrite is also caught."""
-    result = _make_result([{
-        "pattern": "quantitative", "predicate": "day_of_week",
-        "slots": {"value": "Monday"},
-        "source_text": "January 20, 2025 was a Tuesday",
-    }])
-    ClaimExtractor._flag_substitutions(
-        result, "January 20, 2025 was a Tuesday.",
-    )
-    assert len(result.warnings) == 1
-    assert result.warnings[0]["kind"] == "value_not_in_source_text"
-
-
-def test_no_value_slot_no_check():
-    """Facts without a 'value' slot (e.g. preference.likes) skip the
-    value check."""
+def test_no_value_slot_no_warning():
+    """Facts without a 'value' slot work the same as everything else
+    — only source_text-in-input matters."""
     result = _make_result([{
         "pattern": "preference", "predicate": "likes",
         "slots": {"agent": "user", "object": "tea"},
