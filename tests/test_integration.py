@@ -40,13 +40,13 @@ class MockLLM:
     routings: list[RoutingDecision] = field(default_factory=list)
     corrector_model: str = "mock-corrector"
 
-    def chat(self, system, messages, max_tokens=4096):
+    def chat(self, system, messages, max_tokens=4096, **_kwargs):
         return self.chats.pop(0)
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         return self.extracts.pop(0)
 
-    def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+    def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
         return self.rewrites.pop(0)
 
 

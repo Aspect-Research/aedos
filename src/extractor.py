@@ -332,6 +332,7 @@ class ClaimExtractor:
             system=self._system_prompt,
             user_message=user_message,
             tool=self._record_tool,
+            purpose=f"extractor:{role}",
         )
         result = self._validate(raw)
         # Defense-in-depth: flag any fact whose source_text isn't a

@@ -210,13 +210,13 @@ def test_pipeline_emits_substitution_warning_event(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     # Note: model draft says "274"; extractor (simulated) returns
@@ -274,13 +274,13 @@ def test_pipeline_no_warning_when_source_text_matches(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     asst_facts = {

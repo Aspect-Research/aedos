@@ -29,13 +29,13 @@ class ScriptedLLM:
     rewrite_calls: list[dict] = field(default_factory=list)
     corrector_model: str = "claude-haiku-4-5"
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         self.extract_calls.append(
             {"tool_name": tool["name"], "user_message": user_message}
         )
         return self.extracts.pop(0)
 
-    def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+    def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
         self.rewrite_calls.append(
             {"user_message": user_message, "temperature": temperature}
         )

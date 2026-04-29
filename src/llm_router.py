@@ -292,6 +292,7 @@ def route_claim(claim: dict, llm: LLMClient) -> RoutingDecision:
         system=_ROUTER_SYSTEM,
         user_message=_build_user_message(claim),
         tool=_ROUTING_TOOL,
+        purpose="router",
     )
     method = str(raw.get("method") or "").strip()
     if method not in ROUTING_METHODS:

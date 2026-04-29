@@ -219,6 +219,7 @@ def classify_stability(claim: dict, llm: LLMClient) -> StabilityDecision:
     )
     raw = llm.extract_with_tool(
         _STABILITY_SYSTEM, user_message, _STABILITY_TOOL, max_tokens=512,
+        purpose="cache_stability",
     )
     cls = raw.get("stability_class")
     if cls not in STABILITY_CLASSES:

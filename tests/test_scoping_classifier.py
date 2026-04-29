@@ -24,7 +24,7 @@ from src.cache.scoping_classifier import (
 class _MockLLM:
     canned: dict = field(default_factory=dict)
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         return self.canned
 
 
@@ -126,13 +126,13 @@ def test_pipeline_logs_scoping_decisions_in_observation_mode(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     asst_facts = [
@@ -204,13 +204,13 @@ def test_pipeline_continues_when_classifier_raises(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     asst_facts = [

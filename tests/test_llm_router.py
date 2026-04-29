@@ -21,7 +21,7 @@ class FakeLLM:
     extractor_model: str = "claude-sonnet-4-6"
     corrector_model: str = "claude-haiku-4-5"
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         self.calls.append({"system": system, "user_message": user_message, "tool": tool})
         return dict(self.response)
 

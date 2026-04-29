@@ -192,7 +192,7 @@ def test_chat_calls_cost_recorder_with_usage():
     backend = ModalGLMBackend(api_key="k", client=StubClient([good]))
 
     captured: list[tuple] = []
-    def recorder(model, in_tok, out_tok):
+    def recorder(model, in_tok, out_tok, **kwargs):
         captured.append((model, in_tok, out_tok))
 
     backend.chat(system="", messages=[ChatMessage("user", "hi")],
@@ -239,7 +239,7 @@ def test_chat_works_without_usage_field():
     captured: list[tuple] = []
     text = backend.chat(
         system="", messages=[ChatMessage("user", "hi")],
-        cost_recorder=lambda m, i, o: captured.append((m, i, o)),
+        cost_recorder=lambda m, i, o, **_: captured.append((m, i, o)),
     )
     assert text == "hi"
     # No usage field → recorder is called with zeros (we record the
@@ -478,10 +478,10 @@ def test_pipeline_caps_chat_max_tokens(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     captured: list[int] = []
@@ -490,7 +490,7 @@ def test_pipeline_caps_chat_max_tokens(tmp_path):
         provider = "stub"
         model = "stub"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             captured.append(max_tokens)
             return "ok"
 
@@ -531,10 +531,10 @@ def _build_pipeline_with_backend(tmp_path, backend):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     store = FactStore(tmp_path / "p.db")
@@ -572,10 +572,10 @@ def test_pipeline_runs_with_glm_dispatch_to_modal_backend(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     anthropic_calls: list = []
@@ -585,7 +585,7 @@ def test_pipeline_runs_with_glm_dispatch_to_modal_backend(tmp_path):
         provider = "anthropic"
         model = "claude-opus-4-7"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             anthropic_calls.append(turn_id)
             return "from anthropic"
 
@@ -593,7 +593,7 @@ def test_pipeline_runs_with_glm_dispatch_to_modal_backend(tmp_path):
         provider = "modal"
         model = "GLM"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             modal_calls.append(turn_id)
             return "from modal"
 
@@ -639,17 +639,17 @@ def test_pipeline_glm_request_with_no_modal_backend_raises(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     class AnthropicStub:
         provider = "anthropic"
         model = "claude-opus-4-7"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             return "ok"
 
     store = FactStore(tmp_path / "g2.db")
@@ -690,7 +690,7 @@ def test_per_backend_max_tokens_modal_gets_more_headroom(tmp_path, monkeypatch):
         provider = "modal"
         model = "GLM"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             captured_modal.append(max_tokens)
             return "ok"
 
@@ -698,7 +698,7 @@ def test_per_backend_max_tokens_modal_gets_more_headroom(tmp_path, monkeypatch):
         provider = "anthropic"
         model = "claude"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             captured_anthropic.append(max_tokens)
             return "ok"
 
@@ -726,7 +726,7 @@ def test_per_backend_max_tokens_global_override_wins(tmp_path, monkeypatch):
         provider = "modal"
         model = "GLM"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             captured.append(max_tokens)
             return "ok"
 
@@ -756,10 +756,10 @@ def test_pipeline_retries_chat_without_cost_recorder_on_typeerror(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
         def record_external_call(self, model, in_tok, out_tok):
@@ -773,7 +773,7 @@ def test_pipeline_retries_chat_without_cost_recorder_on_typeerror(tmp_path):
 
         # Note: signature has NO cost_recorder. The first call will get
         # a kwarg the function doesn't accept and raise TypeError.
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             call_count[0] += 1
             return "ok"
 
@@ -811,7 +811,7 @@ def test_per_backend_max_tokens_unknown_provider_uses_default(tmp_path, monkeypa
         provider = "some-future-model-host"
         model = "?"
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             captured.append(max_tokens)
             return "ok"
 
@@ -840,10 +840,10 @@ def test_pipeline_uses_chat_backend_and_logs_chat_model_call(tmp_path):
         routings: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     class StubBackend:
@@ -851,7 +851,7 @@ def test_pipeline_uses_chat_backend_and_logs_chat_model_call(tmp_path):
         model = "stub-model"
         calls: list[dict] = []
 
-        def chat(self, system, messages, *, max_tokens, store, turn_id):
+        def chat(self, system, messages, *, max_tokens, store, turn_id, **_kwargs):
             StubBackend.calls.append({
                 "system": system, "messages": list(messages),
                 "max_tokens": max_tokens, "turn_id": turn_id,
@@ -909,13 +909,13 @@ def test_pipeline_legacy_llm_chat_path_still_works(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     store = FactStore(tmp_path / "p.db")
