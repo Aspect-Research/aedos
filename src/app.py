@@ -287,17 +287,27 @@ def list_models() -> dict[str, Any]:
     removed alongside the Modal backend.
     """
     from src.llm_client import ALLOWED_MODELS
+    import os
     p = _pipeline(app)
     labels = {
-        "claude-opus-4-7": "Claude Opus 4.7",
+        "claude-opus-4-7":   "Claude Opus 4.7",
         "claude-sonnet-4-6": "Claude Sonnet 4.6",
-        "claude-haiku-4-5": "Claude Haiku 4.5",
+        "claude-haiku-4-5":  "Claude Haiku 4.5",
+        "gpt-4.1":           "GPT-4.1",
+        "gpt-4.1-mini":      "GPT-4.1-mini",
+        "gpt-4o":            "GPT-4o",
+        "gpt-4o-mini":       "GPT-4o-mini",
     }
+    openai_available = bool(os.getenv("OPENAI_API_KEY"))
     default_model = getattr(p.llm, "model", "claude-opus-4-7")
     return {
         "default": default_model,
         "models": [
-            {"id": m, "label": labels.get(m, m), "available": True}
+            {
+                "id": m,
+                "label": labels.get(m, m),
+                "available": (openai_available if m.startswith("gpt-") else True),
+            }
             for m in ALLOWED_MODELS
         ],
     }
