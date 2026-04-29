@@ -485,7 +485,10 @@ const PIPELINE_STEPS = [
     kind: "final",
     stage: "final",
     title: "Final Response",
-    metaFn: (ev) => ((ev.data || {}).content || "").slice(0, 80),
+    // No content preview — the chat bubble already shows the response.
+    // The Correction card already shows the diff. Just the cost summary
+    // (rendered in renderEventStepNode for kind === "final").
+    metaFn: () => null,
   },
 ];
 
@@ -714,9 +717,10 @@ function renderCallsBlock(calls, ops) {
     block.appendChild(row);
   });
   opLines.forEach((line) => {
-    const row = el("div", { className: "op-row" });
-    row.appendChild(el("span", { className: "call-purpose op-icon", textContent: line.icon }));
+    const row = el("div", { className: `op-row op-row-${line.kind}` });
+    // Dot is rendered via CSS pseudo-element keyed off op-row-{kind}.
     row.appendChild(el("span", { className: "op-label", textContent: line.label }));
+    row.appendChild(el("span", { className: "op-detail", textContent: line.detail }));
     block.appendChild(row);
   });
   return block;
@@ -730,18 +734,18 @@ function formatOpLines(ops) {
     if (ops.cacheHit) parts.push(`${ops.cacheHit} hit`);
     if (ops.cacheSemHit) parts.push(`${ops.cacheSemHit} semantic-hit`);
     if (ops.cacheMiss) parts.push(`${ops.cacheMiss} miss`);
-    lines.push({ icon: "✦", label: `cache lookup · ${parts.join(", ")}` });
+    lines.push({ kind: "cache", label: "cache lookup", detail: parts.join(", ") });
   }
   if (ops.cacheWrite) {
-    lines.push({ icon: "✦", label: `cache write · ${ops.cacheWrite}` });
+    lines.push({ kind: "cache", label: "cache write", detail: String(ops.cacheWrite) });
   }
   if (ops.retrievalQueries) {
-    lines.push({ icon: "🔎",
-      label: `web retrieval · ${ops.retrievalQueries} quer${ops.retrievalQueries === 1 ? "y" : "ies"}` });
+    lines.push({ kind: "retrieval", label: "web retrieval",
+      detail: `${ops.retrievalQueries} quer${ops.retrievalQueries === 1 ? "y" : "ies"}` });
   }
   if (ops.sandboxExecs) {
-    lines.push({ icon: "▶",
-      label: `sandbox exec · ${ops.sandboxExecs} run${ops.sandboxExecs === 1 ? "" : "s"}` });
+    lines.push({ kind: "sandbox", label: "sandbox exec",
+      detail: `${ops.sandboxExecs} run${ops.sandboxExecs === 1 ? "" : "s"}` });
   }
   return lines;
 }
@@ -826,19 +830,40 @@ function renderEventStepNode(step, event, ctx) {
 }
 
 // What ran during the Correction step: the interventions the
-// corrector planned, and an inline word-level diff if the rewrite
-// actually changed the draft.
+// corrector planned (each one shows WHAT claim it's acting on, not
+// just the action type), and an inline word-level diff if the
+// rewrite actually changed the draft.
 function renderCorrectionInline(container, data) {
   const interventions = data.interventions || [];
   if (interventions.length > 0) {
     const ivWrap = el("div", { className: "interventions-inline" });
     interventions.forEach((iv) => {
       const row = el("div", { className: `intervention intervention-${iv.intervention_type}` });
-      row.appendChild(el("span", {
+
+      // Header line: action type pill + the actual claim being touched.
+      const head = el("div", { className: "intervention-head" });
+      head.appendChild(el("span", {
         className: `intervention-type intervention-type-${iv.intervention_type}`,
         textContent: iv.intervention_type,
       }));
-      row.appendChild(el("div", { className: "intervention-reason", textContent: iv.reason || "" }));
+      head.appendChild(el("span", { className: "intervention-target",
+        textContent: claimDisplayText(iv.claim || {}) }));
+      row.appendChild(head);
+
+      // For REPLACE: show the original → verified-value transition
+      // explicitly. The diff below covers the textual change but this
+      // gives the structured before/after at a glance.
+      if (iv.intervention_type === "replace" && iv.verified_value !== undefined && iv.verified_value !== null) {
+        const slots = (iv.claim && iv.claim.slots) || {};
+        const original = slots.object ?? slots.value ?? slots.role ?? slots.target ?? "";
+        row.appendChild(el("div", { className: "intervention-replace-line",
+          textContent: `${formatValue(original)} → ${formatValue(iv.verified_value)}` }));
+      }
+
+      // Reason: the LLM's explanation. Indented under the action.
+      if (iv.reason) {
+        row.appendChild(el("div", { className: "intervention-reason", textContent: iv.reason }));
+      }
       ivWrap.appendChild(row);
     });
     container.appendChild(ivWrap);
@@ -848,6 +873,12 @@ function renderCorrectionInline(container, data) {
     renderInlineDiff(diff, data.original, data.corrected);
     container.appendChild(diff);
   }
+}
+
+function formatValue(v) {
+  if (v === null || v === undefined) return "(none)";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
 
 function renderFinalSummary(d) {
