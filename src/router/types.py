@@ -111,7 +111,12 @@ class Decision:
             "matching_fact_id": self.matching_fact_id,
             "code_gen_result": self.code_gen_result,
             "retrieval_result": (
-                self.retrieval_result.to_dict() if self.retrieval_result else None
+                # Cache-as-evidence (v0.7.10): the cache-hit path
+                # passes a dict directly. The fresh-retrieval path
+                # passes a RetrievalResult object with .to_dict().
+                self.retrieval_result.to_dict()
+                if hasattr(self.retrieval_result, "to_dict")
+                else self.retrieval_result
             ),
             "correction": self.correction,
             "notes": self.notes,

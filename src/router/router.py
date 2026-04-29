@@ -428,6 +428,17 @@ class Router:
         cached = hit.verdict
         key = hit.matched_key or cached.canonical_key
 
+        # v0.7.10 cache-as-evidence: the cached `evidence` dict is the
+        # full RetrievalResult.to_dict() that the verifier stored
+        # originally — snippets, attempts, verdict, justification.
+        # Surface it on the Decision so the corrector hedges with the
+        # real justification (not "from cache") and the per-claim
+        # Decision-detail UI shows the actual snippets that backed
+        # this verdict, marked as cached.
+        cached_retrieval_result = _cache_evidence_to_retrieval_result(
+            cached.evidence, key, hit
+        )
+
         if cached.verdict == "verified":
             return Decision(
                 claim=claim,
@@ -442,6 +453,7 @@ class Router:
                 notes=[f"served from cache (key={key!r}, "
                        f"hit_count={cached.hit_count})"],
                 served_from_cache=True,
+                retrieval_result=cached_retrieval_result,
             )
         if cached.verdict == "contradicted":
             return Decision(
@@ -464,6 +476,7 @@ class Router:
                     "source_text": claim.get("source_text", ""),
                 },
                 served_from_cache=True,
+                retrieval_result=cached_retrieval_result,
             )
         # Cached inconclusive — still serve.
         return Decision(
@@ -478,6 +491,7 @@ class Router:
             ),
             notes=[f"served from cache (inconclusive, key={key!r})"],
             served_from_cache=True,
+            retrieval_result=cached_retrieval_result,
         )
 
     def _route_retrieval(
@@ -669,6 +683,34 @@ class Router:
 
 
 # ---- module-level helpers ------------------------------------------
+
+
+def _cache_evidence_to_retrieval_result(
+    evidence: dict | None, matched_key: str, hit,
+) -> dict | None:
+    """Synthesize a retrieval_result-shaped dict from a cached
+    verdict's evidence so the corrector + per-claim Decision UI see
+    the original snippets and judge justification (not just
+    "served from cache"). Adds a `served_from_cache` marker + the
+    matched key so the trace makes the cache origin explicit.
+
+    The evidence dict was originally `RetrievalResult.to_dict()` at
+    the time of the first verification; we shape it back into the
+    same form (snippets, attempts, verdict) and tack on the cache
+    metadata. Keys missing from older entries (pre-v0.7.10) just
+    end up absent from the synthesized dict — no crash.
+    """
+    if not evidence:
+        return None
+    out = dict(evidence)
+    out["served_from_cache"] = True
+    out["cached_key"] = matched_key
+    out["cache_hit_count"] = getattr(hit.verdict, "hit_count", None)
+    out["cache_evidence_hash"] = getattr(hit.verdict, "evidence_hash", None)
+    out["cache_age_at_hit"] = getattr(hit.verdict, "cached_at", None)
+    if getattr(hit, "score", None) is not None:
+        out["cache_match_score"] = hit.score
+    return out
 
 
 def _apply_correction_to_slots(

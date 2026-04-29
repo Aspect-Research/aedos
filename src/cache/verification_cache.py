@@ -21,6 +21,7 @@ A miss is one extra retrieval call — a wrong-key hit is worse.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -52,6 +53,17 @@ class CachedVerdict:
     cached_at: str
     expires_at: str | None
     hit_count: int
+    # v0.7.10 provenance + bookkeeping. Default to None / 0 / [] so
+    # the dataclass works for both freshly-written entries (all
+    # populated) and old rows that haven't been refreshed yet
+    # (NULL/0 from the migration).
+    evidence_hash: str | None = None
+    source_urls: list[str] | None = None
+    confidence: float | None = None
+    last_refreshed_at: str | None = None
+    refresh_count: int = 0
+    contradiction_count: int = 0
+    flagged_for_review: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -64,6 +76,13 @@ class CachedVerdict:
             "cached_at": self.cached_at,
             "expires_at": self.expires_at,
             "hit_count": self.hit_count,
+            "evidence_hash": self.evidence_hash,
+            "source_urls": self.source_urls or [],
+            "confidence": self.confidence,
+            "last_refreshed_at": self.last_refreshed_at,
+            "refresh_count": self.refresh_count,
+            "contradiction_count": self.contradiction_count,
+            "flagged_for_review": self.flagged_for_review,
         }
 
 
@@ -153,6 +172,80 @@ _PAST_TENSE_MARKERS = re.compile(
 )
 
 
+def _safe_int(row, name: str, default: int = 0) -> int:
+    """sqlite3.Row.__getitem__ raises IndexError when the column
+    isn't on the row — happens when an old test/fixture builds rows
+    without the v0.7.10 columns. Tolerate it."""
+    try:
+        v = row[name]
+    except (IndexError, KeyError):
+        return default
+    return int(v) if v is not None else default
+
+
+def _safe_str(row, name: str) -> str | None:
+    try:
+        v = row[name]
+    except (IndexError, KeyError):
+        return None
+    return v
+
+
+def _safe_float(row, name: str) -> float | None:
+    try:
+        v = row[name]
+    except (IndexError, KeyError):
+        return None
+    return float(v) if v is not None else None
+
+
+def _row_to_cached_verdict(row, *, hit_count_bump: int = 0) -> "CachedVerdict":
+    """Hydrate a CachedVerdict from a sqlite3.Row, tolerating older
+    row shapes that lack the v0.7.10 provenance columns."""
+    src_urls_json = _safe_str(row, "source_urls")
+    try:
+        source_urls = json.loads(src_urls_json) if src_urls_json else []
+    except (json.JSONDecodeError, TypeError):
+        source_urls = []
+    return CachedVerdict(
+        canonical_key=row["canonical_key"],
+        pattern=row["pattern"],
+        predicate=row["predicate"],
+        verdict=row["verdict"],
+        evidence=json.loads(row["evidence"]) if row["evidence"] else None,
+        stability_class=row["stability_class"],
+        cached_at=row["cached_at"],
+        expires_at=row["expires_at"],
+        hit_count=int(row["hit_count"]) + hit_count_bump,
+        evidence_hash=_safe_str(row, "evidence_hash"),
+        source_urls=source_urls,
+        confidence=_safe_float(row, "confidence"),
+        last_refreshed_at=_safe_str(row, "last_refreshed_at"),
+        refresh_count=_safe_int(row, "refresh_count"),
+        contradiction_count=_safe_int(row, "contradiction_count"),
+        flagged_for_review=bool(_safe_int(row, "flagged_for_review")),
+    )
+
+
+def _extract_source_urls(evidence: dict | None) -> list[str]:
+    """Pull the unique URLs out of the evidence dict the retrieval
+    verifier emits. Keeps order. Used to populate source_urls so we
+    know later WHICH sources backed a given verdict — the seed of
+    "invalidate everything that cited this URL" once we add it."""
+    if not evidence:
+        return []
+    urls: list[str] = []
+    seen: set[str] = set()
+    snippets = evidence.get("snippets") if isinstance(evidence, dict) else None
+    if isinstance(snippets, list):
+        for s in snippets:
+            url = (s or {}).get("url") if isinstance(s, dict) else None
+            if isinstance(url, str) and url and url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
 def claim_tense(claim: dict) -> str:
     """Return 'past' if the claim's source_text shows past-tense
     markers, else 'present'. Used as a cache-key dimension so that
@@ -224,11 +317,15 @@ class VerificationCache:
         self.store = store
 
     def lookup(self, canonical_key: str) -> Optional[CachedVerdict]:
-        """Return a cached verdict if it exists and hasn't expired.
+        """Return a cached verdict if it exists, hasn't expired, and
+        isn't flagged for review.
 
-        Increments hit_count on a hit (even if stale; the count tracks
-        attempted lookups). Returns None for miss, expired, or unknown
-        key.
+        Increments hit_count on a hit. Returns None for miss / expired /
+        flagged / unknown key. Flagged entries are entries the v0.7.11
+        causal-cascade marked as "trust me less" because a related
+        contradiction landed; they get re-verified on the next
+        verification path and ``write()`` will clear the flag once a
+        successful refresh confirms (or contradicts again).
         """
         row = self.store._conn.execute(
             "SELECT * FROM verification_cache WHERE canonical_key = ?",
@@ -243,13 +340,17 @@ class VerificationCache:
             try:
                 expiry = datetime.fromisoformat(expires_at)
             except ValueError:
-                # Malformed expiry — treat as expired so we re-derive.
                 return None
             if expiry < datetime.now(timezone.utc):
                 return None
 
-        # Hit. Bump counter (best-effort — never crash a verification on
-        # this).
+        # v0.7.11: flagged-for-review entries are treated as miss so
+        # the next verification path runs fresh. The flag clears
+        # automatically on the next successful write().
+        if int(_safe_int(row, "flagged_for_review")) == 1:
+            return None
+
+        # Hit. Bump counter (best-effort — never crash on this).
         try:
             self.store._conn.execute(
                 "UPDATE verification_cache SET hit_count = hit_count + 1 "
@@ -259,17 +360,7 @@ class VerificationCache:
         except Exception:
             pass
 
-        return CachedVerdict(
-            canonical_key=row["canonical_key"],
-            pattern=row["pattern"],
-            predicate=row["predicate"],
-            verdict=row["verdict"],
-            evidence=json.loads(row["evidence"]) if row["evidence"] else None,
-            stability_class=row["stability_class"],
-            cached_at=row["cached_at"],
-            expires_at=row["expires_at"],
-            hit_count=int(row["hit_count"]) + 1,
-        )
+        return _row_to_cached_verdict(row, hit_count_bump=1)
 
     def write(
         self,
@@ -281,32 +372,33 @@ class VerificationCache:
         stability_class: str,
         ttl_seconds: int | None,
         evidence: dict[str, Any] | None = None,
+        confidence: float | None = None,
     ) -> "WriteOutcome":
         """INSERT a new entry, or UPDATE if the key already exists.
 
         Returns a WriteOutcome describing whether the write was an
         insert / refresh-of-same-verdict / contradiction-overwrite. A
-        contradiction overwrite (new verdict differs from the existing
-        one) is the load-bearing signal — caller logs it as a
-        ``cache_contradiction_replaced`` pipeline event so the operator
-        can see a verdict reversal.
+        contradiction overwrite is the load-bearing signal — caller
+        logs it as a ``cache_contradiction_replaced`` pipeline event
+        and triggers the v0.7.11 semantic-neighbor cascade.
 
-        ``ttl_seconds`` semantics:
-          * None  → no expiry (immutable)
-          * 0     → don't cache (caller should not have called this;
-                    we treat as instant-expiry — equivalent to never
-                    cached, lookup will miss on the next call)
-          * > 0   → expires_at = now + ttl_seconds
-
-        On UPDATE, ``cached_at`` is preserved via COALESCE so the
-        original first-cache time stays intact through later refreshes
-        — useful for "how long has this fact been holding?" telemetry.
+        v0.7.10 provenance fields populated on every write:
+          * evidence_hash — SHA-256 of the evidence JSON (stable
+            "same answer" identity across refreshes)
+          * source_urls — JSON array of unique URLs from the snippets
+          * confidence — judge's confidence (caller-provided, NULL ok)
+          * last_refreshed_at — bumped on every successful write
+          * refresh_count — +1 when refreshed (verdict unchanged)
+          * contradiction_count — +1 when verdict flips
+          * flagged_for_review — cleared on every refresh; the entry
+            "earned trust back" by re-confirming.
         """
         if ttl_seconds == 0:
             return WriteOutcome(action="skipped_volatile", prior_verdict=None)
 
         now = datetime.now(timezone.utc)
         cached_at = now.isoformat()
+        last_refreshed_at = cached_at
         expires_at: str | None
         if ttl_seconds is None:
             expires_at = None
@@ -314,29 +406,60 @@ class VerificationCache:
             expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
 
         evidence_json = json.dumps(evidence, default=str) if evidence else None
+        evidence_hash = (
+            hashlib.sha256(evidence_json.encode("utf-8")).hexdigest()
+            if evidence_json else None
+        )
+        source_urls_json = json.dumps(_extract_source_urls(evidence), default=str) \
+            if evidence else None
 
-        # Look up the existing verdict (if any) for contradiction detection.
+        # Look up the existing row (if any) for contradiction detection
+        # AND to decide whether this write is a refresh vs an insert
+        # (for refresh_count vs contradiction_count bookkeeping).
         prior_row = self.store._conn.execute(
-            "SELECT verdict FROM verification_cache WHERE canonical_key = ?",
+            "SELECT verdict, refresh_count, contradiction_count "
+            "FROM verification_cache WHERE canonical_key = ?",
             (canonical_key,),
         ).fetchone()
         prior_verdict = prior_row["verdict"] if prior_row else None
+
+        if prior_row is None:
+            new_refresh = 0
+            new_contradictions = 0
+        elif prior_verdict == verdict:
+            new_refresh = int(prior_row["refresh_count"] or 0) + 1
+            new_contradictions = int(prior_row["contradiction_count"] or 0)
+        else:
+            new_refresh = int(prior_row["refresh_count"] or 0)
+            new_contradictions = int(prior_row["contradiction_count"] or 0) + 1
 
         self.store._conn.execute(
             """
             INSERT INTO verification_cache (
                 canonical_key, pattern, predicate, verdict, evidence,
-                stability_class, cached_at, expires_at, hit_count, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                stability_class, cached_at, expires_at, hit_count, created_at,
+                evidence_hash, source_urls, confidence,
+                last_refreshed_at, refresh_count, contradiction_count,
+                flagged_for_review
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 0)
             ON CONFLICT(canonical_key) DO UPDATE SET
                 verdict = excluded.verdict,
                 evidence = excluded.evidence,
                 stability_class = excluded.stability_class,
                 cached_at = COALESCE(verification_cache.cached_at, excluded.cached_at),
-                expires_at = excluded.expires_at
+                expires_at = excluded.expires_at,
+                evidence_hash = excluded.evidence_hash,
+                source_urls = excluded.source_urls,
+                confidence = excluded.confidence,
+                last_refreshed_at = excluded.last_refreshed_at,
+                refresh_count = excluded.refresh_count,
+                contradiction_count = excluded.contradiction_count,
+                flagged_for_review = 0
             """,
             (canonical_key, pattern, predicate, verdict, evidence_json,
-             stability_class, cached_at, expires_at, _now_iso()),
+             stability_class, cached_at, expires_at, _now_iso(),
+             evidence_hash, source_urls_json, confidence,
+             last_refreshed_at, new_refresh, new_contradictions),
         )
         self.store._conn.commit()
 
@@ -389,13 +512,227 @@ class VerificationCache:
         # bracketing forms.
         needle_a = f"|{slot_name}={normalized}"
         needle_b = f"&{slot_name}={normalized}"
+        # Capture the rows we're about to delete for the invalidation
+        # log (Layer 4 audit trail).
+        deleted_keys = [r["canonical_key"] for r in self.store._conn.execute(
+            "SELECT canonical_key FROM verification_cache "
+            "WHERE canonical_key LIKE ? OR canonical_key LIKE ?",
+            (f"%{needle_a}%", f"%{needle_b}%"),
+        ).fetchall()]
         cur = self.store._conn.execute(
             "DELETE FROM verification_cache "
             "WHERE canonical_key LIKE ? OR canonical_key LIKE ?",
             (f"%{needle_a}%", f"%{needle_b}%"),
         )
         self.store._conn.commit()
-        return cur.rowcount or 0
+        n = cur.rowcount or 0
+        if n > 0 and deleted_keys:
+            self._log_invalidation(
+                reason="manual_by_slot",
+                primary_key=deleted_keys[0],
+                propagated_to_keys=deleted_keys[1:] if len(deleted_keys) > 1 else None,
+                detail={"slot_name": slot_name, "slot_value": slot_value},
+                triggered_by="user",
+            )
+        return n
+
+    # ---- v0.7.11: causal cascade + invalidation log -------------------
+
+    def flag_neighbors_for_review(
+        self, primary_canonical_key: str, claim: dict,
+        identity_slot_names: list[str],
+    ) -> list[str]:
+        """When ``primary_canonical_key``'s verdict just flipped, mark
+        its semantic neighbors as ``flagged_for_review`` so the next
+        verification path treats them as miss instead of serving the
+        now-suspect cached verdict.
+
+        1-hop only — we don't recursively flag neighbors-of-neighbors.
+        Cost is bounded; cascades stay predictable.
+
+        Returns the list of canonical_keys that were flagged.
+        """
+        # Reuse semantic_lookup's candidate-finding logic by running
+        # it directly without the threshold gate (we want neighbors,
+        # not the single best match). Identity-slot anchoring stays —
+        # without it we'd flag unrelated entries.
+        slots = claim.get("slots") or {}
+        pattern = str(claim.get("pattern", "")).strip().lower()
+        polarity = int(claim.get("polarity", 1))
+        tense = claim_tense(claim)
+
+        identity_pairs = []
+        for name in identity_slot_names:
+            v = slots.get(name)
+            if isinstance(v, str) and v.strip():
+                identity_pairs.append((name, " ".join(v.split()).lower()))
+        if not identity_pairs:
+            return []
+
+        rows = self.store._conn.execute(
+            "SELECT canonical_key FROM verification_cache "
+            "WHERE pattern = ? AND canonical_key != ?",
+            (pattern, primary_canonical_key),
+        ).fetchall()
+
+        flagged: list[str] = []
+        for row in rows:
+            cached_key = row["canonical_key"]
+            # Polarity + tense must match (same axis as semantic_lookup).
+            if f"|p={polarity}|" not in cached_key:
+                continue
+            if f"|t={tense}|" not in cached_key:
+                continue
+            # Identity slots must match.
+            slots_block = cached_key.rsplit("|", 1)[-1]
+            slot_dict = _parse_slots_block(slots_block)
+            if not all(slot_dict.get(name) == value
+                       for name, value in identity_pairs):
+                continue
+            flagged.append(cached_key)
+
+        if flagged:
+            placeholders = ",".join("?" * len(flagged))
+            self.store._conn.execute(
+                f"UPDATE verification_cache SET flagged_for_review = 1 "
+                f"WHERE canonical_key IN ({placeholders})",
+                tuple(flagged),
+            )
+            self.store._conn.commit()
+            self._log_invalidation(
+                reason="contradiction_cascade",
+                primary_key=primary_canonical_key,
+                propagated_to_keys=flagged,
+                detail={"identity_slots": dict(identity_pairs)},
+                triggered_by="auto",
+            )
+        return flagged
+
+    def force_refresh(self, canonical_key: str) -> bool:
+        """Mark a single entry as flagged_for_review so the next
+        verification path re-runs retrieval. Returns True if an entry
+        existed and was flagged, False if no such key.
+        """
+        cur = self.store._conn.execute(
+            "UPDATE verification_cache SET flagged_for_review = 1 "
+            "WHERE canonical_key = ?", (canonical_key,),
+        )
+        self.store._conn.commit()
+        if cur.rowcount and cur.rowcount > 0:
+            self._log_invalidation(
+                reason="admin_one",
+                primary_key=canonical_key,
+                propagated_to_keys=None,
+                detail={"action": "force_refresh"},
+                triggered_by="user",
+            )
+            return True
+        return False
+
+    def invalidate_one(self, canonical_key: str) -> bool:
+        """Delete a single cache entry by canonical_key. Returns True
+        if a row was deleted."""
+        cur = self.store._conn.execute(
+            "DELETE FROM verification_cache WHERE canonical_key = ?",
+            (canonical_key,),
+        )
+        self.store._conn.commit()
+        if cur.rowcount and cur.rowcount > 0:
+            self._log_invalidation(
+                reason="admin_one",
+                primary_key=canonical_key,
+                propagated_to_keys=None,
+                detail={"action": "delete"},
+                triggered_by="user",
+            )
+            return True
+        return False
+
+    def clear_flag(self, canonical_key: str) -> bool:
+        """Manually clear the flagged_for_review bit. Use when the
+        operator inspects a flagged entry and decides it's still
+        trustworthy without re-running retrieval."""
+        cur = self.store._conn.execute(
+            "UPDATE verification_cache SET flagged_for_review = 0 "
+            "WHERE canonical_key = ?", (canonical_key,),
+        )
+        self.store._conn.commit()
+        return bool(cur.rowcount and cur.rowcount > 0)
+
+    def _log_invalidation(
+        self, *, reason: str, primary_key: str,
+        propagated_to_keys: list[str] | None, detail: dict | None,
+        triggered_by: str,
+    ) -> None:
+        """Append a row to cache_invalidation_log. Best-effort —
+        never crashes the operation it's recording."""
+        try:
+            self.store._conn.execute(
+                "INSERT INTO cache_invalidation_log "
+                "(reason, primary_key, propagated_to_keys, detail, "
+                " triggered_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    reason, primary_key,
+                    json.dumps(propagated_to_keys) if propagated_to_keys else None,
+                    json.dumps(detail, default=str) if detail else None,
+                    triggered_by, _now_iso(),
+                ),
+            )
+            self.store._conn.commit()
+        except Exception:
+            pass
+
+    def recent_invalidations(self, limit: int = 50) -> list[dict]:
+        """Return the most recent invalidation log entries — for the
+        Inspector cache panel's audit view."""
+        rows = self.store._conn.execute(
+            "SELECT * FROM cache_invalidation_log "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "id": r["id"],
+                "reason": r["reason"],
+                "primary_key": r["primary_key"],
+                "propagated_to_keys": (
+                    json.loads(r["propagated_to_keys"])
+                    if r["propagated_to_keys"] else []
+                ),
+                "detail": (
+                    json.loads(r["detail"]) if r["detail"] else None
+                ),
+                "triggered_by": r["triggered_by"],
+                "created_at": r["created_at"],
+            })
+        return out
+
+    def health(self) -> dict:
+        """Aggregate health metrics for the Inspector cache panel.
+        Cheap to compute (single GROUP BY query)."""
+        row = self.store._conn.execute(
+            "SELECT "
+            " COUNT(*)                                                   AS total, "
+            " COUNT(CASE WHEN flagged_for_review = 1 THEN 1 END)         AS flagged, "
+            " COUNT(CASE WHEN contradiction_count > 0 THEN 1 END)        AS ever_contradicted, "
+            " SUM(contradiction_count)                                   AS total_contradictions, "
+            " SUM(refresh_count)                                         AS total_refreshes, "
+            " SUM(hit_count)                                             AS total_hits, "
+            " MIN(cached_at)                                             AS oldest_cached_at, "
+            " MAX(cached_at)                                             AS newest_cached_at "
+            "FROM verification_cache"
+        ).fetchone()
+        return {
+            "total_entries": int(row["total"] or 0),
+            "flagged_for_review": int(row["flagged"] or 0),
+            "ever_contradicted_entries": int(row["ever_contradicted"] or 0),
+            "total_contradictions": int(row["total_contradictions"] or 0),
+            "total_refreshes": int(row["total_refreshes"] or 0),
+            "total_hits": int(row["total_hits"] or 0),
+            "oldest_cached_at": row["oldest_cached_at"],
+            "newest_cached_at": row["newest_cached_at"],
+        }
 
     def semantic_lookup(
         self, claim: dict, identity_slot_names: list[str],
@@ -487,18 +824,13 @@ class VerificationCache:
                 except ValueError:
                     continue
 
+            # v0.7.11: respect flagged_for_review at the semantic
+            # layer too — flagged neighbors shouldn't serve hits.
+            if int(_safe_int(row, "flagged_for_review")) == 1:
+                continue
+
             if best is None or score > best.score:
-                verdict = CachedVerdict(
-                    canonical_key=cached_key,
-                    pattern=row["pattern"],
-                    predicate=row["predicate"],
-                    verdict=row["verdict"],
-                    evidence=json.loads(row["evidence"]) if row["evidence"] else None,
-                    stability_class=row["stability_class"],
-                    cached_at=row["cached_at"],
-                    expires_at=row["expires_at"],
-                    hit_count=int(row["hit_count"]),
-                )
+                verdict = _row_to_cached_verdict(row)
                 best = SemanticHit(
                     verdict=verdict, matched_key=cached_key, score=score,
                 )

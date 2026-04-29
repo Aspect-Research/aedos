@@ -297,10 +297,23 @@ class CacheGate:
         # Skip python verifications (free to redo, would shadow stale).
         if getattr(decision, "code_gen_result", None) is not None:
             return
+        # v0.7.10: a Decision that was served from the cache should not
+        # then write itself back. The hit_count was already bumped on
+        # lookup; rewriting would reset cached_at and pollute refresh
+        # bookkeeping (every hit would look like a fresh confirmation).
+        if getattr(decision, "served_from_cache", False):
+            return
         evidence = None
         retrieval_result = getattr(decision, "retrieval_result", None)
         if retrieval_result is not None:
-            evidence = retrieval_result.to_dict()
+            # Tolerate both RetrievalResult objects (fresh path) and
+            # dicts (cache-as-evidence path, defensive — shouldn't
+            # actually reach here because we skip cache hits above).
+            evidence = (
+                retrieval_result.to_dict()
+                if hasattr(retrieval_result, "to_dict")
+                else retrieval_result
+            )
         try:
             outcome = self._cache.write(
                 canonical_key=key,
@@ -331,6 +344,33 @@ class CacheGate:
                     "new_verdict": verdict,
                     "stability_class": state.stability.stability_class,
                 })
+                # v0.7.11 causal cascade: 1-hop semantic neighbors get
+                # flagged_for_review. Lookup will treat them as miss
+                # until the next verification confirms (or contradicts
+                # again, which would re-flag THEIR neighbors). The
+                # cascade is bounded — neighbors-of-neighbors are NOT
+                # touched here, only on their own contradiction.
+                from src.router.constants import KEY_SLOTS_BY_PATTERN
+                identity_slots = KEY_SLOTS_BY_PATTERN.get(
+                    claim.get("pattern", ""), []
+                )
+                try:
+                    flagged = self._cache.flag_neighbors_for_review(
+                        primary_canonical_key=key,
+                        claim=claim,
+                        identity_slot_names=identity_slots,
+                    )
+                    if flagged:
+                        self._emit("cache_drift_cascade", turn_id, {
+                            "primary_key": key,
+                            "flagged_keys": flagged,
+                            "flagged_count": len(flagged),
+                        })
+                except Exception as exc:  # noqa: BLE001
+                    self._emit("cache_drift_cascade", turn_id, {
+                        "primary_key": key,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    })
         except Exception as exc:  # noqa: BLE001
             self._emit("cache_write", turn_id, {
                 "canonical_key": key,
