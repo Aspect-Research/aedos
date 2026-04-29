@@ -126,10 +126,16 @@ class CacheGate:
         scoping_fn: Optional[Callable[[dict], ScopingDecision]] = None,
         stability_fn: Optional[Callable[[dict], StabilityDecision]] = None,
         store: Any = None,
+        combined_fn: Optional[Callable[[dict], Any]] = None,
     ):
         self._cache = cache
         self._scoping_fn = scoping_fn
         self._stability_fn = stability_fn
+        # v0.7.16: when set, ONE LLM call returns both scoping AND
+        # stability (CombinedDecision from src.cache.classify_combined).
+        # Halves cache-classifier LLM cost. classify() prefers this when
+        # available and falls back to the legacy two-call path otherwise.
+        self._combined_fn = combined_fn
         self._store = store
         # Per-turn state. Reset by reset_for_turn().
         self._states: dict[str, ClaimCacheState] = {}
@@ -187,16 +193,19 @@ class CacheGate:
     # ---- classify (was Pipeline stage 5b) ------------------------------
 
     def classify(self, claim: dict, *, turn_id: int) -> Optional[ClaimCacheState]:
-        """Run scoping → stability for one claim. Logs both decision
+        """Run cache classification for one claim. Logs both decision
         events on the given turn_id. Returns the resulting
         ClaimCacheState, or None when the gate is disabled.
 
-        Failures in either classifier are logged but never raised —
-        this is observability + cache-eligibility, not the verdict
-        path. A classifier exception just leaves the claim
-        cache-ineligible.
+        v0.7.16 dispatch:
+          * If a `combined_fn` is wired: ONE LLM call returns both
+            scoping AND stability. Halves cache-classifier cost.
+          * Else: legacy two-call path (scoping_fn → stability_fn).
+
+        Failures in either path are logged but never raised — this is
+        observability + cache-eligibility, not the verdict path.
         """
-        if not self.enabled:
+        if not self.enabled and self._combined_fn is None:
             return None
         claim_summary = {
             "pattern": claim.get("pattern"),
@@ -204,7 +213,42 @@ class CacheGate:
             "slots": claim.get("slots"),
             "polarity": claim.get("polarity"),
         }
-        # Scoping.
+
+        # ---- v0.7.16: combined classifier path -----------------------
+        if self._combined_fn is not None:
+            try:
+                combined = self._combined_fn(claim)
+                scope = combined.scoping
+                stab = combined.stability
+            except Exception as exc:  # noqa: BLE001
+                # Log under the scoping event since that's the first
+                # decision the combined path produces.
+                self._emit("cache_scoping_decision", turn_id, {
+                    "claim": claim_summary,
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+                return None
+            # Surface BOTH events on the trace so the operator's mental
+            # model (scope first, then stability) is preserved even
+            # though only one LLM call fired. Stability only emits when
+            # scope was world_fact (mirrors the legacy path).
+            self._emit("cache_scoping_decision", turn_id, {
+                "claim": claim_summary, "decision": scope.to_dict(),
+                "via": "combined_classifier",
+            })
+            if stab is not None:
+                self._emit("cache_stability_decision", turn_id, {
+                    "claim": claim_summary, "decision": stab.to_dict(),
+                    "via": "combined_classifier",
+                })
+            key = canonicalize_claim_key(claim)
+            state = ClaimCacheState(
+                canonical_key=key, scope=scope, stability=stab,
+            )
+            self._states[key] = state
+            return state
+
+        # ---- legacy two-call path ------------------------------------
         try:
             scope = self._scoping_fn(claim)
             self._emit("cache_scoping_decision", turn_id, {
@@ -218,7 +262,6 @@ class CacheGate:
             return None
 
         if scope.scope != "world_fact":
-            # Not eligible — record state but skip stability.
             state = ClaimCacheState(
                 canonical_key=canonicalize_claim_key(claim), scope=scope,
             )
@@ -228,7 +271,6 @@ class CacheGate:
         key = canonicalize_claim_key(claim)
         state = ClaimCacheState(canonical_key=key, scope=scope)
 
-        # Stability (only for world_fact + when classifier is wired).
         if self._stability_fn is not None:
             try:
                 stab = self._stability_fn(claim)
@@ -241,7 +283,6 @@ class CacheGate:
                     "claim": claim_summary,
                     "error": f"{type(exc).__name__}: {exc}",
                 })
-                # state.stability stays None; writable will be False.
 
         self._states[key] = state
         return state
