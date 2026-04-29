@@ -44,6 +44,7 @@ from src.router.constants import (
     KEY_SLOTS_BY_PATTERN,
     UNIQUE_VALUE_SLOTS,
     USER_SUBJECT_PATTERNS,
+    confidence_with_reinforcement,
     is_user,
     unique_value_slots_enabled,
 )
@@ -439,19 +440,58 @@ class Router:
             cached.evidence, key, hit
         )
 
+        # v0.7.13: fold the cache entry's earned trust signals into
+        # the served Decision's confidence. The cache tracks how many
+        # times this verdict has been re-confirmed (refresh_count) and
+        # flipped (contradiction_count) — that's the user's original
+        # vision of "confidence = how many times reinforced". Read the
+        # cached judge confidence too, if present, so the path prior
+        # gets multiplied by the verifier's own conviction.
+        path_prior = (
+            CONF_RETRIEVAL_VERIFIED if cached.verdict == "verified"
+            else CONF_RETRIEVAL_CORRECTION if cached.verdict == "contradicted"
+            else CONF_RETRIEVAL_INCONCLUSIVE
+        )
+        verifier_conf = (cached.confidence
+                         if cached.confidence is not None else 1.0)
+        adjusted_conf = confidence_with_reinforcement(
+            base=path_prior * verifier_conf,
+            refresh_count=cached.refresh_count or 0,
+            contradiction_count=cached.contradiction_count or 0,
+        )
+
+        # Find or boost the corresponding model-asserted fact instead
+        # of inserting a duplicate on every cache hit (was a real
+        # accumulation bug pre-v0.7.13).
+        verification_status = (
+            "verified" if cached.verdict == "verified"
+            else "contradicted" if cached.verdict == "contradicted"
+            else "retrieval_inconclusive"
+        )
+        fact_id, _, reinforcement_count = self._store_or_boost_model_fact(
+            claim, source_turn_id,
+            path_prior=path_prior, verifier_confidence=verifier_conf,
+            verification_status=verification_status,
+        )
+        notes_extra = (
+            f" · reinforced ×{cached.refresh_count + 1}"
+            if (cached.refresh_count or 0) > 0
+            else ""
+        )
+        if (cached.contradiction_count or 0) > 0:
+            notes_extra += f" · prior flips: {cached.contradiction_count}"
+
         if cached.verdict == "verified":
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
                 verification_status="verified",
-                confidence=CONF_RETRIEVAL_VERIFIED,
-                stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
-                    confidence=CONF_RETRIEVAL_VERIFIED,
-                    verification_status="verified",
-                ),
-                notes=[f"served from cache (key={key!r}, "
-                       f"hit_count={cached.hit_count})"],
+                confidence=adjusted_conf,
+                stored_fact_id=fact_id,
+                notes=[
+                    f"served from cache (key={key!r}, hit_count={cached.hit_count})"
+                    + notes_extra
+                ],
                 served_from_cache=True,
                 retrieval_result=cached_retrieval_result,
             )
@@ -460,13 +500,9 @@ class Router:
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
-                confidence=CONF_RETRIEVAL_CORRECTION,
-                stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
-                    confidence=CONF_RETRIEVAL_CORRECTION,
-                    verification_status="contradicted",
-                ),
-                notes=[f"served from cache (key={key!r})"],
+                confidence=adjusted_conf,
+                stored_fact_id=fact_id,
+                notes=[f"served from cache (key={key!r})" + notes_extra],
                 correction={
                     "original_object": claim.get("slots"),
                     "corrected_object": (cached.evidence or {}).get(
@@ -478,18 +514,15 @@ class Router:
                 served_from_cache=True,
                 retrieval_result=cached_retrieval_result,
             )
-        # Cached inconclusive — still serve.
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
             verification_status="retrieval_inconclusive",
-            confidence=CONF_RETRIEVAL_INCONCLUSIVE,
-            stored_fact_id=self._store(
-                claim, source_turn_id, asserted_by="model",
-                confidence=CONF_RETRIEVAL_INCONCLUSIVE,
-                verification_status="retrieval_inconclusive",
-            ),
-            notes=[f"served from cache (inconclusive, key={key!r})"],
+            confidence=adjusted_conf,
+            stored_fact_id=fact_id,
+            notes=[
+                f"served from cache (inconclusive, key={key!r})" + notes_extra
+            ],
             served_from_cache=True,
             retrieval_result=cached_retrieval_result,
         )
@@ -522,29 +555,42 @@ class Router:
 
         result = self.retrieval_verifier.verify(claim, source_turn_id=source_turn_id)
 
+        # v0.7.13: judge confidence (now in [0, 1] from the parser)
+        # multiplies the path prior so a hedged judge can't produce
+        # a full-confidence Decision. Defaults to 1.0 when the judge
+        # didn't emit a confidence line (legacy responses, mocks).
+        judge_conf = (
+            result.verdict.confidence if result.verdict is not None else 1.0
+        )
+
         if result.outcome is VerificationOutcome.VERIFIED:
+            fact_id, final_conf, _ = self._store_or_boost_model_fact(
+                claim, source_turn_id,
+                path_prior=CONF_RETRIEVAL_VERIFIED,
+                verifier_confidence=judge_conf,
+                verification_status="verified",
+            )
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
                 verification_status="verified",
-                confidence=CONF_RETRIEVAL_VERIFIED,
-                stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
-                    confidence=CONF_RETRIEVAL_VERIFIED, verification_status="verified",
-                ),
+                confidence=final_conf,
+                stored_fact_id=fact_id,
                 retrieval_result=result,
             )
         if result.outcome is VerificationOutcome.CONTRADICTED:
+            fact_id, final_conf, _ = self._store_or_boost_model_fact(
+                claim, source_turn_id,
+                path_prior=CONF_RETRIEVAL_CORRECTION,
+                verifier_confidence=judge_conf,
+                verification_status="contradicted",
+            )
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
-                confidence=CONF_RETRIEVAL_CORRECTION,
-                stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
-                    confidence=CONF_RETRIEVAL_CORRECTION,
-                    verification_status="contradicted",
-                ),
+                confidence=final_conf,
+                stored_fact_id=fact_id,
                 retrieval_result=result,
                 correction={
                     "original_object": claim.get("slots"),
@@ -560,17 +606,29 @@ class Router:
                                   "judge_parse_error", "retrieval_not_configured"}
         )
         status = "retrieval_failed" if is_failed else "retrieval_inconclusive"
-        confidence = CONF_RETRIEVAL_FAILED if is_failed else CONF_RETRIEVAL_INCONCLUSIVE
+        # Failed retrievals don't get a judge confidence (no judge
+        # ran, or the judge response was unparseable). Inconclusive
+        # ones do — multiply through.
+        path_prior = CONF_RETRIEVAL_FAILED if is_failed else CONF_RETRIEVAL_INCONCLUSIVE
+        if is_failed:
+            confidence = path_prior
+            fact_id = self._store(
+                claim, source_turn_id, asserted_by="model",
+                confidence=confidence, verification_status=status,
+            )
+        else:
+            fact_id, confidence, _ = self._store_or_boost_model_fact(
+                claim, source_turn_id,
+                path_prior=path_prior, verifier_confidence=judge_conf,
+                verification_status=status,
+            )
 
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
             verification_status=status,
             confidence=confidence,
-            stored_fact_id=self._store(
-                claim, source_turn_id, asserted_by="model",
-                confidence=confidence, verification_status=status,
-            ),
+            stored_fact_id=fact_id,
             retrieval_result=result,
             notes=[
                 f"retrieval {status}: "
@@ -680,6 +738,73 @@ class Router:
                 user_id=self.user_id,
             )
         )
+
+    def _store_or_boost_model_fact(
+        self,
+        claim: dict,
+        source_turn_id: int,
+        *,
+        path_prior: float,
+        verifier_confidence: float,
+        verification_status: str,
+    ) -> tuple[int, float, int]:
+        """v0.7.13: find an existing matching model-asserted fact and
+        boost it instead of inserting a duplicate. Mirror of the
+        user-asserted find-or-boost pattern in _route_user.
+
+        Returns ``(fact_id, final_confidence, reinforcement_count)``.
+
+        Same-shape lookup is anchored on the pattern's identity slots
+        (same as the cache key + store-verifier identity-slot anchor).
+        Polarity must match — opposite polarity is a CONTRADICTION,
+        not a reinforcement, so we leave it to the existing code paths.
+        """
+        slots = claim.get("slots") or {}
+        polarity = int(claim["polarity"])
+        pattern_name = claim.get("pattern", "")
+        identity_slot_names = KEY_SLOTS_BY_PATTERN.get(pattern_name, [])
+        slot_match = {k: slots[k] for k in identity_slot_names if k in slots}
+
+        existing = []
+        if slot_match and pattern_name:
+            try:
+                existing = self.store.find_currently_valid(
+                    pattern_name,
+                    predicate=claim.get("predicate"),
+                    slot_match=slot_match,
+                    polarity=polarity,
+                    user_id=self.user_id,
+                )
+            except Exception:
+                existing = []
+
+        # Prefer the most-recent model-asserted match; ignore
+        # user-asserted ones (those have their own reinforcement
+        # path via _route_store).
+        existing = [f for f in existing if f.asserted_by == "model"]
+
+        base = max(0.0, min(1.0, path_prior * verifier_confidence))
+        if existing:
+            target = existing[-1]
+            assert target.id is not None
+            new_conf = self.store.boost_confidence(
+                target.id, base_for_curve=base,
+            )
+            new_count = (target.reinforcement_count or 0) + 1
+            return target.id, new_conf, new_count
+
+        # No matching fact yet — store fresh at the base. Use the
+        # reinforcement curve with count=0 so the formula is the
+        # single source of truth (returns base unchanged in that case).
+        from src.router.constants import confidence_with_reinforcement
+        fresh_conf = confidence_with_reinforcement(
+            base, refresh_count=0, contradiction_count=0,
+        )
+        fact_id = self._store(
+            claim, source_turn_id, asserted_by="model",
+            confidence=fresh_conf, verification_status=verification_status,
+        )
+        return fact_id, fresh_conf, 0
 
 
 # ---- module-level helpers ------------------------------------------
