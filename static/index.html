@@ -9,67 +9,57 @@
 <body>
 <header>
   <h1>Aedos</h1>
-  <nav class="tabs">
-    <button class="tab active" data-tab="chat">Chat + Flow</button>
-    <button class="tab" data-tab="trace">Trace</button>
-    <button class="tab" data-tab="facts">Fact Store</button>
-    <button class="tab" data-tab="predicates">Patterns</button>
-    <button class="tab" data-tab="cache">Cache</button>
-  </nav>
   <div class="header-actions">
+    <label class="model-select" title="Drives every step (chat, extraction, routing, verification, correction)">
+      <select id="model-select">
+        <!-- populated from /api/models on load -->
+      </select>
+    </label>
+    <button id="inspector-btn" title="Open Fact Store / Patterns / Cache inspector">Inspector</button>
     <button id="reset-btn" title="Wipe the database">Reset DB</button>
   </div>
 </header>
 
 <main>
-  <!-- Chat + live Flow View tab ------------------------------------- -->
-  <section id="tab-chat" class="tab-panel active">
-    <div class="split">
-      <div class="chat-pane">
-        <div class="chat-toolbar">
-          <label class="model-select">Model
-            <select id="model-select" title="Drives every step (chat, extraction, routing, verification, correction)">
-              <!-- populated from /api/models on load -->
-            </select>
-          </label>
-        </div>
-        <div id="messages" class="messages"></div>
-        <form id="chat-form" class="chat-form">
-          <textarea id="input" placeholder="Type a message..." rows="2" required></textarea>
-          <button type="submit">Send</button>
-        </form>
+  <!-- Single primary view: chat (left) + live progressive flow (right).
+       Click any flow step to expand its detail INLINE under it. The
+       Trace tab is gone — detail lives where it's relevant. -->
+  <div class="split">
+    <div class="chat-pane">
+      <div id="messages" class="messages"></div>
+      <form id="chat-form" class="chat-form">
+        <textarea id="input" placeholder="Type a message..." rows="2" required></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </div>
+    <div class="flow-pane">
+      <div class="flow-pane-header">
+        <h2>Pipeline flow</h2>
+        <span id="flow-status" class="hint">idle</span>
       </div>
-      <div class="flow-pane">
-        <div class="flow-pane-header">
-          <h2>Pipeline flow — live</h2>
-          <span id="flow-live-status" class="hint">idle</span>
-        </div>
-        <div id="flow-live-container" class="flow-container">
-          <p class="hint">Send a message — each pipeline stage will
-            appear here as it lands. Click any box to jump to that
-            stage in the Trace tab.</p>
-        </div>
+      <div id="flow-container" class="flow-container">
+        <p class="hint">Send a message — each pipeline stage will
+          appear here as it lands. Click any step to expand its
+          detail inline.</p>
       </div>
     </div>
-  </section>
+  </div>
+</main>
 
-  <!-- Trace tab ----------------------------------------------------- -->
-  <section id="tab-trace" class="tab-panel">
-    <div class="toolbar">
-      <label>Turn
-        <select id="trace-turn-select"></select>
-      </label>
-      <button id="trace-refresh">Refresh</button>
-      <span id="trace-status" class="hint"></span>
-    </div>
-    <div id="trace" class="trace">
-      <p class="hint">No turns yet. Send a message in the Chat + Flow
-        tab to see the extraction → verification → correction pipeline.</p>
-    </div>
-  </section>
+<!-- Slide-out inspector drawer. Holds Fact Store / Patterns / Cache
+     as a sub-tabbed view. Hidden by default; toggled by the
+     Inspector button. -->
+<aside id="inspector" class="inspector">
+  <div class="inspector-header">
+    <nav class="inspector-tabs">
+      <button class="inspector-tab active" data-inspector-tab="facts">Facts</button>
+      <button class="inspector-tab" data-inspector-tab="patterns">Patterns</button>
+      <button class="inspector-tab" data-inspector-tab="cache">Cache</button>
+    </nav>
+    <button id="inspector-close" title="Close inspector">✕</button>
+  </div>
 
-  <!-- Fact Store tab ------------------------------------------------ -->
-  <section id="tab-facts" class="tab-panel">
+  <section id="inspector-facts" class="inspector-panel active">
     <div class="toolbar">
       <label>Pattern
         <select id="f-pattern">
@@ -94,7 +84,7 @@
           <option value="external">external</option>
         </select>
       </label>
-      <label>Verification status
+      <label>Status
         <select id="f-status">
           <option value="">(any)</option>
           <option value="verified">verified</option>
@@ -113,20 +103,19 @@
     <div id="facts-table" class="facts-table"></div>
   </section>
 
-  <!-- Predicates tab ------------------------------------------------ -->
-  <section id="tab-predicates" class="tab-panel">
+  <section id="inspector-patterns" class="inspector-panel">
     <div id="predicates-table" class="predicates-table"></div>
   </section>
 
-  <!-- Cache tab ----------------------------------------------------- -->
-  <section id="tab-cache" class="tab-panel">
+  <section id="inspector-cache" class="inspector-panel">
     <div class="toolbar">
       <div id="cache-stats" class="cache-stats"></div>
       <button id="cache-refresh">Refresh</button>
     </div>
     <div id="cache-table" class="facts-table"></div>
   </section>
-</main>
+</aside>
+<div id="inspector-backdrop" class="inspector-backdrop"></div>
 
 <script src="/static/app.js"></script>
 </body>
