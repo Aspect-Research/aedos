@@ -81,6 +81,11 @@ PIPELINE_STAGES = {
     # v0.7.8 — fired once at app startup with the prune_expired result
     # (number of dead rows reclaimed).
     "cache_pruned",
+    # v0.7.11 — 1-hop causal cascade: when an entry's verdict flips,
+    # its semantic neighbors get flagged_for_review. This event lists
+    # the cascaded keys so the operator can see "the contradiction
+    # marked these N other entries as suspect".
+    "cache_drift_cascade",
     # v0.7.9 — comparative / superlative claim detection in the
     # retrieval verifier. The detector decomposes a comparative claim
     # into {subject, superlative, measure, domain} and the verifier
@@ -180,15 +185,45 @@ CREATE TABLE IF NOT EXISTS verification_cache (
     verdict TEXT NOT NULL,                   -- verified / contradicted / inconclusive
     evidence TEXT,                           -- JSON: snippets + judge justification
     stability_class TEXT NOT NULL,           -- immutable | decade_stable | ... | volatile
-    cached_at TEXT NOT NULL,
+    cached_at TEXT NOT NULL,                 -- first time this entry was written (preserved across UPSERT)
     expires_at TEXT,                         -- NULL = immutable (never expires)
     hit_count INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    -- v0.7.10 provenance + bookkeeping (added via _migrate_cache_provenance
+    -- on existing DBs; declared here so fresh DBs ship with them).
+    evidence_hash TEXT,                      -- SHA-256 of evidence JSON; stable identity for "same answer"
+    source_urls TEXT,                        -- JSON array of source URLs the judge consulted
+    confidence REAL,                         -- judge's reported confidence, NULL when not provided
+    last_refreshed_at TEXT,                  -- bumped on every refresh; cached_at stays as first-cache
+    refresh_count INTEGER NOT NULL DEFAULT 0,
+    contradiction_count INTEGER NOT NULL DEFAULT 0,
+    flagged_for_review INTEGER NOT NULL DEFAULT 0  -- 1 = lookup() treats as miss until next refresh
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_cache_key
     ON verification_cache(canonical_key);
 CREATE INDEX IF NOT EXISTS idx_verification_cache_expires
     ON verification_cache(expires_at);
+-- The flagged_for_review index lives in _migrate_cache_provenance so
+-- that older DBs (where the column is added by ALTER) get the index
+-- created AFTER the column exists. New DBs created from this SCHEMA
+-- get the column inline above; the migration creates the index for
+-- both cases.
+
+-- v0.7.11: every cache invalidation (manual, contradiction-cascade,
+-- drift) gets a row here so the operator can audit "why did N entries
+-- vanish from the cache?". Bounded — pruned alongside expired cache
+-- rows in prune_expired().
+CREATE TABLE IF NOT EXISTS cache_invalidation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reason TEXT NOT NULL,                    -- 'manual_by_slot' | 'contradiction_cascade' | 'drift' | 'admin_one'
+    primary_key TEXT NOT NULL,               -- the canonical_key that triggered the invalidation
+    propagated_to_keys TEXT,                 -- JSON array of cascaded canonical_keys
+    detail TEXT,                             -- JSON: free-form context (slot/value, prior verdict, etc.)
+    triggered_by TEXT NOT NULL,              -- 'user' | 'auto'
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cache_invalidation_created_at
+    ON cache_invalidation_log(created_at);
 
 -- A flat projection of facts for the UI / quick inspection. The pattern
 -- determines which slot fills "subject" and "object" semantically.
@@ -266,6 +301,7 @@ class FactStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
         self._migrate_user_id()
+        self._migrate_cache_provenance()
         self._conn.commit()
         # v0.6: per-event subscribers (set by /api/chat/stream so the
         # SSE handler can push pipeline_events to the client as they
@@ -286,6 +322,37 @@ class FactStore:
             self._event_subscribers.remove(token)
         except ValueError:
             pass
+
+    def _migrate_cache_provenance(self) -> None:
+        """v0.7.10: backfill the new verification_cache columns
+        (evidence_hash, source_urls, confidence, last_refreshed_at,
+        refresh_count, contradiction_count, flagged_for_review) on
+        databases created before they existed. Each ALTER is wrapped
+        in a column-existence check so it's idempotent across boots.
+        Existing rows get NULL/0 defaults — write() backfills the
+        provenance fields the next time each entry is refreshed.
+        """
+        cols = {r["name"] for r in self._conn.execute(
+            "PRAGMA table_info(verification_cache)"
+        ).fetchall()}
+        new_cols = [
+            ("evidence_hash",        "TEXT"),
+            ("source_urls",          "TEXT"),
+            ("confidence",           "REAL"),
+            ("last_refreshed_at",    "TEXT"),
+            ("refresh_count",        "INTEGER NOT NULL DEFAULT 0"),
+            ("contradiction_count",  "INTEGER NOT NULL DEFAULT 0"),
+            ("flagged_for_review",   "INTEGER NOT NULL DEFAULT 0"),
+        ]
+        for name, decl in new_cols:
+            if name not in cols:
+                self._conn.execute(
+                    f"ALTER TABLE verification_cache ADD COLUMN {name} {decl}"
+                )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_verification_cache_flagged "
+            "ON verification_cache(flagged_for_review)"
+        )
 
     def _migrate_user_id(self) -> None:
         """v0.5.x: add user_id column to pre-existing facts/turns tables.

@@ -353,7 +353,8 @@ def list_cache_entries(limit: int = 200) -> dict[str, Any]:
     """
     from datetime import datetime, timezone
 
-    store = _pipeline(app).store
+    p = _pipeline(app)
+    store = p.store
     rows = store._conn.execute(
         "SELECT * FROM verification_cache ORDER BY id DESC LIMIT ?",
         (limit,),
@@ -410,6 +411,12 @@ def list_cache_entries(limit: int = 200) -> dict[str, Any]:
     total_lookups = hits + misses
     hit_rate = (hits / total_lookups) if total_lookups else None
 
+    # v0.7.11 health metrics from the cache table itself (drift,
+    # contradictions, flagged-for-review entries).
+    cache_obj = getattr(getattr(p, "_cache_gate", None), "_cache", None)
+    health: dict[str, Any] = cache_obj.health() if cache_obj is not None else {}
+    invalidations = cache_obj.recent_invalidations(limit=20) if cache_obj is not None else []
+
     return {
         "stats": {
             "total_entries": int(stats_row["total"] or 0),
@@ -422,7 +429,9 @@ def list_cache_entries(limit: int = 200) -> dict[str, Any]:
             "hit_rate": hit_rate,
             "hits_by_stability": by_stability_hits,
         },
+        "health": health,
         "entries": entries,
+        "recent_invalidations": invalidations,
     }
 
 
@@ -435,6 +444,47 @@ def reset() -> dict[str, bool]:
 class InvalidateRequest(BaseModel):
     slot_name: str
     slot_value: str
+
+
+class CacheEntryRequest(BaseModel):
+    canonical_key: str
+
+
+def _cache_admin(p: "Pipeline"):
+    """Helper: return the VerificationCache instance or None when the
+    cache is missing — keeps each per-entry endpoint short."""
+    cache = getattr(getattr(p, "_cache_gate", None), "_cache", None)
+    if cache is None:
+        raise HTTPException(status_code=503, detail="cache not available")
+    return cache
+
+
+@app.post("/api/cache/refresh-one")
+def cache_refresh_one(req: CacheEntryRequest) -> dict[str, Any]:
+    """Mark a single entry as flagged_for_review so the next
+    verification path re-runs retrieval. Doesn't invalidate the data
+    itself — the entry stays in the cache, lookup() just treats it
+    as miss until the next refresh confirms (or contradicts again)."""
+    cache = _cache_admin(_pipeline(app))
+    ok = cache.force_refresh(req.canonical_key)
+    return {"ok": ok, "canonical_key": req.canonical_key}
+
+
+@app.post("/api/cache/invalidate-one")
+def cache_invalidate_one(req: CacheEntryRequest) -> dict[str, Any]:
+    """Hard-delete a single cache entry by canonical_key."""
+    cache = _cache_admin(_pipeline(app))
+    ok = cache.invalidate_one(req.canonical_key)
+    return {"ok": ok, "canonical_key": req.canonical_key}
+
+
+@app.post("/api/cache/clear-flag")
+def cache_clear_flag(req: CacheEntryRequest) -> dict[str, Any]:
+    """Manually clear flagged_for_review on an entry — operator
+    asserts it's still trustworthy without re-running retrieval."""
+    cache = _cache_admin(_pipeline(app))
+    ok = cache.clear_flag(req.canonical_key)
+    return {"ok": ok, "canonical_key": req.canonical_key}
 
 
 @app.post("/api/cache/invalidate")
