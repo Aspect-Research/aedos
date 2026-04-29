@@ -372,8 +372,9 @@ class Pipeline:
         return final_content, original_content, interventions
 
     def _stage_finalize(self, final_content, assistant_turn_id):
-        """Emit the ``final`` event + drain cost telemetry. Cost
-        aggregator failures never break the turn — pure observability."""
+        """Emit the ``final`` event + drain cost + cache-savings
+        telemetry. Aggregator failures never break the turn — pure
+        observability."""
         self.store.insert_pipeline_event(
             assistant_turn_id, "final", {"content": final_content}
         )
@@ -387,6 +388,18 @@ class Pipeline:
                     assistant_turn_id, "turn_cost",
                     aggregate_costs(calls),
                 )
+        except Exception:
+            pass
+        # v0.7.12 — surface what the cache saved this turn alongside
+        # turn_cost. Pure telemetry; never raises.
+        try:
+            gate = getattr(self, "_cache_gate", None)
+            if gate is not None and hasattr(gate, "turn_savings"):
+                savings = gate.turn_savings()
+                if savings.get("hits", 0) > 0:
+                    self.store.insert_pipeline_event(
+                        assistant_turn_id, "cache_savings", savings,
+                    )
         except Exception:
             pass
 

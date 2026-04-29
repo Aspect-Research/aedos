@@ -86,6 +86,9 @@ PIPELINE_STAGES = {
     # the cascaded keys so the operator can see "the contradiction
     # marked these N other entries as suspect".
     "cache_drift_cascade",
+    # v0.7.12 — end-of-turn: how much $ the cache saved this turn
+    # (rough estimate: each hit avoids one judge LLM call).
+    "cache_savings",
     # v0.7.9 — comparative / superlative claim detection in the
     # retrieval verifier. The detector decomposes a comparative claim
     # into {subject, superlative, measure, domain} and the verifier

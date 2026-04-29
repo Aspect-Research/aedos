@@ -1168,3 +1168,94 @@ def test_write_populates_provenance_fields(tmp_path):
     assert hit.last_refreshed_at is not None
     assert hit.refresh_count == 0  # first write is not a refresh
     store.close()
+
+
+# ---- v0.7.12: confidence floor + cache-savings telemetry --------------
+
+
+def test_gate_skips_write_below_confidence_floor(tmp_path):
+    """A Decision with confidence < _MIN_CONFIDENCE_TO_CACHE (0.5)
+    should not be written. Default CONF_RETRIEVAL_INCONCLUSIVE = 0.4
+    naturally falls below this floor."""
+    from src.cache.gate import (
+        CacheGate, ClaimCacheState, _MIN_CONFIDENCE_TO_CACHE,
+    )
+    from src.cache.scoping_classifier import ScopingDecision
+    from src.cache.stability_classifier import StabilityDecision
+    from types import SimpleNamespace
+
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    gate = CacheGate(cache=cache, scoping_fn=None, stability_fn=None, store=store)
+
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "X", "location": "Y"}, "polarity": 1,
+    }
+    key = canonicalize_claim_key(claim)
+    gate._states[key] = ClaimCacheState(
+        canonical_key=key,
+        scope=SimpleNamespace(scope="world_fact"),
+        stability=StabilityDecision(
+            stability_class="years_stable", reason="r", confidence=0.9,
+            ttl_seconds=90 * 24 * 3600,
+        ),
+    )
+    low_conf = SimpleNamespace(
+        verification_status="retrieval_inconclusive",
+        code_gen_result=None, retrieval_result=None,
+        served_from_cache=False, confidence=0.4,
+    )
+    gate.maybe_write(low_conf, claim, turn_id=1)
+    assert cache.lookup(key) is None  # nothing written
+    store.close()
+
+
+def test_gate_writes_when_confidence_above_floor(tmp_path):
+    """High-confidence verdicts pass the floor and get cached."""
+    from src.cache.gate import CacheGate, ClaimCacheState
+    from src.cache.stability_classifier import StabilityDecision
+    from types import SimpleNamespace
+
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    gate = CacheGate(cache=cache, scoping_fn=None, stability_fn=None, store=store)
+
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "X", "location": "Y"}, "polarity": 1,
+    }
+    key = canonicalize_claim_key(claim)
+    gate._states[key] = ClaimCacheState(
+        canonical_key=key,
+        scope=SimpleNamespace(scope="world_fact"),
+        stability=StabilityDecision(
+            stability_class="years_stable", reason="r", confidence=0.9,
+            ttl_seconds=90 * 24 * 3600,
+        ),
+    )
+    high_conf = SimpleNamespace(
+        verification_status="verified",
+        code_gen_result=None, retrieval_result=None,
+        served_from_cache=False, confidence=0.95,
+    )
+    gate.maybe_write(high_conf, claim, turn_id=1)
+    assert cache.lookup(key) is not None
+    store.close()
+
+
+def test_turn_savings_aggregates_hits(tmp_path):
+    """Each hit bumps the per-turn counter; reset_for_turn clears it."""
+    from src.cache.gate import CacheGate
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    gate = CacheGate(cache=cache, scoping_fn=None, stability_fn=None, store=store)
+    assert gate.turn_savings()["hits"] == 0
+    gate._record_hit_savings()
+    gate._record_hit_savings()
+    s = gate.turn_savings()
+    assert s["hits"] == 2
+    assert s["estimated_usd_saved"] > 0
+    gate.reset_for_turn()
+    assert gate.turn_savings()["hits"] == 0
+    store.close()
