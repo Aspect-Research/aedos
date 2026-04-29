@@ -223,18 +223,24 @@ def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
 
 
 def test_models_endpoint_returns_full_list(client_with_seed_data):
-    """/api/models drives the chat UI dropdown. v0.7.15: Anthropic-only
-    after the GLM/Modal removal."""
+    """/api/models drives the chat UI dropdown. v0.8.0: Anthropic +
+    OpenAI options for the chat slot. OpenAI entries are marked
+    unavailable when OPENAI_API_KEY is missing so the UI can grey
+    them out."""
     r = client_with_seed_data.get("/api/models")
     assert r.status_code == 200
     body = r.json()
     ids = [m["id"] for m in body["models"]]
     assert ids == [
         "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5",
+        "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini",
     ]
-    # Every entry has a label + availability bool; all available.
     for m in body["models"]:
         assert isinstance(m["label"], str) and m["label"]
+        assert isinstance(m["available"], bool)
+    # Anthropic models always available.
+    for cid in ("claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"):
+        m = next(x for x in body["models"] if x["id"] == cid)
         assert m["available"] is True
     # Default is some real model.
     assert body["default"] in ids

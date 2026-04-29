@@ -22,6 +22,12 @@ _PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-5": (3.00,  15.00),
     "claude-haiku-4-5":  (1.00,  5.00),
     "claude-haiku-4-0":  (0.25,  1.25),
+    # OpenAI — added v0.8.0. Per-MTok pricing as of 2026-04.
+    "gpt-4.1":           (2.00,   8.00),
+    "gpt-4.1-mini":      (0.40,   1.60),
+    "gpt-4.1-nano":      (0.10,   0.40),
+    "gpt-4o":            (2.50,  10.00),
+    "gpt-4o-mini":       (0.15,   0.60),
 }
 
 

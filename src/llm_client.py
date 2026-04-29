@@ -1,4 +1,4 @@
-"""Thin wrapper around the Anthropic SDK.
+"""LLM dispatcher (v0.8.0 — multi-provider).
 
 Three entry points cover every call the pipeline makes:
 
@@ -8,9 +8,16 @@ Three entry points cover every call the pipeline makes:
   freeform JSON out of a prose response.
 * ``rewrite(...)`` — a text transform call (correction rewrite).
 
-Prompt caching is applied to stable system prompts by passing a top-level
-``cache_control={"type": "ephemeral"}``. That's sufficient here — the
-extractor's system prompt is the largest reused prefix and benefits most.
+Each call carries a ``purpose`` tag (extractor:user, router, judge, etc.).
+The dispatcher resolves purpose → model → provider via
+DEFAULT_MODEL_BY_PURPOSE (env-var overridable) and forwards to either the
+Anthropic SDK (claude-* models) or the OpenAI SDK (gpt-* models). Cost
+recording lands on a single per-instance ledger regardless of provider.
+
+Prompt caching:
+  * Anthropic: explicit ``cache_control: ephemeral`` on stable system
+    prompts (extractor + chat already; rewrite added in v0.7.16).
+  * OpenAI: automatic on the gpt-4o / gpt-4.1 family — no opt-in needed.
 """
 
 from __future__ import annotations
@@ -20,7 +27,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 import anthropic
 
@@ -38,17 +45,67 @@ DEFAULT_MODEL = "claude-opus-4-7"
 # variation signal, which is documented in OBSERVATIONS.md.
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
 
-# Models the operator can pick from in the chat UI. The selected model
-# drives every Anthropic-backed call (chat, extraction, rewrite).
-# Post-v0.7.15: Anthropic-only — the GLM-5.1 entry was removed because
-# GLM doesn't support tool use (it could only ever drive the chat call,
-# not any of the internal calls), so the dual-backend abstraction was
-# carrying its weight in cruft, not capability.
+# Models the operator can pick from in the chat UI. The selected
+# model drives the CHAT purpose only — internal calls (extractor,
+# router, judge, etc.) follow DEFAULT_MODEL_BY_PURPOSE so the cheap
+# OpenAI-mini-class models run those even when the operator picks
+# Opus 4.7 for the chat-side hallucination test.
 ALLOWED_MODELS: tuple[str, ...] = (
     "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
+    # OpenAI options for the chat slot.
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4o",
+    "gpt-4o-mini",
 )
+
+
+# v0.8.0 — per-purpose model routing. EVERY internal LLM call carries
+# a ``purpose`` tag; the dispatcher resolves it through this map to a
+# concrete model name. The model name's prefix (claude-* vs gpt-*)
+# determines which provider's SDK handles the call. Operator can
+# override any entry via env:
+#     AEDOS_MODEL_extractor:user=gpt-4.1-mini
+#     AEDOS_MODEL_router=claude-haiku-4-5
+#     AEDOS_MODEL_cache_classify=gpt-4.1-nano
+#
+# Defaults reflect Scenario D from the v0.7.16 cost discussion:
+# cheap OpenAI mini-class for everything internal, Anthropic Haiku
+# default for the chat slot (operator-overridable in the UI).
+DEFAULT_MODEL_BY_PURPOSE: dict[str, str] = {
+    "chat":                "claude-haiku-4-5",
+    "extractor:user":      "gpt-4.1-mini",
+    "extractor:assistant": "gpt-4.1-mini",
+    "router":              "gpt-4.1-mini",
+    "cache_classify":      "gpt-4.1-nano",
+    "cache_scoping":       "gpt-4.1-nano",   # legacy two-call path
+    "cache_stability":     "gpt-4.1-nano",   # legacy two-call path
+    "prompt_builder":      "gpt-4.1-mini",
+    "code_writer":         "gpt-4.1-mini",
+    "retrieval_judge":     "gpt-4.1-mini",
+    "corrector":           "gpt-4.1-mini",
+}
+
+
+def _resolve_purpose_model(purpose: str | None, fallback: str) -> str:
+    """purpose → concrete model name. Env override wins; then the
+    DEFAULT_MODEL_BY_PURPOSE entry; then ``fallback``."""
+    if purpose:
+        env = os.getenv(f"AEDOS_MODEL_{purpose}")
+        if env:
+            return env
+        if purpose in DEFAULT_MODEL_BY_PURPOSE:
+            return DEFAULT_MODEL_BY_PURPOSE[purpose]
+    return fallback
+
+
+def is_openai_model(model: str) -> bool:
+    return (model.startswith("gpt-")
+            or model.startswith("o1-") or model.startswith("o3-")
+            or model.startswith("o4-"))
+
 
 _log = logging.getLogger(__name__)
 
@@ -87,6 +144,22 @@ class LLMClient:
         # Cost telemetry: every API call records a CallCost entry here.
         # Pipeline pops the list at end-of-turn to emit a turn_cost event.
         self._recorded_calls: list[CallCost] = []
+        # v0.8.0 — lazy OpenAI client. Built on first OpenAI-routed
+        # call. None means uninitialized; the property below builds it
+        # on demand. Pure-Anthropic deployments never instantiate it.
+        self._openai_client: Any | None = None
+
+    @property
+    def openai(self) -> Any:
+        """Lazily-built OpenAI client wrapper. Routes its cost
+        recordings into this instance's _recorded_calls so the
+        per-turn ledger stays unified across providers."""
+        if self._openai_client is None:
+            from src.openai_client import OpenAIClient
+            self._openai_client = OpenAIClient(
+                cost_recorder=self._recorded_calls.append,
+            )
+        return self._openai_client
 
     def pop_recorded_calls(self) -> list[CallCost]:
         """Return and clear the per-instance call ledger. Pipeline
@@ -97,9 +170,11 @@ class LLMClient:
 
     @contextlib.contextmanager
     def with_active_model(self, model: str | None):
-        """Temporarily set chat / extractor / corrector model to ``model``
-        for the duration of the block. Restores the previous values on
-        exit. Pass ``None`` for a no-op (preserves current model state).
+        """Temporarily set the CHAT model for the duration of the
+        block. v0.8.0 narrowing: extractor/corrector are NO LONGER
+        switched — those follow DEFAULT_MODEL_BY_PURPOSE so the
+        operator picking Opus 4.7 to test the chat side doesn't
+        also blow up internal-call cost. Restores on exit.
 
         Single-threaded use only — restoration is not thread-safe."""
         if model is None:
@@ -109,14 +184,12 @@ class LLMClient:
             raise ValueError(
                 f"unknown model {model!r}; allowed: {ALLOWED_MODELS}"
             )
-        saved = (self.model, self.extractor_model, self.corrector_model)
+        saved = self.model
         self.model = model
-        self.extractor_model = model
-        self.corrector_model = model
         try:
             yield
         finally:
-            self.model, self.extractor_model, self.corrector_model = saved
+            self.model = saved
 
     def _record_call(
         self, model: str, response: Any,
@@ -164,10 +237,27 @@ class LLMClient:
         max_tokens: int = 4096,
         purpose: str | None = "chat",
     ) -> str:
-        """Single-shot chat. Returns the first text block of the response."""
+        """Single-shot chat. Returns the first text block of the response.
+
+        v0.8.0 dispatch: the chat purpose ALWAYS uses
+        ``self.model`` — operator selection (via with_active_model
+        in the per-turn pipeline) is the source of truth here. We
+        deliberately bypass DEFAULT_MODEL_BY_PURPOSE for "chat"
+        because the chat slot is the model under test for hallucination
+        and the operator is in charge of it. Other purposes still
+        flow through the per-purpose router."""
+        target_model = (
+            self.model if purpose == "chat"
+            else _resolve_purpose_model(purpose, self.model)
+        )
+        if is_openai_model(target_model):
+            return self.openai.chat(
+                system, messages, max_tokens=max_tokens,
+                purpose=purpose, model=target_model,
+            )
         t0 = time.monotonic()
         response = self._client.messages.create(
-            model=self.model,
+            model=target_model,
             max_tokens=max_tokens,
             system=[
                 {
@@ -178,7 +268,7 @@ class LLMClient:
             ],
             messages=[{"role": m.role, "content": m.content} for m in messages],
         )
-        self._record_call(self.model, response,
+        self._record_call(target_model, response,
                           purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
         return _first_text(response)
 
@@ -192,10 +282,20 @@ class LLMClient:
         max_tokens: int = 2048,
         purpose: str | None = None,
     ) -> dict[str, Any]:
-        """Force the model to call ``tool`` and return its parsed input."""
+        """Force the model to call ``tool`` and return its parsed input.
+
+        v0.8.0 dispatch: purpose resolves through DEFAULT_MODEL_BY_PURPOSE
+        (or AEDOS_MODEL_<purpose> env override). gpt-* targets route
+        to the OpenAI side; claude-* targets stay on Anthropic."""
+        target_model = _resolve_purpose_model(purpose, self.extractor_model)
+        if is_openai_model(target_model):
+            return self.openai.extract_with_tool(
+                system, user_message, tool, max_tokens=max_tokens,
+                purpose=purpose, model=target_model,
+            )
         t0 = time.monotonic()
         response = self._client.messages.create(
-            model=self.extractor_model,
+            model=target_model,
             max_tokens=max_tokens,
             system=[
                 {
@@ -208,7 +308,7 @@ class LLMClient:
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
         )
-        self._record_call(self.extractor_model, response,
+        self._record_call(target_model, response,
                           purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == tool["name"]:
@@ -231,16 +331,22 @@ class LLMClient:
     ) -> str:
         """Single-shot text-rewrite call.
 
-        ``model`` overrides ``self.corrector_model`` for this call only.
-        Used by the canonical-constants cross-check to force Sonnet 4.6
-        (which still accepts ``temperature``) when the default is
-        Opus 4.7 (which doesn't), preserving the variation signal."""
-        chosen_model = model or self.corrector_model
-        # v0.7.16: wrap system as a structured block with
-        # cache_control: ephemeral so the (large, stable) judge /
-        # corrector / code-writer / prompt-builder system prompts
-        # become Anthropic-prompt-cacheable. ~10x cheaper input
-        # tokens on cache hit (5-minute TTL, automatic).
+        Resolution order for the target model:
+          1. ``model`` parameter (explicit override; preserves the
+             canonical-constants cross-check's force-Sonnet behavior).
+          2. v0.8.0 purpose → DEFAULT_MODEL_BY_PURPOSE / env override.
+          3. self.corrector_model (Anthropic legacy default).
+
+        gpt-* targets dispatch to the OpenAI side; claude-* stay on
+        Anthropic with the cache_control: ephemeral system block."""
+        explicit = model
+        chosen_model = explicit or _resolve_purpose_model(purpose, self.corrector_model)
+        if is_openai_model(chosen_model):
+            return self.openai.rewrite(
+                system, user_message,
+                max_tokens=max_tokens, temperature=temperature,
+                model=chosen_model, purpose=purpose,
+            )
         kwargs: dict[str, Any] = {
             "model": chosen_model,
             "max_tokens": max_tokens,
