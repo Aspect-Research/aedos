@@ -45,8 +45,11 @@ PIPELINE_STAGES = {
     # v0.3 additions
     "retrieval_query_attempt",  # one event per query attempt; trace shows the strategy
     "verifier_failure",         # the verifier didn't produce useful signal
-    # v0.4 additions — code-generated verification stages
-    "code_triage",
+    # v0.4 additions — code-generated verification stages.
+    # (``code_triage`` was removed in v0.5: the LLM router decides
+    # python-verifiability before code generation runs, so a separate
+    # triage stage is dead. Kept out of this enum to fail-loud if
+    # anything tries to write it.)
     "code_prompt_built",
     "code_prompt_leakage_detected",
     "code_generated",
