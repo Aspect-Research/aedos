@@ -1572,6 +1572,10 @@ $("#pipeline-refresh").addEventListener("click", refreshPipelineEvents);
 // =====================================================================
 
 const MODEL_STORAGE_KEY = "aedos.selected_model";
+// UI's preferred first-load default. The backend's default model
+// remains Opus 4.7 (drives scripts/tests), but the chat dropdown
+// opens to Haiku 4.5 since it's cheap-by-default for ad-hoc dogfood.
+const PREFERRED_DEFAULT_MODEL = "claude-haiku-4-5";
 
 async function populateModelSelect() {
   try {
@@ -1583,13 +1587,17 @@ async function populateModelSelect() {
       if (!m.available) opt.disabled = true;
       modelSelect.appendChild(opt);
     });
-    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
     const ids = (data.models || []).map((m) => m.id);
+    const preferred = (data.models || []).find(
+      (m) => m.id === PREFERRED_DEFAULT_MODEL && m.available
+    );
+    const effectiveDefault = preferred ? PREFERRED_DEFAULT_MODEL : data.default;
+    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
     if (saved && ids.includes(saved)) {
       const opt = data.models.find((m) => m.id === saved);
-      modelSelect.value = (opt && opt.available) ? saved : data.default;
+      modelSelect.value = (opt && opt.available) ? saved : effectiveDefault;
     } else {
-      modelSelect.value = data.default;
+      modelSelect.value = effectiveDefault;
     }
   } catch (e) {
     console.error("populateModelSelect failed:", e);
