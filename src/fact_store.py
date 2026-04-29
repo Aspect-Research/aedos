@@ -81,6 +81,15 @@ PIPELINE_STAGES = {
     # v0.7.8 — fired once at app startup with the prune_expired result
     # (number of dead rows reclaimed).
     "cache_pruned",
+    # v0.7.9 — comparative / superlative claim detection in the
+    # retrieval verifier. The detector decomposes a comparative claim
+    # into {subject, superlative, measure, domain} and the verifier
+    # prepends comparative-aware Wikipedia query templates ahead of
+    # the standard pattern queries. The retry-on-inconclusive event
+    # fires when the first viable judge pass lands INSUFFICIENT and
+    # the verifier steps to the next viable attempt.
+    "comparative_detected",
+    "judge_retry_after_inconclusive",
     # v0.6 — end-of-turn cost aggregate. One per turn. Sum of all
     # LLM calls (extractor + router + code-writer + judge + corrector +
     # any classifiers) into total_usd / by_model breakdown.

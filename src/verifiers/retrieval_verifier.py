@@ -28,6 +28,11 @@ from bs4 import BeautifulSoup
 from src.fact_store import FactStore
 from src.llm_client import LLMClient
 from src.pattern_registry import PatternRegistry, Pattern
+from src.verifiers.comparative import (
+    ComparativeClaim,
+    comparative_queries,
+    detect_comparative,
+)
 from src.verifiers.types import VerificationOutcome, VerificationResult
 
 
@@ -49,6 +54,11 @@ _REQUEST_TIMEOUT = 10.0
 _TOP_N = 3
 _MIN_RESULTS_TO_USE = 2  # spec: "If a query returns ≥ 2 results, use those"
 _DEFAULT_TTL_HOURS = 24
+# v0.7.9: comparative-claim retry budget. When the first viable
+# attempt's snippets don't settle the claim, we step through up to
+# this many additional viable attempts before giving up. Bounded so
+# a pathological case can't run away with LLM cost.
+_MAX_JUDGE_RETRIES = 3
 
 
 @dataclass
@@ -300,6 +310,17 @@ Otherwise INSUFFICIENT_EVIDENCE.
 The dissolution / death / end-of-existence of an entity does NOT
 contradict a past-tense claim about that entity. It only contradicts
 present-tense claims.
+
+COMPARATIVE / SUPERLATIVE claims ("X had the most Y", "X is the
+heaviest Y", "X is the first Z to do W"): a snippet that lists the
+measure across multiple entities (e.g. a "list of Y by country" or
+"Y ranking" article) is sufficient evidence to judge — read whether
+X is at the named extreme of that list. A snippet about only X
+without comparison context against other entities is
+INSUFFICIENT_EVIDENCE for the comparative dimension. The comparative
+phrasing in source_text is the signal — a structured slot with
+``relation: had_heaviest_X`` or source text like "the most/heaviest
+/largest of any" should activate this rule.
 
 Output exactly two lines, no preamble:
 VERDICT
@@ -568,8 +589,38 @@ class RetrievalVerifier:
     ) -> RetrievalResult:
         pattern = self.registry.get(claim["pattern"])
         slots = claim.get("slots") or {}
-        queries = build_queries(pattern, slots)
         historical = _is_historical(claim)
+
+        # v0.7.9: detect comparative / superlative claims and prepend
+        # comparative-aware query templates. Standard pattern queries
+        # stay as fallback. When detection fires we also enable the
+        # retry-on-inconclusive path so a first-attempt INSUFFICIENT
+        # verdict can step through the rest of the queue rather than
+        # giving up.
+        comparative = detect_comparative(claim)
+        if comparative is not None and source_turn_id is not None:
+            try:
+                self.store.insert_pipeline_event(
+                    source_turn_id, "comparative_detected",
+                    {
+                        "claim": {
+                            "pattern": claim.get("pattern"),
+                            "predicate": claim.get("predicate"),
+                            "source_text": claim.get("source_text"),
+                        },
+                        **comparative.to_dict(),
+                    },
+                )
+            except Exception:
+                pass
+
+        std_queries = build_queries(pattern, slots)
+        if comparative is not None:
+            queries = comparative_queries(comparative) + [
+                q for q in std_queries if q not in set(comparative_queries(comparative))
+            ]
+        else:
+            queries = std_queries
 
         if not queries:
             return RetrievalResult(
@@ -583,8 +634,13 @@ class RetrievalVerifier:
             )
 
         attempts: list[QueryAttempt] = []
-        chosen_snippets: list[Snippet] = []
+        viable: list[tuple[QueryAttempt, list[Snippet]]] = []
 
+        # First pass: run every query, collect every viable attempt
+        # (>= MIN_RESULTS_TO_USE results). For non-comparative claims
+        # we stop at the first viable to preserve old behavior. For
+        # comparative claims we collect ALL viable so the retry path
+        # has alternatives.
         for q in queries:
             cached = self.store.get_cached_retrieval(q, self.ttl_seconds)
             if cached is not None:
@@ -598,8 +654,6 @@ class RetrievalVerifier:
                     attempt = QueryAttempt(
                         query=q, result_count=len(sn), used=False, from_cache=False
                     )
-                    # Cache every attempt (including empty) so retries don't
-                    # re-hit the same flaky endpoint. TTL handles staleness.
                     self.store.cache_retrieval(q, [s.to_dict() for s in sn])
                 except (httpx.HTTPError, httpx.TimeoutException) as e:
                     attempt = QueryAttempt(
@@ -618,14 +672,12 @@ class RetrievalVerifier:
             self._log_attempt(source_turn_id, attempt)
 
             if attempt.result_count >= _MIN_RESULTS_TO_USE:
-                attempt.used = True
-                chosen_snippets = sn
-                # re-log the attempt now that 'used' is True so the trace shows it
-                self._log_attempt(source_turn_id, attempt, is_decision=True)
-                break
+                viable.append((attempt, sn))
+                if comparative is None:
+                    # Old behavior: stop at first viable.
+                    break
 
-        if not chosen_snippets:
-            # All attempts returned 0 results or errored.
+        if not viable:
             any_error = any(a.error for a in attempts)
             flag = "retrieval_error" if any_error else "no_results"
             err_summary = next((a.error for a in attempts if a.error), None)
@@ -641,7 +693,53 @@ class RetrievalVerifier:
                 historical=historical,
             )
 
-        # Judge step
+        # Judge phase: walk viable attempts. For non-comparative claims
+        # there's only one viable in the list. For comparative claims
+        # we step through up to MAX_JUDGE_RETRIES, returning the first
+        # conclusive (SUPPORTED / CONTRADICTED) verdict. INCONCLUSIVE
+        # advances to the next attempt.
+        max_retries = _MAX_JUDGE_RETRIES if comparative is not None else 1
+        last_inconclusive: RetrievalResult | None = None
+
+        for idx, (attempt, sn) in enumerate(viable[:max_retries]):
+            attempt.used = True
+            self._log_attempt(source_turn_id, attempt, is_decision=True)
+            result = self._judge_one(claim, attempt, sn, attempts, historical)
+            if result.outcome != VerificationOutcome.INCONCLUSIVE:
+                return result
+            last_inconclusive = result
+            # Log the retry decision so the trace shows we tried again.
+            if comparative is not None and idx + 1 < min(len(viable), max_retries):
+                if source_turn_id is not None:
+                    try:
+                        self.store.insert_pipeline_event(
+                            source_turn_id,
+                            "judge_retry_after_inconclusive",
+                            {
+                                "tried_query": attempt.query,
+                                "verdict": (result.verdict.verdict if result.verdict else None),
+                                "next_attempt_idx": idx + 1,
+                            },
+                        )
+                    except Exception:
+                        pass
+
+        # All retries inconclusive — return the last one.
+        return last_inconclusive or RetrievalResult(
+            outcome=VerificationOutcome.INCONCLUSIVE,
+            attempts=attempts, historical=historical,
+            error_flag="no_viable_judge",
+            explanation="reached judge phase without any viable attempt",
+        )
+
+    def _judge_one(
+        self, claim: dict, attempt: QueryAttempt,
+        chosen_snippets: list[Snippet], attempts: list[QueryAttempt],
+        historical: bool,
+    ) -> RetrievalResult:
+        """Run the judge against one attempt's snippets. Extracted so
+        the verify() loop can call it multiple times for the
+        comparative retry-on-inconclusive path."""
         try:
             system = _JUDGE_SYSTEM_HISTORICAL if historical else _JUDGE_SYSTEM_CURRENT
             judge_text = self.llm.rewrite(
