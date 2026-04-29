@@ -107,7 +107,13 @@ header h1 { font-size: 1.1rem; margin: 0; flex: 0 0 auto; }
 
 /* ==== Main split: chat | flow ===================================== */
 
-main { height: calc(100vh - 46px); overflow: hidden; }
+main {
+  /* iOS Safari's 100vh includes the URL/toolbar area, which cuts off
+   * content. dvh tracks the live viewport. Keep vh as fallback. */
+  height: calc(100vh - 46px);
+  height: calc(100dvh - 46px);
+  overflow: hidden;
+}
 
 .split {
   display: grid;
@@ -159,13 +165,13 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   word-wrap: break-word;
   line-height: 1.55;
 }
-/* User message bubble: a warm orange wash matched to the soften /
- * hedge intervention pills (var(--accent) family). Brighter than the
- * dark accent-soft we used before; dark text reads cleanly against it. */
+/* User message bubble: muted burnt-orange (same hue as the soften /
+ * hedge accent palette, but desaturated so it doesn't compete with
+ * the rest of the UI). Dark text reads cleanly against it. */
 .msg.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #f9731c 0%, #e6651a 100%);
-  border: 1px solid rgba(249, 115, 28, 0.45);
+  background: linear-gradient(135deg, #b85d20 0%, #9a4a14 100%);
+  border: 1px solid rgba(184, 93, 32, 0.45);
   color: #1a0a02;
 }
 .msg.user .msg-body { color: #1a0a02; }
@@ -930,6 +936,7 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   width: 65vw;
   max-width: 900px;
   height: 100vh;
+  height: 100dvh;          /* iOS dvh fix */
   background: var(--panel);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
   transform: translateX(100%);
@@ -1270,3 +1277,103 @@ tr.contradicted td { background: var(--bad-soft); }
   border: 2px solid var(--bg);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--panel-hover); }
+
+/* =====================================================================
+ * MOBILE OVERRIDES (≤ 760px) — single self-contained block.
+ *
+ * Layout flips to a vertical stack: pipeline flow on TOP, chat on
+ * BOTTOM. Header is compacted (Inspector hidden, model select shrunk,
+ * tighter padding). Textarea font bumped to 16px so iOS Safari does
+ * not zoom-on-focus.
+ *
+ * Edit guidance: keep mobile rules in this block. Anything outside
+ * is desktop. Bumping a single value here adjusts ONE phone behavior
+ * without ripple — that's the scalability contract.
+ * ===================================================================*/
+@media (max-width: 760px) {
+
+  /* --- Header: compact, fits everything in one row -------------- */
+  header {
+    padding: 0.4rem 0.6rem;
+    gap: 0.5rem;
+  }
+  header h1 { font-size: 0.95rem; }
+  .header-actions { gap: 0.35rem; }
+  .header-actions button {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+    min-height: 36px;             /* touch target */
+  }
+  /* Inspector button hidden on mobile per spec; reset stays. */
+  #inspector-btn { display: none; }
+  /* Model select compresses; the text inside elides naturally. */
+  .model-select select {
+    min-width: 0;
+    width: 8.5em;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.4rem;
+  }
+
+  /* --- Main split: column stack, flow ON TOP, chat ON BOTTOM ----
+   * grid-auto-flow plus explicit row sizes pin both panes onscreen
+   * with neither cut off. The flow gets ~42%, chat gets ~58%. */
+  main {
+    /* recompute against the smaller header */
+    height: calc(100vh - 44px);
+    height: calc(100dvh - 44px);
+  }
+  .split {
+    grid-template-columns: 1fr;
+    grid-template-rows: 42fr 58fr;
+  }
+  .chat-pane { border-right: none; border-top: 1px solid var(--border); }
+  /* Order in DOM is chat → flow, but mobile wants flow first. */
+  .chat-pane { order: 2; }
+  .flow-pane { order: 1; }
+
+  /* Flow header sub-line shrinks to a single inline row. */
+  .flow-pane-header {
+    padding: 0.4rem 0.7rem;
+  }
+  .flow-pane-header h2 { font-size: 0.85rem; }
+  .flow-container { padding: 0.6rem; }
+
+  /* --- Chat pane on mobile -------------------------------------- */
+  .messages { padding: 0.7rem; gap: 0.5rem; }
+  .msg { max-width: 92%; padding: 0.6rem 0.8rem; }
+  .chat-form { padding: 0.55rem 0.6rem; gap: 0.45rem; }
+  /* iOS auto-zooms inputs with font-size < 16px on focus.
+   * 16px exactly defeats it without changing the visual size much. */
+  .chat-form textarea {
+    font-size: 16px;
+    padding: 0.55rem 0.65rem;
+  }
+  .chat-form button {
+    padding: 0 1rem;
+    font-size: 0.95rem;
+    min-height: 44px;             /* iOS touch target */
+  }
+
+  /* --- Flow cards: tighter on small screens --------------------- */
+  .flow-step-wrapper { max-width: 100%; }
+  .flow-step { padding: 0.55rem 0.65rem; }
+  .flow-step-title { font-size: 0.82rem; }
+  .flow-step-meta { font-size: 0.7rem; }
+  .calls-block { padding: 0.4rem 0.5rem; font-size: 0.74rem; }
+  .call-row, .op-row { gap: 0.35rem; }
+  .call-row .call-purpose, .op-row .op-label { font-size: 0.74rem; }
+
+  /* --- Claim rows: still readable; corner notch slightly smaller. */
+  .claim-summary { padding: 0.45rem 0.55rem; gap: 0.4rem; }
+  .claim-summary .claim-text { font-size: 0.85rem; }
+  .claim-row.claim-verified::after,
+  .claim-row.claim-contradicted::after,
+  .claim-row.claim-inconclusive::after,
+  .claim-row.claim-not_applicable::after {
+    border-width: 0 10px 10px 0;
+  }
+  .claim-detail { padding: 0.5rem 0.6rem 0.6rem 0.8rem; }
+
+  /* --- Inspector drawer: full-width on phones ------------------- */
+  .inspector { width: 100vw; max-width: 100vw; }
+}
