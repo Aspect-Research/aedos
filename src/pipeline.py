@@ -143,10 +143,6 @@ class Pipeline:
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
         # the llm.
         self.chat_backend = chat_backend if chat_backend is not None else llm
-        # Optional Modal/GLM backend for the per-turn ``model='glm-5.1'``
-        # selection path. Lazily constructed by build_pipeline if
-        # MODAL_API_KEY is present; absent here when not configured.
-        self._modal_backend: Any | None = None
         # Active per-turn model override; set by run_turn when a model
         # parameter is supplied. Used by _invoke_chat_backend to dispatch
         # to the right chat backend without mutating self.chat_backend.
@@ -157,13 +153,11 @@ class Pipeline:
     ) -> TurnTrace:
         """Run one user→assistant turn.
 
-        ``model`` (optional) makes EVERY internal LLM call (chat,
-        extractor, router, judge, corrector, scoping, stability,
-        code-gen) use the named model. ``glm-5.1`` routes only the
-        chat call to Modal — internal calls keep their prior Anthropic
-        model since GLM doesn't support tool use. ``None`` uses the
-        pipeline's defaults (the model attrs on ``self.llm`` and the
-        chat backend supplied at construction time)."""
+        ``model`` (optional) makes EVERY LLM call (chat, extractor,
+        router, judge, corrector, scoping, stability, code-gen) use
+        the named model. ``None`` uses the pipeline's defaults (the
+        model attrs on ``self.llm`` and the chat backend supplied at
+        construction time)."""
         # Tolerant of LLM clients that don't expose with_active_model
         # (test MockLLMs don't). When the LLM doesn't have the method,
         # the model selection is a no-op on the Anthropic side; the
@@ -591,96 +585,24 @@ class Pipeline:
     # ---- internal helpers -----------------------------------------------
 
     # Conversational chat responses are short by nature; 1024 tokens is
-    # ample for non-reasoning chat models. The earlier 4096 default
-    # mattered against reasoning models like GLM-5.1: a high cap let
-    # the model spend tokens on a long ``reasoning_content`` chain
-    # before the user-visible content, blowing past Modal's 300s
-    # timeout on cold starts. Two of two cold-starts in the Phase-2
-    # dogfood timed out for this reason.
-    #
-    # But 1024 is too tight for reasoning models on hard prompts:
-    # turn 4 of the hallucination corpus (spell
-    # ``floccinaucinihilipilification`` backwards) returned
-    # ``content=null`` because GLM spent the full 1024 tokens inside
-    # the reasoning chain. Reasoning models need more headroom because
-    # the cap counts reasoning + output, not output alone.
-    #
-    # The fix: per-backend defaults.
-    #
-    #   * Anthropic chat (no reasoning_content): 1024 — short answers.
-    #   * Modal/GLM (reasoning_content burns tokens): 4096 — leaves
-    #     ~3K for the answer after a typical chain.
-    #
-    # Both can be overridden via AEDOS_CHAT_MAX_TOKENS_ANTHROPIC and
-    # AEDOS_CHAT_MAX_TOKENS_MODAL respectively. The global
-    # AEDOS_CHAT_MAX_TOKENS still wins if set (backward compat).
-    CHAT_MAX_TOKENS_ANTHROPIC = int(
-        os.getenv("AEDOS_CHAT_MAX_TOKENS_ANTHROPIC", "1024")
-    )
-    CHAT_MAX_TOKENS_MODAL = int(
-        os.getenv("AEDOS_CHAT_MAX_TOKENS_MODAL", "4096")
-    )
-    CHAT_MAX_TOKENS_DEFAULT = 1024
-    CHAT_MAX_TOKENS_GLOBAL_OVERRIDE = (
-        int(os.getenv("AEDOS_CHAT_MAX_TOKENS"))
-        if os.getenv("AEDOS_CHAT_MAX_TOKENS") is not None
-        else None
-    )
-
-    # Backward-compat alias kept for callers (and the existing test)
-    # that read the historical single-value attribute. Resolves to the
-    # global override if set, else the anthropic default (matching the
-    # pre-split behaviour for the Anthropic-by-default deployment).
-    CHAT_MAX_TOKENS = (
-        CHAT_MAX_TOKENS_GLOBAL_OVERRIDE
-        if CHAT_MAX_TOKENS_GLOBAL_OVERRIDE is not None
-        else CHAT_MAX_TOKENS_ANTHROPIC
-    )
+    # ample. Override via AEDOS_CHAT_MAX_TOKENS for unusually long
+    # prompts (the v0.7.15 GLM-removal pass eliminated the per-backend
+    # split that previously needed a higher cap for GLM's
+    # reasoning_content tokens).
+    CHAT_MAX_TOKENS = int(os.getenv("AEDOS_CHAT_MAX_TOKENS", "1024"))
 
     def _max_tokens_for_chat(self, backend: Any | None = None) -> int:
-        """Per-backend cap selection. Global env override wins; else
-        provider-specific default; else 1024. Reasoning-content models
-        get more headroom because the cap counts reasoning tokens
-        too. ``backend`` defaults to the configured chat_backend; the
-        caller passes the dispatched backend when a per-turn model
-        override (e.g. ``glm-5.1``) routes elsewhere."""
-        if self.CHAT_MAX_TOKENS_GLOBAL_OVERRIDE is not None:
-            return self.CHAT_MAX_TOKENS_GLOBAL_OVERRIDE
-        provider = getattr(backend or self.chat_backend, "provider", None)
-        if provider == "modal":
-            return self.CHAT_MAX_TOKENS_MODAL
-        if provider == "anthropic":
-            return self.CHAT_MAX_TOKENS_ANTHROPIC
-        return self.CHAT_MAX_TOKENS_DEFAULT
-
-    def _select_chat_backend(self) -> Any:
-        """Per-turn dispatch. ``glm-5.1`` → Modal backend (lazily
-        constructed); anything else (or ``None``) → the default
-        ``self.chat_backend`` whose model attribute already reflects
-        the active LLM model from ``with_active_model``.
-
-        Raises if GLM is requested but no Modal backend was built —
-        signals a configuration problem (MODAL_API_KEY missing) early
-        rather than silently falling back."""
-        if self._active_chat_model == "glm-5.1":
-            if self._modal_backend is None:
-                raise RuntimeError(
-                    "model='glm-5.1' was requested but no Modal backend "
-                    "is available — set MODAL_API_KEY and rebuild the "
-                    "pipeline."
-                )
-            return self._modal_backend
-        return self.chat_backend
+        return self.CHAT_MAX_TOKENS
 
     def _invoke_chat_backend(
         self, system_prompt: str, history: list[ChatMessage], turn_id: int
     ) -> str:
-        """Call the chat backend selected by ``_select_chat_backend``.
-        Backends that expose a ``provider`` attribute (the new ones
-        do; LLMClient and MockLLM don't) get provenance + cost-recorder
+        """Call the configured chat backend. Backends that expose a
+        ``provider`` attribute (the AnthropicChatBackend wrapper does;
+        LLMClient and MockLLM don't) get provenance + cost-recorder
         kwargs so the chat_model_call event lands without forcing
         test doubles to grow new arguments."""
-        backend = self._select_chat_backend()
+        backend = self.chat_backend
         if hasattr(backend, "provider"):
             kwargs: dict[str, Any] = {
                 "max_tokens": self._max_tokens_for_chat(backend),
@@ -696,8 +618,8 @@ class Pipeline:
                 # Backend may not accept cost_recorder yet (older
                 # versions or stubs in tests). Retry without it.
                 kwargs.pop("cost_recorder", None)
-                return self.chat_backend.chat(system_prompt, history, **kwargs)
-        return self.chat_backend.chat(system_prompt, history)
+                return backend.chat(system_prompt, history, **kwargs)
+        return backend.chat(system_prompt, history)
 
     def _build_chat_system_prompt(self, user_facts: list[Fact]) -> str:
         if not user_facts:
@@ -762,19 +684,6 @@ def build_pipeline(
     corrector = Corrector(llm)
     chat_backend = chat_backend if chat_backend is not None else build_chat_backend(llm=llm)
 
-    # Per-turn ``model='glm-5.1'`` selection routes the chat call to a
-    # Modal backend. Construct it eagerly when MODAL_API_KEY is set so
-    # the pipeline can dispatch without rebuilding state mid-request.
-    # Absent → selecting GLM in the UI will surface a configuration
-    # error early.
-    modal_backend = None
-    if os.getenv("MODAL_API_KEY"):
-        try:
-            from src.llm_clients.modal_glm import ModalGLMBackend
-            modal_backend = ModalGLMBackend.from_env()
-        except Exception:
-            modal_backend = None  # missing key / construct failure → no GLM
-
     # v0.6 Tier 2 verification cache — always on. Scoping classifier
     # decides per-claim eligibility (only world_fact is cached); the
     # stability classifier picks the TTL; cache writes fill the cache
@@ -803,5 +712,4 @@ def build_pipeline(
         stability_classifier=stability_classifier,
         verification_cache=verification_cache,
     )
-    p._modal_backend = modal_backend
     return p

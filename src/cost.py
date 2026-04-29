@@ -3,9 +3,6 @@
 Pricing is per million tokens, sourced from Anthropic's published
 rates. Updated 2026-04. The numbers will drift; the model is the lookup
 key so adding a new model is a one-line change.
-
-Model pricing here. Modal/GLM is free until 2026-04-30, after which we
-need to revisit (maybe move to per-second compute pricing).
 """
 
 from __future__ import annotations
@@ -25,9 +22,6 @@ _PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-5": (3.00,  15.00),
     "claude-haiku-4-5":  (1.00,  5.00),
     "claude-haiku-4-0":  (0.25,  1.25),
-    # Modal/GLM-5.1-FP8 — free tier until 2026-04-30; after that we
-    # need per-second compute pricing. Track as $0 for now.
-    "zai-org/GLM-5.1":   (0.00,  0.00),
 }
 
 
