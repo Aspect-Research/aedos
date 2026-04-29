@@ -263,14 +263,43 @@ def default_search(query: str) -> list[Snippet]:
 
 _JUDGE_SYSTEM_CURRENT = """You are a strict, evidence-bounded judge.
 
-You receive a structured CURRENT-TENSE claim and a small set of search
-result snippets. Decide whether the snippets SUPPORT, CONTRADICT, or are
+You receive a structured CURRENT-TENSE claim, the original source text
+it was extracted from, and a small set of search-result snippets.
+Decide whether the snippets SUPPORT, CONTRADICT, or are
 INSUFFICIENT_EVIDENCE for the claim. Use only the snippets — never your
 prior knowledge.
 
+CRITICAL — respect the speaker's tense in source_text. The structured
+slots strip tense; the source text preserves it.
+
+  * Past tense in source text ("X was Y", "X were Y", "X had Y",
+    "X used to be Y", "was founded in YEAR", "encompassed", "served
+    as", "formerly", "previously", "originally") → the claim is a
+    HISTORICAL assertion. Verify whether the snippets confirm the
+    fact EVER held. The present-day status of the entity is
+    IRRELEVANT — a true historical fact stays SUPPORTED even when
+    the entity no longer exists today. Example: source text says
+    "the Soviet Union was a communist superpower" — snippets that
+    confirm the USSR was a communist superpower (even ones noting
+    its 1991 dissolution) → SUPPORTED, NOT contradicted.
+
+  * Present tense in source text ("X is Y", "X has Y", "X currently
+    Y") with no explicit time period → verify whether the snippets
+    confirm the fact is CURRENTLY true.
+
+  * Mixed / ambiguous source text → favor the interpretation that
+    best fits the slots. If the entity is widely known to be
+    historical (no longer exists / dissolved / deceased), default to
+    the historical interpretation.
+
 A claim is SUPPORTED only if the snippets clearly state or directly
-imply it as currently true. CONTRADICTED only if they clearly state the
-opposite. Otherwise INSUFFICIENT_EVIDENCE.
+imply it under the appropriate tense interpretation. CONTRADICTED
+only if they clearly state the opposite (under the same tense).
+Otherwise INSUFFICIENT_EVIDENCE.
+
+The dissolution / death / end-of-existence of an entity does NOT
+contradict a past-tense claim about that entity. It only contradicts
+present-tense claims.
 
 Output exactly two lines, no preamble:
 VERDICT
@@ -279,14 +308,19 @@ Justification: <one sentence>"""
 _JUDGE_SYSTEM_HISTORICAL = """You are a strict, evidence-bounded judge.
 
 You receive a structured HISTORICAL claim with an explicit time period
-(valid_from / valid_until) and a small set of search result snippets.
-Decide whether the snippets SUPPORT, CONTRADICT, or are INSUFFICIENT_EVIDENCE
-for the claim FOR THAT SPECIFIC PERIOD.
+(valid_from / valid_until), the original source text, and a small set
+of search-result snippets. Decide whether the snippets SUPPORT,
+CONTRADICT, or are INSUFFICIENT_EVIDENCE for the claim FOR THAT
+SPECIFIC PERIOD.
 
-Pay attention to dates. A snippet describing a different time period is
-NOT support — it's INSUFFICIENT_EVIDENCE. A snippet stating a different
-time-bounded fact is CONTRADICTION only if it directly conflicts with
-the claim's period.
+Pay attention to dates. A snippet describing a different time period
+is NOT support — it's INSUFFICIENT_EVIDENCE. A snippet stating a
+different time-bounded fact is CONTRADICTION only if it directly
+conflicts with the claim's period.
+
+The dissolution / death / end-of-existence of the entity AFTER the
+claim's period does NOT contradict the claim — the claim is bounded
+to its period.
 
 Output exactly two lines, no preamble:
 VERDICT
@@ -404,23 +438,33 @@ def _is_historical(claim: dict) -> bool:
 def _format_judge_user_message(claim: dict, snippets: list[Snippet], historical: bool) -> str:
     slots = claim.get("slots") or {}
     polarity_word = "asserts" if int(claim.get("polarity", 1)) == 1 else "denies"
+    source_text = (claim.get("source_text") or "").strip()
     snippets_block = "\n\n".join(
         f"[{i + 1}] {s.title}\n{s.snippet}\nSource: {s.url}"
         for i, s in enumerate(snippets)
     )
 
     slot_lines = "\n".join(f"  {k}: {v!r}" for k, v in slots.items())
+    framing_parts: list[str] = []
+    if source_text:
+        # The source text is the speaker's literal phrasing — the only
+        # place tense survives. The judge prompt instructs the model to
+        # use this for tense interpretation.
+        framing_parts.append(f'Original source text: "{source_text}"')
     if historical:
         period = f"{slots.get('valid_from') or 'unspecified'} to {slots.get('valid_until')}"
-        framing = (
-            f"Time period: {period}\n"
+        framing_parts.append(f"Time period: {period}")
+        framing_parts.append(
             f"The speaker {polarity_word} that this relation held during that period."
         )
     else:
-        framing = (
-            f"The speaker {polarity_word} this relation as currently true "
-            "(no end date specified)."
+        framing_parts.append(
+            f"The speaker {polarity_word} this relation. Match the verdict to "
+            "the tense used in the source text — past-tense source means "
+            "verify the historical fact (snippets confirm it ever held); "
+            "present-tense source means verify current truth."
         )
+    framing = "\n".join(framing_parts)
 
     return (
         f"Claim:\n"

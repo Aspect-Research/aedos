@@ -269,6 +269,28 @@ Input: "Remember when I said I prefer black coffee?"
 Output: facts=[]
 Reasoning: Same family — the user is REFERRING to a prior assertion, not making a new one. If they want to confirm or update, they'll say so directly ("yes, I still prefer black coffee").
 
+Input: "Who is Barron Trump? How many children does he have?"
+Output: facts=[]
+Reasoning: Pure information requests. Asking "Who is X?" or "How many Y does X have?" does NOT assert anything — including that the speaker is unaware of X. Never infer the speaker's knowledge state from a question. The user could be testing the model, refreshing memory, or genuinely curious; we don't know and won't guess. Questions about external entities yield no claims.
+
+Input: "What's the population of Tokyo?"
+Output: facts=[]
+Reasoning: Information request, not assertion. Even though "Tokyo" is named, no fact is being asserted about it. Same for "Tell me about X", "Explain Y", "Describe Z" — instructions are not assertions.
+
+Input: "Why did the Soviet Union dissolve in 1991?"
+Output: facts=[{{"pattern":"event","predicate":"dissolved","slots":{{"event_type":"dissolution","participants":["Soviet Union"],"occurred_at":"1991"}},"polarity":1,"source_text":"the Soviet Union dissolve in 1991"}}]
+Reasoning: This is a question, BUT it embeds a factual premise ("the Soviet Union dissolved in 1991") presented as given. Extract the embedded premise. Distinguish between "asks about" (no fact) and "asks why X happened" where X is stated as background (extract X). Apply this only when the premise is unambiguously presented as fact, not when it's part of the speaker's own hypothetical.
+
+# Information requests vs. assertions
+
+A QUESTION ("Who/what/when/where/how/why ...?") or COMMAND ("Tell me…",
+"Explain…", "Describe…", "Count…", "Show me…") is an information
+REQUEST, not a fact-stating clause. Never extract user-asserted claims
+about the speaker's knowledge, beliefs, or feelings just because they
+asked a question. The ONLY claims to extract from a question are
+factual PREMISES the question states as given (see "Why did the Soviet
+Union dissolve in 1991?" above).
+
 # Output
 
 Always call the `record_facts` tool exactly once. Never reply with prose."""
