@@ -1667,3 +1667,144 @@ def test_router_stamps_session_id_on_session_scoped_user_assertion(tmp_path):
     facts = store.find_currently_valid("categorical")
     assert facts[0].session_id == "sess_x"
     store.close()
+
+
+# ---- v0.7.16: combined classifier + prompt caching --------------------
+
+
+def test_combined_classifier_returns_scope_and_stability_in_one_call():
+    """One LLM call returns both scope and (when world_fact) stability."""
+    from src.cache.classify_combined import classify_for_cache
+
+    class _MockLLM:
+        def __init__(self):
+            self.calls = 0
+        def extract_with_tool(self, system, user_message, tool, **_):
+            self.calls += 1
+            return {
+                "scope": "world_fact",
+                "scope_reason": "geographic fact",
+                "scope_confidence": 0.99,
+                "stability_class": "decade_stable",
+                "stability_reason": "stable on decade timescale",
+                "stability_confidence": 0.95,
+            }
+    mock = _MockLLM()
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "Tokyo", "location": "Japan"},
+        "polarity": 1, "source_text": "Tokyo is in Japan",
+    }
+    combined = classify_for_cache(claim, mock)
+    assert mock.calls == 1
+    assert combined.scoping.scope == "world_fact"
+    assert combined.stability is not None
+    assert combined.stability.stability_class == "decade_stable"
+    assert combined.stability.ttl_seconds == 365 * 24 * 3600
+
+
+def test_combined_classifier_skips_stability_for_non_world_fact():
+    """When scope is user_specific or session_specific, stability is
+    not required and returns None."""
+    from src.cache.classify_combined import classify_for_cache
+
+    class _MockLLM:
+        def extract_with_tool(self, system, user_message, tool, **_):
+            return {
+                "scope": "user_specific",
+                "scope_reason": "agent is the user",
+                "scope_confidence": 0.99,
+            }
+    mock = _MockLLM()
+    claim = {
+        "pattern": "preference", "predicate": "likes",
+        "slots": {"agent": "user", "object": "tea"},
+        "polarity": 1, "source_text": "I like tea",
+    }
+    combined = classify_for_cache(claim, mock)
+    assert combined.scoping.scope == "user_specific"
+    assert combined.stability is None
+
+
+def test_combined_classifier_world_fact_without_stability_raises():
+    """A world_fact verdict without a stability_class is malformed."""
+    from src.cache.classify_combined import classify_for_cache
+
+    class _MockLLM:
+        def extract_with_tool(self, system, user_message, tool, **_):
+            return {
+                "scope": "world_fact",
+                "scope_reason": "geographic fact",
+                "scope_confidence": 0.99,
+                # missing stability_class
+            }
+    mock = _MockLLM()
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "Tokyo", "location": "Japan"},
+        "polarity": 1, "source_text": "Tokyo is in Japan",
+    }
+    with pytest.raises(RuntimeError, match="stability_class"):
+        classify_for_cache(claim, mock)
+
+
+def test_cache_gate_uses_combined_classifier_when_wired():
+    """CacheGate prefers combined_fn over the legacy two-call path."""
+    from src.cache.gate import CacheGate
+    from src.cache.classify_combined import CombinedDecision
+    from src.cache.scoping_classifier import ScopingDecision
+    from src.cache.stability_classifier import (
+        StabilityDecision, STABILITY_TTL_SECONDS,
+    )
+
+    combined_calls = 0
+    legacy_scope_calls = 0
+    legacy_stab_calls = 0
+
+    def fake_combined(claim):
+        nonlocal combined_calls
+        combined_calls += 1
+        return CombinedDecision(
+            scoping=ScopingDecision(scope="world_fact", reason="x", confidence=0.9),
+            stability=StabilityDecision(
+                stability_class="years_stable", reason="x", confidence=0.9,
+                ttl_seconds=STABILITY_TTL_SECONDS["years_stable"],
+            ),
+        )
+    def fake_scope(claim):
+        nonlocal legacy_scope_calls
+        legacy_scope_calls += 1
+        return ScopingDecision(scope="world_fact", reason="x", confidence=0.9)
+    def fake_stab(claim):
+        nonlocal legacy_stab_calls
+        legacy_stab_calls += 1
+        return StabilityDecision(
+            stability_class="years_stable", reason="x", confidence=0.9,
+            ttl_seconds=STABILITY_TTL_SECONDS["years_stable"],
+        )
+
+    gate = CacheGate(
+        cache=None,  # disabled cache, but classify still runs since combined_fn is wired
+        scoping_fn=fake_scope, stability_fn=fake_stab,
+        combined_fn=fake_combined,
+    )
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "X", "location": "Y"},
+        "polarity": 1, "source_text": "X in Y",
+    }
+    gate.classify(claim, turn_id=1)
+    assert combined_calls == 1
+    assert legacy_scope_calls == 0
+    assert legacy_stab_calls == 0
+
+
+def test_rewrite_uses_prompt_caching():
+    """v0.7.16: rewrite() wraps the system prompt with cache_control:
+    ephemeral so the (large, stable) judge / corrector / code-writer
+    prompts become cacheable across the 5-minute Anthropic TTL.
+    Verifies the kwargs shape that ends up at messages.create."""
+    import inspect
+    src = inspect.getsource(__import__("src.llm_client", fromlist=["LLMClient"]).LLMClient.rewrite)
+    assert "cache_control" in src
+    assert "ephemeral" in src

@@ -236,10 +236,21 @@ class LLMClient:
         (which still accepts ``temperature``) when the default is
         Opus 4.7 (which doesn't), preserving the variation signal."""
         chosen_model = model or self.corrector_model
+        # v0.7.16: wrap system as a structured block with
+        # cache_control: ephemeral so the (large, stable) judge /
+        # corrector / code-writer / prompt-builder system prompts
+        # become Anthropic-prompt-cacheable. ~10x cheaper input
+        # tokens on cache hit (5-minute TTL, automatic).
         kwargs: dict[str, Any] = {
             "model": chosen_model,
             "max_tokens": max_tokens,
-            "system": system,
+            "system": [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             "messages": [{"role": "user", "content": user_message}],
         }
         if temperature is not None:

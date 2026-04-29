@@ -103,6 +103,12 @@ class Pipeline:
         # world_fact. Returns a StabilityDecision; logged but not
         # acted on yet.
         stability_classifier: Any | None = None,
+        # v0.7.16 — when set, ONE LLM call returns both scoping AND
+        # stability for a claim. Halves cache-classifier LLM cost.
+        # CacheGate prefers this over the legacy two-call path.
+        # build_pipeline wires it from
+        # src.cache.classify_combined.classify_for_cache.
+        combined_cache_classifier: Any | None = None,
         # v0.6 — when set AND scoping/stability are also set, the
         # pipeline writes successful retrieval verdicts to this cache.
         # No lookups yet (this is the "fill the cache" stage; lookups
@@ -131,6 +137,7 @@ class Pipeline:
             cache=verification_cache,
             scoping_fn=scoping_classifier,
             stability_fn=stability_classifier,
+            combined_fn=combined_cache_classifier,
             store=store,
         )
         # Backward-compat aliases for tests that read these fields
@@ -699,9 +706,17 @@ def build_pipeline(
     from src.cache import (
         VerificationCache, classify_scope, classify_stability,
     )
+    from src.cache.classify_combined import classify_for_cache
     scoping_classifier = lambda claim, _llm=llm: classify_scope(claim, _llm)
     stability_classifier = (
         lambda claim, _llm=llm: classify_stability(claim, _llm)
+    )
+    # v0.7.16: combined classifier preferred over the two-call path.
+    # CacheGate dispatches on this when wired; the per-call functions
+    # remain wired as fallbacks (still used by tests + the historical-
+    # period shortcut path).
+    combined_cache_classifier = (
+        lambda claim, _llm=llm: classify_for_cache(claim, _llm)
     )
     verification_cache = VerificationCache(store)
 
@@ -710,6 +725,7 @@ def build_pipeline(
         chat_backend=chat_backend, user_id=user_id,
         scoping_classifier=scoping_classifier,
         stability_classifier=stability_classifier,
+        combined_cache_classifier=combined_cache_classifier,
         verification_cache=verification_cache,
     )
     return p
