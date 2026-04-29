@@ -35,12 +35,20 @@ STABILITY_CLASSES = (
 # Recommended TTL per class. immutable → None (no expiry). volatile →
 # 0 (don't cache). The classifier returns a class; the caller maps to
 # expires_at via this table. Caller can override for special cases.
+#
+# v0.7.8: TTLs tightened to the low end of "reasonable". The previous
+# values (10y / 1y / 30d / 1d) were too generous for a fact-verification
+# system — Wikipedia entries can be edited at any time, and serving a
+# years-old cached verdict masks any drift. The new values still
+# amortize cost (a same-day re-ask hits the cache) but force re-
+# verification on a horizon shorter than the typical change cadence
+# of the underlying source.
 STABILITY_TTL_SECONDS: dict[str, int | None] = {
-    "immutable": None,
-    "decade_stable": 10 * 365 * 24 * 3600,    # 10 years
-    "years_stable": 365 * 24 * 3600,          # 1 year
-    "months_stable": 30 * 24 * 3600,          # 30 days
-    "days_stable": 24 * 3600,                 # 1 day
+    "immutable": None,                        # never expires
+    "decade_stable": 365 * 24 * 3600,         # 1 year (was 10y)
+    "years_stable": 90 * 24 * 3600,           # 90 days (was 1y)
+    "months_stable": 7 * 24 * 3600,           # 7 days (was 30d)
+    "days_stable": 6 * 3600,                  # 6 hours (was 1d)
     "volatile": 0,                            # don't cache
 }
 

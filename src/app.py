@@ -41,6 +41,24 @@ _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 async def lifespan(app: FastAPI):
     db_path = os.getenv("AEDOS_DB_PATH", "aedos.db")
     app.state.pipeline = build_pipeline(db_path)
+    # Cache hygiene at startup: prune rows whose expires_at is more
+    # than 30 days in the past. Without this the verification_cache
+    # table grows monotonically (lookups skip expired rows but never
+    # delete them). Best-effort — never crash the app on prune failure.
+    try:
+        cache = getattr(app.state.pipeline, "_cache_gate", None)
+        if cache is not None and getattr(cache, "_cache", None) is not None:
+            pruned = cache._cache.prune_expired()
+            if pruned > 0:
+                # No turn_id at startup — fact_store.insert_pipeline_event
+                # requires one. Just log to stderr instead.
+                import sys
+                print(f"[cache] startup prune: {pruned} expired rows removed",
+                      file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        import sys
+        print(f"[cache] startup prune failed: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
     try:
         yield
     finally:
@@ -412,6 +430,31 @@ def list_cache_entries(limit: int = 200) -> dict[str, Any]:
 def reset() -> dict[str, bool]:
     _pipeline(app).store.reset()
     return {"ok": True}
+
+
+class InvalidateRequest(BaseModel):
+    slot_name: str
+    slot_value: str
+
+
+@app.post("/api/cache/invalidate")
+def invalidate_cache(req: InvalidateRequest) -> dict[str, Any]:
+    """Bulk-invalidate cache rows whose canonical_key references the
+    given slot=value pair. Use case: a source you trust (Wikipedia,
+    Tavily) was wrong about an entity, or the entity's status
+    materially changed and the cached verdicts are now stale.
+
+    Example:
+      POST /api/cache/invalidate {"slot_name": "entity", "slot_value": "Soviet Union"}
+    Removes every cached verdict that includes ``entity=soviet union``
+    in its canonical key.
+    """
+    p = _pipeline(app)
+    cache = getattr(p, "_cache_gate", None)
+    if cache is None or getattr(cache, "_cache", None) is None:
+        raise HTTPException(status_code=503, detail="cache not available")
+    n = cache._cache.invalidate_by_slot(req.slot_name, req.slot_value)
+    return {"removed": n, "slot_name": req.slot_name, "slot_value": req.slot_value}
 
 
 # ---- static UI -------------------------------------------------------
