@@ -159,7 +159,16 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   word-wrap: break-word;
   line-height: 1.55;
 }
-.msg.user { align-self: flex-end; background: var(--accent-soft); border: 1px solid var(--accent-soft); }
+/* User message bubble: a warm orange wash matched to the soften /
+ * hedge intervention pills (var(--accent) family). Brighter than the
+ * dark accent-soft we used before; dark text reads cleanly against it. */
+.msg.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #f9731c 0%, #e6651a 100%);
+  border: 1px solid rgba(249, 115, 28, 0.45);
+  color: #1a0a02;
+}
+.msg.user .msg-body { color: #1a0a02; }
 .msg.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); }
 .msg-body { white-space: normal; word-wrap: break-word; }
 /* Markdown rendered into .msg-body — style the elements the renderer
@@ -199,9 +208,10 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .msg-body em { font-style: italic; }
 .msg-body blockquote {
   margin: 0.4em 0;
-  padding: 0.1em 0.7em;
-  border-left: 3px solid var(--border);
+  padding: 0.3em 0.7em;
   color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--r-sm);
 }
 
 /* Draft lifecycle inside an assistant bubble:
@@ -463,16 +473,53 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   text-align: center;
 }
 
-/* Status colors keyed off the row's outcome class. */
+/* Status colors keyed off the row's outcome class. The dot remains
+ * the primary status indicator. Instead of a heavy left bar we use:
+ *   - a faint status-tinted background tone
+ *   - a thin colored ring on the dot itself for emphasis
+ *   - a small rounded-square corner notch (top-right) acting as a
+ *     subtle "tag" — distinctive but quiet. */
+.claim-row { position: relative; }
+.claim-row.claim-verified .claim-dot,
+.claim-row.claim-contradicted .claim-dot,
+.claim-row.claim-inconclusive .claim-dot,
+.claim-row.claim-not_applicable .claim-dot {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25);
+}
 .claim-row.claim-verified .claim-dot { background: var(--ok); }
 .claim-row.claim-contradicted .claim-dot { background: var(--bad); }
 .claim-row.claim-inconclusive .claim-dot { background: var(--warn); }
 .claim-row.claim-not_applicable .claim-dot { background: var(--muted); }
-.claim-row.claim-verified { border-left: 3px solid var(--ok); }
-.claim-row.claim-contradicted { border-left: 3px solid var(--bad); }
-.claim-row.claim-inconclusive { border-left: 3px solid var(--warn); }
-.claim-row.claim-not_applicable { border-left: 3px solid #c8c8c2; }
-.claim-row.claim-cached { background: var(--ok-soft); }
+
+.claim-row.claim-verified      { background: rgba(92, 194, 138, 0.06); }
+.claim-row.claim-contradicted  { background: rgba(239, 91, 84, 0.07); }
+.claim-row.claim-inconclusive  { background: rgba(232, 176, 77, 0.06); }
+.claim-row.claim-not_applicable { background: rgba(138, 132, 122, 0.04); }
+
+/* Top-right corner notch: replaces the old left bar. A small slanted
+ * tab made via a CSS triangle, in the status color. Subtle, present
+ * only when the row carries a status. */
+.claim-row.claim-verified::after,
+.claim-row.claim-contradicted::after,
+.claim-row.claim-inconclusive::after,
+.claim-row.claim-not_applicable::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 12px 12px 0;
+  border-color: transparent;
+  pointer-events: none;
+}
+.claim-row.claim-verified::after      { border-right-color: var(--ok); }
+.claim-row.claim-contradicted::after  { border-right-color: var(--bad); }
+.claim-row.claim-inconclusive::after  { border-right-color: var(--warn); }
+.claim-row.claim-not_applicable::after { border-right-color: rgba(138, 132, 122, 0.6); }
+
+.claim-row.claim-cached { background: rgba(92, 194, 138, 0.10); }
 
 /* Progressive states (in-flight Claims card). */
 .claim-row.claim-pending { background: var(--bg-elev); opacity: 0.65; }
@@ -484,7 +531,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .claim-row.claim-in-flight {
   background: var(--accent-soft);
   border-color: var(--accent);
-  border-left: 3px solid var(--accent);
 }
 .claim-row.claim-in-flight .claim-dot {
   background: var(--accent);
@@ -553,7 +599,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 
 .draft-box {
   background: var(--panel-2);
-  border-left: 3px solid var(--border);
   padding: 0.5rem 0.7rem;
   margin: 0.4rem 0;
   font-size: 0.85rem;
@@ -563,7 +608,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .diff-box {
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
   padding: 0.5rem 0.7rem;
   margin: 0.4rem 0;
   font-size: 0.85rem;
@@ -579,7 +623,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   margin: 0.4rem 0;
   padding: 0.4rem 0.6rem;
   background: var(--bg-elev);
-  border-left: 3px solid var(--border);
   border-radius: 3px;
 }
 .claim-header {
@@ -624,11 +667,9 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .decision {
   margin: 0.4rem 0;
   padding: 0.4rem 0.6rem;
-  border-left: 3px solid var(--border);
   background: var(--bg-elev);
 }
 .decision.decision-cached {
-  border-left-color: var(--ok);
   background: var(--ok-soft);
 }
 .decision-header {
@@ -667,7 +708,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   margin: 0.3rem 0;
   padding: 0.3rem 0.5rem;
   background: var(--info-soft);
-  border-left: 3px solid var(--accent);
   border-radius: 3px;
   font-size: 0.78rem;
 }
@@ -730,35 +770,66 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   font-style: italic;
 }
 
+/* Intervention card: shows what the corrector did to a specific claim.
+ * Layout:
+ *   [TYPE PILL]  "the actual claim text being modified"
+ *               original_value → verified_value     (replace only)
+ *               reason from the LLM corrector
+ */
 .intervention {
-  margin: 0.3rem 0;
-  padding: 0.3rem 0.5rem;
-  border-left: 3px solid var(--warn);
-  background: var(--warn-soft);
-  border-radius: 3px;
+  margin: 0.35rem 0;
+  padding: 0.5rem 0.65rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.intervention.intervention-replace { background: rgba(239, 91, 84, 0.06); }
+.intervention.intervention-hedge   { background: rgba(232, 176, 77, 0.06); }
+.intervention.intervention-soften  { background: rgba(249, 115, 28, 0.06); }
+.intervention.intervention-remove  { background: rgba(138, 132, 122, 0.06); }
+
+.intervention-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.intervention-target {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-style: italic;
+  line-height: 1.4;
 }
 .intervention-type {
   font-family: var(--mono);
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.65rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.05rem 0.4rem;
-  border-radius: 3px;
+  letter-spacing: 0.08em;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
 }
 .intervention-type-replace { background: var(--bad); color: #1a0a02; }
-.intervention-type-hedge { background: var(--warn); color: #1a0a02; }
-.intervention-type-soften { background: var(--accent); color: #1a0a02; }
-.intervention-type-remove { background: var(--ink); color: #1a0a02; }
+.intervention-type-hedge   { background: var(--warn); color: #1a0a02; }
+.intervention-type-soften  { background: var(--accent); color: #1a0a02; }
+.intervention-type-remove  { background: var(--ink); color: #1a0a02; }
+.intervention-replace-line {
+  margin-top: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--r-sm);
+}
 .intervention-reason {
-  margin-top: 0.2rem;
+  margin-top: 0.35rem;
   font-size: 0.78rem;
   color: var(--muted);
-}
-.intervention-value {
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  margin-top: 0.15rem;
+  line-height: 1.4;
 }
 
 /* ---- Annotations (cache events, warnings, cost) ---- */
@@ -776,7 +847,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   margin: 0.25rem 0;
   padding: 0.3rem 0.5rem;
   background: var(--bg-elev);
-  border-left: 3px solid var(--border);
   border-radius: 3px;
   font-size: 0.78rem;
 }
@@ -804,20 +874,18 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .annotation.annotation-routing_anomaly_detected,
 .annotation.annotation-extractor_substitution_warning,
 .annotation.annotation-verifier_failure {
-  border-left-color: var(--warn);
   background: var(--warn-soft);
 }
 .annotation.annotation-turn_cost {
-  border-left-color: var(--accent);
   background: var(--info-soft);
 }
 
 /* Cache annotations: hit / semantic_hit / miss / write distinction */
-.annotation.annotation-cache_lookup.anno-hit { border-left-color: var(--ok); background: var(--ok-soft); }
-.annotation.annotation-cache_lookup.anno-semantic_hit { border-left-color: var(--info); background: var(--info-soft); }
-.annotation.annotation-cache_lookup.anno-miss { border-left-color: var(--muted); background: var(--panel-hover); }
-.annotation.annotation-cache_lookup.anno-error { border-left-color: var(--bad); background: var(--bad-soft); }
-.annotation.annotation-cache_write { border-left-color: var(--accent); background: var(--info-soft); }
+.annotation.annotation-cache_lookup.anno-hit { background: var(--ok-soft); }
+.annotation.annotation-cache_lookup.anno-semantic_hit { background: var(--info-soft); }
+.annotation.annotation-cache_lookup.anno-miss { background: var(--panel-hover); }
+.annotation.annotation-cache_lookup.anno-error { background: var(--bad-soft); }
+.annotation.annotation-cache_write { background: var(--info-soft); }
 
 .cache-badge {
   display: inline-block;
@@ -863,7 +931,6 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   max-width: 900px;
   height: 100vh;
   background: var(--panel);
-  border-left: 1px solid var(--border);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
   transform: translateX(100%);
   transition: transform 0.18s ease;
@@ -1091,12 +1158,43 @@ tr.contradicted td { background: var(--bad-soft); }
   min-width: 4em;
   text-align: right;
 }
+/* Op rows (cache / web retrieval / sandbox) — same visual rhythm as
+ * call rows: label on the left, detail on the right. A small CSS dot
+ * on the left replaces the old emoji prefix; the dot is colored by
+ * op kind so the type is recognizable at a glance. */
 .op-row {
-  grid-template-columns: auto 1fr;
-  color: var(--muted);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
 }
-.op-row .op-icon { color: var(--info); font-family: var(--sans); }
-.op-row .op-label { font-family: var(--sans); font-size: 0.78rem; }
+.op-row::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.op-row.op-row-cache::before     { background: var(--info); }
+.op-row.op-row-retrieval::before { background: var(--accent); }
+.op-row.op-row-sandbox::before   { background: var(--ok); }
+
+.op-row .op-label {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+.op-row .op-detail {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
+}
 
 /* ==== Final-card cost summary ====================================== */
 .final-summary {
