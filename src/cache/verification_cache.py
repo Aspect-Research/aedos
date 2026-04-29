@@ -22,6 +22,7 @@ A miss is one extra retrieval call — a wrong-key hit is worse.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -126,6 +127,33 @@ def _parse_slots_block(slots_block: str) -> dict[str, str]:
     return out
 
 
+# Past-tense markers that distinguish a historical claim from a
+# present-tense one purely by inspecting source_text. Kept narrow on
+# purpose: false positives (treating present-tense as past) only mean
+# the cache key splits where it could have collided — a small loss in
+# hit rate, not a correctness problem. False negatives (missed past
+# tense) keep current behavior.
+_PAST_TENSE_MARKERS = re.compile(
+    r"\b(was|were|had been|used to|formerly|previously|once|"
+    r"originally)\b",
+    re.IGNORECASE,
+)
+
+
+def claim_tense(claim: dict) -> str:
+    """Return 'past' if the claim's source_text shows past-tense
+    markers, else 'present'. Used as a cache-key dimension so that
+    past-tense and present-tense versions of the same structured claim
+    cache independently — a SUPPORTED past-tense verdict ("USSR was
+    a superpower") MUST NOT serve a present-tense lookup ("USSR is a
+    superpower"), and vice versa. Mirrors the tense-awareness rule the
+    retrieval judge uses to interpret the same source_text."""
+    source_text = claim.get("source_text") or ""
+    if _PAST_TENSE_MARKERS.search(source_text):
+        return "past"
+    return "present"
+
+
 def canonicalize_claim_key(claim: dict) -> str:
     """Produce a stable string key for cache lookup.
 
@@ -140,22 +168,27 @@ def canonicalize_claim_key(claim: dict) -> str:
       * Whitespace inside string values is collapsed.
       * Polarity is included so positive and negative claims don't
         collide (Tokyo IS in Japan vs Tokyo is NOT in Japan).
+      * Tense (past/present, derived from source_text) is included so
+        the tense-aware judge's verdict for a past-tense claim doesn't
+        get served to a present-tense lookup.
 
     Example: a claim
         {pattern:'spatial_temporal', predicate:'located_in',
-         slots:{entity:'Tokyo', location:'Japan'}, polarity:1}
+         slots:{entity:'Tokyo', location:'Japan'}, polarity:1,
+         source_text:'Tokyo is in Japan'}
     canonicalizes to:
-        'spatial_temporal|located_in|p=1|entity=tokyo&location=japan'
+        'spatial_temporal|located_in|p=1|t=present|entity=tokyo&location=japan'
 
     With stem normalization, both
         {predicate:'is_child_of', slots:{relation:'is_child_of', ...}}
     and
         {predicate:'child_of',    slots:{relation:'child_of',    ...}}
-    canonicalize to the same key.
+    canonicalize to the same key (assuming same tense).
     """
     pattern = str(claim.get("pattern", "")).strip().lower()
     predicate = _normalize_predicate(str(claim.get("predicate", "")))
     polarity = int(claim.get("polarity", 1))
+    tense = claim_tense(claim)
     slots = claim.get("slots") or {}
     parts: list[str] = []
     for k in sorted(slots.keys()):
@@ -170,7 +203,7 @@ def canonicalize_claim_key(claim: dict) -> str:
             v = json.dumps(v, default=str, sort_keys=True)
         parts.append(f"{k}={v}")
     slots_block = "&".join(parts)
-    return f"{pattern}|{predicate}|p={polarity}|{slots_block}"
+    return f"{pattern}|{predicate}|p={polarity}|t={tense}|{slots_block}"
 
 
 class VerificationCache:
@@ -302,6 +335,7 @@ class VerificationCache:
         slots = claim.get("slots") or {}
         pattern = str(claim.get("pattern", "")).strip().lower()
         polarity = int(claim.get("polarity", 1))
+        tense = claim_tense(claim)
 
         # Need at least one identity slot to anchor; without anchoring
         # we'd be doing pure-text similarity across the whole cache,
@@ -334,6 +368,10 @@ class VerificationCache:
             cached_key = row["canonical_key"]
             # Polarity must match — encoded in the key as ``p=1``/``p=0``.
             if f"|p={polarity}|" not in cached_key:
+                continue
+            # Tense must match too — past-tense and present-tense
+            # versions of the same structured claim cache independently.
+            if f"|t={tense}|" not in cached_key:
                 continue
             # Identity slots must match exactly. Each identity pair
             # appears in the slots block as ``name=value``.
