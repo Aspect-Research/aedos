@@ -1508,3 +1508,30 @@ tr.flagged td:first-child {
   color: var(--muted);
   font-size: 0.7rem;
 }
+
+/* v0.7.13 — earned-trust badges on per-claim Decision details. */
+.decision-trust {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0.3rem 0;
+}
+.trust-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--r-sm);
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border);
+}
+.trust-badge.trust-reinforced {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: rgba(92, 194, 138, 0.35);
+}
+.trust-badge.trust-semantic {
+  background: var(--info-soft);
+  color: var(--info);
+  border-color: rgba(98, 182, 203, 0.35);
+}

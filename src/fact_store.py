@@ -131,6 +131,12 @@ CREATE TABLE IF NOT EXISTS facts (
     slots TEXT NOT NULL,                -- JSON object keyed by slot name
     polarity INTEGER NOT NULL,
     confidence REAL NOT NULL,
+    -- v0.7.13: counts how many times this fact has been re-confirmed
+    -- (boost_confidence calls). Drives the "earned trust" curve in
+    -- router/constants.confidence_with_reinforcement so a fact
+    -- verified 8 times reads as more trustworthy than one verified
+    -- once at the same path-prior.
+    reinforcement_count INTEGER NOT NULL DEFAULT 0,
     asserted_by TEXT NOT NULL,
     verification_status TEXT NOT NULL,
     valid_from TEXT,
@@ -282,6 +288,9 @@ class Fact:
     created_at: str = field(default_factory=_now_iso)
     id: int | None = None
     user_id: str = DEFAULT_USER_ID  # v0.5.x: cross-session scoping
+    # v0.7.13: how many times this fact has been re-confirmed
+    # (boost_confidence calls). Drives the earned-trust curve.
+    reinforcement_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -379,6 +388,15 @@ class FactStore:
             self._conn.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)"
             )
+        # v0.7.13: reinforcement counter on facts.
+        fact_cols = {r["name"] for r in self._conn.execute(
+            "PRAGMA table_info(facts)"
+        ).fetchall()}
+        if "reinforcement_count" not in fact_cols:
+            self._conn.execute(
+                "ALTER TABLE facts ADD COLUMN reinforcement_count INTEGER "
+                "NOT NULL DEFAULT 0"
+            )
 
     # ---- facts ------------------------------------------------------------
 
@@ -463,16 +481,45 @@ class FactStore:
             polarity=opposite, user_id=user_id,
         )
 
-    def boost_confidence(self, fact_id: int, amount: float = _CONFIDENCE_BOOST) -> float:
+    def boost_confidence(
+        self, fact_id: int, amount: float = _CONFIDENCE_BOOST,
+        *, base_for_curve: float | None = None,
+    ) -> float:
+        """Reinforce a stored fact: increment its reinforcement_count
+        and recompute its confidence on the earned-trust curve.
+
+        Two modes (kept backward-compatible):
+          * ``base_for_curve=None`` (default, legacy callers) — apply
+            a flat ``+amount`` boost capped at _CONFIDENCE_CAP.
+            Preserves the v0.5–v0.7.12 behavior for callers that
+            haven't been upgraded.
+          * ``base_for_curve=<path_prior>`` (v0.7.13 callers) —
+            recompute confidence as
+            ``confidence_with_reinforcement(base, reinforcement_count, 0)``
+            so the saturating curve replaces the flat +0.02-step.
+
+        Either way: ``reinforcement_count`` is incremented by one.
+        """
         row = self._conn.execute(
-            "SELECT confidence FROM facts WHERE id = ?", (fact_id,)
+            "SELECT confidence, reinforcement_count FROM facts WHERE id = ?",
+            (fact_id,),
         ).fetchone()
         if not row:
             raise LookupError(f"fact {fact_id} does not exist")
-        new = min(float(row["confidence"]) + amount, _CONFIDENCE_CAP)
-        self._conn.execute("UPDATE facts SET confidence = ? WHERE id = ?", (new, fact_id))
+        new_count = int(row["reinforcement_count"] or 0) + 1
+        if base_for_curve is None:
+            new_conf = min(float(row["confidence"]) + amount, _CONFIDENCE_CAP)
+        else:
+            from src.router.constants import confidence_with_reinforcement
+            new_conf = confidence_with_reinforcement(
+                base_for_curve, refresh_count=new_count, contradiction_count=0,
+            )
+        self._conn.execute(
+            "UPDATE facts SET confidence = ?, reinforcement_count = ? WHERE id = ?",
+            (new_conf, new_count, fact_id),
+        )
         self._conn.commit()
-        return new
+        return new_conf
 
     def close_fact(
         self,
@@ -720,4 +767,14 @@ def _row_to_fact(row: sqlite3.Row) -> Fact:
         source_text=row["source_text"],
         created_at=row["created_at"],
         user_id=row["user_id"],
+        # Tolerate rows from older DBs (pre-v0.7.13 migration didn't
+        # exist) that don't have the column. The schema migration
+        # backfills for new opens; this guard handles the rare race
+        # where row was loaded before the migration ran in tests.
+        reinforcement_count=(
+            int(row["reinforcement_count"])
+            if "reinforcement_count" in row.keys()
+               and row["reinforcement_count"] is not None
+            else 0
+        ),
     )

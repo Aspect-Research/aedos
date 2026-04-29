@@ -1050,6 +1050,30 @@ function renderClaimDetailBody(container, claim, d) {
   if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
   if (meta.length) container.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
 
+  // v0.7.13: surface earned-trust signals on cache hits so the
+  // "verified Nx" pattern is visible. Pulled from the cache_*
+  // fields the router attaches when serving from cache.
+  const rr = d.retrieval_result;
+  if (rr && rr.served_from_cache) {
+    const reinforcedRow = el("div", { className: "decision-trust" });
+    // Reinforcement: hits + 1 (this lookup) when refresh_count is 0
+    // means this is the second sighting; refresh_count > 0 means it
+    // has been re-confirmed before. We display the cumulative count.
+    const hitCount = rr.cache_hit_count;
+    if (typeof hitCount === "number") {
+      const badge = el("span", { className: "trust-badge trust-reinforced",
+        textContent: `↻ verified ×${hitCount + 1}` });
+      badge.title = "Number of times this verdict has been served from cache";
+      reinforcedRow.appendChild(badge);
+    }
+    if (rr.cache_match_score != null) {
+      reinforcedRow.appendChild(el("span", { className: "trust-badge trust-semantic",
+        title: "Semantic-shape match — predicate token similarity to the cached entry",
+        textContent: `~ semantic match ${rr.cache_match_score.toFixed(2)}` }));
+    }
+    container.appendChild(reinforcedRow);
+  }
+
   // Status badges (verification + display).
   const badges = el("div", { className: "decision-header" }, [
     el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),

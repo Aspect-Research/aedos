@@ -1259,3 +1259,214 @@ def test_turn_savings_aggregates_hits(tmp_path):
     gate.reset_for_turn()
     assert gate.turn_savings()["hits"] == 0
     store.close()
+
+
+# ---- v0.7.13: confidence-with-reinforcement curve --------------------
+
+
+def test_confidence_with_reinforcement_no_history_returns_base():
+    from src.router.constants import confidence_with_reinforcement
+    assert confidence_with_reinforcement(0.95) == pytest.approx(0.95)
+    assert confidence_with_reinforcement(0.4) == pytest.approx(0.4)
+
+
+def test_confidence_with_reinforcement_grows_with_refreshes():
+    from src.router.constants import confidence_with_reinforcement
+    base = 0.85
+    conf_1 = confidence_with_reinforcement(base, refresh_count=1)
+    conf_5 = confidence_with_reinforcement(base, refresh_count=5)
+    conf_20 = confidence_with_reinforcement(base, refresh_count=20)
+    assert base < conf_1 < conf_5 < conf_20 < 1.0
+    # Saturation: 20 reinforcements should be very close to ceiling.
+    assert conf_20 > 0.99
+
+
+def test_confidence_with_reinforcement_penalized_by_contradictions():
+    from src.router.constants import confidence_with_reinforcement
+    base = 0.95
+    no_flips = confidence_with_reinforcement(base)
+    one_flip = confidence_with_reinforcement(base, contradiction_count=1)
+    five_flips = confidence_with_reinforcement(base, contradiction_count=5)
+    assert no_flips > one_flip > five_flips
+    # Penalty cap ≈ 0.4 — even with many flips, doesn't zero out
+    assert five_flips >= 0.55
+
+
+def test_confidence_with_reinforcement_floor_protects_observability():
+    from src.router.constants import confidence_with_reinforcement, CONF_FLOOR
+    # Even a low base + lots of contradictions stays above the floor.
+    conf = confidence_with_reinforcement(0.2, contradiction_count=20)
+    assert conf >= CONF_FLOOR
+
+
+def test_confidence_with_reinforcement_clamps_invalid_base():
+    from src.router.constants import confidence_with_reinforcement
+    assert confidence_with_reinforcement(1.5) <= 1.0
+    assert confidence_with_reinforcement(-0.2) >= 0.0
+
+
+# ---- v0.7.13: judge confidence parsing -------------------------------
+
+
+def test_judge_response_with_confidence_line_parsed():
+    from src.verifiers.retrieval_verifier import parse_judge_response
+    text = "SUPPORTED\nJustification: snippets confirm directly\nConfidence: 0.92"
+    v = parse_judge_response(text)
+    assert v is not None
+    assert v.verdict == "SUPPORTED"
+    assert v.confidence == pytest.approx(0.92)
+
+
+def test_judge_response_without_confidence_defaults_to_one():
+    """Backwards compat: legacy responses (and most test mocks)
+    don't carry a confidence line — default to 1.0 so the path
+    prior is unchanged."""
+    from src.verifiers.retrieval_verifier import parse_judge_response
+    v = parse_judge_response("SUPPORTED\nJustification: ok")
+    assert v is not None
+    assert v.confidence == 1.0
+
+
+def test_judge_response_confidence_clamped_to_unit():
+    from src.verifiers.retrieval_verifier import parse_judge_response
+    over = parse_judge_response("SUPPORTED\nJ: x\nConfidence: 1.5")
+    under = parse_judge_response("SUPPORTED\nJ: x\nConfidence: -0.3")
+    assert 0.0 <= over.confidence <= 1.0
+    assert 0.0 <= under.confidence <= 1.0
+
+
+def test_judge_confidence_stripped_from_justification():
+    from src.verifiers.retrieval_verifier import parse_judge_response
+    v = parse_judge_response(
+        "SUPPORTED\nJustification: snippets directly state the claim\nConfidence: 0.95"
+    )
+    assert "Confidence" not in v.justification
+    assert "0.95" not in v.justification
+
+
+# ---- v0.7.13: facts gain reinforcement_count + boost uses curve ----
+
+
+def test_facts_table_has_reinforcement_count(tmp_path):
+    store = FactStore(tmp_path / "v.db")
+    cols = {r["name"] for r in store._conn.execute(
+        "PRAGMA table_info(facts)"
+    ).fetchall()}
+    assert "reinforcement_count" in cols
+    store.close()
+
+
+def test_boost_confidence_increments_reinforcement_count(tmp_path):
+    from src.fact_store import Fact
+    store = FactStore(tmp_path / "v.db")
+    fid = store.insert_fact(Fact(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "Tokyo", "category": "city"},
+        polarity=1, confidence=0.85,
+        asserted_by="model", verification_status="verified",
+    ))
+    store.boost_confidence(fid)  # legacy flat-step caller
+    rows = store._conn.execute(
+        "SELECT confidence, reinforcement_count FROM facts WHERE id = ?",
+        (fid,),
+    ).fetchone()
+    assert rows["reinforcement_count"] == 1
+    assert rows["confidence"] > 0.85
+    store.close()
+
+
+def test_boost_confidence_with_curve_uses_reinforcement_formula(tmp_path):
+    from src.fact_store import Fact
+    from src.router.constants import confidence_with_reinforcement
+    store = FactStore(tmp_path / "v.db")
+    fid = store.insert_fact(Fact(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "Tokyo", "category": "city"},
+        polarity=1, confidence=0.85,
+        asserted_by="model", verification_status="verified",
+    ))
+    new_conf = store.boost_confidence(fid, base_for_curve=0.85)
+    expected = confidence_with_reinforcement(0.85, refresh_count=1)
+    assert new_conf == pytest.approx(expected, abs=1e-9)
+    # And again — counter advances to 2
+    new_conf2 = store.boost_confidence(fid, base_for_curve=0.85)
+    expected2 = confidence_with_reinforcement(0.85, refresh_count=2)
+    assert new_conf2 == pytest.approx(expected2, abs=1e-9)
+    assert new_conf2 > new_conf
+    store.close()
+
+
+# ---- v0.7.13: model-asserted find-or-boost integration ---------------
+
+
+def test_router_store_or_boost_reuses_existing_model_fact(tmp_path):
+    """Re-verifying the same model claim boosts the existing fact
+    instead of inserting a duplicate. Mirror of the user-asserted
+    find-or-boost pattern."""
+    from src.fact_store import Fact
+    from src.pattern_registry import PatternRegistry
+    from src.router.router import Router
+
+    store = FactStore(tmp_path / "v.db")
+    reg = PatternRegistry.from_yaml("patterns.yaml")
+    router = Router(store=store, registry=reg)
+
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Tokyo", "category": "city"},
+        "polarity": 1, "source_text": "Tokyo is a city",
+    }
+    # First "verification" — store fresh.
+    fact_id_1, conf_1, count_1 = router._store_or_boost_model_fact(
+        claim, source_turn_id=1,
+        path_prior=0.95, verifier_confidence=1.0,
+        verification_status="verified",
+    )
+    assert count_1 == 0
+
+    # Second verification of an identical claim — should boost the same fact.
+    fact_id_2, conf_2, count_2 = router._store_or_boost_model_fact(
+        claim, source_turn_id=2,
+        path_prior=0.95, verifier_confidence=1.0,
+        verification_status="verified",
+    )
+    assert fact_id_2 == fact_id_1  # same fact, not a duplicate
+    assert count_2 == 1
+    assert conf_2 > conf_1
+    store.close()
+
+
+def test_router_judge_confidence_multiplies_path_prior(tmp_path):
+    """A hedged judge (confidence=0.6) produces a lower Decision
+    confidence than a certain judge (confidence=0.95), even though
+    both verdicts are SUPPORTED via the same path prior."""
+    from src.fact_store import Fact
+    from src.pattern_registry import PatternRegistry
+    from src.router.router import Router
+
+    store = FactStore(tmp_path / "v.db")
+    reg = PatternRegistry.from_yaml("patterns.yaml")
+    router = Router(store=store, registry=reg)
+
+    claim_a = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Tokyo", "category": "city"},
+        "polarity": 1, "source_text": "Tokyo is a city",
+    }
+    claim_b = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Osaka", "category": "city"},
+        "polarity": 1, "source_text": "Osaka is a city",
+    }
+    _, conf_certain, _ = router._store_or_boost_model_fact(
+        claim_a, source_turn_id=1,
+        path_prior=0.95, verifier_confidence=0.95,
+        verification_status="verified",
+    )
+    _, conf_hedged, _ = router._store_or_boost_model_fact(
+        claim_b, source_turn_id=2,
+        path_prior=0.95, verifier_confidence=0.6,
+        verification_status="verified",
+    )
+    assert conf_certain > conf_hedged
+    store.close()

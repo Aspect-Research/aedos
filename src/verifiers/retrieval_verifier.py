@@ -75,9 +75,20 @@ class Snippet:
 class JudgeVerdict:
     verdict: str
     justification: str
+    # v0.7.13: judge's reported conviction in [0, 1]. Multiplied into
+    # the path prior to compute the final Decision.confidence — a
+    # judge that hedges ("0.6") shouldn't produce the same downstream
+    # confidence as one that's certain ("0.97"). Defaults to 1.0 so
+    # legacy responses without a Confidence: line still produce a
+    # full-strength verdict (no behavior change for unupdated mocks).
+    confidence: float = 1.0
 
-    def to_dict(self) -> dict[str, str]:
-        return {"verdict": self.verdict, "justification": self.justification}
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "verdict": self.verdict,
+            "justification": self.justification,
+            "confidence": self.confidence,
+        }
 
 
 @dataclass
@@ -322,9 +333,15 @@ phrasing in source_text is the signal — a structured slot with
 ``relation: had_heaviest_X`` or source text like "the most/heaviest
 /largest of any" should activate this rule.
 
-Output exactly two lines, no preamble:
+Output exactly THREE lines, no preamble:
 VERDICT
-Justification: <one sentence>"""
+Justification: <one sentence>
+Confidence: <number 0.0-1.0>
+
+Confidence reflects YOUR conviction in the verdict given the
+snippets — 1.0 = the snippets state the claim verbatim, 0.5 = the
+snippets imply it but indirectly, 0.3 = you're unsure. Use the
+full range; do not default to 1.0."""
 
 _JUDGE_SYSTEM_HISTORICAL = """You are a strict, evidence-bounded judge.
 
@@ -343,9 +360,14 @@ The dissolution / death / end-of-existence of the entity AFTER the
 claim's period does NOT contradict the claim — the claim is bounded
 to its period.
 
-Output exactly two lines, no preamble:
+Output exactly THREE lines, no preamble:
 VERDICT
-Justification: <one sentence>"""
+Justification: <one sentence>
+Confidence: <number 0.0-1.0>
+
+Confidence reflects YOUR conviction in the verdict given the
+snippets for the stated period. Use the full range — 1.0 only when
+the snippets state the claim verbatim for that period."""
 
 
 # Map of accepted verdict tokens (after upper + strip) → canonical label.
@@ -444,9 +466,33 @@ def parse_judge_response(text: str) -> JudgeVerdict | None:
     )
     # Drop residual markdown markers and surrounding whitespace.
     rest = rest.strip().strip("*_#>`-").strip()
+
+    # v0.7.13: pull a `Confidence: <number>` line out of the rest, if
+    # present. Defaults to 1.0 when missing — preserves behavior for
+    # mocks/older judges that don't emit a confidence line. Strip the
+    # confidence line from the justification so it doesn't leak into
+    # the displayed text.
+    confidence = 1.0
+    conf_match = re.search(
+        r"\b[Cc]onfidence\s*[:=]?\s*\**\s*([0-9]*\.?[0-9]+)\s*\**",
+        rest,
+    )
+    if conf_match:
+        try:
+            confidence = max(0.0, min(1.0, float(conf_match.group(1))))
+        except (TypeError, ValueError):
+            confidence = 1.0
+        # Remove the confidence sentence from the justification text.
+        rest = re.sub(
+            r"\s*\b[Cc]onfidence\s*[:=]?\s*\**\s*[0-9]*\.?[0-9]+\s*\**\s*\.?\s*",
+            " ",
+            rest,
+        ).strip().strip("*_#>`-").strip()
+
     return JudgeVerdict(
         verdict=canonical,
         justification=rest or "(no justification)",
+        confidence=confidence,
     )
 
 
