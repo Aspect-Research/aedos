@@ -1535,3 +1535,20 @@ tr.flagged td:first-child {
   color: var(--info);
   border-color: rgba(98, 182, 203, 0.35);
 }
+
+/* v0.7.14 — tier-provenance badges on per-claim Decision details. */
+.trust-badge.trust-tier-microtheory {
+  background: rgba(249, 115, 28, 0.10);
+  color: var(--accent);
+  border-color: rgba(249, 115, 28, 0.40);
+}
+.trust-badge.trust-tier-user_store {
+  background: var(--info-soft);
+  color: var(--info);
+  border-color: rgba(98, 182, 203, 0.35);
+}
+.trust-badge.trust-tier-cache {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: rgba(92, 194, 138, 0.35);
+}

@@ -274,11 +274,22 @@ def test_user_specific_claim_does_not_check_cache(tmp_path):
     )
     trace = p.run_turn("test")
 
-    # No cache_lookup event — the claim was not flagged eligible, so
-    # the lookup was never even attempted.
+    # v0.7.14: cache lookup now runs at the Pipeline tier-3 step
+    # BEFORE classification, so we always see one cache_lookup event
+    # per claim — but for a user_specific claim with no matching
+    # canonical key in the cache, it's a guaranteed miss (free SQL).
+    # The point is no scoping classifier fires either, since this
+    # mock returns user_specific (would have fired only on cache miss
+    # → tier-4 classify; but we're testing the case where the
+    # classify step itself decides user_specific). The relevant
+    # contract is: real retrieval still runs (cache miss falls
+    # through), and we don't pay extra LLM cost on guaranteed misses.
     events = store.get_pipeline_events(trace.assistant_turn_id)
     lookup_events = [e for e in events if e["stage"] == "cache_lookup"]
-    assert lookup_events == []
+    # Exactly one lookup event (tier-3); router-level lookup
+    # short-circuits via the missed-keys-this-turn dedup.
+    assert len(lookup_events) == 1
+    assert lookup_events[0]["data"].get("result") == "miss"
     # Real retrieval ran.
     assert len(retrieval.calls) == 1
 

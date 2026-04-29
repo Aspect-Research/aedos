@@ -137,6 +137,13 @@ class CacheGate:
         # Pipeline reads at end-of-turn for the cache_savings event.
         self._turn_hits: int = 0
         self._turn_savings_usd: float = 0.0
+        # v0.7.14: canonical_keys we've already looked up this turn
+        # AND that missed. Prevents the Pipeline-level tier-3 short-
+        # circuit and the router-level _maybe_cache_hit from
+        # double-emitting cache_lookup events for the same claim.
+        # Hits aren't tracked because they short-circuit and the
+        # router never reaches _maybe_cache_hit on hit.
+        self._missed_keys_this_turn: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -159,12 +166,13 @@ class CacheGate:
         return {k for k, st in self._states.items() if st.eligible_for_cache}
 
     def reset_for_turn(self) -> None:
-        """Clear per-claim decisions + per-turn savings tally.
-        Pipeline calls at the start of each turn so prior
-        classifications don't leak."""
+        """Clear per-claim decisions + per-turn savings tally +
+        already-looked-up tracking. Pipeline calls at the start of
+        each turn so prior classifications don't leak."""
         self._states.clear()
         self._turn_hits = 0
         self._turn_savings_usd = 0.0
+        self._missed_keys_this_turn.clear()
 
     def turn_savings(self) -> dict:
         """Returned at end-of-turn for the cache_savings event.
@@ -242,18 +250,34 @@ class CacheGate:
 
     def maybe_hit(
         self, claim: dict, identity_slot_names: list[str], *, turn_id: int,
+        require_eligible: bool = True,
     ) -> Optional[CacheHit]:
         """Try exact lookup, then semantic lookup. Emits the
         cache_lookup event in either branch (hit / semantic_hit /
         miss / error) so the trace UI sees a uniform record.
 
         Returns None if the gate is disabled, the claim isn't
-        eligible, the cache is unwired, or both lookups miss.
+        eligible (when require_eligible=True), the cache is unwired,
+        or both lookups miss.
+
+        v0.7.14: pass ``require_eligible=False`` to look up regardless
+        of whether the claim was classified this turn. Used by the
+        Pipeline-level tiered short-circuit, which consults the cache
+        BEFORE the classify step runs — if there's a hit, classify is
+        skipped entirely (saves 2 LLM calls per claim). The eligibility
+        check originally existed because writes are gated; lookups
+        are free and any miss is harmless.
         """
         if self._cache is None or not self.enabled:
             return None
         key = canonicalize_claim_key(claim)
-        if key not in self.eligible_keys:
+        if require_eligible and key not in self.eligible_keys:
+            return None
+        # v0.7.14 dedup: if a previous lookup this turn missed on this
+        # key, the second call (from defense-in-depth in
+        # _route_retrieval after a tier-3 miss) would just emit a
+        # duplicate cache_lookup event for nothing. Short-circuit.
+        if key in self._missed_keys_this_turn:
             return None
         # Exact lookup.
         try:
@@ -263,6 +287,7 @@ class CacheGate:
                 "canonical_key": key,
                 "error": f"{type(exc).__name__}: {exc}",
             })
+            self._missed_keys_this_turn.add(key)
             return None
         if cached is not None:
             self._record_hit_savings()
@@ -288,11 +313,13 @@ class CacheGate:
                     f"semantic_lookup raised: {type(exc).__name__}: {exc}"
                 ),
             })
+            self._missed_keys_this_turn.add(key)
             return None
         if semantic is None:
             self._emit("cache_lookup", turn_id, {
                 "canonical_key": key, "result": "miss",
             })
+            self._missed_keys_this_turn.add(key)
             return None
 
         self._record_hit_savings()

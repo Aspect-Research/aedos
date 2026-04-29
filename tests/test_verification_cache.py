@@ -1470,3 +1470,200 @@ def test_router_judge_confidence_multiplies_path_prior(tmp_path):
     )
     assert conf_certain > conf_hedged
     store.close()
+
+
+# ---- v0.7.14: tiered precedence verification -------------------------
+
+
+def test_session_marker_detection():
+    from src.session_markers import is_session_scoped
+    # Positive cases.
+    assert is_session_scoped("for this conversation, X = 5")
+    assert is_session_scoped("In our discussion, A = B")
+    assert is_session_scoped("let's say the cat is black")
+    assert is_session_scoped("hypothetically, the budget is $100")
+    assert is_session_scoped("In this scenario, the deadline is Friday")
+    # Negative cases — common assertions that should NOT be session-scoped.
+    assert not is_session_scoped("I like peanut butter")
+    assert not is_session_scoped("Tokyo is a city in Japan")
+    assert not is_session_scoped("I went to the store today")
+    assert not is_session_scoped("")
+    assert not is_session_scoped(None)
+
+
+def test_facts_table_has_session_id_column(tmp_path):
+    store = FactStore(tmp_path / "v.db")
+    cols = {r["name"] for r in store._conn.execute(
+        "PRAGMA table_info(facts)"
+    ).fetchall()}
+    assert "session_id" in cols
+    store.close()
+
+
+def test_find_currently_valid_filters_by_session_id(tmp_path):
+    """find_currently_valid honors the new session_id parameter:
+    None = cross-session only, specific id = that session only,
+    sentinel = any (legacy behavior)."""
+    from src.fact_store import Fact
+    store = FactStore(tmp_path / "v.db")
+    # One cross-session, one session-scoped, same identity.
+    cross = Fact(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "X", "category": "thing"},
+        polarity=1, confidence=0.95,
+        asserted_by="user", verification_status="user_asserted",
+    )
+    scoped = Fact(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "X", "category": "thing"},
+        polarity=1, confidence=0.95,
+        asserted_by="user", verification_status="user_asserted",
+        session_id="sess_a",
+    )
+    store.insert_fact(cross)
+    store.insert_fact(scoped)
+
+    # Cross-session only.
+    cross_only = store.find_currently_valid(
+        "categorical", session_id=None,
+    )
+    assert all(f.session_id is None for f in cross_only)
+    assert len(cross_only) == 1
+
+    # Session-scoped only.
+    scoped_only = store.find_currently_valid(
+        "categorical", session_id="sess_a",
+    )
+    assert all(f.session_id == "sess_a" for f in scoped_only)
+    assert len(scoped_only) == 1
+
+    # Default sentinel = any.
+    everything = store.find_currently_valid("categorical")
+    assert len(everything) == 2
+    store.close()
+
+
+def test_microtheory_takes_precedence_over_user_store_in_pipeline(tmp_path):
+    """A model claim that matches a session-scoped user fact gets
+    served from microtheory (tier 1), not from cache or fresh."""
+    from src.fact_store import Fact
+    from src.pattern_registry import PatternRegistry
+    from src.router.router import Router
+    from src.pipeline import Pipeline
+    from src.extractor import ClaimExtractor
+    from src.corrector import Corrector
+
+    class _MockLLM:
+        def chat(self, *a, **k): return "draft"
+        def extract_with_tool(self, *a, **k): return {"facts": []}
+        def rewrite(self, *a, **k): return "rewrite"
+        def pop_recorded_calls(self): return []
+
+    store = FactStore(tmp_path / "v.db")
+    reg = PatternRegistry.from_yaml("patterns.yaml")
+    mock = _MockLLM()
+    router = Router(store=store, registry=reg)
+    p = Pipeline(
+        store, reg, mock, ClaimExtractor(mock, reg),
+        router, Corrector(mock),
+        session_id="sess_test",
+    )
+
+    # Pre-populate a session-scoped user fact.
+    store.insert_fact(Fact(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "Tokyo", "category": "city"},
+        polarity=1, confidence=0.95,
+        asserted_by="user", verification_status="user_asserted",
+        session_id="sess_test",
+    ))
+
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Tokyo", "category": "city"},
+        "polarity": 1, "source_text": "Tokyo is a city",
+    }
+    decision = p._tier_microtheory_lookup(claim, turn_id=1)
+    assert decision is not None
+    assert decision.served_from_tier is None  # Pipeline assigns this in _stage_verify
+    # The boost path means confidence rises above the prior.
+    assert decision.boosted_fact_id is not None
+    store.close()
+
+
+def test_user_store_tier_returns_none_when_only_microtheory_match(tmp_path):
+    """Tier 2 (cross-session) should NOT see session-scoped facts —
+    they belong to tier 1."""
+    from src.fact_store import Fact
+    from src.pattern_registry import PatternRegistry
+    from src.router.router import Router
+    from src.pipeline import Pipeline
+    from src.extractor import ClaimExtractor
+    from src.corrector import Corrector
+
+    class _MockLLM:
+        def chat(self, *a, **k): return "x"
+        def extract_with_tool(self, *a, **k): return {"facts": []}
+        def rewrite(self, *a, **k): return "x"
+        def pop_recorded_calls(self): return []
+
+    store = FactStore(tmp_path / "v.db")
+    reg = PatternRegistry.from_yaml("patterns.yaml")
+    mock = _MockLLM()
+    router = Router(store=store, registry=reg)
+    p = Pipeline(
+        store, reg, mock, ClaimExtractor(mock, reg),
+        router, Corrector(mock),
+        session_id="sess_test",
+    )
+    # Only a session-scoped fact exists; tier 2 (NULL session) should miss.
+    store.insert_fact(Fact(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "Tokyo", "category": "city"},
+        polarity=1, confidence=0.95,
+        asserted_by="user", verification_status="user_asserted",
+        session_id="sess_test",
+    ))
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Tokyo", "category": "city"},
+        "polarity": 1, "source_text": "Tokyo is a city",
+    }
+    assert p._tier_user_store_lookup(claim, turn_id=1) is None
+    # But tier 1 hits.
+    assert p._tier_microtheory_lookup(claim, turn_id=1) is not None
+    store.close()
+
+
+def test_router_stamps_session_id_on_session_scoped_user_assertion(tmp_path):
+    """A user assertion whose source_text carries a session marker
+    gets stored with session_id set (microtheory). Non-session-marked
+    assertions stay session_id=NULL (cross-session)."""
+    from src.fact_store import Fact
+    from src.pattern_registry import PatternRegistry
+    from src.router.router import Router
+    store = FactStore(tmp_path / "v.db")
+    reg = PatternRegistry.from_yaml("patterns.yaml")
+    router = Router(store=store, registry=reg, session_id="sess_x")
+
+    cross_session_claim = {
+        "pattern": "preference", "predicate": "likes",
+        "slots": {"agent": "user", "object": "tea"},
+        "polarity": 1, "source_text": "I like tea",
+    }
+    session_scoped_claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "X", "category": "thing"},
+        "polarity": 1,
+        "source_text": "for this conversation, X is a thing",
+    }
+    pattern_a = reg.get("preference")
+    pattern_b = reg.get("categorical")
+    router._route_user(cross_session_claim, pattern_a, source_turn_id=1)
+    router._route_user(session_scoped_claim, pattern_b, source_turn_id=2)
+
+    facts = store.find_currently_valid("preference")
+    assert facts[0].session_id is None
+    facts = store.find_currently_valid("categorical")
+    assert facts[0].session_id == "sess_x"
+    store.close()
