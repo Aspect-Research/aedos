@@ -24,7 +24,28 @@ def test_canonicalize_basic():
         "polarity": 1,
     }
     key = canonicalize_claim_key(claim)
-    assert key == "spatial_temporal|located_in|p=1|entity=tokyo&location=japan"
+    # v0.7.6: includes a tense bit (`t=present`/`t=past`) so past- and
+    # present-tense versions of the same structured claim cache
+    # independently. No source_text → defaults to present.
+    assert key == "spatial_temporal|located_in|p=1|t=present|entity=tokyo&location=japan"
+
+
+def test_canonicalize_past_tense_distinct_from_present():
+    """A past-tense source_text produces a different canonical key
+    than the same claim with present-tense source. Without this
+    split, the tense-aware judge's verdicts could leak across — a
+    SUPPORTED past-tense verdict for a dissolved entity must NOT
+    serve a present-tense lookup of the same structured claim."""
+    base = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Soviet Union", "category": "communist superpower"},
+        "polarity": 1,
+    }
+    present = canonicalize_claim_key({**base, "source_text": "Soviet Union is a communist superpower"})
+    past = canonicalize_claim_key({**base, "source_text": "Soviet Union was a communist superpower"})
+    assert present != past
+    assert "|t=present|" in present
+    assert "|t=past|" in past
 
 
 def test_canonicalize_case_insensitive_for_pattern_predicate_strings():
