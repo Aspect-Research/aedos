@@ -381,7 +381,6 @@ function renderTrace(events) {
     "extractor_substitution_warning",
     "retrieval_query_attempt",
     // v0.4 / v0.5 code-gen sub-stages — surfaced inside the verification decision.
-    "code_triage",  // legacy; v0.5 doesn't emit but old DBs may have it
     "code_prompt_built",
     "code_prompt_leakage_detected",
     "code_generated",
