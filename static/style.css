@@ -120,7 +120,48 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 }
 .msg.user { align-self: flex-end; background: var(--accent-soft); border: 1px solid #c7dbf4; }
 .msg.assistant { align-self: flex-start; background: #f0efe9; border: 1px solid var(--border); }
-.msg-body { white-space: pre-wrap; word-wrap: break-word; }
+.msg-body { white-space: normal; word-wrap: break-word; }
+/* Markdown rendered into .msg-body — style the elements the renderer
+ * emits. Preserve compact spacing so chat bubbles stay tight. */
+.msg-body > :first-child { margin-top: 0; }
+.msg-body > :last-child  { margin-bottom: 0; }
+.msg-body p              { margin: 0.4em 0; }
+.msg-body h1, .msg-body h2, .msg-body h3,
+.msg-body h4, .msg-body h5, .msg-body h6 { margin: 0.5em 0 0.25em; font-weight: 600; }
+.msg-body h1 { font-size: 1.18em; }
+.msg-body h2 { font-size: 1.10em; }
+.msg-body h3 { font-size: 1.04em; }
+.msg-body h4 { font-size: 1.00em; }
+.msg-body h5 { font-size: 0.95em; }
+.msg-body h6 { font-size: 0.90em; color: var(--muted); }
+.msg-body code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+.msg-body pre {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.5em 0.7em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.4em 0;
+  white-space: pre;
+}
+.msg-body pre code { background: transparent; padding: 0; font-size: 0.85em; }
+.msg-body ul, .msg-body ol { margin: 0.35em 0; padding-left: 1.5em; }
+.msg-body li { margin: 0.1em 0; }
+.msg-body a { color: var(--accent); text-decoration: underline; }
+.msg-body a:hover { text-decoration: none; }
+.msg-body strong { font-weight: 600; }
+.msg-body em { font-style: italic; }
+.msg-body blockquote {
+  margin: 0.4em 0;
+  padding: 0.1em 0.7em;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
 
 /* Draft lifecycle inside an assistant bubble:
  *   draft-pending — bubble just created, body is "…"
@@ -285,49 +326,97 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .thinking-dots .thinking-anim::after { content: "..."; letter-spacing: 0.1em; }
 @keyframes thinking-dots { to { width: 1.4em; } }
 
-/* Verification step — claim list inside the bubble. */
-.flow-step-verification { /* same width as others */ }
+/* Combined Claims card: the card itself isn't clickable as a whole —
+ * each claim row inside it is independently expandable. Override the
+ * generic .flow-step cursor/hover styles to avoid suggesting otherwise. */
+.flow-step-claims { cursor: default; }
+.flow-step-claims:hover { background: var(--panel); border-color: var(--border); }
+
+/* Each claim is one row; rows are individually expandable. The
+ * collapsed view (`.claim-summary`) shows the plaintext source_text +
+ * a pattern badge + a verifier-method badge. The expanded body
+ * (`.claim-detail`) appears under the row and shows ONLY that
+ * claim's full Decision payload — slots, routing, code-gen,
+ * retrieval, correction. No other claim is touched when one expands. */
 .claim-list {
   margin: 0.5rem 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.18rem;
-  max-height: 280px;
+  gap: 0.25rem;
+  max-height: 480px;
   overflow-y: auto;
 }
 .claim-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.4rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 5px;
+  font-size: 0.85rem;
   background: #fafaf7;
-  cursor: default;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
+  overflow: hidden;
 }
-.claim-row:hover { background: #eef2f8; border-color: var(--border); }
-.claim-row .claim-dot {
-  width: 8px;
-  height: 8px;
+.claim-row.claim-expandable .claim-summary { cursor: pointer; }
+.claim-row.claim-expandable:hover { border-color: var(--accent); }
+
+.claim-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+}
+.claim-summary .claim-dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--muted);
   flex-shrink: 0;
-  position: relative;
 }
+.claim-summary .claim-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claim-row.expanded .claim-text { white-space: normal; }
+.claim-summary .claim-pattern {
+  font-size: 0.65rem;
+  padding: 0.05rem 0.35rem;
+}
+.claim-summary .claim-method {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  background: var(--border);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.claim-summary .claim-toggle {
+  font-size: 0.7rem;
+  color: var(--muted);
+  width: 1em;
+  text-align: center;
+}
+
+/* Status colors keyed off the row's outcome class. */
 .claim-row.claim-verified .claim-dot { background: var(--ok); }
 .claim-row.claim-contradicted .claim-dot { background: var(--bad); }
 .claim-row.claim-inconclusive .claim-dot { background: var(--warn); }
 .claim-row.claim-not_applicable .claim-dot { background: #888; }
+.claim-row.claim-verified { border-left: 3px solid var(--ok); }
+.claim-row.claim-contradicted { border-left: 3px solid var(--bad); }
+.claim-row.claim-inconclusive { border-left: 3px solid var(--warn); }
+.claim-row.claim-not_applicable { border-left: 3px solid #c8c8c2; }
+.claim-row.claim-cached { background: #f5fbf7; }
 
-/* Progressive states (verification step while in flight). */
-.claim-row.claim-pending {
-  background: #fafaf7;
-  opacity: 0.65;
-}
+/* Progressive states (in-flight Claims card). */
+.claim-row.claim-pending { background: #fafaf7; opacity: 0.65; }
 .claim-row.claim-pending .claim-dot {
   background: transparent;
   border: 1.5px solid var(--muted);
@@ -336,33 +425,44 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 .claim-row.claim-in-flight {
   background: #f5f8fc;
   border-color: var(--accent);
+  border-left: 3px solid var(--accent);
 }
 .claim-row.claim-in-flight .claim-dot {
   background: var(--accent);
   animation: claim-pulse 1.0s ease-in-out infinite;
 }
 .claim-row.claim-in-flight .claim-method { color: var(--accent); }
-.claim-row.claim-neutral { /* extraction-step row, no verdict yet */ }
 @keyframes claim-pulse {
   0%, 100% { transform: scale(1.0); opacity: 1.0; }
   50%      { transform: scale(1.5); opacity: 0.55; }
 }
-.claim-row .claim-label {
-  font-family: var(--mono);
+
+/* Per-claim expanded body: shows ONLY this claim's Decision detail. */
+.claim-row .claim-detail {
+  display: none;
+  padding: 0.5rem 0.6rem 0.6rem 1.2rem;
+  border-top: 1px dashed var(--border);
+  background: white;
+  font-size: 0.8rem;
   color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
 }
-.claim-row .claim-method {
-  font-family: var(--mono);
-  font-size: 0.65rem;
+.claim-row.expanded .claim-detail { display: block; }
+
+/* Card-level annotations on the Claims card — collapsed by default. */
+.claims-annotations {
+  margin-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.4rem;
+}
+.claims-annotations .annotations-header { margin-top: 0; border-top: none; padding-top: 0; }
+.claims-annotations .annotations-header::after {
+  content: " ▸";
   color: var(--muted);
-  background: var(--border);
-  padding: 0.05rem 0.35rem;
-  border-radius: 3px;
 }
-.claim-row.claim-cached { background: #f5fbf7; }
+.claims-annotations.expanded .annotations-header::after { content: " ▾"; }
+.claims-annotations .claims-annotations-body { display: none; margin-top: 0.3rem; }
+.claims-annotations.expanded .claims-annotations-body { display: block; }
 
 /* Inline detail (replaces the standalone Trace tab). */
 .flow-step-detail {

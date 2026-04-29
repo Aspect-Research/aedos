@@ -142,25 +142,33 @@ function setBubbleDraft(bubble, draftText) {
   bubble.classList.remove("draft-pending");
   bubble.classList.add("draft-faded");
   const body = bubble.querySelector(".msg-body");
-  body.textContent = draftText || "";
+  renderMarkdown(body, draftText || "");
 }
 
+// Lay out a finalized assistant bubble. Final children, in order:
+//   1. .msg-body         — markdown-rendered final text
+//   2. .diff-view        — inline diff (only when corrected)
+//   3. .show-diff-btn    — toggle button (always LAST so it stays at the
+//                          bottom whether the body or the diff is shown)
 function finalizeBubble(bubble, finalText, originalText) {
-  bubble.classList.remove("draft-pending", "draft-faded");
-  const body = bubble.querySelector(".msg-body");
-  body.textContent = finalText || "";
-  // Strip any existing diff toggle from a previous render.
-  bubble.querySelectorAll(".show-diff-btn, .diff-view").forEach((n) => n.remove());
+  bubble.classList.remove("draft-pending", "draft-faded", "diff-open");
+  // Wipe and rebuild children so DOM order is canonical regardless of
+  // what state the bubble was in (mid-stream draft, prior render, etc.).
+  bubble.innerHTML = "";
+  const body = el("div", { className: "msg-body" });
+  renderMarkdown(body, finalText || "");
+  bubble.appendChild(body);
+
   if (originalText && originalText !== finalText) {
-    const btn = el("button", { className: "show-diff-btn", textContent: "show diff" });
     const diffView = el("div", { className: "diff-view" });
     renderInlineDiff(diffView, originalText, finalText);
-    bubble.appendChild(btn);
     bubble.appendChild(diffView);
+    const btn = el("button", { className: "show-diff-btn", textContent: "show diff" });
     btn.addEventListener("click", () => {
       const showing = bubble.classList.toggle("diff-open");
       btn.textContent = showing ? "hide diff" : "show diff";
     });
+    bubble.appendChild(btn);
   }
 }
 
@@ -173,10 +181,7 @@ function appendUserMessage(text) {
 
 function appendHydratedAssistant(turn) {
   const node = el("div", { className: "msg assistant" });
-  node.appendChild(el("div", { className: "msg-body", textContent: turn.content }));
-  if (turn.original_content && turn.original_content !== turn.content) {
-    finalizeBubble(node, turn.content, turn.original_content);
-  }
+  finalizeBubble(node, turn.content, turn.original_content);
   messagesEl.appendChild(node);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -226,6 +231,134 @@ function renderInlineDiff(container, oldText, newText) {
   });
 }
 
+// ---- minimal markdown renderer for chat bubbles ----
+//
+// Handles the subset LLMs actually emit: headings (#..####), **bold**,
+// *italic*, `code`, ```fenced code```, - / 1. lists, [text](url),
+// > blockquotes, paragraphs separated by blank lines, soft line breaks.
+// All text inserted via textContent — never innerHTML on model output.
+
+function renderMarkdown(container, text) {
+  container.innerHTML = "";
+  if (!text) return;
+  const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Fenced code block
+    if (/^```/.test(line)) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++;  // skip closing fence (or EOF)
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = buf.join("\n");
+      pre.appendChild(code);
+      container.appendChild(pre);
+      continue;
+    }
+    // Heading
+    const h = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (h) {
+      const node = document.createElement(`h${h[1].length}`);
+      renderInlineMarkdown(node, h[2]);
+      container.appendChild(node);
+      i++;
+      continue;
+    }
+    // Blockquote (one or more consecutive `> ` lines)
+    if (/^>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        buf.push(lines[i].replace(/^>\s?/, "")); i++;
+      }
+      const bq = document.createElement("blockquote");
+      renderInlineMarkdown(bq, buf.join(" "));
+      container.appendChild(bq);
+      continue;
+    }
+    // Lists (consecutive lines all matching the same marker)
+    const ulMatch = line.match(/^[-*+]\s+(.+)$/);
+    const olMatch = line.match(/^\d+[.)]\s+(.+)$/);
+    if (ulMatch || olMatch) {
+      const ordered = !!olMatch;
+      const re = ordered ? /^\d+[.)]\s+(.+)$/ : /^[-*+]\s+(.+)$/;
+      const items = [];
+      while (i < lines.length) {
+        const m = lines[i].match(re);
+        if (!m) break;
+        items.push(m[1]);
+        i++;
+      }
+      const list = document.createElement(ordered ? "ol" : "ul");
+      items.forEach((it) => {
+        const li = document.createElement("li");
+        renderInlineMarkdown(li, it);
+        list.appendChild(li);
+      });
+      container.appendChild(list);
+      continue;
+    }
+    // Blank line — skip
+    if (line.trim() === "") { i++; continue; }
+    // Paragraph: collect contiguous non-blank, non-block lines
+    const buf = [line];
+    i++;
+    while (i < lines.length) {
+      const l = lines[i];
+      if (l.trim() === "") break;
+      if (/^(```|#{1,6}\s|>\s?|[-*+]\s|\d+[.)]\s)/.test(l)) break;
+      buf.push(l);
+      i++;
+    }
+    const p = document.createElement("p");
+    renderInlineMarkdown(p, buf.join(" "));
+    container.appendChild(p);
+  }
+}
+
+function renderInlineMarkdown(parent, text) {
+  // Order matters: code first (eats anything inside backticks), then
+  // links, then bold, then italic. All non-greedy to avoid runaway.
+  const pattern = /(`[^`\n]+`)|(\[([^\]]+)\]\(([^)\s]+)\))|(\*\*([^*\n]+)\*\*)|(__([^_\n]+)__)|(\*([^*\n]+)\*)|(_([^_\n]+)_)/g;
+  let last = 0;
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+    if (m[1]) {  // `code`
+      const node = document.createElement("code");
+      node.textContent = m[1].slice(1, -1);
+      parent.appendChild(node);
+    } else if (m[2]) {  // [text](url)
+      const a = document.createElement("a");
+      a.href = m[4];
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = m[3];
+      parent.appendChild(a);
+    } else if (m[5]) {  // **bold**
+      const node = document.createElement("strong");
+      node.textContent = m[6];
+      parent.appendChild(node);
+    } else if (m[7]) {  // __bold__
+      const node = document.createElement("strong");
+      node.textContent = m[8];
+      parent.appendChild(node);
+    } else if (m[9]) {  // *italic*
+      const node = document.createElement("em");
+      node.textContent = m[10];
+      parent.appendChild(node);
+    } else if (m[11]) {  // _italic_
+      const node = document.createElement("em");
+      node.textContent = m[12];
+      parent.appendChild(node);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+}
+
 async function hydrate() {
   try {
     const turns = await api("GET", "/api/turns");
@@ -265,6 +398,7 @@ form.addEventListener("submit", async (e) => {
   const requestStartMs = Date.now();
   flowStatus.textContent = "running…";
   expandedSteps.clear();
+  expandedClaims.clear();
   renderFlow(null, [], { running: true, requestStartMs });
 
   try {
@@ -317,28 +451,30 @@ form.addEventListener("submit", async (e) => {
 // 4. live flow chart
 // =====================================================================
 //
-// Five progressive steps + (while running) one animated "thinking"
-// bubble for the next expected step. Click any landed step to expand
-// its detail INLINE under it (no tab switch — the trace lives where
-// it's relevant).
+// Four progressive steps. Click any step to expand its detail INLINE.
+// The middle "Claims" step combines extraction + verification: each
+// claim is its own row in plain language, individually expandable.
 
 const PIPELINE_STEPS = [
   {
+    kind: "chat_model_call",
     stage: "chat_model_call",
     title: "Chat Model",
     metaFn: (ev) => formatChatMeta(ev.data || {}),
   },
   {
-    stage: "assistant_extraction",
-    title: "Extraction",
-    isExtractionList: true,
+    // Virtual step. Consumes assistant_extraction (claim seeds) AND
+    // verification (decisions) from the event stream. State:
+    //   * verification landed       → "done" (final per-claim colors)
+    //   * extraction landed only    → "in_flight" (pending dots that
+    //                                  flip to in-flight as routing
+    //                                  decisions arrive per claim)
+    //   * neither                   → "pending"
+    kind: "claims",
+    title: "Claims",
   },
   {
-    stage: "verification",
-    title: "Verification",
-    isVerificationList: true,
-  },
-  {
+    kind: "correction",
     stage: "correction",
     title: "Correction",
     metaFn: (ev) => {
@@ -347,6 +483,7 @@ const PIPELINE_STEPS = [
     },
   },
   {
+    kind: "final",
     stage: "final",
     title: "Final Response",
     metaFn: (ev) => ((ev.data || {}).content || "").slice(0, 80),
@@ -385,100 +522,110 @@ function flowEdgeClass(displayStatus) {
   return "not_applicable";
 }
 
-// Track which steps are expanded so re-renders preserve state.
+// Persistent expansion state: per-step (chat / correction / final) and
+// per-claim (each row in the Claims card). Survive re-renders during
+// SSE streaming; cleared when a new turn starts.
 const expandedSteps = new Set();
+const expandedClaims = new Set();
 
 function renderFlow(turnId, events, { running = false, requestStartMs = null } = {}) {
   flowContainer.innerHTML = "";
   flowContainer.appendChild(buildFlowChart(events || [], turnId, running, requestStartMs));
 }
 
+// Determine state for a given step from the event map.
+//   "done"      — primary event present (and, for claims, verification fired)
+//   "in_flight" — claims-only: extraction fired but verification hasn't
+//   "pending"   — nothing yet
+function stepState(step, stageMap) {
+  if (step.kind === "claims") {
+    if (stageMap["verification"]) return "done";
+    if (stageMap["assistant_extraction"]) return "in_flight";
+    return "pending";
+  }
+  return stageMap[step.stage] ? "done" : "pending";
+}
+
+// When did a step finish (ms)? Used to compute the NEXT step's duration.
+function stepEndMs(step, stageMap) {
+  if (step.kind === "claims") {
+    const v = stageMap["verification"];
+    if (v && typeof v.arrivedMs === "number") return v.arrivedMs;
+    const e = stageMap["assistant_extraction"];
+    return e && typeof e.arrivedMs === "number" ? e.arrivedMs : null;
+  }
+  const ev = stageMap[step.stage];
+  return ev && typeof ev.arrivedMs === "number" ? ev.arrivedMs : null;
+}
+
 function buildFlowChart(events, turnId, running, requestStartMs) {
   const stageMap = {};
   events.forEach((e) => { stageMap[e.stage] = e; });
 
-  // Index annotation events (everything not in PIPELINE_STEPS) by
-  // their nearest PIPELINE_STEP for inline rendering. The bucketing
-  // is approximate but stable.
-  const stageNames = new Set(PIPELINE_STEPS.map((s) => s.stage));
-  const annotationsByStep = {};
-  for (const step of PIPELINE_STEPS) annotationsByStep[step.stage] = [];
+  // Index annotation events (everything not a primary step event) by
+  // the step they belong to. With the combined Claims card,
+  // extraction- and verification-related annotations both bucket
+  // under "claims".
+  const primaryStages = new Set(["chat_model_call", "assistant_extraction",
+                                 "verification", "correction", "final"]);
+  const annotationsByStep = { chat_model_call: [], claims: [], correction: [], final: [] };
   events.forEach((e) => {
-    if (stageNames.has(e.stage)) return;
+    if (primaryStages.has(e.stage)) return;
     const bucket = annotationStepFor(e.stage);
     if (bucket && annotationsByStep[bucket]) annotationsByStep[bucket].push(e);
   });
 
-  const landed = [];
-  for (const step of PIPELINE_STEPS) {
-    if (stageMap[step.stage]) landed.push({ step, event: stageMap[step.stage] });
-  }
-
-  // Per-step duration: time between THIS step's event and PREVIOUS
-  // step's event = elapsed time spent waiting for this step. For the
-  // first landed step, fall back to (arrivedMs - requestStartMs).
+  // Per-step duration = (this step's end) − (previous step's end). The
+  // very first step's "previous" is the request-start timestamp.
   const durations = {};
   let prevMs = requestStartMs;
-  for (const { step, event } of landed) {
-    const ms = event.arrivedMs;
-    if (typeof ms === "number" && typeof prevMs === "number") {
-      durations[step.stage] = ms - prevMs;
-    }
-    if (typeof ms === "number") prevMs = ms;
+  for (const step of PIPELINE_STEPS) {
+    const endMs = stepEndMs(step, stageMap);
+    if (endMs != null && prevMs != null) durations[step.kind] = endMs - prevMs;
+    if (endMs != null) prevMs = endMs;
   }
 
-  let nextStep = null;
-  const lastLandedIdx = landed.length > 0
-    ? PIPELINE_STEPS.indexOf(landed[landed.length - 1].step)
-    : -1;
-  if (running && lastLandedIdx + 1 < PIPELINE_STEPS.length) {
-    nextStep = PIPELINE_STEPS[lastLandedIdx + 1];
-  }
+  // Routing decisions (per-claim, fire during verification dispatch).
+  // Used by the Claims card's in-flight view to flip individual
+  // claim rows from "pending" → "in flight".
+  const routingEvents = events.filter((e) => e.stage === "routing_decision");
 
   const chart = el("div", { className: "flow-chart" });
 
-  if (landed.length === 0 && !nextStep) {
+  // Render each step in order. Done/in-flight steps render their full
+  // node. The first "pending" step renders as a thinking placeholder
+  // (only while the turn is running); later pending steps don't render.
+  let renderedAny = false;
+  for (const step of PIPELINE_STEPS) {
+    const state = stepState(step, stageMap);
+    if (state === "pending") {
+      if (running) {
+        if (renderedAny) chart.appendChild(arrowDown());
+        chart.appendChild(renderThinkingNode(step));
+      }
+      break;
+    }
+    if (renderedAny) chart.appendChild(arrowDown());
+    chart.appendChild(renderStep(step, state, stageMap, {
+      duration: durations[step.kind],
+      annotations: annotationsByStep[step.kind] || [],
+      routingEvents,
+    }));
+    renderedAny = true;
+  }
+
+  if (!renderedAny) {
     chart.appendChild(el("p", { className: "hint",
       textContent: "Send a message — each stage will appear here as it lands." }));
-    return chart;
   }
-
-  // For the verification step's progressive view, we need the
-  // extraction event (claim seeds) and any routing_decision events
-  // (per-claim "in flight" → "done" transitions).
-  const extractionEvent = stageMap["assistant_extraction"];
-  const routingEvents = events.filter((e) => e.stage === "routing_decision");
-
-  landed.forEach(({ step, event }, idx) => {
-    if (idx > 0) chart.appendChild(arrowDown());
-    chart.appendChild(renderStepNode(step, event, annotationsByStep[step.stage] || [], {
-      duration: durations[step.stage],
-      extractionEvent, routingEvents,
-    }));
-  });
-
-  if (nextStep) {
-    if (landed.length > 0) chart.appendChild(arrowDown());
-    // Special-case: if we know what claims will be verified (extraction
-    // landed) but verification hasn't, render the verification step
-    // PROACTIVELY with claims as pending placeholders. This is the
-    // "claims being verified in parallel" view the user wants.
-    if (nextStep.stage === "verification" && extractionEvent) {
-      chart.appendChild(renderVerificationProgress(nextStep, extractionEvent, routingEvents,
-        annotationsByStep["verification"] || []));
-    } else {
-      chart.appendChild(renderThinkingNode(nextStep));
-    }
-  }
-
   return chart;
 }
 
 function annotationStepFor(stage) {
-  // Map any non-main pipeline event to the step it should render under.
-  if (stage === "user_extraction" || stage === "user_storage"
-      || stage === "extractor_substitution_warning") return "assistant_extraction";
+  // Map non-primary events to a step bucket.
   if (stage === "assistant_draft") return "chat_model_call";
+  if (stage === "user_extraction" || stage === "user_storage"
+      || stage === "extractor_substitution_warning") return "claims";
   if (stage === "routing_decision" || stage === "routing_anomaly_detected"
       || stage === "verifier_failure" || stage === "retrieval_query_attempt"
       || stage === "code_prompt_built" || stage === "code_prompt_leakage_detected"
@@ -487,81 +634,49 @@ function annotationStepFor(stage) {
       || stage === "canonical_constants_cross_check"
       || stage === "canonical_constants_disagreement"
       || stage === "cache_scoping_decision" || stage === "cache_stability_decision"
-      || stage === "cache_lookup" || stage === "cache_write") return "verification";
+      || stage === "cache_lookup" || stage === "cache_write") return "claims";
   if (stage === "turn_cost") return "final";
   return null;
 }
 
-function renderStepNode(step, event, annotations, ctx = {}) {
-  if (step.isExtractionList) return renderExtractionNode(step, event, annotations, ctx);
-  if (step.isVerificationList) return renderVerificationNode(step, event, annotations, ctx);
-
-  const wrapper = el("div", { className: "flow-step-wrapper" });
-  const node = el("div", { className: "flow-step flow-step-done", dataset: { stage: step.stage } });
-  node.appendChild(buildStepHeader(step.title, ctx.duration));
-  const meta = step.metaFn ? step.metaFn(event) : "";
-  if (meta) node.appendChild(el("div", { className: "flow-step-meta", textContent: meta }));
-
-  const detail = el("div", { className: "flow-step-detail" });
-  if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
-  renderStepDetail(detail, step, event, annotations);
-
-  node.addEventListener("click", () => {
-    if (expandedSteps.has(step.stage)) {
-      expandedSteps.delete(step.stage);
-      detail.classList.remove("expanded");
-    } else {
-      expandedSteps.add(step.stage);
-      detail.classList.add("expanded");
-    }
-  });
-
-  wrapper.appendChild(node);
-  wrapper.appendChild(detail);
-  return wrapper;
+function renderStep(step, state, stageMap, ctx) {
+  if (step.kind === "claims") return renderClaimsNode(state, stageMap, ctx);
+  // Single-event step (chat / correction / final).
+  return renderEventStepNode(step, stageMap[step.stage], ctx.annotations, ctx.duration);
 }
 
-function buildStepHeader(title, durationMs) {
+// ---- step header (title + duration pill) ----
+
+function buildStepHeader(title, durationMs, extraRight) {
   const header = el("div", { className: "flow-step-header" });
   header.appendChild(el("span", { className: "flow-step-title", textContent: title }));
-  if (durationMs != null && isFinite(durationMs)) {
+  if (extraRight) header.appendChild(extraRight);
+  else if (durationMs != null && isFinite(durationMs)) {
     header.appendChild(el("span", { className: "flow-step-duration",
       textContent: fmtDurationMs(durationMs), title: `${Math.round(durationMs)} ms` }));
   }
   return header;
 }
 
-function renderExtractionNode(step, event, annotations, ctx = {}) {
-  const data = event.data || {};
-  const valid = data.valid_facts || [];
-  const rejected = data.rejected_facts || [];
-  const wrapper = el("div", { className: "flow-step-wrapper" });
-  const node = el("div", { className: "flow-step flow-step-done flow-step-extraction",
-    dataset: { stage: step.stage } });
-  const summary = `${valid.length} claim${valid.length === 1 ? "" : "s"}` +
-    (rejected.length ? ` · ${rejected.length} rejected` : "");
-  const header = buildStepHeader(`${step.title} · ${summary}`, ctx.duration);
-  node.appendChild(header);
+// ---- generic single-event step (chat / correction / final) ----
 
-  if (valid.length === 0) {
-    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims extracted" }));
-  } else {
-    const list = el("ul", { className: "claim-list" });
-    valid.forEach((c) => list.appendChild(renderClaimRow(c, "neutral", null)));
-    node.appendChild(list);
-  }
+function renderEventStepNode(step, event, annotations, durationMs) {
+  const wrapper = el("div", { className: "flow-step-wrapper" });
+  const node = el("div", { className: "flow-step flow-step-done", dataset: { stage: step.stage } });
+  node.appendChild(buildStepHeader(step.title, durationMs));
+  const meta = step.metaFn ? step.metaFn(event) : "";
+  if (meta) node.appendChild(el("div", { className: "flow-step-meta", textContent: meta }));
 
   const detail = el("div", { className: "flow-step-detail" });
-  if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
+  if (expandedSteps.has(step.kind)) detail.classList.add("expanded");
   renderStepDetail(detail, step, event, annotations);
 
-  node.addEventListener("click", (e) => {
-    if (e.target.closest(".claim-row")) return;
-    if (expandedSteps.has(step.stage)) {
-      expandedSteps.delete(step.stage);
+  node.addEventListener("click", () => {
+    if (expandedSteps.has(step.kind)) {
+      expandedSteps.delete(step.kind);
       detail.classList.remove("expanded");
     } else {
-      expandedSteps.add(step.stage);
+      expandedSteps.add(step.kind);
       detail.classList.add("expanded");
     }
   });
@@ -571,118 +686,205 @@ function renderExtractionNode(step, event, annotations, ctx = {}) {
   return wrapper;
 }
 
-// Build one row inside a claim list. `state` is one of:
-//   "pending"  — grey hollow dot (no event yet)
-//   "in_flight" — blue pulsing dot (routing fired, verifying)
-//   "neutral"  — grey solid dot (extraction step view)
-//   { displayStatus, cached } — finalized verification result
-function renderClaimRow(claim, state, decision) {
-  let cls, dotState, methodText, suffix = "";
-  if (state === "pending") {
-    cls = "claim-pending"; dotState = "pending"; methodText = "queued";
-  } else if (state === "in_flight") {
-    cls = "claim-in-flight"; dotState = "pulsing"; methodText = "verifying…";
-  } else if (state === "neutral") {
-    cls = "claim-neutral"; dotState = "solid"; methodText = claim.pattern || "";
-  } else {
-    const display = (decision && decision.display_status) || "inconclusive";
-    cls = `claim-${flowEdgeClass(display)}`;
-    dotState = "solid";
-    methodText = (decision && decision.routing_decision || {}).method || "?";
-    if (decision && decision.served_from_cache) {
-      cls += " claim-cached";
-      suffix = "↺ ";
-    }
-  }
-  const row = el("li", {
-    className: `claim-row ${cls}`,
-    title: `${claim.pattern || "?"}.${claim.predicate || "?"}` +
-      (decision ? `\nstatus=${decision.verification_status}` : ""),
-  });
-  const dot = el("span", { className: `claim-dot claim-dot-${dotState}` });
-  row.appendChild(dot);
-  row.appendChild(el("span", { className: "claim-label",
-    textContent: suffix + (claim.predicate || "?") }));
-  row.appendChild(el("span", { className: "claim-method", textContent: methodText }));
-  return row;
-}
+// ---- combined Claims card ----
+//
+// state === "in_flight": extraction landed, verification hasn't.
+//   Claims show as pending dots; flip to in-flight as their
+//   routing_decision events arrive. Card row expansion is disabled
+//   (no decision yet to show).
+// state === "done": both events landed. Claims show final colors.
+//   Each row is independently expandable — expanding one hides
+//   nothing else, but ONLY that row's expanded body shows the
+//   per-claim Decision detail.
+function renderClaimsNode(state, stageMap, ctx) {
+  const extractionEvent = stageMap["assistant_extraction"];
+  const verificationEvent = stageMap["verification"];
+  const valid = (extractionEvent && extractionEvent.data ? extractionEvent.data.valid_facts : []) || [];
+  const decisions = (verificationEvent && verificationEvent.data ? verificationEvent.data.decisions : []) || [];
 
-function renderVerificationNode(step, event, annotations, ctx = {}) {
-  const decisions = (event.data || {}).decisions || [];
-  const wrapper = el("div", { className: "flow-step-wrapper" });
-  const node = el("div", { className: "flow-step flow-step-done flow-step-verification",
-    dataset: { stage: step.stage } });
-  const header = buildStepHeader(
-    `${step.title} · ${decisions.length} claim${decisions.length === 1 ? "" : "s"}`,
-    ctx.duration);
-  node.appendChild(header);
+  // Map decisions by claim key for quick lookup when verification is done.
+  const decisionByKey = {};
+  decisions.forEach((d) => { decisionByKey[claimKey(d.claim || {})] = d; });
 
-  if (decisions.length === 0) {
-    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims to verify" }));
-  } else {
-    const list = el("ul", { className: "claim-list" });
-    decisions.forEach((d) => list.appendChild(renderClaimRow(d.claim || {}, d, d)));
-    node.appendChild(list);
-  }
+  // Set of claim keys that have already routed (used while in-flight).
+  const routedKeys = new Set(ctx.routingEvents.map((e) => claimKey((e.data || {}).claim || {})));
 
-  const detail = el("div", { className: "flow-step-detail" });
-  if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
-  renderStepDetail(detail, step, event, annotations);
-
-  node.addEventListener("click", (e) => {
-    if (e.target.closest(".claim-row")) return;
-    if (expandedSteps.has(step.stage)) {
-      expandedSteps.delete(step.stage);
-      detail.classList.remove("expanded");
-    } else {
-      expandedSteps.add(step.stage);
-      detail.classList.add("expanded");
-    }
-  });
-
-  wrapper.appendChild(node);
-  wrapper.appendChild(detail);
-  return wrapper;
-}
-
-// Verification step rendered while the step is in-flight: pre-populate
-// claim placeholders from the extraction event, mark each as
-// "in flight" once its routing_decision lands. This gives the
-// "claims being verified in parallel, results coming in" experience
-// even though the backend processes them sequentially.
-function renderVerificationProgress(step, extractionEvent, routingEvents, annotations) {
   const wrapper = el("div", { className: "flow-step-wrapper" });
   const node = el("div", {
-    className: "flow-step flow-step-thinking flow-step-verification",
-    dataset: { stage: step.stage },
+    className: "flow-step flow-step-claims" + (state === "in_flight" ? " flow-step-thinking" : " flow-step-done"),
+    dataset: { stage: "claims" },
   });
-  const valid = (extractionEvent.data || {}).valid_facts || [];
-  const routed = new Set(routingEvents.map((e) => claimKey((e.data || {}).claim || {})));
 
-  const header = el("div", { className: "flow-step-header" });
-  header.appendChild(el("span", { className: "flow-step-title", textContent: step.title }));
-  header.appendChild(el("span", { className: "flow-step-duration thinking-dots" }, [
-    document.createTextNode("verifying"),
-    el("span", { className: "thinking-anim" }),
-  ]));
-  node.appendChild(header);
+  // Header: title · N claims, with duration on the right (or
+  // "verifying…" while in-flight).
+  let summary = `${valid.length} claim${valid.length === 1 ? "" : "s"}`;
+  let extraRight = null;
+  if (state === "in_flight") {
+    extraRight = el("span", { className: "flow-step-duration thinking-dots" }, [
+      document.createTextNode("verifying"),
+      el("span", { className: "thinking-anim" }),
+    ]);
+  }
+  node.appendChild(buildStepHeader(`Claims · ${summary}`, ctx.duration, extraRight));
 
   if (valid.length === 0) {
-    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims to verify" }));
+    node.appendChild(el("div", { className: "flow-step-meta",
+      textContent: "no claims extracted from the draft" }));
   } else {
-    const list = el("ul", { className: "claim-list" });
-    valid.forEach((c) => {
-      const state = routed.has(claimKey(c)) ? "in_flight" : "pending";
-      list.appendChild(renderClaimRow(c, state, null));
+    const list = el("ul", { className: "claim-list claim-list-detailed" });
+    valid.forEach((claim) => {
+      const decision = decisionByKey[claimKey(claim)] || null;
+      let rowState;
+      if (decision) rowState = "done";
+      else if (routedKeys.has(claimKey(claim))) rowState = "in_flight";
+      else rowState = "pending";
+      list.appendChild(renderClaimItem(claim, rowState, decision));
     });
     node.appendChild(list);
   }
+
+  // Card-level annotations (substitution warnings, turn-of-claim cache
+  // events that didn't carry a claim). Tucked at the bottom so they
+  // don't dominate the card.
+  if (ctx.annotations.length > 0) {
+    const annoWrap = el("div", { className: "claims-annotations" });
+    const header = el("div", { className: "annotations-header",
+      textContent: `${ctx.annotations.length} pipeline event${ctx.annotations.length === 1 ? "" : "s"}` });
+    annoWrap.appendChild(header);
+    const body = el("div", { className: "claims-annotations-body" });
+    ctx.annotations.forEach((a) => body.appendChild(renderAnnotation(a)));
+    annoWrap.appendChild(body);
+    header.style.cursor = "pointer";
+    header.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      annoWrap.classList.toggle("expanded");
+    });
+    node.appendChild(annoWrap);
+  }
+
   wrapper.appendChild(node);
   return wrapper;
 }
 
+// One claim row inside the Claims card. The COLLAPSED row shows:
+//   [dot]  source-text-or-summary  [pattern badge]  [verifier badge]
+// The EXPANDED detail (only when row.classList contains 'expanded')
+// shows ONLY this claim's Decision payload — slots, routing reason,
+// code-gen / retrieval blocks, correction info, notes.
+function renderClaimItem(claim, state, decision) {
+  const key = claimKey(claim);
+  const isExpandable = state === "done";
+  const row = el("li", {
+    className: `claim-row claim-${claimRowClass(state, decision)}`
+      + (decision && decision.served_from_cache ? " claim-cached" : "")
+      + (isExpandable ? " claim-expandable" : ""),
+  });
+  if (expandedClaims.has(key)) row.classList.add("expanded");
+
+  // ----- collapsed (always-visible) summary line -----
+  const summaryLine = el("div", { className: "claim-summary" });
+  summaryLine.appendChild(el("span", { className: `claim-dot claim-dot-${claimDotState(state)}` }));
+  summaryLine.appendChild(el("span", {
+    className: "claim-text",
+    textContent: claimDisplayText(claim),
+  }));
+  summaryLine.appendChild(el("span", {
+    className: "pattern-badge claim-pattern",
+    textContent: claim.pattern || "?",
+  }));
+  const methodText = state === "pending" ? "queued"
+    : state === "in_flight" ? "verifying…"
+    : ((decision && decision.routing_decision || {}).method || "?");
+  summaryLine.appendChild(el("span", { className: "claim-method", textContent: methodText }));
+  if (decision && decision.served_from_cache) {
+    summaryLine.appendChild(el("span", { className: "cache-badge cache-badge-hit",
+      title: "served from Tier 2 cache", textContent: "↺ cached" }));
+  }
+  if (isExpandable) {
+    summaryLine.appendChild(el("span", { className: "claim-toggle",
+      textContent: row.classList.contains("expanded") ? "▾" : "▸" }));
+  }
+  row.appendChild(summaryLine);
+
+  // ----- expanded body (only this claim's full detail) -----
+  if (isExpandable) {
+    const body = el("div", { className: "claim-detail" });
+    renderClaimDetailBody(body, claim, decision);
+    row.appendChild(body);
+    summaryLine.style.cursor = "pointer";
+    summaryLine.addEventListener("click", () => {
+      const wasExpanded = expandedClaims.has(key);
+      if (wasExpanded) expandedClaims.delete(key);
+      else expandedClaims.add(key);
+      row.classList.toggle("expanded");
+      const tog = summaryLine.querySelector(".claim-toggle");
+      if (tog) tog.textContent = row.classList.contains("expanded") ? "▾" : "▸";
+    });
+  }
+
+  return row;
+}
+
+function claimRowClass(state, decision) {
+  if (state === "pending") return "pending";
+  if (state === "in_flight") return "in-flight";
+  return flowEdgeClass((decision && decision.display_status) || "inconclusive");
+}
+function claimDotState(state) {
+  if (state === "pending") return "pending";
+  if (state === "in_flight") return "pulsing";
+  return "solid";
+}
+
+// Plain-text rendering of a claim. Prefer the source_text the
+// extractor pulled from the message; fall back to a synthesized
+// "subject predicate object" sentence if it's missing.
+function claimDisplayText(claim) {
+  if (claim.source_text && claim.source_text.trim()) return claim.source_text.trim();
+  const slots = claim.slots || {};
+  const subject = slots.subject || slots.holder || slots.entity || "";
+  const object = slots.object || slots.role || slots.value || slots.target || "";
+  const pred = (claim.predicate || "").replace(/_/g, " ");
+  const polarity = claim.polarity === 0 ? "not " : "";
+  const parts = [subject, polarity + pred, object].filter((p) => p && String(p).trim());
+  return parts.length ? parts.join(" ") : "(unrecognized claim)";
+}
+
+function renderClaimDetailBody(container, claim, d) {
+  // Per-claim Decision detail. Mirrors what the old "Verification"
+  // detail block showed for one decision, restricted to this claim.
+  const meta = [];
+  if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
+  if (d.stored_fact_id != null) meta.push(`stored fact id=${d.stored_fact_id}`);
+  if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
+  if (meta.length) container.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
+
+  // Status badges (verification + display).
+  const badges = el("div", { className: "decision-header" }, [
+    el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
+    el("span", { className: `display-status display-${d.display_status || "inconclusive"}`,
+      textContent: d.display_status || d.verification_status }),
+  ]);
+  container.appendChild(badges);
+
+  // Claim shape (slots, polarity).
+  container.appendChild(renderClaimBlock(claim));
+
+  // Routing decision, code-gen, retrieval, correction, notes.
+  if (d.routing_decision) container.appendChild(renderRoutingBlock(d.routing_decision));
+  if (d.code_gen_result) container.appendChild(renderCodeGenBlock(d.code_gen_result));
+  if (d.retrieval_result) container.appendChild(renderRetrievalBlock(d.retrieval_result));
+  if (d.correction) {
+    container.appendChild(el("div", { className: "correction-block",
+      textContent: `correction: ${JSON.stringify(d.correction.original_object)} → ${JSON.stringify(d.correction.corrected_object)}` }));
+  }
+  (d.notes || []).forEach((n) => {
+    container.appendChild(el("div", { className: "verifier-explanation", textContent: n }));
+  });
+}
+
 function renderThinkingNode(step) {
-  const node = el("div", { className: "flow-step flow-step-thinking", dataset: { stage: step.stage } });
+  const node = el("div", { className: "flow-step flow-step-thinking", dataset: { stage: step.kind } });
   node.appendChild(el("div", { className: "flow-step-title", textContent: step.title }));
   const meta = el("div", { className: "flow-step-meta thinking-dots" });
   meta.appendChild(document.createTextNode("thinking"));
@@ -706,14 +908,12 @@ function arrowDown() {
 
 function renderStepDetail(container, step, event, annotations) {
   const data = event.data || {};
-  // Step-specific primary detail.
-  if (step.stage === "chat_model_call") renderChatModelCallDetail(container, data);
-  else if (step.stage === "assistant_extraction") renderExtractionDetail(container, data);
-  else if (step.stage === "verification") renderVerificationDetail(container, data);
-  else if (step.stage === "correction") renderCorrectionDetail(container, data);
-  else if (step.stage === "final") renderFinalDetail(container, data);
+  // Per-step primary detail. The "claims" step has no whole-card
+  // detail — it dispatches per-claim instead.
+  if (step.kind === "chat_model_call") renderChatModelCallDetail(container, data);
+  else if (step.kind === "correction") renderCorrectionDetail(container, data);
+  else if (step.kind === "final") renderFinalDetail(container, data);
 
-  // Annotations below.
   if (annotations.length > 0) {
     const annoHeader = el("div", { className: "annotations-header",
       textContent: `${annotations.length} annotation${annotations.length === 1 ? "" : "s"}` });
@@ -729,22 +929,6 @@ function renderChatModelCallDetail(container, data) {
     tbl.appendChild(el("dd", { textContent: typeof v === "object" ? JSON.stringify(v) : String(v) }));
   }
   container.appendChild(tbl);
-}
-
-function renderExtractionDetail(container, data) {
-  const valid = data.valid_facts || [];
-  const rejected = data.rejected_facts || [];
-  if (valid.length) {
-    container.appendChild(el("h4", { textContent: `${valid.length} valid claim(s)` }));
-    valid.forEach((f) => container.appendChild(renderClaimBlock(f)));
-  }
-  if (rejected.length) {
-    container.appendChild(el("h4", { textContent: `${rejected.length} rejected` }));
-    rejected.forEach((r) => {
-      container.appendChild(el("div", { className: "rejected-claim",
-        textContent: `${r.reason}: ${JSON.stringify(r.fact)}` }));
-    });
-  }
 }
 
 function renderClaimBlock(claim) {
@@ -769,47 +953,6 @@ function renderClaimBlock(claim) {
     wrap.appendChild(el("div", { className: "src", textContent: `"${claim.source_text}"` }));
   }
   return wrap;
-}
-
-function renderVerificationDetail(container, data) {
-  const decisions = data.decisions || [];
-  if (decisions.length === 0) {
-    container.appendChild(el("p", { className: "hint", textContent: "no decisions" }));
-    return;
-  }
-  decisions.forEach((d) => {
-    const node = el("div", { className: "decision" });
-    if (d.served_from_cache) node.classList.add("decision-cached");
-    const header = el("div", { className: "decision-header" }, [
-      el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
-      el("span", { className: `display-status display-${d.display_status || "inconclusive"}`,
-        textContent: d.display_status || d.verification_status }),
-    ]);
-    if (d.served_from_cache) {
-      header.appendChild(el("span", { className: "cache-badge cache-badge-hit",
-        title: "served from Tier 2 cache", textContent: "↺ CACHED" }));
-    }
-    header.appendChild(renderClaimBlock(d.claim));
-    node.appendChild(header);
-
-    const meta = [];
-    if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
-    if (d.stored_fact_id != null) meta.push(`stored fact id=${d.stored_fact_id}`);
-    if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
-    if (meta.length) node.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
-
-    if (d.routing_decision) node.appendChild(renderRoutingBlock(d.routing_decision));
-    if (d.code_gen_result) node.appendChild(renderCodeGenBlock(d.code_gen_result));
-    if (d.retrieval_result) node.appendChild(renderRetrievalBlock(d.retrieval_result));
-    if (d.correction) {
-      node.appendChild(el("div", { className: "correction-block",
-        textContent: `correction: ${JSON.stringify(d.correction.original_object)} → ${JSON.stringify(d.correction.corrected_object)}` }));
-    }
-    (d.notes || []).forEach((n) => {
-      node.appendChild(el("div", { className: "verifier-explanation", textContent: n }));
-    });
-    container.appendChild(node);
-  });
 }
 
 function renderRoutingBlock(rd) {
