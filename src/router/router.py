@@ -74,12 +74,17 @@ class Router:
         retrieval_verifier: RetrievalVerifier | None = None,
         code_gen_verifier: CodeGenerationVerifier | None = None,
         user_id: str = DEFAULT_USER_ID,
+        session_id: str | None = None,
         cache_gate: Any = None,
     ):
         self.store = store
         self.registry = registry
         self.llm = llm
         self.user_id = user_id
+        # v0.7.14: when set, _route_user stamps session-scoped user
+        # assertions with this id (microtheory layer). None preserves
+        # the existing cross-session behavior. Pipeline assigns post-init.
+        self.session_id = session_id
         # If neither a routing_fn nor an llm is provided, model-origin
         # routing fails loudly. User-origin routing doesn't need either.
         if routing_fn is None and llm is not None:
@@ -409,15 +414,10 @@ class Router:
     def _maybe_cache_hit(
         self, claim: dict, source_turn_id: int,
     ) -> Decision | None:
-        """Try the cache via CacheGate. On hit (exact or semantic),
-        build the appropriate Decision. On miss / no gate / not
-        eligible, return None — caller falls through to retrieval.
-
-        Pure delegation to CacheGate.maybe_hit; the gate owns lookup
-        + event emission. The Decision-building logic stays here
-        because Decision shape depends on routing concepts the gate
-        doesn't know about.
-        """
+        """Try the cache via CacheGate. On hit, hand off to
+        _build_cache_hit_decision. Used by _route_retrieval as the
+        defense-in-depth check (the Pipeline-level tiered short-
+        circuit normally catches this first as of v0.7.14)."""
         if self._cache_gate is None:
             return None
         identity_slots = KEY_SLOTS_BY_PATTERN.get(claim.get("pattern", ""), [])
@@ -426,6 +426,16 @@ class Router:
         )
         if hit is None:
             return None
+        return self._build_cache_hit_decision(claim, hit, source_turn_id)
+
+    def _build_cache_hit_decision(
+        self, claim: dict, hit, source_turn_id: int,
+    ) -> Decision:
+        """Build a Decision from a cache hit. Extracted so the
+        Pipeline-level tiered short-circuit (v0.7.14) can call it
+        directly with a hit obtained via maybe_hit(require_eligible=False).
+        Carries cache-as-evidence flow-through + earned-trust-curve
+        confidence."""
         cached = hit.verdict
         key = hit.matched_key or cached.canonical_key
 
@@ -722,6 +732,18 @@ class Router:
         verification_status: str,
     ) -> int:
         slots = claim.get("slots") or {}
+        # v0.7.14: stamp session_id on user assertions whose source
+        # text carries a session marker ("for this conversation",
+        # "let's say", etc.). Cross-session assertions stay session_id
+        # NULL — preserves the existing "I like peanut butter" memory
+        # model. Model-asserted facts always go cross-session for now;
+        # the cache handles their per-session caching separately.
+        from src.session_markers import is_session_scoped
+        session_id = None
+        if (asserted_by == "user"
+            and self.session_id is not None
+            and is_session_scoped(claim.get("source_text"))):
+            session_id = self.session_id
         return self.store.insert_fact(
             Fact(
                 pattern=claim["pattern"],
@@ -736,6 +758,7 @@ class Router:
                 source_turn_id=source_turn_id,
                 source_text=claim.get("source_text"),
                 user_id=self.user_id,
+                session_id=session_id,
             )
         )
 

@@ -1050,6 +1050,27 @@ function renderClaimDetailBody(container, claim, d) {
   if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
   if (meta.length) container.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
 
+  // v0.7.14: tier-provenance badge (microtheory / user_store / cache / fresh).
+  if (d.served_from_tier && d.served_from_tier !== "fresh") {
+    const tierRow = el("div", { className: "decision-trust" });
+    const labels = {
+      microtheory: "↻ this conversation",
+      user_store:  "✦ user store",
+      cache:       "⚙ cache",
+    };
+    const tooltips = {
+      microtheory: "Matched a session-scoped user assertion (microtheory tier)",
+      user_store:  "Matched a cross-session user-asserted fact (user-store tier)",
+      cache:       "Matched a cached world-fact verdict (cache tier)",
+    };
+    tierRow.appendChild(el("span", {
+      className: `trust-badge trust-tier-${d.served_from_tier}`,
+      title: tooltips[d.served_from_tier] || "",
+      textContent: labels[d.served_from_tier] || d.served_from_tier,
+    }));
+    container.appendChild(tierRow);
+  }
+
   // v0.7.13: surface earned-trust signals on cache hits so the
   // "verified Nx" pattern is visible. Pulled from the cache_*
   // fields the router attaches when serving from cache.

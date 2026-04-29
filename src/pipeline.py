@@ -28,7 +28,12 @@ from typing import Any
 
 from src.corrector import Corrector, Intervention
 from src.extractor import ClaimExtractor
-from src.fact_store import DEFAULT_USER_ID, Fact, FactStore
+from src.fact_store import (
+    DEFAULT_SESSION_ID,
+    DEFAULT_USER_ID,
+    Fact,
+    FactStore,
+)
 from src.llm_client import ChatMessage, LLMClient
 from src.pattern_registry import PatternRegistry
 from src.router import Decision, Router, RoutingOutcome
@@ -87,6 +92,7 @@ class Pipeline:
         corrector: Corrector,
         chat_backend: Any | None = None,
         user_id: str = DEFAULT_USER_ID,
+        session_id: str = DEFAULT_SESSION_ID,
         # v0.6 Phase 6 — when set, the scoping classifier runs on every
         # model-origin claim and logs a cache_scoping_decision event.
         # Pure observation: no behavior change, no cache reads, no cache
@@ -110,6 +116,13 @@ class Pipeline:
         self.router = router
         self.corrector = corrector
         self.user_id = user_id
+        # v0.7.14: per-conversation context. Microtheory entries are
+        # session-scoped; cross-session user-asserted facts use NULL.
+        self.session_id = session_id
+        # Propagate to the router so user-side _route_user can stamp
+        # session_id on session-scoped assertions.
+        if hasattr(router, "session_id"):
+            router.session_id = session_id
         # CacheGate consolidates scoping + stability + lookup + write.
         # Pre-refactor these were three separate fields scattered
         # across pipeline + router; now one owner.
@@ -274,26 +287,184 @@ class Pipeline:
         return asst_extraction
 
     def _stage_verify(self, valid_facts, assistant_turn_id):
-        """Stages 5b + 6 + 6b: cache classify, route+verify each
-        claim, opportunistic cache writes."""
-        # Reset per-turn cache state and classify each claim.
+        """v0.7.14 tiered precedence verification.
+
+        For each claim, walk through the precedence tiers cheapest-to-
+        costliest, returning at the first tier that produces a Decision:
+
+          * Tier 1 — microtheory (this conversation's session-scoped
+                     user assertions). Free SQL.
+          * Tier 2 — user store (cross-session user assertions). Free SQL.
+          * Tier 3 — verification cache (recently-confirmed world facts).
+                     Free SQL.
+          * Tier 4 — fresh classify + route + verify. Pays the LLM cost.
+
+        This replaces the prior flow which paid for classify (2 LLMs)
+        + router (1 LLM) + verifier on EVERY claim, only consulting
+        the cache inside _route_retrieval. A microtheory or store hit
+        now skips ~$0.0015 of LLM calls per claim.
+        """
         self._cache_gate.reset_for_turn()
-        for claim in valid_facts:
-            self._cache_gate.classify(claim, turn_id=assistant_turn_id)
-        # Hand the gate to the router so it can short-circuit on hits.
+        # Hand the gate to the router so it can still short-circuit on
+        # cache hits inside _route_retrieval (defense-in-depth + the
+        # router's cache-as-evidence wiring depends on it).
         self.router._cache_gate = self._cache_gate
-        verification_decisions: list[Decision] = [
-            self.router.route(c, origin="model", source_turn_id=assistant_turn_id)
-            for c in valid_facts
-        ]
+
+        verification_decisions: list[Decision] = []
+        for claim in valid_facts:
+            # Tier 1: microtheory.
+            decision = self._tier_microtheory_lookup(claim, assistant_turn_id)
+            tier_used = "microtheory" if decision else None
+            # Tier 2: cross-session user store.
+            if decision is None:
+                decision = self._tier_user_store_lookup(claim, assistant_turn_id)
+                if decision is not None:
+                    tier_used = "user_store"
+            # Tier 3: verification cache (no classify needed).
+            if decision is None:
+                decision = self._tier_cache_lookup(claim, assistant_turn_id)
+                if decision is not None:
+                    tier_used = "cache"
+            # Tier 4: pay the LLM cost — classify, then route + verify.
+            if decision is None:
+                self._cache_gate.classify(claim, turn_id=assistant_turn_id)
+                decision = self.router.route(
+                    claim, origin="model", source_turn_id=assistant_turn_id,
+                )
+                tier_used = "fresh"
+                # Opportunistic cache write.
+                self._cache_gate.maybe_write(
+                    decision, claim, turn_id=assistant_turn_id,
+                )
+
+            decision.served_from_tier = tier_used
+            verification_decisions.append(decision)
+
         self.store.insert_pipeline_event(
             assistant_turn_id, "verification",
             {"decisions": [d.to_dict() for d in verification_decisions]},
         )
-        # Opportunistic cache writes from successful retrievals.
-        for d, claim in zip(verification_decisions, valid_facts):
-            self._cache_gate.maybe_write(d, claim, turn_id=assistant_turn_id)
         return verification_decisions
+
+    # ---- v0.7.14 tier helpers ------------------------------------------
+
+    def _tier_microtheory_lookup(
+        self, claim: dict, turn_id: int,
+    ) -> Decision | None:
+        """Tier 1: this conversation's session-scoped user assertions.
+        Returns a Decision if a session-scoped user fact matches the
+        claim's identity, or None on miss. Logs a tier_lookup event
+        either way so the trace shows the precedence walk."""
+        match = self._find_matching_user_fact(claim, session_id=self.session_id)
+        if match is None:
+            return None
+        return self._fact_to_decision(claim, match, tier="microtheory",
+                                      turn_id=turn_id)
+
+    def _tier_user_store_lookup(
+        self, claim: dict, turn_id: int,
+    ) -> Decision | None:
+        """Tier 2: cross-session user assertions (the original user
+        store). Returns a Decision if a NULL-session-id user fact
+        matches, or None on miss."""
+        match = self._find_matching_user_fact(claim, session_id=None)
+        if match is None:
+            return None
+        return self._fact_to_decision(claim, match, tier="user_store",
+                                      turn_id=turn_id)
+
+    def _tier_cache_lookup(
+        self, claim: dict, turn_id: int,
+    ) -> Decision | None:
+        """Tier 3: verification cache. Looks up regardless of whether
+        scoping/stability classified this claim THIS turn — a hit means
+        the claim was previously classified eligible. On hit, the
+        router builds the cache-hit Decision (with cache-as-evidence
+        flow-through + earned-trust-curve confidence).
+        """
+        from src.router.constants import KEY_SLOTS_BY_PATTERN
+        identity_slots = KEY_SLOTS_BY_PATTERN.get(claim.get("pattern", ""), [])
+        hit = self._cache_gate.maybe_hit(
+            claim, identity_slots, turn_id=turn_id, require_eligible=False,
+        )
+        if hit is None:
+            return None
+        # Reuse the router's cache-hit Decision builder so the same
+        # earned-trust + evidence-flow-through logic runs.
+        return self.router._build_cache_hit_decision(claim, hit, turn_id)
+
+    def _find_matching_user_fact(
+        self, claim: dict, *, session_id,
+    ) -> "Fact | None":
+        """Look up a currently-valid user-asserted fact whose pattern
+        + identity-slot values match the claim. Polarity must match
+        too — opposite-polarity is a contradiction, not a tier hit
+        (those go through fresh verification so the corrector handles
+        them with the existing intervention semantics)."""
+        from src.router.constants import KEY_SLOTS_BY_PATTERN
+        pattern = claim.get("pattern", "")
+        identity_slot_names = KEY_SLOTS_BY_PATTERN.get(pattern, [])
+        slots = claim.get("slots") or {}
+        slot_match = {k: slots[k] for k in identity_slot_names if k in slots}
+        if not slot_match:
+            return None
+        try:
+            matches = self.store.find_currently_valid(
+                pattern,
+                predicate=claim.get("predicate"),
+                slot_match=slot_match,
+                polarity=int(claim.get("polarity", 1)),
+                user_id=self.user_id,
+                session_id=session_id,
+            )
+        except Exception:
+            return None
+        # Restrict to user-asserted only (model-asserted facts have
+        # their own paths via the cache + boost mechanisms).
+        user_asserted = [f for f in matches if f.asserted_by == "user"]
+        return user_asserted[-1] if user_asserted else None
+
+    def _fact_to_decision(
+        self, claim: dict, fact: "Fact", *, tier: str, turn_id: int,
+    ) -> Decision:
+        """Build a Decision from a matched user-asserted fact (tier 1
+        or tier 2 hit). Boosts the matched fact's confidence so
+        repeated hits accumulate trust on the source row."""
+        from src.router.constants import (
+            CONF_STORE_VERIFIED, confidence_with_reinforcement,
+        )
+        # Reinforce the underlying fact and use the boosted value as
+        # the Decision's confidence — the user's reinforcement vision
+        # extended to the tiered path.
+        try:
+            new_conf = self.store.boost_confidence(
+                fact.id, base_for_curve=CONF_STORE_VERIFIED,
+            )
+        except Exception:
+            new_conf = float(fact.confidence)
+        # Telemetry.
+        try:
+            self.store.insert_pipeline_event(turn_id, "tier_lookup", {
+                "tier": tier,
+                "matched_fact_id": fact.id,
+                "matched_session_id": fact.session_id,
+                "claim_pattern": claim.get("pattern"),
+                "claim_predicate": claim.get("predicate"),
+            })
+        except Exception:
+            pass
+        return Decision(
+            claim=claim,
+            outcome=RoutingOutcome.VERIFIED,
+            verification_status="verified",
+            confidence=new_conf,
+            boosted_fact_id=fact.id,
+            matching_fact_id=fact.id,
+            notes=[
+                f"served from {tier} (matched user fact id={fact.id}, "
+                f"reinforcement_count={fact.reinforcement_count + 1})"
+            ],
+        )
 
     def _stage_anomaly_and_failure_events(
         self, verification_decisions, assistant_turn_id,

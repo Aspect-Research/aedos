@@ -89,6 +89,10 @@ PIPELINE_STAGES = {
     # v0.7.12 — end-of-turn: how much $ the cache saved this turn
     # (rough estimate: each hit avoids one judge LLM call).
     "cache_savings",
+    # v0.7.14 — fired on every tier-1/tier-2 short-circuit hit so the
+    # operator can see which precedence layer served each claim and
+    # which underlying fact the lookup matched.
+    "tier_lookup",
     # v0.7.9 — comparative / superlative claim detection in the
     # retrieval verifier. The detector decomposes a comparative claim
     # into {subject, superlative, measure, domain} and the verifier
@@ -122,6 +126,11 @@ def _now_iso() -> str:
 
 
 DEFAULT_USER_ID = "default_user"
+# v0.7.14: per-conversation context identifier. Solo dogfooding stays
+# on a single rolling session; multi-session deployments thread their
+# own. Microtheory entries are session_id-scoped; cross-session
+# user-asserted facts use NULL session_id.
+DEFAULT_SESSION_ID = "default_session"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS facts (
@@ -137,6 +146,12 @@ CREATE TABLE IF NOT EXISTS facts (
     -- verified 8 times reads as more trustworthy than one verified
     -- once at the same path-prior.
     reinforcement_count INTEGER NOT NULL DEFAULT 0,
+    -- v0.7.14: scopes the fact to a specific conversation session.
+    -- NULL = cross-session (default; the existing user-facts behavior).
+    -- Non-NULL = microtheory entry that ONLY applies within the
+    -- named session. Tiered verification consults microtheory rows
+    -- BEFORE cross-session ones so this conversation's overrides win.
+    session_id TEXT,
     asserted_by TEXT NOT NULL,
     verification_status TEXT NOT NULL,
     valid_from TEXT,
@@ -291,6 +306,11 @@ class Fact:
     # v0.7.13: how many times this fact has been re-confirmed
     # (boost_confidence calls). Drives the earned-trust curve.
     reinforcement_count: int = 0
+    # v0.7.14: NULL = cross-session (the existing user-fact behavior).
+    # Non-NULL = microtheory entry that ONLY applies within the named
+    # session. Tier 1 lookup in _stage_verify checks session_id
+    # matches before falling through to cross-session and cache.
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -397,6 +417,15 @@ class FactStore:
                 "ALTER TABLE facts ADD COLUMN reinforcement_count INTEGER "
                 "NOT NULL DEFAULT 0"
             )
+        # v0.7.14: session_id column for microtheory-scoped rows.
+        if "session_id" not in fact_cols:
+            self._conn.execute(
+                "ALTER TABLE facts ADD COLUMN session_id TEXT"
+            )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_facts_session_id "
+            "ON facts(session_id) WHERE session_id IS NOT NULL"
+        )
 
     # ---- facts ------------------------------------------------------------
 
@@ -408,8 +437,8 @@ class FactStore:
             INSERT INTO facts (
                 pattern, predicate, slots, polarity, confidence,
                 asserted_by, verification_status, valid_from, valid_until,
-                source_turn_id, source_text, created_at, user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_turn_id, source_text, created_at, user_id, session_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 fact.pattern,
@@ -425,6 +454,7 @@ class FactStore:
                 fact.source_text,
                 fact.created_at,
                 fact.user_id,
+                fact.session_id,
             ),
         )
         self._conn.commit()
@@ -441,6 +471,7 @@ class FactStore:
         slot_match: dict[str, Any] | None = None,
         polarity: int | None = None,
         user_id: str = DEFAULT_USER_ID,
+        session_id: Any = "_any_session",
     ) -> list[Fact]:
         """Currently-valid facts matching pattern + optional predicate + slot subset.
 
@@ -449,6 +480,16 @@ class FactStore:
 
         ``user_id`` scopes the lookup. Defaults to ``DEFAULT_USER_ID``
         for solo dogfooding; multi-user deployments thread their own.
+
+        ``session_id`` (v0.7.14):
+          * ``"_any_session"`` (sentinel default) — return facts at
+            ANY session scope (cross-session AND any session-scoped
+            row that matches). Preserves pre-v0.7.14 semantics for
+            existing callers.
+          * ``None`` — return only cross-session rows (session_id IS NULL).
+            Tier 2 of the verification short-circuit (user store).
+          * specific string — return only rows scoped to that session.
+            Tier 1 of the verification short-circuit (microtheory).
         """
         clauses = ["pattern = ?", "valid_until IS NULL", "user_id = ?"]
         params: list[Any] = [pattern, user_id]
@@ -458,6 +499,11 @@ class FactStore:
         if polarity is not None:
             clauses.append("polarity = ?")
             params.append(polarity)
+        if session_id is None:
+            clauses.append("session_id IS NULL")
+        elif session_id != "_any_session":
+            clauses.append("session_id = ?")
+            params.append(session_id)
         for k, v in (slot_match or {}).items():
             clauses.append(f"LOWER(json_extract(slots, '$.{_safe_key(k)}')) = LOWER(?)")
             params.append(str(v))
@@ -776,5 +822,10 @@ def _row_to_fact(row: sqlite3.Row) -> Fact:
             if "reinforcement_count" in row.keys()
                and row["reinforcement_count"] is not None
             else 0
+        ),
+        session_id=(
+            row["session_id"]
+            if "session_id" in row.keys()
+            else None
         ),
     )
