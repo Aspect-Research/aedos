@@ -302,7 +302,7 @@ class CacheGate:
         if retrieval_result is not None:
             evidence = retrieval_result.to_dict()
         try:
-            self._cache.write(
+            outcome = self._cache.write(
                 canonical_key=key,
                 pattern=claim.get("pattern", ""),
                 predicate=claim.get("predicate", ""),
@@ -316,7 +316,21 @@ class CacheGate:
                 "verdict": verdict,
                 "stability_class": state.stability.stability_class,
                 "ttl_seconds": state.stability.ttl_seconds,
+                "action": outcome.action,
             })
+            # Surface verdict reversals as their own pipeline event so
+            # the operator can see when a previously-cached verdict got
+            # overwritten with a different one. This is the load-bearing
+            # contradiction signal — same key, opposite verdict, often
+            # caused by source drift or a flaky earlier verification.
+            if outcome.action == "contradicted_and_replaced":
+                self._emit("cache_contradiction_replaced", turn_id, {
+                    "canonical_key": key,
+                    "claim": claim,
+                    "prior_verdict": outcome.prior_verdict,
+                    "new_verdict": verdict,
+                    "stability_class": state.stability.stability_class,
+                })
         except Exception as exc:  # noqa: BLE001
             self._emit("cache_write", turn_id, {
                 "canonical_key": key,

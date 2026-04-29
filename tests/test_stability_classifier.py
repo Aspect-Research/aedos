@@ -47,7 +47,9 @@ def test_returns_decade_stable_with_correct_ttl():
     d = classify_stability(_claim(), llm)
     assert d.stability_class == "decade_stable"
     assert d.ttl_seconds == STABILITY_TTL_SECONDS["decade_stable"]
-    assert d.ttl_seconds == 10 * 365 * 24 * 3600
+    # v0.7.8 — tightened from 10y → 1y so a multi-year-old verdict
+    # never serves a fresh fact-verification request.
+    assert d.ttl_seconds == 365 * 24 * 3600
 
 
 def test_returns_immutable_with_none_ttl():
@@ -169,7 +171,8 @@ def test_decision_to_dict_shape():
         "stability_class": "years_stable",
         "reason": "r",
         "confidence": 0.9,
-        "ttl_seconds": 365 * 24 * 3600,
+        # v0.7.8 — tightened from 1y → 90 days.
+        "ttl_seconds": 90 * 24 * 3600,
     }
 
 
@@ -272,7 +275,8 @@ def test_stability_runs_only_on_world_fact_claims(tmp_path):
     assert len(scope_events) == 2
     assert len(stab_events) == 1
     assert stab_events[0]["data"]["decision"]["stability_class"] == "decade_stable"
-    assert stab_events[0]["data"]["decision"]["ttl_seconds"] == 10 * 365 * 24 * 3600
+    # v0.7.8 — decade_stable tightened from 10y → 1y.
+    assert stab_events[0]["data"]["decision"]["ttl_seconds"] == 365 * 24 * 3600
 
 
 def test_stability_classifier_failure_does_not_break_pipeline(tmp_path):

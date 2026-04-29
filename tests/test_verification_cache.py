@@ -748,3 +748,178 @@ def test_legacy_db_migration_adds_verification_cache(tmp_path):
     cols = store._conn.execute("PRAGMA table_info(verification_cache)").fetchall()
     assert len(cols) > 0
     store.close()
+
+
+# ---- v0.7.8: WriteOutcome + COALESCE cached_at + prune + invalidate ----
+
+
+def test_write_returns_inserted_outcome_on_first_write(tmp_path):
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    outcome = cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="decade_stable",
+        ttl_seconds=365 * 24 * 3600,
+    )
+    assert outcome.action == "inserted"
+    assert outcome.prior_verdict is None
+    store.close()
+
+
+def test_write_returns_refreshed_when_verdict_unchanged(tmp_path):
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    outcome = cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    assert outcome.action == "refreshed"
+    assert outcome.prior_verdict == "verified"
+    store.close()
+
+
+def test_write_returns_contradicted_when_verdict_flips(tmp_path):
+    """A new verdict that disagrees with the cached one is the load-
+    bearing signal — caller turns this into a
+    cache_contradiction_replaced event."""
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    outcome = cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="contradicted", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    assert outcome.action == "contradicted_and_replaced"
+    assert outcome.prior_verdict == "verified"
+    # And the row now reflects the new verdict.
+    hit = cache.lookup("k1")
+    assert hit.verdict == "contradicted"
+    store.close()
+
+
+def test_cached_at_preserved_across_refresh(tmp_path):
+    """COALESCE on UPSERT means the original first-cache timestamp
+    survives subsequent refreshes — useful for "how long has this
+    fact been holding?" telemetry."""
+    import time
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    original_cached_at = cache.lookup("k1").cached_at
+    time.sleep(0.01)
+    cache.write(
+        canonical_key="k1", pattern="x", predicate="y",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    refreshed_cached_at = cache.lookup("k1").cached_at
+    assert refreshed_cached_at == original_cached_at
+    store.close()
+
+
+def test_prune_expired_removes_old_rows(tmp_path):
+    """prune_expired deletes rows whose expires_at is more than
+    ``grace_seconds`` in the past. Immutable rows (NULL expires_at)
+    are never pruned."""
+    from datetime import datetime, timedelta, timezone
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    cache.write(
+        canonical_key="immutable_key", pattern="x", predicate="y",
+        verdict="verified", stability_class="immutable",
+        ttl_seconds=None,
+    )
+    cache.write(
+        canonical_key="alive_key", pattern="x", predicate="y",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    # Force an old expires_at on a third row.
+    cache.write(
+        canonical_key="dead_key", pattern="x", predicate="y",
+        verdict="verified", stability_class="days_stable",
+        ttl_seconds=3600,
+    )
+    long_ago = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+    store._conn.execute(
+        "UPDATE verification_cache SET expires_at = ? WHERE canonical_key = ?",
+        (long_ago, "dead_key"),
+    )
+    store._conn.commit()
+    n = cache.prune_expired(grace_seconds=30 * 24 * 3600)
+    assert n == 1
+    assert cache.lookup("immutable_key") is not None
+    assert cache.lookup("alive_key") is not None
+    # dead_key gone
+    assert cache.lookup("dead_key") is None
+    store.close()
+
+
+def test_invalidate_by_slot_removes_matching_entries(tmp_path):
+    """invalidate_by_slot deletes every cache row whose canonical_key
+    references the slot=value pair (case-folded match)."""
+    from src.cache.verification_cache import canonicalize_claim_key
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+
+    def make(claim):
+        key = canonicalize_claim_key(claim)
+        cache.write(
+            canonical_key=key, pattern=claim["pattern"], predicate=claim["predicate"],
+            verdict="verified", stability_class="years_stable",
+            ttl_seconds=90 * 24 * 3600,
+        )
+        return key
+
+    a = make({"pattern": "categorical", "predicate": "is_a",
+              "slots": {"entity": "Soviet Union", "category": "communist superpower"},
+              "polarity": 1})
+    b = make({"pattern": "spatial_temporal", "predicate": "located_in",
+              "slots": {"entity": "Soviet Union", "location": "Eurasia"},
+              "polarity": 1})
+    c = make({"pattern": "categorical", "predicate": "is_a",
+              "slots": {"entity": "United States", "category": "country"},
+              "polarity": 1})
+
+    n = cache.invalidate_by_slot("entity", "Soviet Union")
+    assert n == 2
+    assert cache.lookup(a) is None
+    assert cache.lookup(b) is None
+    assert cache.lookup(c) is not None  # different entity untouched
+    store.close()
+
+
+def test_invalidate_by_slot_case_insensitive(tmp_path):
+    from src.cache.verification_cache import canonicalize_claim_key
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    key = canonicalize_claim_key({
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Soviet Union", "category": "x"},
+        "polarity": 1,
+    })
+    cache.write(
+        canonical_key=key, pattern="categorical", predicate="is_a",
+        verdict="verified", stability_class="years_stable",
+        ttl_seconds=90 * 24 * 3600,
+    )
+    n = cache.invalidate_by_slot("entity", "soviet union")
+    assert n == 1
+    n = cache.invalidate_by_slot("entity", "SOVIET   UNION")  # whitespace + case
+    assert n == 0  # already gone
+    store.close()

@@ -73,6 +73,14 @@ PIPELINE_STAGES = {
     "cache_stability_decision",     # per claim: stability_class + TTL + reason
     "cache_lookup",                 # per claim: hit/miss + cached_key + age
     "cache_write",                  # per claim: insert/update + canonical_key
+    # v0.7.8 — fired when a cache write replaces a prior verdict with a
+    # different one (e.g. retrieval first said SUPPORTED, later said
+    # CONTRADICTED). Surfaces source drift / verification flakiness
+    # without burying it inside the regular cache_write event.
+    "cache_contradiction_replaced",
+    # v0.7.8 — fired once at app startup with the prune_expired result
+    # (number of dead rows reclaimed).
+    "cache_pruned",
     # v0.6 — end-of-turn cost aggregate. One per turn. Sum of all
     # LLM calls (extractor + router + code-writer + judge + corrector +
     # any classifiers) into total_usd / by_model breakdown.

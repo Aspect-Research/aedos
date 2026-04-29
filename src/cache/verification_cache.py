@@ -67,6 +67,19 @@ class CachedVerdict:
         }
 
 
+@dataclass
+class WriteOutcome:
+    """Returned from VerificationCache.write so the caller can react
+    to a verdict reversal. Action values:
+      * ``inserted``                  — new entry, no prior verdict
+      * ``refreshed``                 — same verdict as before; TTL bumped
+      * ``contradicted_and_replaced`` — new verdict differs from prior
+      * ``skipped_volatile``          — ttl_seconds == 0 (no write)
+    """
+    action: str
+    prior_verdict: str | None
+
+
 # Predicate-prefix stems we strip during canonicalization so semantically-
 # equivalent predicates collide on the same cache key. Order matters
 # only in length — we strip longest match first so "were_" beats "we_"
@@ -268,8 +281,15 @@ class VerificationCache:
         stability_class: str,
         ttl_seconds: int | None,
         evidence: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> "WriteOutcome":
         """INSERT a new entry, or UPDATE if the key already exists.
+
+        Returns a WriteOutcome describing whether the write was an
+        insert / refresh-of-same-verdict / contradiction-overwrite. A
+        contradiction overwrite (new verdict differs from the existing
+        one) is the load-bearing signal — caller logs it as a
+        ``cache_contradiction_replaced`` pipeline event so the operator
+        can see a verdict reversal.
 
         ``ttl_seconds`` semantics:
           * None  → no expiry (immutable)
@@ -277,11 +297,13 @@ class VerificationCache:
                     we treat as instant-expiry — equivalent to never
                     cached, lookup will miss on the next call)
           * > 0   → expires_at = now + ttl_seconds
+
+        On UPDATE, ``cached_at`` is preserved via COALESCE so the
+        original first-cache time stays intact through later refreshes
+        — useful for "how long has this fact been holding?" telemetry.
         """
         if ttl_seconds == 0:
-            # The caller was supposed to gate on this; tolerate but
-            # don't actually persist anything that's already expired.
-            return
+            return WriteOutcome(action="skipped_volatile", prior_verdict=None)
 
         now = datetime.now(timezone.utc)
         cached_at = now.isoformat()
@@ -293,6 +315,13 @@ class VerificationCache:
 
         evidence_json = json.dumps(evidence, default=str) if evidence else None
 
+        # Look up the existing verdict (if any) for contradiction detection.
+        prior_row = self.store._conn.execute(
+            "SELECT verdict FROM verification_cache WHERE canonical_key = ?",
+            (canonical_key,),
+        ).fetchone()
+        prior_verdict = prior_row["verdict"] if prior_row else None
+
         self.store._conn.execute(
             """
             INSERT INTO verification_cache (
@@ -303,13 +332,70 @@ class VerificationCache:
                 verdict = excluded.verdict,
                 evidence = excluded.evidence,
                 stability_class = excluded.stability_class,
-                cached_at = excluded.cached_at,
+                cached_at = COALESCE(verification_cache.cached_at, excluded.cached_at),
                 expires_at = excluded.expires_at
             """,
             (canonical_key, pattern, predicate, verdict, evidence_json,
              stability_class, cached_at, expires_at, _now_iso()),
         )
         self.store._conn.commit()
+
+        if prior_verdict is None:
+            return WriteOutcome(action="inserted", prior_verdict=None)
+        if prior_verdict == verdict:
+            return WriteOutcome(action="refreshed", prior_verdict=prior_verdict)
+        return WriteOutcome(
+            action="contradicted_and_replaced",
+            prior_verdict=prior_verdict,
+        )
+
+    def prune_expired(self, grace_seconds: int = 30 * 24 * 3600) -> int:
+        """Delete cache rows whose ``expires_at`` is older than
+        ``now - grace_seconds``. Returns the number of rows deleted.
+
+        Called from app startup so the table doesn't grow monotonically
+        with stale entries. The grace period (default 30 days past
+        expiry) keeps recently-expired entries around for analytics +
+        in case they get refreshed by another retrieval that picks up
+        their canonical key. Immutable entries (``expires_at IS NULL``)
+        are never pruned.
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=grace_seconds)
+        ).isoformat()
+        cur = self.store._conn.execute(
+            "DELETE FROM verification_cache "
+            "WHERE expires_at IS NOT NULL AND expires_at < ?",
+            (cutoff,),
+        )
+        self.store._conn.commit()
+        return cur.rowcount or 0
+
+    def invalidate_by_slot(self, slot_name: str, slot_value: str) -> int:
+        """Delete every cache row whose canonical_key references the
+        given slot=value pair (case-folded, whitespace-collapsed to
+        match the canonicalization rules).
+
+        Use case: you discover a source is wrong about an entity, or
+        an entity's status materially changed (X dissolved, Y
+        renamed). Returns the number of rows deleted.
+        """
+        if not slot_name or not slot_value:
+            return 0
+        normalized = " ".join(str(slot_value).split()).lower()
+        # canonical_key contains the substring "{slot_name}={normalized}"
+        # bracketed by '|' (start of slots block) or '&' (between
+        # slots) or end-of-string. Use LIKE patterns matching both
+        # bracketing forms.
+        needle_a = f"|{slot_name}={normalized}"
+        needle_b = f"&{slot_name}={normalized}"
+        cur = self.store._conn.execute(
+            "DELETE FROM verification_cache "
+            "WHERE canonical_key LIKE ? OR canonical_key LIKE ?",
+            (f"%{needle_a}%", f"%{needle_b}%"),
+        )
+        self.store._conn.commit()
+        return cur.rowcount or 0
 
     def semantic_lookup(
         self, claim: dict, identity_slot_names: list[str],
