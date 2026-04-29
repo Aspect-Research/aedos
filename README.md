@@ -215,8 +215,6 @@ than just YAML.
 | `AEDOS_EXTRACTOR_MODEL` | `claude-opus-4-7` | Model for the claim extractor |
 | `AEDOS_CHAT_MODEL` | `claude-opus-4-7` | Model that generates assistant drafts |
 | `AEDOS_CORRECTOR_MODEL` | `claude-opus-4-7` | Model for both corrector rewrites and the retrieval judge. Haiku 4.5 is a good cost-saver here |
-| `TAVILY_API_KEY` | (none) | If set, retrieval uses Tavily — usually higher-quality results than the DDG fallback |
-| `SERPAPI_KEY` | (none) | If set and Tavily isn't, retrieval uses SerpAPI |
 | `AEDOS_RETRIEVAL_CACHE_TTL_HOURS` | `24` | TTL for the SQLite-backed retrieval cache. Set to `0` to disable caching |
 
 When neither `TAVILY_API_KEY` nor `SERPAPI_KEY` is set, retrieval scrapes

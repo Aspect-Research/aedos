@@ -29,13 +29,6 @@ def test_haiku_pricing():
     assert c.total_usd == pytest.approx(6.00)
 
 
-def test_glm_free_tier():
-    c = cost_for_call("zai-org/GLM-5.1-FP8", input_tokens=10_000,
-                      output_tokens=10_000)
-    assert c.total_usd == 0.0
-    assert c.pricing_known
-
-
 def test_versioned_model_prefix_match():
     """Versioned IDs (claude-opus-4-7-20260101) should hit the same
     pricing tier as the base model."""

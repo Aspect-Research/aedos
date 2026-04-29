@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 import httpx
-from bs4 import BeautifulSoup
 
 from src.fact_store import FactStore
 from src.llm_client import LLMClient
@@ -36,20 +35,6 @@ from src.verifiers.comparative import (
 from src.verifiers.types import VerificationOutcome, VerificationResult
 
 
-# DDG's HTML endpoint is sensitive to User-Agent fingerprinting and
-# often returns 0 results on the first request. Try a couple of UAs in
-# sequence on empty result before giving up. Order: realistic-Chrome
-# (current), realistic-Firefox (fallback). The "Aedos research
-# prototype" label was getting filtered.
-_USER_AGENTS = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) "
-    "Gecko/20100101 Firefox/121.0",
-)
-_DDG_URL = "https://html.duckduckgo.com/html/"
-_TAVILY_URL = "https://api.tavily.com/search"
-_SERPAPI_URL = "https://serpapi.com/search.json"
 _REQUEST_TIMEOUT = 10.0
 _TOP_N = 3
 _MIN_RESULTS_TO_USE = 2  # spec: "If a query returns ≥ 2 results, use those"
@@ -160,124 +145,30 @@ class RetrievalResult:
         }
 
 
-# ---- search providers (unchanged from v0.2) -------------------------
-
-
-def _ddg_attempt(query: str, user_agent: str, top_n: int) -> list[Snippet]:
-    """Single DDG request with a specific User-Agent."""
-    resp = httpx.post(
-        _DDG_URL,
-        data={"q": query},
-        headers={"User-Agent": user_agent},
-        timeout=_REQUEST_TIMEOUT,
-        follow_redirects=True,
-    )
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    out: list[Snippet] = []
-    for result in soup.select("div.result, div.web-result")[: top_n * 3]:
-        title_el = result.select_one("a.result__a, h2 a")
-        snippet_el = result.select_one(".result__snippet, .result__body")
-        if not title_el or not snippet_el:
-            continue
-        title = title_el.get_text(strip=True)
-        snippet_text = snippet_el.get_text(" ", strip=True)
-        url = title_el.get("href", "")
-        if not (title and snippet_text):
-            continue
-        out.append(Snippet(title=title, snippet=snippet_text, url=url))
-        if len(out) >= top_n:
-            break
-    return out
-
-
-def search_duckduckgo(query: str, *, top_n: int = _TOP_N) -> list[Snippet]:
-    """Try each User-Agent in turn until one returns results.
-
-    DDG's HTML endpoint commonly returns 0 results due to bot
-    fingerprinting (the dogfood corpus turn 9 'denver_elevation' hit
-    this — all queries returned empty for an answer that's literally
-    on every Denver Wikipedia page). Rotating UA usually unblocks it.
-
-    Returns the first attempt's results that are non-empty. If every
-    UA returns 0, returns []. Errors propagate from the first attempt
-    (we don't retry on HTTP error — that's a different failure class)."""
-    for ua in _USER_AGENTS:
-        results = _ddg_attempt(query, ua, top_n)
-        if results:
-            return results
-    return []
-
-
-def search_tavily(query: str, api_key: str, *, top_n: int = _TOP_N) -> list[Snippet]:
-    resp = httpx.post(
-        _TAVILY_URL,
-        json={
-            "api_key": api_key,
-            "query": query,
-            "max_results": top_n,
-            "search_depth": "basic",
-        },
-        timeout=_REQUEST_TIMEOUT,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    return [
-        Snippet(title=str(r.get("title", "")), snippet=str(r.get("content", "")),
-                url=str(r.get("url", "")))
-        for r in payload.get("results", [])[:top_n]
-    ]
-
-
-def search_serpapi(query: str, api_key: str, *, top_n: int = _TOP_N) -> list[Snippet]:
-    resp = httpx.get(
-        _SERPAPI_URL,
-        params={"q": query, "api_key": api_key, "num": top_n},
-        timeout=_REQUEST_TIMEOUT,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    return [
-        Snippet(title=str(r.get("title", "")), snippet=str(r.get("snippet", "")),
-                url=str(r.get("link", "")))
-        for r in payload.get("organic_results", [])[:top_n]
-    ]
+# ---- search providers (Wikipedia-only, post-v0.7.15) -----------------
 
 
 def default_search(query: str) -> list[Snippet]:
-    """Provider chain, in priority order:
+    """Wikipedia via the MediaWiki API. Free, no key, no meaningful
+    rate limit, and the highest-quality factual source for the bulk
+    of AEDOS's queries (biographical / historical / definitional).
 
-      1. Wikipedia — pure-Python lookup against the MediaWiki API.
-         Free, no key, no meaningful rate limit, and the highest-
-         quality factual source for the bulk of AEDOS's queries
-         (biographical / historical / definitional). Returns when
-         it has results; falls through silently when it doesn't or
-         when the request errors.
-      2. Tavily — paid search API; used when TAVILY_API_KEY is set.
-      3. SerpAPI — paid search API; used when SERPAPI_KEY is set.
-      4. DuckDuckGo HTML scrape — free fallback; brittle (DDG
-         frequently returns 0 results from bot fingerprinting).
+    Errors return []. Empty results return []. The verifier's
+    multi-attempt query strategy then walks to the next template,
+    and the comparative-claim path (v0.7.9) prepends ranking-page
+    queries before the standard ones for superlative claims.
 
-    The Wikipedia-first ordering eliminates most retrieval failures
-    on the corpus we actually care about while staying cost-free.
-    Pure DDG (the prior default) was getting 0 results on most queries
-    because the HTML endpoint blocks repeat scrapers.
+    History: pre-v0.7.15 there were three additional providers
+    (Tavily, SerpAPI, DuckDuckGo) as paid + scraped fallbacks. They
+    were removed because Wikipedia covers the corpus AEDOS targets,
+    the paid providers added a key-management burden, and the DDG
+    scrape was unreliable enough to be net-negative.
     """
-    # Wikipedia first — only providers below it pay $ or hit rate
-    # walls.
     try:
         from src.verifiers.scrapers import search_wikipedia
-        wiki = search_wikipedia(query)
-        if wiki:
-            return wiki
+        return search_wikipedia(query) or []
     except Exception:
-        pass  # fall through to legacy providers
-
-    if (key := os.getenv("TAVILY_API_KEY")):
-        return search_tavily(query, key)
-    if (key := os.getenv("SERPAPI_KEY")):
-        return search_serpapi(query, key)
-    return search_duckduckgo(query)
+        return []
 
 
 # ---- judge — current vs historical ----------------------------------

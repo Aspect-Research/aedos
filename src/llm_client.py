@@ -39,16 +39,15 @@ DEFAULT_MODEL = "claude-opus-4-7"
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
 
 # Models the operator can pick from in the chat UI. The selected model
-# drives every Anthropic-backed call this client makes (chat, extraction,
-# rewrite). GLM is here for completeness so the UI can list it; the
-# Pipeline routes the chat call to ``ModalGLMBackend`` when GLM is
-# selected and keeps internal calls on the prior Anthropic model
-# (GLM doesn't support tool use, so extraction etc. can't run on it).
+# drives every Anthropic-backed call (chat, extraction, rewrite).
+# Post-v0.7.15: Anthropic-only — the GLM-5.1 entry was removed because
+# GLM doesn't support tool use (it could only ever drive the chat call,
+# not any of the internal calls), so the dual-backend abstraction was
+# carrying its weight in cruft, not capability.
 ALLOWED_MODELS: tuple[str, ...] = (
     "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
-    "glm-5.1",
 )
 
 _log = logging.getLogger(__name__)
@@ -102,14 +101,8 @@ class LLMClient:
         for the duration of the block. Restores the previous values on
         exit. Pass ``None`` for a no-op (preserves current model state).
 
-        GLM is a no-op on this client because GLM is dispatched at the
-        Pipeline level (Modal chat backend) and doesn't run any
-        Anthropic-side calls. Selecting GLM in the UI keeps the
-        internal Anthropic-side calls on whatever model was previously
-        active.
-
         Single-threaded use only — restoration is not thread-safe."""
-        if model is None or model == "glm-5.1":
+        if model is None:
             yield
             return
         if model not in ALLOWED_MODELS:
@@ -149,9 +142,11 @@ class LLMClient:
         self, model: str, input_tokens: int, output_tokens: int,
         purpose: str | None = None, duration_ms: float | None = None,
     ) -> None:
-        """Public hook for non-Anthropic chat backends (e.g. ModalGLMBackend)
-        to feed their token usage + purpose into the per-turn cost
-        ledger. Best-effort — never raises."""
+        """Public hook for non-Anthropic chat backends to feed their
+        token usage + purpose into the per-turn cost ledger. Currently
+        unused (post-v0.7.15 the only chat backend is Anthropic, which
+        records cost natively); kept as a stable extension point for
+        future backends. Best-effort — never raises."""
         try:
             self._recorded_calls.append(
                 cost_for_call(model, int(input_tokens), int(output_tokens),

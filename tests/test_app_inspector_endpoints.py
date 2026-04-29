@@ -223,27 +223,18 @@ def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
 
 
 def test_models_endpoint_returns_full_list(client_with_seed_data):
-    """/api/models drives the chat UI dropdown. Returns the canonical
-    id list, the server's default, and an availability flag per model
-    (so GLM can be greyed out when MODAL_API_KEY is missing)."""
+    """/api/models drives the chat UI dropdown. v0.7.15: Anthropic-only
+    after the GLM/Modal removal."""
     r = client_with_seed_data.get("/api/models")
     assert r.status_code == 200
     body = r.json()
     ids = [m["id"] for m in body["models"]]
     assert ids == [
-        "claude-opus-4-7", "claude-sonnet-4-6",
-        "claude-haiku-4-5", "glm-5.1",
+        "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5",
     ]
-    # Every entry has a label + availability bool.
+    # Every entry has a label + availability bool; all available.
     for m in body["models"]:
         assert isinstance(m["label"], str) and m["label"]
-        assert isinstance(m["available"], bool)
-    # GLM unavailable in this fixture (no MODAL_API_KEY).
-    glm = next(m for m in body["models"] if m["id"] == "glm-5.1")
-    assert glm["available"] is False
-    # Anthropic models always available (the LLMClient is constructed).
-    for cid in ("claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"):
-        m = next(x for x in body["models"] if x["id"] == cid)
         assert m["available"] is True
     # Default is some real model.
     assert body["default"] in ids

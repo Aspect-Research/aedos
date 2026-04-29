@@ -108,18 +108,6 @@ def test_with_active_model_none_is_no_op(monkeypatch):
         assert c.corrector_model == "claude-opus-4-7"
 
 
-def test_with_active_model_glm_is_no_op_on_anthropic_side(monkeypatch):
-    """GLM is dispatched at the Pipeline level (Modal chat backend);
-    on the Anthropic-backed LLMClient it must be a no-op so internal
-    calls (extraction etc.) keep their prior model. GLM doesn't do
-    tool use so it can't run those anyway."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    c = LLMClient(model="claude-opus-4-7", corrector_model="claude-opus-4-7")
-    with c.with_active_model("glm-5.1"):
-        assert c.model == "claude-opus-4-7"
-        assert c.corrector_model == "claude-opus-4-7"
-
-
 def test_with_active_model_rejects_unknown(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     c = LLMClient()

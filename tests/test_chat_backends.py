@@ -10,7 +10,6 @@ from src.fact_store import FactStore
 from src.llm_client import ChatMessage
 from src.llm_clients import build_chat_backend
 from src.llm_clients.anthropic_chat import AnthropicChatBackend
-from src.llm_clients.modal_glm import ModalGLMBackend
 
 
 @dataclass
@@ -77,41 +76,15 @@ def test_anthropic_backend_logs_event_on_failure(tmp_path):
     assert "RuntimeError" in events[0]["data"]["error"]
 
 
-def test_factory_anthropic_default(monkeypatch):
-    monkeypatch.delenv("AEDOS_CHAT_MODEL_PROVIDER", raising=False)
+def test_factory_returns_anthropic_backend():
+    """v0.7.15: Anthropic is the only chat backend; the factory just
+    wraps the LLMClient. The Modal/GLM provider was removed alongside
+    the Modal backend itself."""
     fake = FakeLLM()
     backend = build_chat_backend(llm=fake)
     assert isinstance(backend, AnthropicChatBackend)
 
 
-def test_factory_explicit_anthropic(monkeypatch):
-    monkeypatch.setenv("AEDOS_CHAT_MODEL_PROVIDER", "anthropic")
-    fake = FakeLLM()
-    backend = build_chat_backend(llm=fake)
-    assert isinstance(backend, AnthropicChatBackend)
-
-
-def test_factory_modal(monkeypatch):
-    monkeypatch.setenv("AEDOS_CHAT_MODEL_PROVIDER", "modal")
-    monkeypatch.setenv("MODAL_API_KEY", "test-key")
-    backend = build_chat_backend(llm=None)
-    assert isinstance(backend, ModalGLMBackend)
-
-
-def test_factory_unknown_provider_raises(monkeypatch):
-    monkeypatch.setenv("AEDOS_CHAT_MODEL_PROVIDER", "openai")
-    with pytest.raises(RuntimeError, match="AEDOS_CHAT_MODEL_PROVIDER"):
-        build_chat_backend(llm=FakeLLM())
-
-
-def test_factory_anthropic_requires_llm(monkeypatch):
-    monkeypatch.setenv("AEDOS_CHAT_MODEL_PROVIDER", "anthropic")
+def test_factory_requires_llm():
     with pytest.raises(RuntimeError, match="AnthropicChatBackend requires"):
-        build_chat_backend(llm=None)
-
-
-def test_factory_modal_missing_key_raises(monkeypatch):
-    monkeypatch.setenv("AEDOS_CHAT_MODEL_PROVIDER", "modal")
-    monkeypatch.delenv("MODAL_API_KEY", raising=False)
-    with pytest.raises(RuntimeError, match="MODAL_API_KEY not set"):
         build_chat_backend(llm=None)
