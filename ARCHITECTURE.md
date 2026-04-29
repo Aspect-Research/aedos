@@ -2,539 +2,272 @@
 
 ## Hypothesis
 
-Aedos tests a specific claim: **hallucination is predominantly a failure of
-verification, not of knowledge.** If you extract each factual claim a model
-produces and route it to a type-matched verifier, you should be able to
-suppress hallucination at the claim level without retraining the model.
+Aedos tests one claim: **hallucination is predominantly a failure of
+verification, not of knowledge.** If you extract every factual claim a
+model produces and route it to a type-matched verifier, you should be
+able to suppress hallucination at the claim level without retraining
+the model.
 
 The system is built to make that hypothesis easy to inspect: every
-intermediate step is logged, every decision is traceable, and the vocabulary
-of predicates is a small, human-editable file.
+intermediate step is logged, every decision is traceable, and the
+vocabulary of patterns is a small human-editable file.
+
+For the v0.1→v0.6 evolution see [`CHANGELOG.md`](CHANGELOG.md). This
+document describes the system as it stands.
 
 ## Data flow
 
 ```
-                                ┌──────────────────┐
-   user message  ──────────────▶│  fact_store:     │
-         │                      │    turns table   │
-         ▼                      └──────────────────┘
-  ┌────────────┐   claims
-  │ extractor  │ ──────────┐
-  │ (user)     │           │
-  └────────────┘           ▼
-                     ┌──────────┐    ┌─────────────┐
-                     │  router  │───▶│ fact_store: │
-                     └──────────┘    │ facts table │
-                           │         └─────────────┘
-                           │                │
-                           │   pipeline_events (every stage)
-                           ▼                │
-                    ┌──────────────┐        │
-                    │ llm_client   │◀───────┘
-                    │ chat(sys+h)  │  system prompt includes all
-                    └──────┬───────┘  currently-valid user facts
-                           │
-                           ▼ draft
-                    ┌────────────┐
-                    │ extractor  │
-                    │ (model)    │
-                    └────────────┘
-                           │ claims
-                           ▼
-                    ┌──────────┐    python_verifier
-                    │  router  │───▶ store_lookup
-                    │ (model)  │    retrieval_stub
-                    └──────────┘    unverifiable_flag
-                           │
-                   ┌───────┴──────┐
-                   ▼              ▼
-            no contradictions   contradictions
-                   │              │
-                   │              ▼
-                   │       ┌────────────┐
-                   │       │ corrector  │──▶ rewrites draft
-                   │       └────────────┘
-                   ▼              ▼
-            final response to user (+ trace to UI)
+user message
+    │
+    ▼
+extract user claims ──► route ──► fact_store (user-asserted)
+    │
+    ▼
+build chat context (history + user-asserted facts)
+    │
+    ▼
+chat backend (Anthropic / Modal/GLM) → assistant draft
+    │
+    ▼
+extract assistant claims
+    │
+    ▼
+CacheGate.classify (per claim: scope + stability + cache eligibility)
+    │
+    ▼
+router.route (per claim) ──► verifier (code-gen / retrieval / store)
+    │                              │
+    │                              ▼
+    │                        Decision (verified/contradicted/...)
+    ▼
+CacheGate.maybe_write (cacheable retrieval verdicts)
+    │
+    ▼
+corrector (replace / hedge / soften based on Decisions)
+    │
+    ▼
+final response (+ all events written to pipeline_events)
 ```
 
-## Component responsibilities
+## Component map
 
-| Component | Responsibility | Inputs | Outputs |
-|---|---|---|---|
-| `fact_store` | SQLite. Owns all persistent state: facts, turns, pipeline_events. Validates rows on insert. Handles contradiction lookup and temporal close/reopen. | — | — |
-| `pattern_registry` | Loads and validates `patterns.yaml` (8 patterns; predicates free-form within). Exposes lookups and a prompt-formatted dump. | `patterns.yaml` | `Pattern` objects |
-| `extractor` | Single LLM call per message, forced tool use. Validates each returned claim against the registry; drops malformed; flags substitutions (source_text-not-in-input, value-not-in-source-text). | text, role | `ExtractionResult` |
-| `llm_router` | (v0.5) Per-claim LLM routing classifier. Returns one of `python`, `python_with_canonical_constants`, `retrieval`, `user_authoritative`, `unverifiable`. | claim | `RoutingDecision` |
-| `router` | Dispatches claims to the verifier the LLM router picked. Writes facts to the store. Cache-eligible claims hit the v0.6 cache before retrieval. | claim, origin | `Decision` |
-| `verifiers/code_generation` | (v0.5) prompt builder → code writer → sandbox → comparator. Cross-check at temp 0.0/0.3 for canonical-constants claims (forces Sonnet 4.6 since Opus 4.7 deprecated temperature). | claim | `CodeGenVerificationResult` |
-| `verifiers/store_verifier` | Matches a model claim against user-asserted facts. Scoped by `user_id`. | claim, store, user_id | `StoreLookupResult` |
-| `verifiers/retrieval_verifier` | Slots-aware multi-attempt retrieval (DDG with UA rotation, Tavily, SerpAPI) + LLM judge. Result-cached in `retrieval_cache` table. | claim | `RetrievalResult` |
-| `cache` | (v0.6 Tier 2) Scoping + stability classifiers + verification cache. Frame: cache, not knowledge base. | claim | `CachedVerdict` or None |
-| `corrector` | Single LLM call that rewrites the assistant draft given a list of interventions (replace / hedge / soften / remove). | draft + interventions | rewritten text |
-| `pipeline` | Orchestrator. Runs every stage in order. Writes `pipeline_events` rows. Aggregates per-turn cost. | user message | `TurnTrace` |
-| `llm_client` | Anthropic SDK wrapper. Three methods: `chat`, `extract_with_tool`, `rewrite`. Records cost per call. Drops `temperature` for opus-4-7. | — | — |
-| `llm_clients/` | Pluggable chat-model backends (anthropic / modal-glm). Selected by `AEDOS_CHAT_MODEL_PROVIDER`. | system + messages | response text |
-| `cost` | (v0.6) Per-million-token pricing constants + `cost_for_call` + `aggregate_costs`. | model + tokens | `CallCost` |
-| `app` | FastAPI backend. Endpoints for chat, trace, fact inspector, pattern inspector, cache inspector, reset. Serves the static UI. | HTTP | JSON / HTML |
-
-## Key design decisions
-
-### Bounded vocabulary
-
-The extractor is only allowed to use predicates from the registry. Claims
-with unknown predicates are dropped in `extractor._validate` — not stored,
-not routed. This is load-bearing: without it, the system's verification
-claims become vacuous (the extractor can always just invent a predicate
-that makes the claim trivially verifiable).
-
-Adding a predicate is intentionally low-friction (edit YAML, optionally
-add a python function) so this constraint isn't painful.
-
-### Two-extractor pattern
-
-Every turn extracts claims twice — once from the user's message, once from
-the assistant's draft. Same extractor, same registry, different binding
-rules:
-
-- User text: `I`, `my` → `user`
-- Assistant text: `you`, `your` → `user`
-
-This symmetry is deliberate. It means user-asserted facts and model-made
-claims travel through the same validation and storage path; the router is
-the only place where their *origin* matters.
-
-### `pipeline_events` as the trace
-
-Every stage writes a row to `pipeline_events` with a stage name and a JSON
-blob. The UI rebuilds the trace panel by fetching those rows verbatim. This
-means adding a new pipeline stage doesn't require changes to the UI plumbing
-— just log the data, and it shows up.
-
-### User-authoritative claims from the model
-
-A subtle case the spec doesn't spell out: when the *model* asserts a
-user-authoritative fact (e.g. "you like peanut butter"), we route it to
-store lookup, not user-assertion storage. If the user has said it before,
-great — boost the confidence. If they haven't, we store the model's claim
-as unverified with low confidence and flag it. We never let the model
-fabricate user preferences.
-
-### One primary path
-
-There's exactly one way to run a turn through the pipeline. No
-configuration options, no mode flags, no alternate code paths. Tests
-exercise that one path thoroughly. When something changes, it's visible.
-
-## Representation: patterns vs predicates (v0.3)
-
-Aedos's earlier releases used a closed predicate vocabulary. v0.3 moves
-to a pattern-based representation. The motivation is straightforward.
-
-### The two failure modes we wanted to avoid
-
-**Closed vocabulary doesn't scale.** Every conversation introduces
-relations that don't fit the existing list. Adding predicates is human
-work; the rate of new conversational claim-types vastly exceeds the rate
-at which a curated vocabulary can grow. v0.2 had ~37 predicates and
-already routinely encountered claims with no good fit, leading to one of
-two bad outcomes: forcing a poor fit (the `(Donald Trump, believes,
-"is the U.S. president")` case from the v0.2 trace) or abstaining when a
-real fact was being stated.
-
-**Open vocabulary doesn't work either.** Letting the extractor invent
-predicates reproduces the canonicalization problem that broke the
-semantic web — three conversations later you have `likes`, `loves`,
-`enjoys`, `is_fond_of`, and `has_positive_attitude_toward` all
-representing the same relation, none of which can be queried as a unit
-or routed consistently.
-
-### Why patterns are the middle path
-
-A **pattern** is a bounded structural type with declared verification
-semantics. There are eight: `role_assignment`, `preference`,
-`quantitative`, `spatial_temporal`, `categorical`, `relational`,
-`event`, `propositional_attitude`. A fact is a pattern instance
-populated with slot values, plus a free-form predicate label that names
-the relation descriptively.
-
-The verification method comes from the pattern, not the predicate. So
-`adores`, `is_obsessed_with`, and `tolerates` are all preference
-predicates and inherit preference's semantics — user-authoritative when
-the agent is the user, unverifiable otherwise. No code change is needed
-to support a new predicate; the structural type carries the meaning.
-
-This lets vocabulary grow organically per conversation while keeping
-verification predictable.
-
-### Domains covered
-
-| Pattern | Domain | Example |
-|---|---|---|
-| `role_assignment` | named offices/positions, time-bounded | "Trump is the 47th President" |
-| `preference` | user affinities | "I love peanut butter" |
-| `quantitative` | numeric measurements | "Strawberry has 3 r's" |
-| `spatial_temporal` | location, residence, employment | "I live in Williamstown" |
-| `categorical` | profession / kind / class | "Marie Curie was a physicist" |
-| `relational` | binary directed relations | "Trump defeated Harris in 2024" |
-| `event` | discrete occurrences | "Trump was inaugurated on Jan 20, 2025" |
-| `propositional_attitude` | beliefs, plans, hopes, feelings | "I think the Fed will cut rates" |
-
-### Known scope limits
-
-The pattern set is deliberately bounded. It represents factual claims
-with well-defined verification procedures. Things outside that scope
-are flagged as out-of-scope by the extractor, not represented:
-
-- **Aesthetic judgments** ("the sunset was beautiful"). Not verifiable,
-  not a preference of a specific agent, not a category. Abstained.
-- **Counterfactuals** ("if Biden had run, he would have lost"). No
-  pattern represents counterfactual conditionals; out of scope for v0.3.
-- **Complex causal claims** ("X caused Y because of Z"). Multi-step
-  causation isn't captured. Such claims abstain unless they reduce
-  cleanly to one of the eight patterns.
-- **Process descriptions** ("photosynthesis converts sunlight"). Generic
-  scientific process descriptions don't fit the patterns; abstained.
-
-This is a defensible scope. We are not trying to represent everything
-sayable — we are representing the kinds of claims for which an
-automated verification procedure makes sense.
-
-## Verification status semantics (v0.2/v0.3)
-
-Every stored fact and every routing `Decision` carries one of these
-verification statuses. The corrector reads the status to decide what
-intervention (if any) to apply.
-
-| Status | Assigned when | Typical confidence | Corrector behavior |
-|---|---|---|---|
-| `verified` | Python verifier said VERIFIED, retrieval judge said SUPPORTED, or store lookup matched a user-asserted fact | 0.95–0.99 | noop |
-| `contradicted` | A verifier returned CONTRADICTED | 0.95–0.99 | **replace**: rewrite using the verified value |
-| `user_asserted` | User stated this directly | 0.95+ | noop |
-| `unverifiable_in_principle` | Pattern's resolved method is `unverifiable` (e.g. `propositional_attitude` for non-user agent) | 0.3 | **soften** definite framing |
-| `retrieval_inconclusive` | **v0.3 split:** verifier RAN, search returned snippets, judge said INSUFFICIENT_EVIDENCE | 0.4 | **hedge** — there's positive evidence of uncertainty |
-| `retrieval_failed` | **v0.3 split:** verifier didn't get useful signal — network error, no results, judge unparseable | 0.4 | **noop** — verifier failure is not evidence of uncertainty about the *claim*; the pipeline emits a `verifier_failure` event instead |
-| `unverifiable_pending_implementation` | Python verifier inconclusive, store-lookup miss, etc. | 0.4 | **hedge** when confidence < 0.5 |
-| `routing_anomaly` | A `_USER_SUBJECT_PATTERNS` pattern (`preference`, `propositional_attitude`) got a non-user agent — almost always an upstream extractor error | 0.2 | noop **at content level** — pipeline emits a `routing_anomaly_detected` event with the offending slot |
-
-The `retrieval_inconclusive` / `retrieval_failed` split is the v0.3 fix
-for a v0.2 bug: hedging on retrieval failure was making the system more
-wrong. Adding "I think" to a possibly-true claim is worse than leaving
-it as-is.
-
-_(Verification status semantics moved to the v0.3 section above.)_
-
-## Code-generated verification (v0.4 / v0.5)
-
-The python verification path used to be a hand-written registry: one
-function per predicate in `src/verifiers/python_verifiers.py`, dispatched
-by predicate name. That worked for the small set of predicates we
-seeded, but it didn't scale. Every new property a model invents
-(`prime_count_in_range`, `words_containing_letter_e`, sum of digits,
-…) needed a new hand-written function. The cost wasn't the function
-itself — it was the long tail. Predicates we hadn't anticipated fell
-through to the registered `has_count` and silently returned 0, which
-the comparator then accepted as "verified" against any claim of 0.
-
-v0.4 replaced the registry with code generation. v0.5 removed the
-triage stage (the LLM router decides python-verifiability up front).
-A python-routed claim is now resolved by two LLM calls plus a sandbox
-execution and a deterministic comparator:
-
-```
-            claim
-              │
-              ▼
-        ┌──────────┐
-        │ Stage 1  │  build a NEUTRAL question
-        │ extractor│  sees: full claim INCLUDING asserted value
-        │   model  │  returns: {prompt, expected_output_type}
-        └────┬─────┘  prompt MUST NOT contain asserted value
-             │
-             │  leak detector scans prompt for stringifications
-             │  of the asserted value; retries once on detection
-             │
-             ▼
-        ┌──────────┐
-        │ Stage 2  │  write python script
-        │ corrector│  sees: ONLY the neutral prompt + expected_type
-        │   model  │  returns: source code
-        └────┬─────┘
-             │
-             ▼
-        ┌──────────┐
-        │ sandbox  │  subprocess, strict limits, no env, empty cwd
-        └────┬─────┘
-             │  stdout / stderr / duration / timed_out
-             ▼
-        ┌──────────┐
-        │comparator│  parse stdout per expected_type;
-        │ (python) │  apply polarity; equal vs not equal
-        └────┬─────┘
-             │
-             ▼
-   verified | contradicted | comparison_error | code_execution_failed
-```
-
-For `python_with_canonical_constants` claims the pipeline runs twice
-(temperatures 0.0 and 0.3) and the cross-check compares the computed
-values; disagreement → `canonical_constants_disagreement`.
-
-### The firewall
-
-The system avoids confirmation bias in code-generated verification by
-separating the LLM that decides what to verify, the LLM that
-articulates the question, and the LLM that writes the code. The
-code-writing LLM never sees the model's claimed answer; it only sees
-a neutral question. This means the code is written to compute a
-value, not to validate a hypothesis. Comparison happens
-deterministically outside the LLM, in `comparator.py`.
-
-The firewall is enforced structurally, not by convention:
-
-- `write_code()`'s function signature takes only `(neutral_prompt,
-  expected_output_type, llm)`. It cannot accept the original claim;
-  passing one is a `TypeError`.
-- `compare()` is a pure-python function, not an LLM call. It cannot
-  rationalize.
-
-### Known limitation: leak detection is heuristic
-
-The firewall depends on Stage 2 producing a leak-free prompt. Stage 2
-is constrained by its prompt and few-shot examples to omit the
-asserted value, and a substring-based leak detector retries once on
-detection. But sophisticated leakage — the asserted value reformulated
-semantically ("the answer is the same as the number of fingers on a
-typical hand"), or as a synonym, or in a different base — can slip
-through. Hardening this is a target for future work; the current
-heuristic catches the obvious cases (the literal value as a digit
-string or as a substring of the claim's distinctive subject).
-
-### What this is NOT
-
-- **Not a security sandbox.** The code runs in our own environment;
-  the limits in `sandbox.py` keep accidental interactions away from
-  AEDOS state. They do not stop a determined attacker.
-- **Not a fallback for unfamiliar predicates.** When the LLM router
-  decides retrieval, the retrieval verifier handles it; when it
-  decides unverifiable, the corrector softens. There is no
-  hand-written verifier registry as a backup. The point of v0.4/v0.5
-  is to stop maintaining that registry.
-
-## Verification routing (v0.5)
-
-Verification routing is decided per claim by an LLM-based classifier,
-not by the claim's structural pattern. `src/llm_router.py` makes a
-single call to Sonnet 4.6, which picks one of five methods:
-
-| Method | When |
+| Component | Responsibility |
 |---|---|
-| `python` | The claim's truth value is computable from its own inputs alone — no external data, no canonical reference. Letter counts, arithmetic, string reversal, primality, palindromes, day-of-week from a date in the claim, duration between two dates in the claim, internal consistency. |
-| `python_with_canonical_constants` | Same, but the code may reference small stable canonical references the LLM can emit literally (lists of US states, months, primes under 100, ASCII tables). Triggers a cross-check (two generations at different temperatures). |
-| `retrieval` | External data needed — specific people, places, current world state, populations, geographic facts, historical event dates. Anything not computable from the claim's own slots. |
-| `user_authoritative` | The claim's subject is the user. Verified by store lookup against user-asserted facts. |
-| `unverifiable` | Aesthetic judgments, third-party internal states, future events, model-state claims, probabilistic claims about non-users. |
+| `fact_store` | SQLite. Owns facts, turns, pipeline_events, verification_cache. Subscriber registry for SSE event push. |
+| `pattern_registry` | Loads `patterns.yaml` (8 structural patterns; predicates free-form within). |
+| `extractor` | One LLM call per message, forced tool use. Validates each claim against the registry; flags substitutions where source_text isn't in the input. |
+| `llm_router` | One LLM call per assistant claim. Returns the verification method: `python` / `python_with_canonical_constants` / `retrieval` / `user_authoritative` / `unverifiable`. |
+| `router` | Dispatches each claim to the verifier the LLM router picked. Cache-eligible claims hit the cache before retrieval. Builds the `Decision`. |
+| `verifiers/code_generation` | prompt builder → code writer → sandbox → comparator. Cross-check at temp 0.0 / 0.3 for canonical-constants claims. |
+| `verifiers/retrieval_verifier` | Slots-aware multi-attempt search (Wikipedia → Tavily → SerpAPI → DDG) + tolerant LLM judge. |
+| `verifiers/store_verifier` | Matches a model claim against user-asserted facts (per-user). |
+| `cache` | `VerificationCache` (table I/O), `CacheGate` (single owner of scoping + stability + lookup + write), `canonicalize_claim_key` with stem normalization, `semantic_lookup` for shape-based fallback. |
+| `corrector` | One LLM call. Plans interventions (replace / hedge / soften / remove) per Decision and applies them all in one rewrite, demanding internal consistency with verified values. |
+| `pipeline` | Orchestrator. Six clearly-named stage methods inside `_run_turn_inner`. |
+| `llm_client` | Anthropic SDK wrapper. `with_active_model(model)` swaps chat/extractor/corrector model atomically for one turn. Drops `temperature` for opus-4-7. |
+| `llm_clients/` | Pluggable chat backends — Anthropic + Modal/GLM. Selected per-turn via the chat UI's model dropdown. |
+| `cost` | Per-million-token pricing constants + per-call recording + end-of-turn aggregation. |
+| `app` | FastAPI. `POST /api/chat`, `POST /api/chat/stream` (SSE), `/api/turns`, `/api/trace/{id}`, `/api/facts`, `/api/patterns`, `/api/cache`, `/api/models`, `/api/health`, `/api/reset`. Serves the static UI. |
 
-### Why we removed predicate overrides
+## Key design choices
 
-v0.4's `predicate_overrides` map (`relational.reverse_of → python`,
-`relational.is_anagram_of → python`, …) didn't scale. Every new
-computable claim type required editing YAML, and entire categories of
-python-verifiable claims (date arithmetic, structural text properties,
-internal consistency checks) silently routed to retrieval or
-unverifiable because they didn't match a pre-declared category.
+### Bounded pattern set, free-form predicates
 
-The LLM router recognizes python-verifiability from the claim's
-content directly. It can route a `quantitative.term_duration` claim
-with `valid_from=2017, valid_until=2021, value=4` to python (it's an
-arithmetic check on stated values), without anyone editing YAML.
+8 patterns (`patterns.yaml`): `preference`, `propositional_attitude`,
+`spatial_temporal`, `categorical`, `role_assignment`, `relational`,
+`quantitative`, `event`. Each declares slots + a query strategy.
 
-### Multi-claim convention
+Within a pattern, predicates are free-form — the extractor can produce
+`is_child_of`, `child_of`, `son_of`, all valid as long as they sit
+under the right pattern. Verification semantics come from the pattern,
+not the predicate label. This is what made v0.3 scale where v0.1's
+closed predicate vocabulary couldn't.
 
-A claim like "Marie Curie was born in 1867 and died in 1934, so she
-lived 67 years" packages an arithmetic check around two retrievable
-dates. The router routes this to **python** — the arithmetic is what's
-being asserted; the dates are inputs the claim takes as given. If the
-dates themselves are wrong, that surfaces as a separate retrieval-class
-claim that the extractor would emit independently. The router doesn't
-try to split a single claim.
+### Two-extractor symmetry
 
-### Canonical-constants cross-check
+Same extractor runs over the user message and the assistant draft.
+Same registry, same validation. The router is the only place origin
+matters: user-origin claims update the fact store as ground truth;
+model-origin claims get verified.
 
-For `python_with_canonical_constants`, the verifier runs the code-
-generation pipeline twice at different temperatures (0.0 and 0.3) and
-compares the two computed values. Agreement → accept. Disagreement →
-log `canonical_constants_disagreement` and return that status (the
-dispatcher treats it as pending). Two generations is a cheap guard
-against the LLM emitting a subtly wrong canonical reference.
+### `pipeline_events` is the trace
 
-A more rigorous version would use two different models. Temperature
-variation is the v0.5 compromise — it surfaces most divergent
-generations without requiring two API surfaces.
+Every stage writes a row. The trace UI fetches those rows verbatim.
+Adding a new event type is one constant in `PIPELINE_STAGES` + one
+optional UI renderer; the plumbing stays the same.
 
-### What this routing layer is NOT
+The 30 stages currently in the enum cover the main pipeline plus
+fine-grained code-generation, cache, routing, cost, and warning
+events. SSE pushes them live during a turn.
 
-- **Not a rule engine.** No pattern→method tables, no predicate
-  overrides, no fallback heuristics. The router decides; if it gets it
-  wrong, fix the prompt or worked examples.
-- **Not heuristic.** The router asks the model to apply judgment, not
-  to match labels. The 15 worked examples in `_ROUTER_SYSTEM` cover
-  the boundary cases we've found; the calibration test
-  (`tests/test_routing_calibration.py`) catches drift.
+### Verification routing (LLM, not rules)
 
-### Triage is gone
+v0.4 used a YAML rule walk per claim. v0.5 replaced it with a single
+LLM call (`src/llm_router.py`) that picks the method. Worked examples
+in the system prompt cover boundary cases (multi-claim arithmetic
+around retrieved values, external-string operations that look like
+python but need retrieval, canonical references that need
+cross-check).
 
-v0.4 had a triage stage as the first call in code generation, deciding
-whether the claim was python-resolvable. v0.5 removed it: the LLM
-router has already decided python-verifiability before code generation
-runs, and a redundant triage call would just risk drift between two
-prompts. False positives surface at the sandbox stage as
-`code_execution_failed` or at the comparator as `comparison_error`,
-which the dispatcher treats as pending (low confidence, hedged by the
-corrector if needed).
+### Code-generated python verification
 
-## Known limitations
+Four-stage pipeline. The deliberate firewall: the **code writer never
+sees the asserted value**. It only sees a NEUTRAL prompt that asks the
+question. Without this, the model writes code that confirms the
+assertion rather than computes the answer.
 
-- **Retrieval is v1 — snippet-based, judge-LLM only.** The retrieval
-  verifier issues one or more searches (DuckDuckGo, Tavily, or SerpAPI),
-  takes the top 1–3 result snippets, and asks an LLM to judge support.
-  It does not fetch full pages, does not cross-corroborate across
-  multiple sources, and does not pull from structured sources (Wikidata,
-  Wikipedia infoboxes). v0.3 added a multi-attempt query strategy and the
-  `retrieval_inconclusive` / `retrieval_failed` split, but the underlying
-  retrieval pipeline is still snippet-based. v2 would add full-page fetch
-  where needed, a structured-fact path for high-confidence claims, and
-  source-ranking + multi-snippet corroboration before the judge.
+For canonical-constants claims (US states, days of the week, ASCII
+tables), `verify_with_cross_check` runs the pipeline twice at
+temperatures 0.0 and 0.3. Disagreement surfaces as
+`canonical_constants_disagreement` — guards against the LLM emitting a
+subtly wrong reference.
 
-- **Scope of representation.** The eight patterns capture factual claims
-  with well-defined verification procedures. Aesthetic judgments,
-  counterfactuals, and complex causal claims are out of scope and will
-  abstain (see "Representation: patterns vs predicates" → Known scope
-  limits above). This is a deliberate design decision, not a TODO.
+### Tier 2 verification cache (always on)
 
-- **Python verification depends on the LLM router + leak detection.**
-  v0.5 generates python on demand: the router decides python-eligibility,
-  the prompt builder articulates a neutral question, and the code writer
-  produces a script the sandbox runs. Every step has limits: the router
-  may occasionally over- or under-route; the leak detector is heuristic
-  (literal substrings only); the sandbox runs in a subprocess so
-  startup cost is non-trivial (~tens to hundreds of ms per claim).
-  The system fails loud — `comparison_error`, `code_execution_failed` —
-  rather than silently passing.
+`CacheGate` is the single owner of the cache lifecycle:
 
-- **Single conversation.** The `facts`, `turns`, and `pipeline_events`
-  tables have no conversation id. Everything is one long conversation
-  until `reset_db.py` wipes the file. Adding multi-conversation scoping
-  is a schema-level change and deliberately deferred.
+  1. **Classify** (per claim, before routing): scoping classifier
+     decides `user_specific` / `session_specific` / `world_fact`
+     (only world_fact is cache-eligible); stability classifier picks
+     a TTL bucket from immutable down to volatile.
+  2. **Lookup** (during routing, before retrieval): exact key match,
+     then semantic-shape fallback (Jaccard predicate-token overlap
+     anchored on identity slots) to catch spelling-variant predicates
+     like `child_of` ↔ `is_child_of`.
+  3. **Write** (after verification): cacheable retrieval verdicts
+     (verified / contradicted / inconclusive) get persisted with the
+     stability TTL.
 
-- **No streaming.** The chat endpoint blocks on the full turn. Fine for a
-  debugging UI; not what you'd ship.
+`canonicalize_claim_key` strips common stems (`is_`, `was_`, `has_`,
+…) before keying so equivalent predicates collide deterministically.
 
-- **No re-verification on edit.** If you change the router's prompt or
-  worked examples while facts already exist, historical facts keep
-  their old verification status (they were verified by the previous
-  routing logic). `reset_db.py` is the intended workflow for this;
-  production would need a re-verify pass.
+Hit short-circuits retrieval entirely. The Cache tab in the inspector
+drawer shows live hit-rate from `pipeline_events` plus the entry
+table.
 
-## Verification cache (v0.6 / Tier 2)
+### Single model selection (per turn)
 
-The cache is a performance optimization for retrieval, not a knowledge
-base. **Cached entries can be wrong, can go stale, and are subject to
-eviction. Every cached verdict is provisional.** The framing is load-
-bearing: hosting the cache as "fast lookups for things we already
-verified" lets us be aggressive about TTLs (cache miss = 1 extra
-retrieval call); hosting it as "things AEDOS knows" would push us to
-trust stale entries.
+The chat UI has one model dropdown. Selecting it threads the choice
+into `LLMClient.with_active_model(model)` for the whole turn, so chat,
+extraction, routing, judge, corrector, scoping classifier, stability
+classifier, and the canonical-constants cross-check all use the same
+model.
 
-### Pipeline
+GLM-5.1 (Modal-hosted) is the exception: when selected, the chat call
+routes to the Modal backend; everything else stays on the prior
+Anthropic model since GLM doesn't support tool use.
 
-For each model-asserted claim:
+### Live progressive UI
 
-1. **Scoping classifier** (one LLM call per claim) → one of
-   `user_specific`, `session_specific`, `world_fact`. Only world_fact
-   is cache-eligible. user_specific is Tier 1's job; session_specific
-   ("this sentence has 7 words", "the previous turn said X") is true-
-   only-in-context.
-2. **Stability classifier** (only for world_fact) → TTL bin: immutable
-   (math, definitions), decade_stable (geography), years_stable
-   (political offices), months_stable (recent pop culture), days_stable
-   (current events), volatile (prices, weather — don't cache).
-3. **Cache lookup** before retrieval. Canonical key is case/whitespace/
-   slot-order independent and polarity-distinguishing. Hit → serve the
-   cached verdict, skip retrieval. Miss → fall through.
-4. **Cache write** after retrieval. verified / contradicted /
-   inconclusive verdicts get cached with the stability TTL. Volatile
-   doesn't write. Python verdicts don't write (cheap to redo).
+`POST /api/chat/stream` is SSE. `FactStore.register_event_subscriber`
++ a 2KB padded preamble defeats Chrome's initial chunk buffering.
 
-### What's deliberately not cached
+The UI shows a 5-step progress chart in the chat panel (chat model →
+extraction → verification → correction → final). Each step renders
+when its event lands, with an animated "thinking" placeholder for the
+next expected step. Click any landed step to expand its full detail
+inline.
 
-- User-specific claims (preferences, biography, opinion). Tier 1 is the
-  per-user store; the Tier 2 cache is shared.
-- Session-specific claims (literal-text counts, "now" / "today" claims).
-- Volatile claims (prices, weather).
-- Python-routed verdicts. The cost of a cache miss is one DDG search +
-  one judge call (~$0.005-0.02). Re-running python verification is a
-  subprocess invocation + LLM code-write call (~$0.005). The savings
-  from caching python don't justify the cache-management overhead.
+The Inspector drawer (button top-right) houses Facts / Patterns /
+Cache as a tabbed slide-out.
 
-### Failure modes
+## Verification status (8 internal, 4 user-facing)
 
-- **Stale entries serving wrong answers.** Bias toward shorter TTLs
-  when uncertain — wrong-and-confident is worse than slow-and-correct.
-  Stability classifier prompt explicitly biases toward tighter bins.
-- **Canonical-key collisions across non-equivalent claims.** Polarity
-  is in the key so positive/negative don't collide. But "Tokyo is
-  in Japan" and "Tokyo, Japan exists" hash differently — the first
-  cached lookup misses the second. Acceptable for v0.6; entity-
-  alias resolution is future work.
-- **Canonical-key MISSES across semantically-equivalent claims.** Same
-  as above. A miss costs one extra retrieval; a wrong-key hit serves
-  a wrong answer for the entire TTL window. The asymmetry justifies
-  the v0.6 conservative posture.
+The router emits one of 8 internal `verification_status` values:
 
-### Always on
+| Status | Meaning | Corrector action |
+|---|---|---|
+| `verified` | confirmed by any path | noop |
+| `user_asserted` | user said it; treat as ground truth | noop |
+| `contradicted` | disproven; correction object provided | REPLACE |
+| `retrieval_inconclusive` | judge said insufficient_evidence | HEDGE |
+| `retrieval_failed` | verifier got no useful signal at all | noop (failure isn't evidence) |
+| `unverifiable_in_principle` | no method applies | SOFTEN |
+| `unverifiable_pending_implementation` | python verifier inconclusive / store-lookup miss / code-execution failed | HEDGE if conf<0.5 |
+| `routing_anomaly` | extractor bound a user-subject pattern to a non-user agent | noop (logged separately) |
 
-The cache builds on every turn — `build_pipeline` always wires the
-scoping classifier, the stability classifier, and the
-`VerificationCache`. Each layer adds one LLM call per assistant claim
-in the worst case, but the cache accumulates verdicts across sessions
-so the pipeline gets faster the more you use it. That accumulation is
-the whole point; opting out would defeat it. Earlier versions had
-`AEDOS_CACHE_*` opt-in env vars; those are gone.
+The UI projects these to 4 buckets via
+`Decision.display_status_for(status)`:
 
-For hermetic test contexts that need a no-cache pipeline, construct
-`Pipeline` directly with `scoping_classifier=None` /
-`stability_classifier=None` / `verification_cache=None` — `build_pipeline`
-no longer offers an env-driven way to disable it.
+  * `verified` (green)
+  * `contradicted` (red)
+  * `inconclusive` (amber)
+  * `not_applicable` (grey)
 
-The Cache tab in the trace UI shows live hit rate, per-stability hit
-breakdown, and the most-recently-cached entries with verdict, stability
-class, hit count, and expiry status. Cached claims also surface as a
-green ↺ CACHED badge on the corresponding decision in the Detail View
-and a dashed border in the Flow View, so the operator can see at a
-glance which verdicts cost zero LLM calls.
+Routing logic still keys off the 8-status fine grain; the projection
+is pure UI sugar.
 
-## What v2 would add
+## Pipeline events
 
-- A retrieval layer that fetches full pages on demand, ranks sources,
-  and corroborates across at least two sources before judging
-  (replacing the snippet-only v1 path).
-- Structured-fact retrieval against Wikidata / Wikipedia infoboxes for
-  predicates with stable answers (capitals, birth years, founders).
-- ~~Multi-conversation scoping on the core tables.~~ **(v0.5.x done):
-  facts/turns now have user_id; default 'default_user' for solo
-  dogfooding; multi-user scoping ready.**
-- Streaming assistant responses with incremental trace updates.
-- A policy layer that decides *when* to correct silently vs surface the
-  conflict to the user.
-- Confidence calibration based on repeated verification outcomes (an
-  observed contradiction from a python verifier is much more decisive
-  than a retrieval miss).
-- Generalize the v0.6 unique-value-slot prototype (currently
-  spatial_temporal.was_born_in only) to a curated set of definitionally-
-  unique slots, OR move to YAML metadata (`unique_per_entity: true`
-  on slot definitions).
-- Entity-name canonicalization beyond the cache's case-folding +
-  whitespace normalization: alias tables, fuzzy match, embedding
-  similarity. Currently the cache misses semantically-equivalent
-  claims with different wording.
+30 named stages in `PIPELINE_STAGES`. The main 5 the UI renders as
+explicit progress steps:
+
+  * `chat_model_call` — backend dispatch result
+  * `assistant_extraction` — extracted claim list
+  * `verification` — Decision per claim
+  * `correction` — interventions applied
+  * `final` — final response text
+
+Annotation events render under their parent step in the inline detail:
+
+  * `routing_decision` — per claim, before each verification
+  * `routing_anomaly_detected`, `verifier_failure`,
+    `extractor_substitution_warning` — warnings
+  * `retrieval_query_attempt` — one per multi-attempt retrieval query
+  * `code_prompt_built`, `code_prompt_leakage_detected`,
+    `code_generated`, `code_executed`, `code_unusual_behavior`,
+    `code_comparison` — code-gen sub-stages
+  * `canonical_constants_cross_check`,
+    `canonical_constants_disagreement` — cross-check
+  * `cache_scoping_decision`, `cache_stability_decision`,
+    `cache_lookup`, `cache_write` — cache lifecycle
+  * `turn_cost` — end-of-turn aggregate
+
+## Retrieval providers (priority order)
+
+  1. Wikipedia (MediaWiki API; no key, no meaningful rate limit, highest
+     quality for the bulk of factual queries)
+  2. Tavily (paid; via `TAVILY_API_KEY`)
+  3. SerpAPI (paid; via `SERPAPI_KEY`)
+  4. DuckDuckGo HTML scrape (free fallback; brittle)
+
+Wikipedia errors fall through silently. Each provider returns
+`Snippet(title, snippet, url)` for the judge.
+
+The judge uses a tolerant parser that handles markdown bolds (`**SUPPORTED**`),
+"Verdict:" prefixes, preambles, and `NOT SUPPORTED` (negation flips
+SUPPORTED ↔ CONTRADICTED).
+
+## What's deliberately not here
+
+  * **No mode flags / configuration options** for the pipeline. One
+    primary path. Adding a feature means changing the path.
+  * **No cross-conversation entity resolution.** The Tier 2 cache hits
+    on canonical key + semantic shape; equivalent claims with
+    materially different surface form (e.g. "Marie Curie" vs "Madame
+    Curie") miss. Future work; not v0.7.
+  * **No retraining feedback loop.** Aedos verifies each turn in
+    isolation. The cache accumulates verdicts but they aren't fed back
+    to the chat model.
+  * **No multi-source corroboration.** A retrieval verdict comes from
+    one provider's snippets + one judge call. v2 would require ≥2
+    independent sources.
+
+## Module sizes (for grokking the codebase)
+
+| File | Lines |
+|---|---|
+| `src/router/router.py` | 620 |
+| `src/pipeline.py` | 600 |
+| `src/verifiers/retrieval_verifier.py` | 670 |
+| `src/fact_store.py` | 640 |
+| `src/extractor.py` | 440 |
+| `src/app.py` | 530 |
+| `src/cache/gate.py` | 280 |
+| `src/cache/verification_cache.py` | 420 |
+| `static/app.js` | 1030 |
+| `static/style.css` | 770 |
+| `patterns.yaml` | 440 |
+
+Each is sized to be readable in one sitting.
