@@ -120,14 +120,74 @@ main { height: calc(100vh - 46px); overflow: hidden; }
 }
 .msg.user { align-self: flex-end; background: var(--accent-soft); border: 1px solid #c7dbf4; }
 .msg.assistant { align-self: flex-start; background: #f0efe9; border: 1px solid var(--border); }
-.msg .corrected-note { font-size: 0.75rem; color: var(--warn); margin-top: 0.3rem; font-style: italic; }
-.msg .original {
-  margin-top: 0.35rem;
-  padding: 0.35rem 0.5rem;
-  border-left: 3px solid var(--warn);
+.msg-body { white-space: pre-wrap; word-wrap: break-word; }
+
+/* Draft lifecycle inside an assistant bubble:
+ *   draft-pending — bubble just created, body is "…"
+ *   draft-faded   — assistant_draft event arrived; show draft text dimmed
+ *                   while verification + correction run
+ *   (no class)    — finalized; final text rendered un-faded */
+.msg.assistant.draft-pending { color: var(--muted); font-style: italic; }
+.msg.assistant.draft-faded .msg-body {
   color: var(--muted);
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.msg.assistant.draft-faded::after {
+  content: "verifying claims…";
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--accent);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+/* "show diff" toggle: button below the bubble, hides the diff view by
+ * default. Clicking the button toggles `.diff-open` on the bubble. */
+.msg .show-diff-btn {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.7rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+.msg .show-diff-btn:hover { background: #f0f0ec; color: var(--ink); }
+.msg .diff-view {
+  display: none;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.55rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  line-height: 1.45;
+}
+.msg.diff-open .diff-view { display: block; }
+.msg.diff-open .msg-body { display: none; }
+
+/* Inline word-level diff markers (used both in chat-bubble diff view
+ * and in the Correction step's Inline diff block). */
+.diff-ins {
+  background: #d6f3df;
+  color: #114a23;
+  text-decoration: none;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.diff-del {
+  background: #fadada;
+  color: #5a0a0a;
   text-decoration: line-through;
-  font-size: 0.85rem;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 .chat-form {
@@ -181,7 +241,23 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   transition: border-color 0.1s ease, background 0.1s ease;
 }
 .flow-step:hover { background: #f5f8fc; border-color: var(--accent); }
+.flow-step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
 .flow-step-title { font-size: 0.85rem; font-weight: 600; color: var(--ink); }
+.flow-step-duration {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: #f0efe9;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .flow-step-meta {
   margin-top: 0.2rem;
   font-family: var(--mono);
@@ -240,11 +316,37 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   border-radius: 50%;
   background: var(--muted);
   flex-shrink: 0;
+  position: relative;
 }
 .claim-row.claim-verified .claim-dot { background: var(--ok); }
 .claim-row.claim-contradicted .claim-dot { background: var(--bad); }
 .claim-row.claim-inconclusive .claim-dot { background: var(--warn); }
 .claim-row.claim-not_applicable .claim-dot { background: #888; }
+
+/* Progressive states (verification step while in flight). */
+.claim-row.claim-pending {
+  background: #fafaf7;
+  opacity: 0.65;
+}
+.claim-row.claim-pending .claim-dot {
+  background: transparent;
+  border: 1.5px solid var(--muted);
+  width: 7px; height: 7px;
+}
+.claim-row.claim-in-flight {
+  background: #f5f8fc;
+  border-color: var(--accent);
+}
+.claim-row.claim-in-flight .claim-dot {
+  background: var(--accent);
+  animation: claim-pulse 1.0s ease-in-out infinite;
+}
+.claim-row.claim-in-flight .claim-method { color: var(--accent); }
+.claim-row.claim-neutral { /* extraction-step row, no verdict yet */ }
+@keyframes claim-pulse {
+  0%, 100% { transform: scale(1.0); opacity: 1.0; }
+  50%      { transform: scale(1.5); opacity: 0.55; }
+}
 .claim-row .claim-label {
   font-family: var(--mono);
   color: var(--ink);
@@ -299,8 +401,18 @@ main { height: calc(100vh - 46px); overflow: hidden; }
   white-space: pre-wrap;
   border-radius: 3px;
 }
-.draft-original { background: #fadada; border-left-color: var(--bad); }
-.draft-corrected { background: #ecf7ef; border-left-color: var(--ok); }
+.diff-box {
+  background: white;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0.7rem;
+  margin: 0.4rem 0;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  border-radius: 3px;
+  line-height: 1.5;
+}
 
 /* ---- Claim block (used in extraction + verification details) ---- */
 

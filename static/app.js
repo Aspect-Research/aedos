@@ -120,21 +120,120 @@ const form = $("#chat-form");
 const input = $("#input");
 const modelSelect = $("#model-select");
 
-function appendMessage(turn) {
-  const node = el("div", { className: `msg ${turn.role}`, textContent: turn.content });
+// ---- chat bubble helpers ----
+//
+// Lifecycle for an assistant bubble during streaming:
+//   1. Created as `.msg.assistant.draft-pending` showing "…"
+//   2. assistant_draft event arrives → bubble shows DRAFT text, faded
+//      (.msg.assistant.draft-faded). The user sees what the model
+//      *wanted* to say while verification runs.
+//   3. final/done arrives → bubble swaps to FINAL text, un-faded. If
+//      final !== draft, a "show diff" toggle is appended that swaps
+//      the bubble body between final-only and inline diff view.
+
+function makeAssistantBubble() {
+  const node = el("div", { className: "msg assistant draft-pending" });
+  const body = el("div", { className: "msg-body", textContent: "…" });
+  node.appendChild(body);
+  return node;
+}
+
+function setBubbleDraft(bubble, draftText) {
+  bubble.classList.remove("draft-pending");
+  bubble.classList.add("draft-faded");
+  const body = bubble.querySelector(".msg-body");
+  body.textContent = draftText || "";
+}
+
+function finalizeBubble(bubble, finalText, originalText) {
+  bubble.classList.remove("draft-pending", "draft-faded");
+  const body = bubble.querySelector(".msg-body");
+  body.textContent = finalText || "";
+  // Strip any existing diff toggle from a previous render.
+  bubble.querySelectorAll(".show-diff-btn, .diff-view").forEach((n) => n.remove());
+  if (originalText && originalText !== finalText) {
+    const btn = el("button", { className: "show-diff-btn", textContent: "show diff" });
+    const diffView = el("div", { className: "diff-view" });
+    renderInlineDiff(diffView, originalText, finalText);
+    bubble.appendChild(btn);
+    bubble.appendChild(diffView);
+    btn.addEventListener("click", () => {
+      const showing = bubble.classList.toggle("diff-open");
+      btn.textContent = showing ? "hide diff" : "show diff";
+    });
+  }
+}
+
+function appendUserMessage(text) {
+  const node = el("div", { className: "msg user" });
+  node.appendChild(el("div", { className: "msg-body", textContent: text }));
+  messagesEl.appendChild(node);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendHydratedAssistant(turn) {
+  const node = el("div", { className: "msg assistant" });
+  node.appendChild(el("div", { className: "msg-body", textContent: turn.content }));
   if (turn.original_content && turn.original_content !== turn.content) {
-    node.appendChild(el("div", { className: "original", textContent: turn.original_content }));
-    node.appendChild(el("div", { className: "corrected-note", textContent: "↑ corrected by pipeline" }));
+    finalizeBubble(node, turn.content, turn.original_content);
   }
   messagesEl.appendChild(node);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// ---- word-level inline diff (LCS) ----
+
+function diffWords(oldText, newText) {
+  const tokenize = (s) => s.split(/(\s+)/).filter((t) => t.length > 0);
+  const a = tokenize(oldText || "");
+  const b = tokenize(newText || "");
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const ops = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) { ops.push({ op: "=", t: a[i - 1] }); i--; j--; }
+    else if (dp[i - 1][j] >= dp[i][j - 1]) { ops.push({ op: "-", t: a[i - 1] }); i--; }
+    else { ops.push({ op: "+", t: b[j - 1] }); j--; }
+  }
+  while (i > 0) { ops.push({ op: "-", t: a[i - 1] }); i--; }
+  while (j > 0) { ops.push({ op: "+", t: b[j - 1] }); j--; }
+  ops.reverse();
+  // Coalesce adjacent same-op tokens for cleaner span output.
+  const merged = [];
+  for (const o of ops) {
+    const last = merged[merged.length - 1];
+    if (last && last.op === o.op) last.t += o.t;
+    else merged.push({ op: o.op, t: o.t });
+  }
+  return merged;
+}
+
+function renderInlineDiff(container, oldText, newText) {
+  container.innerHTML = "";
+  diffWords(oldText, newText).forEach(({ op, t }) => {
+    if (op === "=") container.appendChild(document.createTextNode(t));
+    else container.appendChild(el("span", {
+      className: op === "+" ? "diff-ins" : "diff-del", textContent: t,
+    }));
+  });
 }
 
 async function hydrate() {
   try {
     const turns = await api("GET", "/api/turns");
     messagesEl.innerHTML = "";
-    turns.forEach((t) => appendMessage(t));
+    turns.forEach((t) => {
+      if (t.role === "user") appendUserMessage(t.content);
+      else appendHydratedAssistant(t);
+    });
     if (turns.length) {
       const lastAsst = [...turns].reverse().find((t) => t.role === "assistant");
       if (lastAsst) {
@@ -156,15 +255,17 @@ form.addEventListener("submit", async (e) => {
   sendBtn.disabled = true;
   input.value = "";
 
-  appendMessage({ role: "user", content: text });
-  const thinking = el("div", { className: "msg assistant", textContent: "…" });
-  messagesEl.appendChild(thinking);
+  appendUserMessage(text);
+  const bubble = makeAssistantBubble();
+  messagesEl.appendChild(bubble);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
   let assistantTurnId = null;
   const liveEvents = [];
+  const requestStartMs = Date.now();
   flowStatus.textContent = "running…";
-  renderFlow(null, [], { running: true });
+  expandedSteps.clear();
+  renderFlow(null, [], { running: true, requestStartMs });
 
   try {
     await streamChat(
@@ -172,33 +273,39 @@ form.addEventListener("submit", async (e) => {
       {
         onEvent: (ev) => {
           if (assistantTurnId === null) assistantTurnId = ev.turn_id;
+          const arrivedMs = Date.now();
           liveEvents.push({
             turn_id: ev.turn_id, stage: ev.stage, data: ev.data,
-            created_at: new Date().toISOString(),
+            arrivedMs, created_at: new Date(arrivedMs).toISOString(),
           });
-          renderFlow(assistantTurnId, liveEvents, { running: true });
+          // Update the assistant bubble when the draft text becomes available.
+          if (ev.stage === "assistant_draft" && ev.data && ev.data.content) {
+            setBubbleDraft(bubble, ev.data.content);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          }
+          renderFlow(assistantTurnId, liveEvents, { running: true, requestStartMs });
           flowStatus.textContent = `running… (${liveEvents.length} events)`;
         },
         onDone: (trace) => {
-          messagesEl.removeChild(thinking);
-          appendMessage({
-            role: "assistant",
-            content: trace.final_content,
-            original_content: trace.original_content,
-          });
-          renderFlow(trace.assistant_turn_id, liveEvents, { running: false });
+          finalizeBubble(bubble, trace.final_content, trace.original_content);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+          renderFlow(trace.assistant_turn_id, liveEvents, { running: false, requestStartMs });
           flowStatus.textContent = `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
         },
         onError: (errInfo) => {
-          thinking.textContent = `⚠ ${errInfo.error_type}: ${errInfo.error_message}`;
-          thinking.style.color = "var(--bad)";
+          const body = bubble.querySelector(".msg-body");
+          body.textContent = `⚠ ${errInfo.error_type}: ${errInfo.error_message}`;
+          bubble.classList.remove("draft-faded", "draft-pending");
+          bubble.style.color = "var(--bad)";
           flowStatus.textContent = "error";
         },
       },
     );
   } catch (err) {
-    thinking.textContent = `⚠ ${err.message}`;
-    thinking.style.color = "var(--bad)";
+    const body = bubble.querySelector(".msg-body");
+    body.textContent = `⚠ ${err.message}`;
+    bubble.classList.remove("draft-faded", "draft-pending");
+    bubble.style.color = "var(--bad)";
     flowStatus.textContent = "error";
   } finally {
     sendBtn.disabled = false;
@@ -224,17 +331,12 @@ const PIPELINE_STEPS = [
   {
     stage: "assistant_extraction",
     title: "Extraction",
-    metaFn: (ev) => {
-      const d = ev.data || {};
-      const v = (d.valid_facts || []).length;
-      const r = (d.rejected_facts || []).length;
-      return `${v} valid · ${r} rejected`;
-    },
+    isExtractionList: true,
   },
   {
     stage: "verification",
     title: "Verification",
-    isClaimList: true,
+    isVerificationList: true,
   },
   {
     stage: "correction",
@@ -256,10 +358,23 @@ function formatChatMeta(d) {
   if (d.error) {
     return `⚠ ${d.provider || "?"}:${d.model || "?"} — ERROR: ${(d.error || "").slice(0, 80)}`;
   }
-  const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
   const status = d.status_code ? ` http=${d.status_code}` : "";
-  const respc = d.response_chars != null ? `, response=${d.response_chars}c` : "";
-  return `${d.provider || "?"}:${d.model || "?"} — ${dur}${status}${respc}`;
+  const respc = d.response_chars != null ? `, ${d.response_chars}c` : "";
+  return `${d.provider || "?"}:${d.model || "?"}${status}${respc}`;
+}
+
+function fmtDurationMs(ms) {
+  if (ms == null || !isFinite(ms)) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+// Stable identity key for a claim — must match between extraction's
+// valid_facts and routing_decision's claim payload (both come from the
+// same fact dict; same json shape).
+function claimKey(claim) {
+  if (!claim) return "";
+  return `${claim.pattern || ""}|${claim.predicate || ""}|${claim.polarity ?? ""}|${JSON.stringify(claim.slots || {})}`;
 }
 
 function flowEdgeClass(displayStatus) {
@@ -273,12 +388,12 @@ function flowEdgeClass(displayStatus) {
 // Track which steps are expanded so re-renders preserve state.
 const expandedSteps = new Set();
 
-function renderFlow(turnId, events, { running = false } = {}) {
+function renderFlow(turnId, events, { running = false, requestStartMs = null } = {}) {
   flowContainer.innerHTML = "";
-  flowContainer.appendChild(buildFlowChart(events || [], turnId, running));
+  flowContainer.appendChild(buildFlowChart(events || [], turnId, running, requestStartMs));
 }
 
-function buildFlowChart(events, turnId, running) {
+function buildFlowChart(events, turnId, running, requestStartMs) {
   const stageMap = {};
   events.forEach((e) => { stageMap[e.stage] = e; });
 
@@ -290,7 +405,6 @@ function buildFlowChart(events, turnId, running) {
   for (const step of PIPELINE_STEPS) annotationsByStep[step.stage] = [];
   events.forEach((e) => {
     if (stageNames.has(e.stage)) return;
-    // Bucket by event type → step.
     const bucket = annotationStepFor(e.stage);
     if (bucket && annotationsByStep[bucket]) annotationsByStep[bucket].push(e);
   });
@@ -298,6 +412,19 @@ function buildFlowChart(events, turnId, running) {
   const landed = [];
   for (const step of PIPELINE_STEPS) {
     if (stageMap[step.stage]) landed.push({ step, event: stageMap[step.stage] });
+  }
+
+  // Per-step duration: time between THIS step's event and PREVIOUS
+  // step's event = elapsed time spent waiting for this step. For the
+  // first landed step, fall back to (arrivedMs - requestStartMs).
+  const durations = {};
+  let prevMs = requestStartMs;
+  for (const { step, event } of landed) {
+    const ms = event.arrivedMs;
+    if (typeof ms === "number" && typeof prevMs === "number") {
+      durations[step.stage] = ms - prevMs;
+    }
+    if (typeof ms === "number") prevMs = ms;
   }
 
   let nextStep = null;
@@ -316,14 +443,32 @@ function buildFlowChart(events, turnId, running) {
     return chart;
   }
 
+  // For the verification step's progressive view, we need the
+  // extraction event (claim seeds) and any routing_decision events
+  // (per-claim "in flight" → "done" transitions).
+  const extractionEvent = stageMap["assistant_extraction"];
+  const routingEvents = events.filter((e) => e.stage === "routing_decision");
+
   landed.forEach(({ step, event }, idx) => {
     if (idx > 0) chart.appendChild(arrowDown());
-    chart.appendChild(renderStepNode(step, event, annotationsByStep[step.stage] || []));
+    chart.appendChild(renderStepNode(step, event, annotationsByStep[step.stage] || [], {
+      duration: durations[step.stage],
+      extractionEvent, routingEvents,
+    }));
   });
 
   if (nextStep) {
     if (landed.length > 0) chart.appendChild(arrowDown());
-    chart.appendChild(renderThinkingNode(nextStep));
+    // Special-case: if we know what claims will be verified (extraction
+    // landed) but verification hasn't, render the verification step
+    // PROACTIVELY with claims as pending placeholders. This is the
+    // "claims being verified in parallel" view the user wants.
+    if (nextStep.stage === "verification" && extractionEvent) {
+      chart.appendChild(renderVerificationProgress(nextStep, extractionEvent, routingEvents,
+        annotationsByStep["verification"] || []));
+    } else {
+      chart.appendChild(renderThinkingNode(nextStep));
+    }
   }
 
   return chart;
@@ -347,16 +492,16 @@ function annotationStepFor(stage) {
   return null;
 }
 
-function renderStepNode(step, event, annotations) {
-  if (step.isClaimList) return renderVerificationNode(step, event, annotations);
+function renderStepNode(step, event, annotations, ctx = {}) {
+  if (step.isExtractionList) return renderExtractionNode(step, event, annotations, ctx);
+  if (step.isVerificationList) return renderVerificationNode(step, event, annotations, ctx);
 
   const wrapper = el("div", { className: "flow-step-wrapper" });
   const node = el("div", { className: "flow-step flow-step-done", dataset: { stage: step.stage } });
-  node.appendChild(el("div", { className: "flow-step-title", textContent: step.title }));
+  node.appendChild(buildStepHeader(step.title, ctx.duration));
   const meta = step.metaFn ? step.metaFn(event) : "";
   if (meta) node.appendChild(el("div", { className: "flow-step-meta", textContent: meta }));
 
-  const detailId = `detail-${step.stage}`;
   const detail = el("div", { className: "flow-step-detail" });
   if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
   renderStepDetail(detail, step, event, annotations);
@@ -376,33 +521,33 @@ function renderStepNode(step, event, annotations) {
   return wrapper;
 }
 
-function renderVerificationNode(step, event, annotations) {
-  const decisions = (event.data || {}).decisions || [];
+function buildStepHeader(title, durationMs) {
+  const header = el("div", { className: "flow-step-header" });
+  header.appendChild(el("span", { className: "flow-step-title", textContent: title }));
+  if (durationMs != null && isFinite(durationMs)) {
+    header.appendChild(el("span", { className: "flow-step-duration",
+      textContent: fmtDurationMs(durationMs), title: `${Math.round(durationMs)} ms` }));
+  }
+  return header;
+}
+
+function renderExtractionNode(step, event, annotations, ctx = {}) {
+  const data = event.data || {};
+  const valid = data.valid_facts || [];
+  const rejected = data.rejected_facts || [];
   const wrapper = el("div", { className: "flow-step-wrapper" });
-  const node = el("div", { className: "flow-step flow-step-done flow-step-verification",
+  const node = el("div", { className: "flow-step flow-step-done flow-step-extraction",
     dataset: { stage: step.stage } });
-  node.appendChild(el("div", { className: "flow-step-title",
-    textContent: `${step.title} · ${decisions.length} claim${decisions.length === 1 ? "" : "s"}` }));
-  if (decisions.length === 0) {
-    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims to verify" }));
+  const summary = `${valid.length} claim${valid.length === 1 ? "" : "s"}` +
+    (rejected.length ? ` · ${rejected.length} rejected` : "");
+  const header = buildStepHeader(`${step.title} · ${summary}`, ctx.duration);
+  node.appendChild(header);
+
+  if (valid.length === 0) {
+    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims extracted" }));
   } else {
     const list = el("ul", { className: "claim-list" });
-    decisions.forEach((d) => {
-      const display = d.display_status || "inconclusive";
-      const cls = flowEdgeClass(display);
-      const claim = d.claim || {};
-      const method = (d.routing_decision || {}).method || "?";
-      const cached = d.served_from_cache === true;
-      const row = el("li", {
-        className: `claim-row claim-${cls}` + (cached ? " claim-cached" : ""),
-        title: `${claim.predicate || "?"} (${claim.pattern || "?"}) via ${method}\n→ ${d.verification_status}` + (cached ? "\n(served from cache)" : ""),
-      });
-      row.appendChild(el("span", { className: "claim-dot" }));
-      row.appendChild(el("span", { className: "claim-label",
-        textContent: (cached ? "↺ " : "") + (claim.predicate || "?") }));
-      row.appendChild(el("span", { className: "claim-method", textContent: method }));
-      list.appendChild(row);
-    });
+    valid.forEach((c) => list.appendChild(renderClaimRow(c, "neutral", null)));
     node.appendChild(list);
   }
 
@@ -423,6 +568,116 @@ function renderVerificationNode(step, event, annotations) {
 
   wrapper.appendChild(node);
   wrapper.appendChild(detail);
+  return wrapper;
+}
+
+// Build one row inside a claim list. `state` is one of:
+//   "pending"  — grey hollow dot (no event yet)
+//   "in_flight" — blue pulsing dot (routing fired, verifying)
+//   "neutral"  — grey solid dot (extraction step view)
+//   { displayStatus, cached } — finalized verification result
+function renderClaimRow(claim, state, decision) {
+  let cls, dotState, methodText, suffix = "";
+  if (state === "pending") {
+    cls = "claim-pending"; dotState = "pending"; methodText = "queued";
+  } else if (state === "in_flight") {
+    cls = "claim-in-flight"; dotState = "pulsing"; methodText = "verifying…";
+  } else if (state === "neutral") {
+    cls = "claim-neutral"; dotState = "solid"; methodText = claim.pattern || "";
+  } else {
+    const display = (decision && decision.display_status) || "inconclusive";
+    cls = `claim-${flowEdgeClass(display)}`;
+    dotState = "solid";
+    methodText = (decision && decision.routing_decision || {}).method || "?";
+    if (decision && decision.served_from_cache) {
+      cls += " claim-cached";
+      suffix = "↺ ";
+    }
+  }
+  const row = el("li", {
+    className: `claim-row ${cls}`,
+    title: `${claim.pattern || "?"}.${claim.predicate || "?"}` +
+      (decision ? `\nstatus=${decision.verification_status}` : ""),
+  });
+  const dot = el("span", { className: `claim-dot claim-dot-${dotState}` });
+  row.appendChild(dot);
+  row.appendChild(el("span", { className: "claim-label",
+    textContent: suffix + (claim.predicate || "?") }));
+  row.appendChild(el("span", { className: "claim-method", textContent: methodText }));
+  return row;
+}
+
+function renderVerificationNode(step, event, annotations, ctx = {}) {
+  const decisions = (event.data || {}).decisions || [];
+  const wrapper = el("div", { className: "flow-step-wrapper" });
+  const node = el("div", { className: "flow-step flow-step-done flow-step-verification",
+    dataset: { stage: step.stage } });
+  const header = buildStepHeader(
+    `${step.title} · ${decisions.length} claim${decisions.length === 1 ? "" : "s"}`,
+    ctx.duration);
+  node.appendChild(header);
+
+  if (decisions.length === 0) {
+    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims to verify" }));
+  } else {
+    const list = el("ul", { className: "claim-list" });
+    decisions.forEach((d) => list.appendChild(renderClaimRow(d.claim || {}, d, d)));
+    node.appendChild(list);
+  }
+
+  const detail = el("div", { className: "flow-step-detail" });
+  if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
+  renderStepDetail(detail, step, event, annotations);
+
+  node.addEventListener("click", (e) => {
+    if (e.target.closest(".claim-row")) return;
+    if (expandedSteps.has(step.stage)) {
+      expandedSteps.delete(step.stage);
+      detail.classList.remove("expanded");
+    } else {
+      expandedSteps.add(step.stage);
+      detail.classList.add("expanded");
+    }
+  });
+
+  wrapper.appendChild(node);
+  wrapper.appendChild(detail);
+  return wrapper;
+}
+
+// Verification step rendered while the step is in-flight: pre-populate
+// claim placeholders from the extraction event, mark each as
+// "in flight" once its routing_decision lands. This gives the
+// "claims being verified in parallel, results coming in" experience
+// even though the backend processes them sequentially.
+function renderVerificationProgress(step, extractionEvent, routingEvents, annotations) {
+  const wrapper = el("div", { className: "flow-step-wrapper" });
+  const node = el("div", {
+    className: "flow-step flow-step-thinking flow-step-verification",
+    dataset: { stage: step.stage },
+  });
+  const valid = (extractionEvent.data || {}).valid_facts || [];
+  const routed = new Set(routingEvents.map((e) => claimKey((e.data || {}).claim || {})));
+
+  const header = el("div", { className: "flow-step-header" });
+  header.appendChild(el("span", { className: "flow-step-title", textContent: step.title }));
+  header.appendChild(el("span", { className: "flow-step-duration thinking-dots" }, [
+    document.createTextNode("verifying"),
+    el("span", { className: "thinking-anim" }),
+  ]));
+  node.appendChild(header);
+
+  if (valid.length === 0) {
+    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims to verify" }));
+  } else {
+    const list = el("ul", { className: "claim-list" });
+    valid.forEach((c) => {
+      const state = routed.has(claimKey(c)) ? "in_flight" : "pending";
+      list.appendChild(renderClaimRow(c, state, null));
+    });
+    node.appendChild(list);
+  }
+  wrapper.appendChild(node);
   return wrapper;
 }
 
@@ -637,10 +892,14 @@ function renderCorrectionDetail(container, data) {
     }
     container.appendChild(node);
   });
-  if (data.original && data.corrected) {
-    container.appendChild(el("h5", { textContent: "Diff" }));
-    container.appendChild(el("div", { className: "draft-box draft-original", textContent: data.original }));
-    container.appendChild(el("div", { className: "draft-box draft-corrected", textContent: data.corrected }));
+  if (data.original && data.corrected && data.original !== data.corrected) {
+    container.appendChild(el("h5", { textContent: "Inline diff" }));
+    const diff = el("div", { className: "diff-box" });
+    renderInlineDiff(diff, data.original, data.corrected);
+    container.appendChild(diff);
+  } else if (data.original && data.corrected) {
+    container.appendChild(el("p", { className: "hint",
+      textContent: "interventions planned but rewrite was identical to draft" }));
   }
 }
 
