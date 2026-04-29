@@ -1,30 +1,28 @@
-// Aedos UI — one file of vanilla JS that talks to the FastAPI backend.
+// Aedos UI — single-pane chat + live progressive flow chart, with a
+// slide-out inspector drawer for Facts / Patterns / Cache.
+//
+// Sections:
+//   1. el / api helpers
+//   2. SSE consumer (streamChat)
+//   3. Chat form + message list
+//   4. Live flow chart (5 stages, progressive, click-to-expand)
+//   5. Stage detail rendering (the long tail of pipeline_event types)
+//   6. Inspector drawer (Facts / Patterns / Cache)
+//   7. Model selector + Reset
 //
 // Conventions:
-//   * No build step, no framework. Every DOM construction uses document.createElement
-//     (never innerHTML on user-controlled text) so model output can't inject HTML.
-//   * Every backend response is rendered verbatim — the point of this tool is to see
-//     exactly what the pipeline produced, not a polished view.
+//   * No build step, no framework. textContent everywhere — never
+//     innerHTML on user-controlled text so model output can't inject
+//     HTML.
+//   * Every backend response renders verbatim — the point is to see
+//     what the pipeline produced, not a polished view.
+
+// =====================================================================
+// 1. helpers
+// =====================================================================
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-// ---- tabs --------------------------------------------------
-
-$$(".tab").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    $$(".tab").forEach((b) => b.classList.remove("active"));
-    $$(".tab-panel").forEach((p) => p.classList.remove("active"));
-    btn.classList.add("active");
-    $(`#tab-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "facts") refreshFacts();
-    if (btn.dataset.tab === "predicates") refreshPredicates();
-    if (btn.dataset.tab === "trace") refreshTraceTab();
-    if (btn.dataset.tab === "cache") refreshCache();
-  });
-});
-
-// ---- helpers -----------------------------------------------
 
 function el(tag, opts = {}, children = []) {
   const n = document.createElement(tag);
@@ -32,9 +30,12 @@ function el(tag, opts = {}, children = []) {
   if (opts.title) n.title = opts.title;
   if (opts.textContent !== undefined) n.textContent = opts.textContent;
   if (opts.dataset) for (const k in opts.dataset) n.dataset[k] = opts.dataset[k];
+  if (opts.style) n.style.cssText = opts.style;
   children.forEach((c) => n.appendChild(c));
   return n;
 }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 async function api(method, path, body) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
@@ -42,199 +43,26 @@ async function api(method, path, body) {
   const resp = await fetch(path, opts);
   if (!resp.ok) {
     let detail;
-    try {
-      const j = await resp.json();
-      // FastAPI puts the detail at j.detail. Sometimes it's a string,
-      // sometimes a dict (our /api/chat 502 returns a dict).
-      if (j && typeof j.detail === "object") {
-        const d = j.detail;
-        detail = `${d.error_type || "Error"}: ${d.error_message || ""}`;
-        if (d.hint) detail += ` — ${d.hint}`;
-      } else {
-        detail = j?.detail || JSON.stringify(j);
-      }
-    } catch {
-      detail = await resp.text();
-    }
-    throw new Error(`${method} ${path} failed (${resp.status}): ${detail}`);
+    try { detail = await resp.json(); } catch (_) { detail = await resp.text(); }
+    const msg = typeof detail === "object"
+      ? (detail.detail?.error_message || detail.detail?.error || JSON.stringify(detail))
+      : detail;
+    throw new Error(`${resp.status} ${msg}`);
   }
   return resp.json();
 }
 
-function renderCacheClaimHeader(claim) {
-  // Compact one-line claim identifier for cache decision events
-  // (cache_scoping_decision, cache_stability_decision). Without
-  // this header those events floated context-free in the trace —
-  // the operator couldn't tell which claim each decision pertained
-  // to. Format: ``pattern.predicate(key=val, ...)``.
-  const wrap = el("div", { className: "cache-claim-header" });
-  if (!claim || (!claim.pattern && !claim.predicate)) {
-    wrap.appendChild(el("span", { className: "cache-claim-missing",
-      textContent: "(claim not recorded on this event)" }));
-    return wrap;
-  }
-  wrap.appendChild(el("span", { className: "pattern-badge",
-    textContent: claim.pattern || "?" }));
-  wrap.appendChild(el("span", { className: "cache-claim-pred",
-    textContent: "." + (claim.predicate || "?") }));
-  const slots = claim.slots || {};
-  const slotKeys = Object.keys(slots);
-  if (slotKeys.length) {
-    const slotPairs = slotKeys.map((k) => {
-      const v = slots[k];
-      const vstr = typeof v === "object" ? JSON.stringify(v) : String(v);
-      const trimmed = vstr.length > 40 ? vstr.slice(0, 40) + "…" : vstr;
-      return `${k}=${trimmed}`;
-    }).join(", ");
-    wrap.appendChild(el("span", { className: "cache-claim-slots",
-      textContent: ` (${slotPairs})` }));
-  }
-  return wrap;
-}
-
-
-function triplify(claim) {
-  // v0.3: claims have {pattern, predicate, slots, polarity, source_text}.
-  // Render: pattern badge, predicate label, slot key-value table.
-  const pol = claim.polarity === 1
-    ? el("span", { className: "pol-pos", textContent: "+" })
-    : el("span", { className: "pol-neg", textContent: "−" });
-  const wrap = el("div", { className: "claim-block" });
-  const header = el("div", { className: "claim-header" }, [
-    el("span", { className: "pattern-badge", textContent: claim.pattern || "?" }),
-    el("span", { className: "pred", textContent: claim.predicate || "?" }),
-    pol,
-  ]);
-  wrap.appendChild(header);
-
-  const slots = claim.slots || {};
-  if (Object.keys(slots).length) {
-    const tbl = el("div", { className: "slots-table" });
-    for (const [k, v] of Object.entries(slots)) {
-      tbl.appendChild(el("span", { className: "slot-name", textContent: k }));
-      tbl.appendChild(el("span", {
-        className: "slot-value",
-        textContent: typeof v === "object" ? JSON.stringify(v) : String(v),
-      }));
-    }
-    wrap.appendChild(tbl);
-  }
-  if (claim.source_text) {
-    wrap.appendChild(el("div", {
-      className: "src",
-      textContent: `"${claim.source_text}"`,
-    }));
-  }
-  return wrap;
-}
-
-// ---- chat --------------------------------------------------
-
-const messagesEl = $("#messages");
-const traceEl = $("#trace");
-const flowLiveContainer = $("#flow-live-container");
-const flowLiveStatus = $("#flow-live-status");
-const form = $("#chat-form");
-const input = $("#input");
-
-// Render everything from the server on load so a refresh doesn't lose the conversation.
-async function hydrate() {
-  try {
-    const turns = await api("GET", "/api/turns");
-    messagesEl.innerHTML = "";
-    turns.forEach((t) => appendMessage(t));
-    if (turns.length) {
-      // Most recent assistant turn → render its events as the live
-      // flow + populate the Trace tab so the user sees state on
-      // reload.
-      const lastAsst = [...turns].reverse().find((t) => t.role === "assistant");
-      if (lastAsst) {
-        const events = await api("GET", `/api/trace/${lastAsst.id}`);
-        renderTrace(events);
-        renderLiveFlow(lastAsst.id, events);
-      }
-    }
-  } catch (e) {
-    console.error(e);
-  }
-}
-hydrate();
-
-// ---- model selector ---------------------------------------
-//
-// Populate the model dropdown from /api/models. Persist the
-// selection in localStorage so it survives reloads. The selected
-// id is sent with every /api/chat POST and drives every step of
-// the pipeline for that turn.
-
-const MODEL_STORAGE_KEY = "aedos.selected_model";
-const modelSelect = $("#model-select");
-
-async function populateModelSelect() {
-  try {
-    const data = await api("GET", "/api/models");
-    modelSelect.innerHTML = "";
-    (data.models || []).forEach((m) => {
-      // ``el()`` doesn't propagate ``value`` (it only handles
-      // className/title/textContent/dataset). Set it directly so the
-      // <option>'s value attribute is the canonical model id, not the
-      // human-readable label — otherwise <select>.value returns the
-      // textContent and the server gets "Claude Haiku 4.5" as a model
-      // name and rejects it.
-      const opt = el("option", {
-        textContent: m.label + (m.available ? "" : " — unavailable"),
-      });
-      opt.value = m.id;
-      if (!m.available) opt.disabled = true;
-      modelSelect.appendChild(opt);
-    });
-    // Restore the user's last pick if it's still in the available set;
-    // otherwise fall back to the server's default.
-    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
-    const ids = (data.models || []).map((m) => m.id);
-    if (saved && ids.includes(saved)) {
-      const opt = data.models.find((m) => m.id === saved);
-      if (opt && opt.available) modelSelect.value = saved;
-      else modelSelect.value = data.default;
-    } else {
-      modelSelect.value = data.default;
-    }
-  } catch (e) {
-    console.error("populateModelSelect failed:", e);
-  }
-}
-populateModelSelect();
-
-modelSelect.addEventListener("change", () => {
-  localStorage.setItem(MODEL_STORAGE_KEY, modelSelect.value);
-});
-
-function appendMessage(turn) {
-  const node = el("div", { className: `msg ${turn.role}`, textContent: turn.content });
-  if (turn.original_content && turn.original_content !== turn.content) {
-    node.appendChild(
-      el("div", { className: "original", textContent: turn.original_content }),
-    );
-    node.appendChild(
-      el("div", { className: "corrected-note", textContent: "↑ corrected by pipeline" }),
-    );
-  }
-  messagesEl.appendChild(node);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-// ---- live SSE consumer ----
+// =====================================================================
+// 2. SSE consumer
+// =====================================================================
 //
 // POST /api/chat/stream returns Server-Sent Events. We read the
-// response body as a stream and parse SSE frames manually (EventSource
-// only supports GET). Each pipeline_event arrival appends to the
-// liveEvents accumulator and re-renders the Flow View. Final ``done``
-// event carries the TurnTrace; ``error`` carries error info.
+// response body as a stream and parse SSE frames manually
+// (EventSource only supports GET).
 
 function parseSseFrame(block) {
   const out = { event: "message", data: "" };
-  const lines = block.split("\n");
-  for (const line of lines) {
+  for (const line of block.split("\n")) {
     if (!line) continue;
     const colon = line.indexOf(":");
     if (colon < 0) continue;
@@ -274,15 +102,51 @@ async function streamChat(body, handlers) {
       let parsed;
       try { parsed = JSON.parse(frame.data); }
       catch (_) { continue; }
-      if (frame.event === "pipeline_event" && handlers.onEvent)
-        handlers.onEvent(parsed);
-      else if (frame.event === "done" && handlers.onDone)
-        handlers.onDone(parsed);
-      else if (frame.event === "error" && handlers.onError)
-        handlers.onError(parsed);
+      if (frame.event === "pipeline_event" && handlers.onEvent) handlers.onEvent(parsed);
+      else if (frame.event === "done" && handlers.onDone) handlers.onDone(parsed);
+      else if (frame.event === "error" && handlers.onError) handlers.onError(parsed);
     }
   }
 }
+
+// =====================================================================
+// 3. chat form + message list
+// =====================================================================
+
+const messagesEl = $("#messages");
+const flowContainer = $("#flow-container");
+const flowStatus = $("#flow-status");
+const form = $("#chat-form");
+const input = $("#input");
+const modelSelect = $("#model-select");
+
+function appendMessage(turn) {
+  const node = el("div", { className: `msg ${turn.role}`, textContent: turn.content });
+  if (turn.original_content && turn.original_content !== turn.content) {
+    node.appendChild(el("div", { className: "original", textContent: turn.original_content }));
+    node.appendChild(el("div", { className: "corrected-note", textContent: "↑ corrected by pipeline" }));
+  }
+  messagesEl.appendChild(node);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+async function hydrate() {
+  try {
+    const turns = await api("GET", "/api/turns");
+    messagesEl.innerHTML = "";
+    turns.forEach((t) => appendMessage(t));
+    if (turns.length) {
+      const lastAsst = [...turns].reverse().find((t) => t.role === "assistant");
+      if (lastAsst) {
+        const events = await api("GET", `/api/trace/${lastAsst.id}`);
+        renderFlow(lastAsst.id, events);
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+hydrate();
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -297,15 +161,10 @@ form.addEventListener("submit", async (e) => {
   messagesEl.appendChild(thinking);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  // Reset the live flow chart and immediately render a "thinking"
-  // bubble for the first stage (Chat Model) — gives the operator
-  // visual feedback the moment they hit Send, before any event
-  // lands. Subsequent renders pass running=true so the next
-  // expected stage shows as a thinking placeholder.
   let assistantTurnId = null;
   const liveEvents = [];
-  flowLiveStatus.textContent = "running…";
-  renderLiveFlow(null, [], { running: true });
+  flowStatus.textContent = "running…";
+  renderFlow(null, [], { running: true });
 
   try {
     await streamChat(
@@ -314,14 +173,11 @@ form.addEventListener("submit", async (e) => {
         onEvent: (ev) => {
           if (assistantTurnId === null) assistantTurnId = ev.turn_id;
           liveEvents.push({
-            turn_id: ev.turn_id,
-            stage: ev.stage,
-            data: ev.data,
+            turn_id: ev.turn_id, stage: ev.stage, data: ev.data,
             created_at: new Date().toISOString(),
           });
-          renderLiveFlow(assistantTurnId, liveEvents, { running: true });
-          flowLiveStatus.textContent =
-            `running… (${liveEvents.length} events)`;
+          renderFlow(assistantTurnId, liveEvents, { running: true });
+          flowStatus.textContent = `running… (${liveEvents.length} events)`;
         },
         onDone: (trace) => {
           messagesEl.removeChild(thinking);
@@ -330,972 +186,35 @@ form.addEventListener("submit", async (e) => {
             content: trace.final_content,
             original_content: trace.original_content,
           });
-          // Final render with running=false so any lingering
-          // "thinking" bubble disappears.
-          renderLiveFlow(trace.assistant_turn_id, liveEvents,
-            { running: false });
-          flowLiveStatus.textContent =
-            `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
+          renderFlow(trace.assistant_turn_id, liveEvents, { running: false });
+          flowStatus.textContent = `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
         },
         onError: (errInfo) => {
-          thinking.textContent =
-            `⚠ ${errInfo.error_type}: ${errInfo.error_message}`;
+          thinking.textContent = `⚠ ${errInfo.error_type}: ${errInfo.error_message}`;
           thinking.style.color = "var(--bad)";
-          flowLiveStatus.textContent = "error";
+          flowStatus.textContent = "error";
         },
       },
     );
   } catch (err) {
     thinking.textContent = `⚠ ${err.message}`;
     thinking.style.color = "var(--bad)";
-    flowLiveStatus.textContent = "error";
+    flowStatus.textContent = "error";
   } finally {
     sendBtn.disabled = false;
     input.focus();
   }
 });
 
-// ---- trace renderer ---------------------------------------
-
-function renderTrace(events) {
-  traceEl.innerHTML = "";
-  if (!events || !events.length) {
-    traceEl.appendChild(el("p", { className: "hint", textContent: "No trace for this turn." }));
-    return;
-  }
-  // Promote loud events to banners at the top of the trace.
-  events
-    .filter((e) => e.stage === "routing_anomaly_detected")
-    .forEach((ev) => traceEl.appendChild(renderAnomalyBanner(ev)));
-  events
-    .filter((e) => e.stage === "verifier_failure")
-    .forEach((ev) => traceEl.appendChild(renderVerifierFailureBanner(ev)));
-  events
-    .filter((e) => e.stage === "extractor_substitution_warning")
-    .forEach((ev) => traceEl.appendChild(renderSubstitutionWarning(ev)));
-  // Bury per-attempt retrieval logs and code-gen sub-stages inside their
-  // decisions, not as standalone stages.
-  const buriedStages = new Set([
-    "routing_anomaly_detected",
-    "verifier_failure",
-    "extractor_substitution_warning",
-    "retrieval_query_attempt",
-    // v0.4 / v0.5 code-gen sub-stages — surfaced inside the verification decision.
-    "code_prompt_built",
-    "code_prompt_leakage_detected",
-    "code_generated",
-    "code_executed",
-    "code_unusual_behavior",
-    "code_comparison",
-    // v0.5 routing + cross-check stages — surfaced inline on the decision.
-    "routing_decision",
-    "canonical_constants_cross_check",
-    "canonical_constants_disagreement",
-  ]);
-  events
-    .filter((e) => !buriedStages.has(e.stage))
-    .forEach((ev) => traceEl.appendChild(renderStage(ev)));
-}
-
-function renderAnomalyBanner(event) {
-  const d = event.data || {};
-  const claim = d.claim || {};
-  const slot = d.anomaly_slot || {};
-  const banner = el("div", { className: "anomaly-banner" });
-  banner.appendChild(el("strong", {
-    textContent: "⚠ Routing anomaly detected — likely extractor error",
-  }));
-  const body = el("div");
-  body.appendChild(document.createTextNode("Pattern "));
-  body.appendChild(el("code", { textContent: claim.pattern || "?" }));
-  body.appendChild(document.createTextNode(" expects slot "));
-  body.appendChild(el("code", { textContent: slot.slot || "?" }));
-  body.appendChild(document.createTextNode(" = "));
-  body.appendChild(el("code", { textContent: String(slot.expected ?? "?") }));
-  body.appendChild(document.createTextNode(" for the user-authoritative branch, but got "));
-  body.appendChild(el("code", { textContent: String(slot.actual ?? "?") }));
-  body.appendChild(document.createTextNode(
-    ". This almost always means the extractor mis-bound the slot. "
-    + "Consider whether the source phrasing should have mapped to a different pattern."
-  ));
-  banner.appendChild(body);
-  if (d.warning) {
-    banner.appendChild(el("div", {
-      className: "decision-meta",
-      textContent: d.warning,
-    }));
-  }
-  return banner;
-}
-
-function renderSubstitutionWarning(event) {
-  const d = event.data || {};
-  const w = d.warning || {};
-  const fact = d.fact || {};
-  const banner = el("div", { className: "anomaly-banner",
-    style: "background:#fff7e6;border-color:#c87000;color:#8a4d00;" });
-  banner.appendChild(el("strong", {
-    textContent: "⚠ Extractor substitution detected",
-  }));
-  banner.appendChild(el("div", {
-    textContent: w.detail || "extractor source_text doesn't match input",
-  }));
-  if (fact.source_text) {
-    banner.appendChild(el("div", { className: "decision-meta",
-      textContent: `extractor wrote source_text: ${JSON.stringify(fact.source_text)}` }));
-  }
-  if (d.model_draft) {
-    banner.appendChild(el("div", { className: "decision-meta",
-      style: "font-size:0.7rem",
-      textContent: `actual model draft (first 240): ${d.model_draft.slice(0, 240)}` }));
-  }
-  return banner;
-}
-
-
-function renderVerifierFailureBanner(event) {
-  const d = event.data || {};
-  const claim = d.claim || {};
-  const banner = el("div", { className: "anomaly-banner", style: "background:#fff7e6;border-color:var(--warn);color:var(--warn);" });
-  banner.appendChild(el("strong", {
-    textContent: "⚡ Verifier failure — claim NOT hedged",
-  }));
-  banner.appendChild(el("div", {
-    textContent: (
-      "The retrieval verifier produced no useful signal for the "
-      + (claim.pattern || "?") + "/" + (claim.predicate || "?") + " claim. "
-      + "Hedging on verifier failure was a v0.2 bug — adding 'I think' to a "
-      + "possibly-true claim is worse than leaving it. The fact is stored "
-      + "as retrieval_failed; investigate the search/judge instead."
-    ),
-  }));
-  return banner;
-}
-
-function renderStage(event) {
-  const stage = el("div", { className: "stage" });
-  const header = el("div", { className: "stage-header" }, [
-    el("span", { textContent: event.stage }),
-    el("span", { className: "turn-role", textContent: `turn ${event.turn_id} · ${event.created_at}` }),
-  ]);
-  stage.appendChild(header);
-  const body = el("div", { className: "stage-body" });
-  stage.appendChild(body);
-
-  const d = event.data || {};
-  switch (event.stage) {
-    case "user_extraction":
-    case "assistant_extraction":
-      renderExtraction(body, d);
-      break;
-    case "user_storage":
-    case "verification":
-      renderDecisions(body, d);
-      break;
-    case "assistant_draft":
-      body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
-      break;
-    case "cache_lookup": {
-      // v0.6 — cache hit/miss event. Three result types: ``hit``
-      // (exact-key match), ``semantic_hit`` (Jaccard predicate
-      // match anchored on identity slots — different key, same
-      // shape), and ``miss``. Each gets a distinct badge so the
-      // operator can see at a glance which path served the verdict.
-      const result = d.result || (d.error ? "error" : "?");
-      stage.classList.add(`cache-${result}`);
-      const meta = el("div", { className: "decision-meta" });
-      const badgeLabel = result === "semantic_hit"
-        ? "SEMANTIC HIT" : result.toUpperCase();
-      const badge = el("span", {
-        className: `cache-badge cache-badge-${result}`,
-        textContent: badgeLabel,
-      });
-      const head = el("div", {});
-      head.appendChild(badge);
-      if (result === "hit") {
-        head.appendChild(document.createTextNode(
-          ` retrieval short-circuited · ${d.verdict || "?"}`
-          + (d.hit_count != null ? ` · entry hit_count=${d.hit_count}` : "")
-        ));
-      } else if (result === "semantic_hit") {
-        const score = d.score != null ? ` · Jaccard=${d.score}` : "";
-        head.appendChild(document.createTextNode(
-          ` retrieval short-circuited via shape match · `
-          + `${d.verdict || "?"}${score}`
-          + (d.hit_count != null ? ` · entry hit_count=${d.hit_count}` : "")
-        ));
-      } else if (result === "miss") {
-        head.appendChild(document.createTextNode(
-          " no cached verdict — falling through to retrieval"));
-      } else if (d.error) {
-        head.appendChild(document.createTextNode(` · ${d.error}`));
-      }
-      meta.appendChild(head);
-      // For semantic hits, show BOTH keys (lookup + matched) so the
-      // operator can see what shape merged with what.
-      if (result === "semantic_hit" && d.matched_key) {
-        meta.appendChild(el("div", {
-          className: "mono cache-key",
-          textContent: `lookup_key=${(d.canonical_key || "").slice(0, 100)}`,
-        }));
-        meta.appendChild(el("div", {
-          className: "mono cache-key",
-          textContent: `matched_key=${d.matched_key.slice(0, 100)}`,
-        }));
-      } else if (d.canonical_key) {
-        meta.appendChild(el("div", {
-          className: "mono cache-key",
-          textContent: `key=${d.canonical_key.slice(0, 100)}`,
-        }));
-      }
-      if ((result === "hit" || result === "semantic_hit") && d.expires_at) {
-        meta.appendChild(el("div", {
-          className: "decision-meta-secondary",
-          textContent: `expires ${d.expires_at}`,
-        }));
-      }
-      body.appendChild(meta);
-      break;
-    }
-    case "cache_write": {
-      // v0.6 — cache write event. A write fills the cache so the
-      // next equivalent claim is a hit; mark errors red but don't
-      // belabor successes (they're the expected steady-state outcome
-      // when Tier 2 is enabled).
-      const meta = el("div", { className: "decision-meta" });
-      if (d.error) {
-        stage.classList.add("cache-error");
-        const head = el("div", {});
-        head.appendChild(el("span", {
-          className: "cache-badge cache-badge-error",
-          textContent: "WRITE ERR",
-        }));
-        head.appendChild(document.createTextNode(` ${d.error}`));
-        meta.appendChild(head);
-      } else {
-        stage.classList.add("cache-write");
-        const head = el("div", {});
-        head.appendChild(el("span", {
-          className: "cache-badge cache-badge-write",
-          textContent: "WROTE",
-        }));
-        const ttlText = d.ttl_seconds === null ? "never expires"
-          : d.ttl_seconds != null ? `ttl=${d.ttl_seconds}s` : "no ttl";
-        head.appendChild(document.createTextNode(
-          ` ${d.verdict || "?"} · ${d.stability_class || "?"} · ${ttlText}`));
-        meta.appendChild(head);
-        if (d.canonical_key) {
-          meta.appendChild(el("div", {
-            className: "mono cache-key",
-            textContent: `key=${d.canonical_key.slice(0, 100)}`,
-          }));
-        }
-      }
-      body.appendChild(meta);
-      break;
-    }
-    case "cache_scoping_decision": {
-      const meta = el("div", { className: "decision-meta" });
-      meta.appendChild(renderCacheClaimHeader(d.claim));
-      if (d.error) {
-        meta.appendChild(el("div", {
-          style: "color:var(--danger)",
-          textContent: `error: ${d.error}`,
-        }));
-      } else {
-        const dec = d.decision || {};
-        meta.appendChild(el("div", {
-          textContent: `scope=${dec.scope || "?"} (conf=${
-            (dec.confidence ?? 0).toFixed(2)}) — ${dec.reason || ""}`,
-        }));
-      }
-      body.appendChild(meta);
-      break;
-    }
-    case "cache_stability_decision": {
-      const meta = el("div", { className: "decision-meta" });
-      meta.appendChild(renderCacheClaimHeader(d.claim));
-      if (d.error) {
-        meta.appendChild(el("div", {
-          style: "color:var(--danger)",
-          textContent: `error: ${d.error}`,
-        }));
-      } else {
-        const dec = d.decision || {};
-        const ttl = dec.ttl_seconds === null ? "never expires"
-          : dec.ttl_seconds === 0 ? "don't cache (volatile)"
-          : `ttl=${dec.ttl_seconds}s`;
-        meta.appendChild(el("div", {
-          textContent: `${dec.stability_class || "?"} (conf=${
-            (dec.confidence ?? 0).toFixed(2)}) · ${ttl} — ${dec.reason || ""}`,
-        }));
-      }
-      body.appendChild(meta);
-      break;
-    }
-    case "turn_cost": {
-      // v0.6 — end-of-turn cost aggregate. Show total + by-model breakdown.
-      const meta = el("div", { className: "decision-meta" });
-      const totalUsd = (d.total_usd ?? 0).toFixed(6);
-      const totalCalls = d.total_calls ?? 0;
-      const totalIn = d.total_input_tokens ?? 0;
-      const totalOut = d.total_output_tokens ?? 0;
-      meta.appendChild(el("div", {
-        textContent: `$${totalUsd} · ${totalCalls} calls · `
-          + `${totalIn} in / ${totalOut} out tokens`
-          + (d.any_unknown_pricing ? " (some unknown pricing)" : ""),
-      }));
-      const byModel = d.by_model || {};
-      Object.keys(byModel).sort().forEach((m) => {
-        const slot = byModel[m];
-        meta.appendChild(el("div", {
-          className: "mono",
-          style: "font-size:0.75rem;padding-left:0.8rem",
-          textContent: `${m}: ${slot.calls} calls, $${(slot.total_usd ?? 0).toFixed(6)}`
-            + ` (${slot.input_tokens || 0} in / ${slot.output_tokens || 0} out)`,
-        }));
-      });
-      body.appendChild(meta);
-      break;
-    }
-    case "chat_model_call": {
-      // v0.5.x: per-turn provenance row for the chat model under test.
-      // Whether the chat model was Claude or GLM, we get one of these.
-      const meta = el("div", { className: "decision-meta" });
-      const provider = d.provider || "?";
-      const model = d.model || "?";
-      const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
-      const status = d.status_code != null ? ` http=${d.status_code}` : "";
-      const sysChars = d.system_chars != null ? `, system=${d.system_chars}c` : "";
-      const respChars = d.response_chars != null ? `, response=${d.response_chars}c` : "";
-      meta.appendChild(el("div", {
-        textContent: `${provider}:${model} — ${dur}${status} (msgs=${d.message_count ?? "?"}${sysChars}${respChars})`,
-      }));
-      if (d.error) {
-        meta.appendChild(el("div", {
-          style: "color:var(--danger);font-weight:600",
-          textContent: `error: ${d.error}`,
-        }));
-      }
-      body.appendChild(meta);
-      break;
-    }
-    case "correction": {
-      const diff = el("div", { className: "diff-view" });
-      const left = el("div");
-      left.appendChild(el("h4", { textContent: "Original" }));
-      left.appendChild(el("div", {
-        className: "diff-pane diff-original",
-        textContent: d.original || "",
-      }));
-      const right = el("div");
-      right.appendChild(el("h4", { textContent: "Corrected" }));
-      right.appendChild(el("div", {
-        className: "diff-pane diff-corrected",
-        textContent: d.corrected || "",
-      }));
-      diff.appendChild(left);
-      diff.appendChild(right);
-      const interventions = d.interventions || [];
-      if (interventions.length) {
-        const list = el("div", { className: "intervention-list" });
-        list.appendChild(el("strong", { textContent: "Interventions:" }));
-        const ul = el("ul");
-        interventions.forEach((iv) => {
-          const li = el("li");
-          li.appendChild(el("span", {
-            className: `intervention-type intervention-type-${iv.intervention_type}`,
-            textContent: iv.intervention_type,
-          }));
-          const claim = iv.claim || {};
-          li.appendChild(document.createTextNode(
-            `${claim.subject || "?"} · ${claim.predicate || "?"} · ${claim.object || "?"} — ${iv.reason || ""}`,
-          ));
-          ul.appendChild(li);
-        });
-        list.appendChild(ul);
-        diff.appendChild(list);
-      }
-      body.appendChild(diff);
-      break;
-    }
-    case "final":
-      body.appendChild(el("div", { className: "draft-box", textContent: d.content || "" }));
-      break;
-    default:
-      body.appendChild(el("pre", { textContent: JSON.stringify(d, null, 2) }));
-  }
-  return stage;
-}
-
-function renderExtraction(body, data) {
-  if (data.valid_facts && data.valid_facts.length) {
-    body.appendChild(el("div", { textContent: "Valid claims:" }));
-    data.valid_facts.forEach((c) => body.appendChild(triplify(c)));
-  } else {
-    body.appendChild(el("div", { className: "hint", textContent: "(no valid claims extracted)" }));
-  }
-  if (data.rejected_facts && data.rejected_facts.length) {
-    const rej = el("div", { className: "rejected-claims" });
-    rej.appendChild(el("strong", { textContent: "Rejected:" }));
-    data.rejected_facts.forEach((r) => {
-      rej.appendChild(
-        el("div", { textContent: `• ${r.reason} — ${JSON.stringify(r.claim)}` }),
-      );
-    });
-    body.appendChild(rej);
-  }
-}
-
-function statusBadge(status) {
-  if (!status) return el("span");
-  return el("span", {
-    className: `status-badge status-${status}`,
-    textContent: status,
-    title: `verification_status = ${status}`,
-  });
-}
-
-function renderRoutingDecision(rd) {
-  // rd: {method, reason, confidence, python_inputs_self_contained,
-  //      retrieval_query_hint, canonical_constants_needed}
-  const block = el("div", { className: "routing-block" });
-  const header = el("div", { className: "routing-header" });
-  header.appendChild(el("span", {
-    className: `routing-method routing-method-${rd.method}`,
-    textContent: `route → ${rd.method}`,
-  }));
-  if (typeof rd.confidence === "number") {
-    const conf = rd.confidence;
-    const lowConf = conf < 0.7;
-    header.appendChild(el("span", {
-      className: lowConf ? "routing-conf-low" : "routing-conf",
-      textContent: `conf=${conf.toFixed(2)}`,
-      title: lowConf ? "low-confidence routing decision (< 0.7)" : "",
-    }));
-    if (lowConf) {
-      header.appendChild(el("span", {
-        className: "routing-warning",
-        textContent: "⚠ low confidence",
-      }));
-    }
-  }
-  block.appendChild(header);
-  if (rd.reason) {
-    block.appendChild(el("div", {
-      className: "routing-reason",
-      textContent: rd.reason,
-    }));
-  }
-  const meta = [];
-  if (rd.python_inputs_self_contained === true) meta.push("inputs self-contained");
-  if (rd.python_inputs_self_contained === false) meta.push("inputs require external data");
-  if (rd.retrieval_query_hint) meta.push(`query hint: ${rd.retrieval_query_hint}`);
-  if (rd.canonical_constants_needed && rd.canonical_constants_needed.length) {
-    meta.push(`canonical: ${rd.canonical_constants_needed.join(", ")}`);
-  }
-  if (meta.length) {
-    block.appendChild(el("div", {
-      className: "routing-meta",
-      textContent: meta.join(" · "),
-    }));
-  }
-  return block;
-}
-
-
-function renderCrossCheckBlock(cc) {
-  // cc.a, cc.b each have {status, actual_value, code, execution, explanation}.
-  const block = el("div", { className: "crosscheck-block" });
-  const header = el("div", { className: "crosscheck-header" });
-  const agree = (
-    cc.a && cc.b
-    && cc.a.status === cc.b.status
-    && cc.a.actual_value === cc.b.actual_value
-  );
-  header.appendChild(el("strong", {
-    textContent: agree
-      ? "canonical-constants cross-check: AGREE"
-      : "⚠ canonical-constants cross-check: DISAGREE",
-  }));
-  block.appendChild(header);
-
-  const row = el("div", { className: "crosscheck-row" });
-  ["a", "b"].forEach((k) => {
-    const side = cc[k] || {};
-    const col = el("div", { className: "crosscheck-col" });
-    col.appendChild(el("h5", {
-      textContent: `gen ${k.toUpperCase()} — ${side.status || "?"}`,
-    }));
-    if (side.code && side.code.code) {
-      const pre = el("pre", { className: "codegen-code" });
-      pre.textContent = side.code.code;
-      col.appendChild(pre);
-    }
-    if (side.actual_value !== undefined) {
-      col.appendChild(el("div", {
-        className: "codegen-meta",
-        textContent: `computed = ${JSON.stringify(side.actual_value)}`,
-      }));
-    }
-    row.appendChild(col);
-  });
-  block.appendChild(row);
-  return block;
-}
-
-
-function renderCodeGenBlock(result) {
-  // result has: status, confidence, explanation, actual_value, trace
-  // trace has: triage, prompt (with attempts), code, execution, comparison
-  const block = el("div", { className: "codegen-block" });
-
-  // Header — verdict + computed/claimed values, always visible.
-  const header = el("div", { className: "codegen-header" });
-  header.appendChild(el("span", {
-    className: `codegen-status codegen-status-${result.status}`,
-    textContent: `code-gen: ${result.status}`,
-  }));
-  if (result.explanation) {
-    header.appendChild(el("span", {
-      className: "codegen-explanation",
-      textContent: result.explanation,
-    }));
-  }
-  block.appendChild(header);
-
-  const trace = result.trace || {};
-
-  // Warnings — prompt leakage, slow run, stderr.
-  const warnings = [];
-  const promptInfo = trace.prompt || {};
-  const attempts = promptInfo.attempts || [];
-  const leakAttempts = attempts.filter((a) => a.leak_detected);
-  if (leakAttempts.length > 0) {
-    warnings.push(
-      promptInfo.compromised
-        ? "⚠ leak detected on every attempt — verification compromised"
-        : `⚠ leak detected on ${leakAttempts.length} attempt(s); retried successfully`,
-    );
-  }
-  const exec = trace.execution || {};
-  if (exec.slow) warnings.push(`⏱ slow run (${exec.duration_ms} ms)`);
-  if (exec.stderr) warnings.push("⚠ stderr output (see below)");
-  if (exec.timed_out) warnings.push("⛔ sandbox timed out");
-  warnings.forEach((w) => {
-    block.appendChild(el("div", { className: "codegen-warning", textContent: w }));
-  });
-
-  // Expandable details.
-  const details = el("details", { className: "codegen-details" });
-  const summary = el("summary", {
-    textContent: "show pipeline (prompt → code → execution → comparison)",
-  });
-  details.appendChild(summary);
-
-  // Triage (legacy v0.4 traces only — v0.5 doesn't generate this).
-  if (trace.triage) {
-    const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "0. Triage (v0.4 legacy)" }));
-    sec.appendChild(el("div", {
-      textContent: `verifiable: ${trace.triage.verifiable}`,
-    }));
-    if (trace.triage.reason) {
-      sec.appendChild(el("div", {
-        className: "codegen-reason",
-        textContent: trace.triage.reason,
-      }));
-    }
-    details.appendChild(sec);
-  }
-
-  // Prompt + attempts
-  if (trace.prompt) {
-    const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "1. Neutral prompt" }));
-    sec.appendChild(el("div", {
-      className: "codegen-readonly",
-      textContent: trace.prompt.prompt || "",
-    }));
-    sec.appendChild(el("div", {
-      className: "codegen-meta",
-      textContent: `expected_output_type: ${trace.prompt.expected_output_type}`,
-    }));
-    if (attempts.length > 1) {
-      const attempts_block = el("div", { className: "codegen-attempts" });
-      attempts_block.appendChild(el("strong", { textContent: "attempts:" }));
-      attempts.forEach((a, i) => {
-        const row = el("div", { className: "codegen-attempt" });
-        row.appendChild(el("span", {
-          className: a.leak_detected ? "codegen-attempt-leak" : "codegen-attempt-ok",
-          textContent: a.leak_detected ? `[${i + 1}] LEAK` : `[${i + 1}] ok`,
-        }));
-        row.appendChild(document.createTextNode(" "));
-        row.appendChild(el("code", { textContent: a.prompt }));
-        attempts_block.appendChild(row);
-      });
-      sec.appendChild(attempts_block);
-    }
-    details.appendChild(sec);
-  }
-
-  // Code
-  if (trace.code) {
-    const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "2. Generated code" }));
-    sec.appendChild(el("div", {
-      className: "codegen-meta",
-      textContent: `model: ${trace.code.model || ""}`,
-    }));
-    const pre = el("pre", { className: "codegen-code" });
-    pre.textContent = trace.code.code || "";
-    sec.appendChild(pre);
-    details.appendChild(sec);
-  }
-
-  // Execution
-  if (trace.execution) {
-    const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "3. Execution" }));
-    sec.appendChild(el("div", {
-      className: "codegen-meta",
-      textContent: (
-        `success=${trace.execution.success} · `
-        + `exit_code=${trace.execution.exit_code} · `
-        + `duration_ms=${trace.execution.duration_ms} · `
-        + `timed_out=${trace.execution.timed_out}`
-      ),
-    }));
-    if (trace.execution.stdout) {
-      sec.appendChild(el("h5", { textContent: "stdout" }));
-      const pre = el("pre", { className: "codegen-stdout" });
-      pre.textContent = trace.execution.stdout;
-      sec.appendChild(pre);
-    }
-    if (trace.execution.stderr) {
-      sec.appendChild(el("h5", { textContent: "stderr" }));
-      const pre = el("pre", { className: "codegen-stderr" });
-      pre.textContent = trace.execution.stderr;
-      sec.appendChild(pre);
-    }
-    details.appendChild(sec);
-  }
-
-  // Comparison
-  if (trace.comparison) {
-    const sec = el("div", { className: "codegen-section" });
-    sec.appendChild(el("h4", { textContent: "4. Comparison" }));
-    sec.appendChild(el("div", {
-      textContent: `verdict: ${trace.comparison.verdict}`,
-    }));
-    sec.appendChild(el("div", {
-      className: "codegen-meta",
-      textContent: (
-        `claimed=${JSON.stringify(trace.comparison.claimed_value)} · `
-        + `computed=${JSON.stringify(trace.comparison.computed_value)}`
-      ),
-    }));
-    if (trace.comparison.explanation) {
-      sec.appendChild(el("div", {
-        className: "codegen-reason",
-        textContent: trace.comparison.explanation,
-      }));
-    }
-    details.appendChild(sec);
-  }
-
-  block.appendChild(details);
-  return block;
-}
-
-function renderRetrievalBlock(rr) {
-  const node = el("div", { className: "retrieval-block" });
-
-  // Verdict + temporal mode (current vs historical).
-  if (rr.verdict) {
-    const v = rr.verdict;
-    const verdictEl = el("div", { className: `verdict verdict-${v.verdict}` });
-    verdictEl.textContent = `judge (${rr.historical ? "historical" : "current"}): ${v.verdict}`;
-    node.appendChild(verdictEl);
-    if (v.justification) {
-      node.appendChild(el("div", {
-        className: "verifier-explanation",
-        textContent: v.justification,
-      }));
-    }
-  }
-  if (rr.error_flag) {
-    node.appendChild(el("span", { className: "error-flag", textContent: rr.error_flag }));
-  }
-
-  // Multi-attempt query strategy table — Section 5 surface.
-  const attempts = rr.attempts || [];
-  if (attempts.length) {
-    const wrap = el("div", { className: "query-attempts" });
-    wrap.appendChild(el("div", { className: "decision-meta", textContent: "query attempts:" }));
-    const tbl = el("table");
-    tbl.appendChild(el("tr", {}, ["#", "query", "results", "cache?", "used?", "error"]
-      .map((h) => el("th", { textContent: h }))));
-    attempts.forEach((a, i) => {
-      const tr = el("tr");
-      if (a.used) tr.classList.add("attempt-used");
-      if (a.error) tr.classList.add("attempt-error");
-      [
-        String(i + 1),
-        a.query,
-        String(a.result_count),
-        a.from_cache ? "✓" : "",
-        a.used ? "✓" : "",
-        a.error || "",
-      ].forEach((v, j) => {
-        const td = el("td", { textContent: v });
-        if (j === 1) td.classList.add("att-q");
-        tr.appendChild(td);
-      });
-      tbl.appendChild(tr);
-    });
-    wrap.appendChild(tbl);
-    node.appendChild(wrap);
-  }
-
-  (rr.snippets || []).forEach((s) => {
-    const sn = el("div", { className: "snippet" });
-    if (s.title) sn.appendChild(el("div", { className: "snippet-title", textContent: s.title }));
-    if (s.snippet) sn.appendChild(el("div", { textContent: s.snippet }));
-    if (s.url) sn.appendChild(el("div", { className: "snippet-url", textContent: s.url }));
-    node.appendChild(sn);
-  });
-  return node;
-}
-
-function renderDecisions(body, data) {
-  const decisions = data.decisions || [];
-  if (!decisions.length) {
-    body.appendChild(el("div", { className: "hint", textContent: "(no decisions — nothing routed)" }));
-    return;
-  }
-  decisions.forEach((d) => {
-    const node = el("div", { className: "decision" });
-    if (d.served_from_cache) node.classList.add("decision-cached");
-    const headerChildren = [
-      el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
-      statusBadge(d.verification_status),
-    ];
-    if (d.served_from_cache) {
-      headerChildren.push(el("span", {
-        className: "cache-badge cache-badge-hit",
-        title: "verdict came from the Tier 2 verification cache; "
-               + "retrieval was short-circuited",
-        textContent: "↺ CACHED",
-      }));
-    }
-    headerChildren.push(triplify(d.claim));
-    const header = el("div", { className: "decision-header" }, headerChildren);
-    node.appendChild(header);
-    const meta = [];
-    if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
-    if (d.stored_fact_id != null) meta.push(`stored fact id=${d.stored_fact_id}`);
-    if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
-    if (d.closed_fact_ids && d.closed_fact_ids.length) meta.push(`closed=${d.closed_fact_ids.join(",")}`);
-    if (d.contradicting_fact_id != null) meta.push(`contradicted id=${d.contradicting_fact_id}`);
-    if (d.matching_fact_id != null) meta.push(`matching id=${d.matching_fact_id}`);
-    if (meta.length) node.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
-
-    // v0.5: routing decision leads the verification block.
-    if (d.routing_decision) {
-      node.appendChild(renderRoutingDecision(d.routing_decision));
-    }
-
-    if (d.code_gen_result) {
-      node.appendChild(renderCodeGenBlock(d.code_gen_result));
-      // v0.5: canonical-constants cross-check, when present.
-      const cc = (d.code_gen_result.trace || {}).cross_check;
-      if (cc) node.appendChild(renderCrossCheckBlock(cc));
-    }
-    if (d.retrieval_result) {
-      node.appendChild(renderRetrievalBlock(d.retrieval_result));
-    }
-    if (d.correction) {
-      node.appendChild(
-        el("div", {
-          className: "correction-block",
-          textContent: `correction: ${d.correction.original_object} → ${d.correction.corrected_object}`,
-        }),
-      );
-    }
-    (d.notes || []).forEach((n) => {
-      node.appendChild(el("div", { className: "verifier-explanation", textContent: n }));
-    });
-    body.appendChild(node);
-  });
-}
-
-// ---- facts inspector --------------------------------------
-
-async function refreshFacts() {
-  const p = new URLSearchParams();
-  const pat = $("#f-pattern").value;
-  const pred = $("#f-predicate").value.trim();
-  const ab = $("#f-asserted-by").value;
-  const st = $("#f-status").value;
-  const onlyValid = $("#f-only-valid").checked;
-  if (pat) p.set("pattern", pat);
-  if (pred) p.set("predicate", pred);
-  if (ab) p.set("asserted_by", ab);
-  if (st) p.set("verification_status", st);
-  if (onlyValid) p.set("only_valid", "true");
-
-  const facts = await api("GET", "/api/facts?" + p.toString());
-  const container = $("#facts-table");
-  container.innerHTML = "";
-  if (!facts.length) {
-    container.appendChild(el("p", { className: "hint", textContent: "(no facts match these filters)" }));
-    return;
-  }
-  const table = el("table");
-  const head = el("tr", {}, [
-    "id", "pattern", "predicate", "slots", "pol", "confidence", "asserted_by", "status", "valid_until", "turn",
-  ].map((h) => el("th", { textContent: h })));
-  table.appendChild(head);
-  facts.forEach((f) => {
-    const tr = el("tr");
-    if (f.valid_until) tr.classList.add("closed");
-    if (f.verification_status === "contradicted") tr.classList.add("contradicted");
-    if (f.verification_status === "verified") tr.classList.add("verified");
-
-    const slotsCell = el("td", { className: "mono" });
-    const entries = Object.entries(f.slots || {});
-    slotsCell.textContent = entries.length
-      ? entries.map(([k, v]) =>
-          `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(" ")
-      : "—";
-
-    const confCell = el("td");
-    if (typeof f.confidence === "number") {
-      const bar = el("span", { className: "confidence-bar" });
-      const overlay = el("span");
-      overlay.style.width = `${Math.max(0, (1 - f.confidence) * 100)}%`;
-      bar.appendChild(overlay);
-      confCell.appendChild(bar);
-      confCell.appendChild(el("span", {
-        className: "confidence-text",
-        textContent: f.confidence.toFixed(2),
-      }));
-    } else {
-      confCell.textContent = String(f.confidence);
-    }
-    const statusCell = el("td");
-    statusCell.appendChild(statusBadge(f.verification_status));
-
-    [
-      el("td", { textContent: String(f.id) }),
-      el("td", {}, [el("span", { className: "pattern-badge", textContent: f.pattern })]),
-      el("td", { textContent: String(f.predicate) }),
-      slotsCell,
-      el("td", { textContent: String(f.polarity) }),
-      confCell,
-      el("td", { textContent: String(f.asserted_by) }),
-      statusCell,
-      el("td", { textContent: f.valid_until || "—" }),
-      el("td", { textContent: String(f.source_turn_id ?? "") }),
-    ].forEach((c) => tr.appendChild(c));
-    table.appendChild(tr);
-  });
-  container.appendChild(table);
-}
-
-["#f-predicate"].forEach((s) => {
-  $(s).addEventListener("keydown", (e) => { if (e.key === "Enter") refreshFacts(); });
-});
-["#f-pattern", "#f-asserted-by", "#f-status", "#f-only-valid"].forEach((s) => {
-  $(s).addEventListener("change", refreshFacts);
-});
-$("#facts-refresh").addEventListener("click", refreshFacts);
-
-// ---- predicates inspector ---------------------------------
-
-async function refreshPredicates() {
-  // The "Patterns" tab in v0.3 — kept the function name so the tab handler
-  // doesn't need to change. Renders pattern metadata, not the old predicate
-  // table.
-  const patterns = await api("GET", "/api/patterns");
-  const container = $("#predicates-table");
-  container.innerHTML = "";
-  patterns.forEach((p) => {
-    const card = el("div", { className: "stage" });
-    const header = el("div", { className: "stage-header" }, [
-      el("span", { className: "pattern-badge", textContent: p.name }),
-    ]);
-    card.appendChild(header);
-    const body = el("div", { className: "stage-body" });
-    body.appendChild(el("div", { textContent: p.description }));
-
-    // Slots table.
-    body.appendChild(el("h4", { textContent: "Slots" }));
-    const slotsTbl = el("table");
-    slotsTbl.appendChild(el("tr", {}, ["name", "type", "required"].map(
-      (h) => el("th", { textContent: h }))));
-    (p.slots || []).forEach((s) => {
-      slotsTbl.appendChild(el("tr", {}, [
-        el("td", { className: "mono", textContent: s.name }),
-        el("td", { textContent: s.type }),
-        el("td", { textContent: s.required ? "✓" : "" }),
-      ]));
-    });
-    body.appendChild(slotsTbl);
-
-    // (v0.5) Per-pattern verification rules and the user-anomaly flag are
-    // gone — routing is decided per-claim by the LLM router.
-
-    if ((p.example_predicates || []).length) {
-      body.appendChild(el("h4", { textContent: "Example predicates (free-form, not exhaustive)" }));
-      body.appendChild(el("div", { className: "mono",
-        textContent: p.example_predicates.join(", ") }));
-    }
-    if ((p.query_strategy || []).length) {
-      body.appendChild(el("h4", { textContent: "Query strategy (retrieval)" }));
-      const ol = el("ol");
-      p.query_strategy.forEach((q) => ol.appendChild(el("li", { className: "mono", textContent: q })));
-      body.appendChild(ol);
-    }
-    if (p.disambiguation_notes) {
-      body.appendChild(el("h4", { textContent: "Disambiguation" }));
-      body.appendChild(el("div", { className: "draft-box", textContent: p.disambiguation_notes }));
-    }
-    card.appendChild(body);
-    container.appendChild(card);
-  });
-}
-
-// ---- flow view --------------------------------------------
+// =====================================================================
+// 4. live flow chart
+// =====================================================================
 //
-// At-a-glance per-turn flowchart. Vertical SVG. Linear stages stack;
-// the router branches into one column per assistant claim and the
-// corrector merges them back. Each node is clickable — clicking flips
-// to the Chat + Trace tab and scrolls the corresponding stage into view.
-//
-// Source of truth is the same pipeline_events stream the Detail View
-// uses; this renderer just lays it out structurally.
+// Five progressive steps + (while running) one animated "thinking"
+// bubble for the next expected step. Click any landed step to expand
+// its detail INLINE under it (no tab switch — the trace lives where
+// it's relevant).
 
-function flowEdgeClass(status) {
-  if (status === "verified" || status === "user_asserted") return "verified";
-  if (status === "contradicted") return "contradicted";
-  if (
-    status === "retrieval_inconclusive" ||
-    status === "retrieval_failed" ||
-    status === "unverifiable_pending_implementation" ||
-    status === "routing_anomaly"
-  ) return "inconclusive";
-  if (status === "unverifiable_in_principle") return "unverifiable";
-  return "";
-}
-
-// The five progress steps of a turn, in the order they fire. The
-// flow chart renders ONLY the steps whose events have landed, plus
-// (when the run is still in progress) one animated "thinking" bubble
-// for the next expected step. The chart fills in like a progress
-// bar — no template, no misleading defaults like "draft passed
-// through unchanged" rendered before the corrector even runs.
 const PIPELINE_STEPS = [
   {
     stage: "chat_model_call",
@@ -1322,8 +241,7 @@ const PIPELINE_STEPS = [
     title: "Correction",
     metaFn: (ev) => {
       const n = ((ev.data || {}).interventions || []).length;
-      return n === 0 ? "no corrections needed"
-        : `${n} intervention${n === 1 ? "" : "s"} applied`;
+      return n === 0 ? "no corrections needed" : `${n} intervention${n === 1 ? "" : "s"} applied`;
     },
   },
   {
@@ -1333,32 +251,55 @@ const PIPELINE_STEPS = [
   },
 ];
 
-// Render the live flow chart in the chat panel for ``turnId`` from
-// ``events`` (any partial subset is OK — only landed stages render
-// as bubbles; the next expected stage shows as an animated "thinking"
-// placeholder). Used both by hydrate (with completed events) and by
-// the SSE handler (with incrementally-arriving events).
-function renderLiveFlow(turnId, events, { running = false } = {}) {
-  flowLiveContainer.innerHTML = "";
-  flowLiveContainer.appendChild(buildFlowChart(events || [], turnId, running));
+function formatChatMeta(d) {
+  if (!d) return "(no chat data)";
+  if (d.error) {
+    return `⚠ ${d.provider || "?"}:${d.model || "?"} — ERROR: ${(d.error || "").slice(0, 80)}`;
+  }
+  const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
+  const status = d.status_code ? ` http=${d.status_code}` : "";
+  const respc = d.response_chars != null ? `, response=${d.response_chars}c` : "";
+  return `${d.provider || "?"}:${d.model || "?"} — ${dur}${status}${respc}`;
+}
+
+function flowEdgeClass(displayStatus) {
+  // display_status: verified / contradicted / inconclusive / not_applicable
+  if (displayStatus === "verified") return "verified";
+  if (displayStatus === "contradicted") return "contradicted";
+  if (displayStatus === "inconclusive") return "inconclusive";
+  return "not_applicable";
+}
+
+// Track which steps are expanded so re-renders preserve state.
+const expandedSteps = new Set();
+
+function renderFlow(turnId, events, { running = false } = {}) {
+  flowContainer.innerHTML = "";
+  flowContainer.appendChild(buildFlowChart(events || [], turnId, running));
 }
 
 function buildFlowChart(events, turnId, running) {
   const stageMap = {};
   events.forEach((e) => { stageMap[e.stage] = e; });
 
-  // Collect landed steps in pipeline order. (Cache events and other
-  // intermediate fires — assistant_draft, scoping/stability decisions
-  // — are visible in the Trace tab; the flow chart shows only the
-  // five main progress markers.)
+  // Index annotation events (everything not in PIPELINE_STEPS) by
+  // their nearest PIPELINE_STEP for inline rendering. The bucketing
+  // is approximate but stable.
+  const stageNames = new Set(PIPELINE_STEPS.map((s) => s.stage));
+  const annotationsByStep = {};
+  for (const step of PIPELINE_STEPS) annotationsByStep[step.stage] = [];
+  events.forEach((e) => {
+    if (stageNames.has(e.stage)) return;
+    // Bucket by event type → step.
+    const bucket = annotationStepFor(e.stage);
+    if (bucket && annotationsByStep[bucket]) annotationsByStep[bucket].push(e);
+  });
+
   const landed = [];
   for (const step of PIPELINE_STEPS) {
     if (stageMap[step.stage]) landed.push({ step, event: stageMap[step.stage] });
   }
 
-  // Next expected step is the one immediately after the last landed
-  // step (or the very first step if nothing has landed yet). Only
-  // shown while ``running`` AND there's a next step left.
   let nextStep = null;
   const lastLandedIdx = landed.length > 0
     ? PIPELINE_STEPS.indexOf(landed[landed.length - 1].step)
@@ -1375,13 +316,11 @@ function buildFlowChart(events, turnId, running) {
     return chart;
   }
 
-  // Render landed steps.
   landed.forEach(({ step, event }, idx) => {
     if (idx > 0) chart.appendChild(arrowDown());
-    chart.appendChild(renderStepNode(step, event));
+    chart.appendChild(renderStepNode(step, event, annotationsByStep[step.stage] || []));
   });
 
-  // Render thinking placeholder for next step.
   if (nextStep) {
     if (landed.length > 0) chart.appendChild(arrowDown());
     chart.appendChild(renderThinkingNode(nextStep));
@@ -1390,70 +329,106 @@ function buildFlowChart(events, turnId, running) {
   return chart;
 }
 
-function renderStepNode(step, event) {
-  if (step.isClaimList) return renderVerificationNode(step, event);
-
-  const node = el("div", { className: "flow-step flow-step-done",
-    dataset: { stage: step.stage } });
-  node.addEventListener("click", () => jumpToStage(step.stage));
-  node.appendChild(el("div", { className: "flow-step-title",
-    textContent: step.title }));
-  const meta = step.metaFn ? step.metaFn(event) : "";
-  if (meta) {
-    node.appendChild(el("div", { className: "flow-step-meta",
-      textContent: meta }));
-  }
-  return node;
+function annotationStepFor(stage) {
+  // Map any non-main pipeline event to the step it should render under.
+  if (stage === "user_extraction" || stage === "user_storage"
+      || stage === "extractor_substitution_warning") return "assistant_extraction";
+  if (stage === "assistant_draft") return "chat_model_call";
+  if (stage === "routing_decision" || stage === "routing_anomaly_detected"
+      || stage === "verifier_failure" || stage === "retrieval_query_attempt"
+      || stage === "code_prompt_built" || stage === "code_prompt_leakage_detected"
+      || stage === "code_generated" || stage === "code_executed"
+      || stage === "code_unusual_behavior" || stage === "code_comparison"
+      || stage === "canonical_constants_cross_check"
+      || stage === "canonical_constants_disagreement"
+      || stage === "cache_scoping_decision" || stage === "cache_stability_decision"
+      || stage === "cache_lookup" || stage === "cache_write") return "verification";
+  if (stage === "turn_cost") return "final";
+  return null;
 }
 
-function renderVerificationNode(step, event) {
+function renderStepNode(step, event, annotations) {
+  if (step.isClaimList) return renderVerificationNode(step, event, annotations);
+
+  const wrapper = el("div", { className: "flow-step-wrapper" });
+  const node = el("div", { className: "flow-step flow-step-done", dataset: { stage: step.stage } });
+  node.appendChild(el("div", { className: "flow-step-title", textContent: step.title }));
+  const meta = step.metaFn ? step.metaFn(event) : "";
+  if (meta) node.appendChild(el("div", { className: "flow-step-meta", textContent: meta }));
+
+  const detailId = `detail-${step.stage}`;
+  const detail = el("div", { className: "flow-step-detail" });
+  if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
+  renderStepDetail(detail, step, event, annotations);
+
+  node.addEventListener("click", () => {
+    if (expandedSteps.has(step.stage)) {
+      expandedSteps.delete(step.stage);
+      detail.classList.remove("expanded");
+    } else {
+      expandedSteps.add(step.stage);
+      detail.classList.add("expanded");
+    }
+  });
+
+  wrapper.appendChild(node);
+  wrapper.appendChild(detail);
+  return wrapper;
+}
+
+function renderVerificationNode(step, event, annotations) {
   const decisions = (event.data || {}).decisions || [];
+  const wrapper = el("div", { className: "flow-step-wrapper" });
   const node = el("div", { className: "flow-step flow-step-done flow-step-verification",
     dataset: { stage: step.stage } });
   node.appendChild(el("div", { className: "flow-step-title",
     textContent: `${step.title} · ${decisions.length} claim${decisions.length === 1 ? "" : "s"}` }));
   if (decisions.length === 0) {
-    node.appendChild(el("div", { className: "flow-step-meta",
-      textContent: "no claims to verify" }));
-    node.addEventListener("click", () => jumpToStage(step.stage));
-    return node;
+    node.appendChild(el("div", { className: "flow-step-meta", textContent: "no claims to verify" }));
+  } else {
+    const list = el("ul", { className: "claim-list" });
+    decisions.forEach((d) => {
+      const display = d.display_status || "inconclusive";
+      const cls = flowEdgeClass(display);
+      const claim = d.claim || {};
+      const method = (d.routing_decision || {}).method || "?";
+      const cached = d.served_from_cache === true;
+      const row = el("li", {
+        className: `claim-row claim-${cls}` + (cached ? " claim-cached" : ""),
+        title: `${claim.predicate || "?"} (${claim.pattern || "?"}) via ${method}\n→ ${d.verification_status}` + (cached ? "\n(served from cache)" : ""),
+      });
+      row.appendChild(el("span", { className: "claim-dot" }));
+      row.appendChild(el("span", { className: "claim-label",
+        textContent: (cached ? "↺ " : "") + (claim.predicate || "?") }));
+      row.appendChild(el("span", { className: "claim-method", textContent: method }));
+      list.appendChild(row);
+    });
+    node.appendChild(list);
   }
-  // One lean row per claim — single bubble, not a bubble-per-claim.
-  const list = el("ul", { className: "claim-list" });
-  decisions.forEach((d) => {
-    const status = d.verification_status || "?";
-    const cls = flowEdgeClass(status);
-    const claim = d.claim || {};
-    const method = (d.routing_decision || {}).method || "?";
-    const cached = d.served_from_cache === true;
-    const row = el("li", {
-      className: `claim-row claim-${cls}` + (cached ? " claim-cached" : ""),
-      title: `${claim.predicate || "?"} (${claim.pattern || "?"}) via ${method}\n`
-             + `→ ${status}` + (cached ? "\n(served from cache)" : ""),
-    });
-    row.addEventListener("click", (e) => {
-      e.stopPropagation();
-      jumpToStage(step.stage);
-    });
-    row.appendChild(el("span", { className: "claim-dot",
-      title: status }));
-    const labelText = claim.predicate || "?";
-    row.appendChild(el("span", { className: "claim-label",
-      textContent: (cached ? "↺ " : "") + labelText }));
-    row.appendChild(el("span", { className: "claim-method",
-      textContent: method }));
-    list.appendChild(row);
+
+  const detail = el("div", { className: "flow-step-detail" });
+  if (expandedSteps.has(step.stage)) detail.classList.add("expanded");
+  renderStepDetail(detail, step, event, annotations);
+
+  node.addEventListener("click", (e) => {
+    if (e.target.closest(".claim-row")) return;
+    if (expandedSteps.has(step.stage)) {
+      expandedSteps.delete(step.stage);
+      detail.classList.remove("expanded");
+    } else {
+      expandedSteps.add(step.stage);
+      detail.classList.add("expanded");
+    }
   });
-  node.appendChild(list);
-  return node;
+
+  wrapper.appendChild(node);
+  wrapper.appendChild(detail);
+  return wrapper;
 }
 
 function renderThinkingNode(step) {
-  const node = el("div", { className: "flow-step flow-step-thinking",
-    dataset: { stage: step.stage } });
-  node.appendChild(el("div", { className: "flow-step-title",
-    textContent: step.title }));
-  // Animated "thinking" indicator — CSS pulses the dots.
+  const node = el("div", { className: "flow-step flow-step-thinking", dataset: { stage: step.stage } });
+  node.appendChild(el("div", { className: "flow-step-title", textContent: step.title }));
   const meta = el("div", { className: "flow-step-meta thinking-dots" });
   meta.appendChild(document.createTextNode("thinking"));
   meta.appendChild(el("span", { className: "thinking-anim" }));
@@ -1465,131 +440,512 @@ function arrowDown() {
   return el("div", { className: "flow-arrow", textContent: "↓" });
 }
 
-// ---- trace tab --------------------------------------------
+// =====================================================================
+// 5. inline stage detail (replaces the standalone Trace tab)
+// =====================================================================
 //
-// The Trace tab is the new home for the detailed pipeline trace.
-// Picks an assistant turn from the dropdown; renders the trace
-// (and a small flow chart at the top) for that turn.
+// One renderStepDetail dispatches to the right per-step renderer.
+// Annotations (cache events, routing decisions, code-gen sub-stages,
+// substitution warnings) render below the step's primary detail as
+// collapsible blocks.
 
-async function refreshTraceTab() {
-  const turnSelect = $("#trace-turn-select");
-  const status = $("#trace-status");
-  status.textContent = "loading…";
+function renderStepDetail(container, step, event, annotations) {
+  const data = event.data || {};
+  // Step-specific primary detail.
+  if (step.stage === "chat_model_call") renderChatModelCallDetail(container, data);
+  else if (step.stage === "assistant_extraction") renderExtractionDetail(container, data);
+  else if (step.stage === "verification") renderVerificationDetail(container, data);
+  else if (step.stage === "correction") renderCorrectionDetail(container, data);
+  else if (step.stage === "final") renderFinalDetail(container, data);
 
-  const turns = await api("GET", "/api/turns");
-  const assistantTurns = turns.filter((t) => t.role === "assistant");
-  const prev = turnSelect.value;
-  turnSelect.innerHTML = "";
-  assistantTurns.forEach((t) => {
-    const opt = el("option", {});
-    opt.value = String(t.id);
-    opt.textContent = `turn ${t.id} — ${(t.content || "").slice(0, 60)}`;
-    turnSelect.appendChild(opt);
-  });
-  if (!assistantTurns.length) {
-    traceEl.innerHTML = "";
-    traceEl.appendChild(el("p", { className: "hint",
-      textContent: "No assistant turns yet. Send a message in Chat + Flow." }));
-    status.textContent = "";
+  // Annotations below.
+  if (annotations.length > 0) {
+    const annoHeader = el("div", { className: "annotations-header",
+      textContent: `${annotations.length} annotation${annotations.length === 1 ? "" : "s"}` });
+    container.appendChild(annoHeader);
+    annotations.forEach((a) => container.appendChild(renderAnnotation(a)));
+  }
+}
+
+function renderChatModelCallDetail(container, data) {
+  const tbl = el("dl", { className: "kv" });
+  for (const [k, v] of Object.entries(data || {})) {
+    tbl.appendChild(el("dt", { textContent: k }));
+    tbl.appendChild(el("dd", { textContent: typeof v === "object" ? JSON.stringify(v) : String(v) }));
+  }
+  container.appendChild(tbl);
+}
+
+function renderExtractionDetail(container, data) {
+  const valid = data.valid_facts || [];
+  const rejected = data.rejected_facts || [];
+  if (valid.length) {
+    container.appendChild(el("h4", { textContent: `${valid.length} valid claim(s)` }));
+    valid.forEach((f) => container.appendChild(renderClaimBlock(f)));
+  }
+  if (rejected.length) {
+    container.appendChild(el("h4", { textContent: `${rejected.length} rejected` }));
+    rejected.forEach((r) => {
+      container.appendChild(el("div", { className: "rejected-claim",
+        textContent: `${r.reason}: ${JSON.stringify(r.fact)}` }));
+    });
+  }
+}
+
+function renderClaimBlock(claim) {
+  const wrap = el("div", { className: "claim-block" });
+  wrap.appendChild(el("div", { className: "claim-header" }, [
+    el("span", { className: "pattern-badge", textContent: claim.pattern || "?" }),
+    el("span", { className: "pred", textContent: claim.predicate || "?" }),
+    el("span", { className: claim.polarity === 1 ? "pol-pos" : "pol-neg",
+                 textContent: claim.polarity === 1 ? "+" : "−" }),
+  ]));
+  const slots = claim.slots || {};
+  if (Object.keys(slots).length) {
+    const tbl = el("div", { className: "slots-table" });
+    for (const [k, v] of Object.entries(slots)) {
+      tbl.appendChild(el("span", { className: "slot-name", textContent: k }));
+      tbl.appendChild(el("span", { className: "slot-value",
+        textContent: typeof v === "object" ? JSON.stringify(v) : String(v) }));
+    }
+    wrap.appendChild(tbl);
+  }
+  if (claim.source_text) {
+    wrap.appendChild(el("div", { className: "src", textContent: `"${claim.source_text}"` }));
+  }
+  return wrap;
+}
+
+function renderVerificationDetail(container, data) {
+  const decisions = data.decisions || [];
+  if (decisions.length === 0) {
+    container.appendChild(el("p", { className: "hint", textContent: "no decisions" }));
     return;
   }
-  const desired = prev && assistantTurns.find((t) => String(t.id) === prev)
-    ? prev : String(assistantTurns[assistantTurns.length - 1].id);
-  turnSelect.value = desired;
-  await renderTraceForTurn(parseInt(desired, 10));
-  status.textContent = "";
-}
-
-async function renderTraceForTurn(turnId) {
-  const events = await api("GET", `/api/trace/${turnId}`);
-  renderTrace(events);
-}
-
-function formatChatMeta(d) {
-  if (!d) return "(no chat data)";
-  if (d.error) {
-    return `⚠ ${d.provider || "?"}:${d.model || "?"} — ERROR: `
-      + d.error.slice(0, 80);
-  }
-  const dur = d.duration_ms != null ? `${(d.duration_ms / 1000).toFixed(2)}s` : "?";
-  const status = d.status_code ? ` http=${d.status_code}` : "";
-  const respc = d.response_chars != null ? `, response=${d.response_chars}c` : "";
-  return `${d.provider || "?"}:${d.model || "?"} — ${dur}${status}${respc}`;
-}
-
-function jumpToStage(stage) {
-  // Switch to the Trace tab and scroll the matching stage into view.
-  // The detailed trace lives there now; the chat panel only shows the
-  // live flow chart.
-  const traceTab = document.querySelector('.tab[data-tab="trace"]');
-  if (traceTab) traceTab.click();
-  // Defer one frame so the tab activation has rendered.
-  requestAnimationFrame(() => {
-    const headers = traceEl.querySelectorAll(".stage-header > span:first-child");
-    for (const h of headers) {
-      if (h.textContent.trim() === stage) {
-        h.parentElement.scrollIntoView({ behavior: "smooth", block: "start" });
-        h.parentElement.style.boxShadow = "0 0 0 2px var(--accent)";
-        setTimeout(() => { h.parentElement.style.boxShadow = ""; }, 1500);
-        return;
-      }
+  decisions.forEach((d) => {
+    const node = el("div", { className: "decision" });
+    if (d.served_from_cache) node.classList.add("decision-cached");
+    const header = el("div", { className: "decision-header" }, [
+      el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
+      el("span", { className: `display-status display-${d.display_status || "inconclusive"}`,
+        textContent: d.display_status || d.verification_status }),
+    ]);
+    if (d.served_from_cache) {
+      header.appendChild(el("span", { className: "cache-badge cache-badge-hit",
+        title: "served from Tier 2 cache", textContent: "↺ CACHED" }));
     }
+    header.appendChild(renderClaimBlock(d.claim));
+    node.appendChild(header);
+
+    const meta = [];
+    if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
+    if (d.stored_fact_id != null) meta.push(`stored fact id=${d.stored_fact_id}`);
+    if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
+    if (meta.length) node.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
+
+    if (d.routing_decision) node.appendChild(renderRoutingBlock(d.routing_decision));
+    if (d.code_gen_result) node.appendChild(renderCodeGenBlock(d.code_gen_result));
+    if (d.retrieval_result) node.appendChild(renderRetrievalBlock(d.retrieval_result));
+    if (d.correction) {
+      node.appendChild(el("div", { className: "correction-block",
+        textContent: `correction: ${JSON.stringify(d.correction.original_object)} → ${JSON.stringify(d.correction.corrected_object)}` }));
+    }
+    (d.notes || []).forEach((n) => {
+      node.appendChild(el("div", { className: "verifier-explanation", textContent: n }));
+    });
+    container.appendChild(node);
   });
 }
 
-$("#trace-refresh").addEventListener("click", refreshTraceTab);
-$("#trace-turn-select").addEventListener("change", async (e) => {
-  await renderTraceForTurn(parseInt(e.target.value, 10));
+function renderRoutingBlock(rd) {
+  const wrap = el("div", { className: "routing-block" });
+  wrap.appendChild(el("div", { className: "routing-method",
+    textContent: `routed to ${rd.method} (conf=${(rd.confidence ?? 0).toFixed(2)})` }));
+  if (rd.reason) wrap.appendChild(el("div", { className: "routing-reason", textContent: rd.reason }));
+  return wrap;
+}
+
+function renderCodeGenBlock(cg) {
+  const wrap = el("details", { className: "code-gen-block" });
+  const summary = el("summary", { textContent: `code-gen: ${cg.status} (conf=${(cg.confidence ?? 0).toFixed(2)})` });
+  wrap.appendChild(summary);
+  const tr = cg.trace || {};
+  if (tr.prompt) {
+    wrap.appendChild(el("h5", { textContent: "Neutral prompt" }));
+    wrap.appendChild(el("pre", { textContent: tr.prompt.text || JSON.stringify(tr.prompt) }));
+  }
+  if (tr.code) {
+    wrap.appendChild(el("h5", { textContent: "Generated code" }));
+    wrap.appendChild(el("pre", { textContent: tr.code.code || "" }));
+  }
+  if (tr.execution) {
+    wrap.appendChild(el("h5", { textContent: "Execution" }));
+    const ex = tr.execution;
+    wrap.appendChild(el("pre", {
+      textContent: `stdout: ${ex.stdout || ""}\nstderr: ${ex.stderr || ""}\nexit=${ex.exit_code} duration=${ex.duration_ms}ms`,
+    }));
+  }
+  if (cg.actual_value !== undefined) {
+    wrap.appendChild(el("div", { className: "kv",
+      textContent: `actual_value = ${JSON.stringify(cg.actual_value)}` }));
+  }
+  if (cg.explanation) wrap.appendChild(el("div", { className: "verifier-explanation", textContent: cg.explanation }));
+  return wrap;
+}
+
+function renderRetrievalBlock(rr) {
+  const wrap = el("details", { className: "retrieval-block" });
+  wrap.appendChild(el("summary", { textContent: `retrieval: ${rr.outcome}` }));
+  (rr.attempts || []).forEach((a, i) => {
+    const row = el("div", { className: "query-attempt" });
+    row.appendChild(el("span", { className: "att-q", textContent: `#${i + 1} ${a.query}` }));
+    row.appendChild(el("span", { textContent: `${a.result_count} results` }));
+    if (a.used) row.appendChild(el("span", { className: "att-used", textContent: "✓ used" }));
+    if (a.error) row.appendChild(el("span", { className: "att-error", textContent: a.error }));
+    wrap.appendChild(row);
+  });
+  (rr.snippets || []).forEach((s) => {
+    const sn = el("div", { className: "snippet" });
+    sn.appendChild(el("div", { className: "snippet-title", textContent: s.title }));
+    sn.appendChild(el("div", { className: "snippet-body", textContent: s.snippet }));
+    sn.appendChild(el("div", { className: "snippet-url", textContent: s.url }));
+    wrap.appendChild(sn);
+  });
+  if (rr.verdict) {
+    wrap.appendChild(el("div", { className: `verdict verdict-${rr.verdict.verdict}`,
+      textContent: `${rr.verdict.verdict}: ${rr.verdict.justification}` }));
+  }
+  if (rr.error_flag) {
+    wrap.appendChild(el("div", { className: "error-flag", textContent: `⚠ ${rr.error_flag}: ${rr.explanation || ""}` }));
+  }
+  return wrap;
+}
+
+function renderCorrectionDetail(container, data) {
+  if (!data.interventions || data.interventions.length === 0) {
+    container.appendChild(el("p", { className: "hint", textContent: "no interventions applied" }));
+    return;
+  }
+  data.interventions.forEach((iv) => {
+    const node = el("div", { className: `intervention intervention-${iv.intervention_type}` });
+    node.appendChild(el("span", { className: `intervention-type intervention-type-${iv.intervention_type}`,
+      textContent: iv.intervention_type }));
+    node.appendChild(el("div", { className: "intervention-reason", textContent: iv.reason }));
+    if (iv.verified_value !== undefined && iv.verified_value !== null) {
+      node.appendChild(el("div", { className: "intervention-value",
+        textContent: `verified_value = ${JSON.stringify(iv.verified_value)}` }));
+    }
+    container.appendChild(node);
+  });
+  if (data.original && data.corrected) {
+    container.appendChild(el("h5", { textContent: "Diff" }));
+    container.appendChild(el("div", { className: "draft-box draft-original", textContent: data.original }));
+    container.appendChild(el("div", { className: "draft-box draft-corrected", textContent: data.corrected }));
+  }
+}
+
+function renderFinalDetail(container, data) {
+  container.appendChild(el("div", { className: "draft-box", textContent: data.content || "" }));
+}
+
+// ---- annotation renderer (the long tail) ----
+
+function renderAnnotation(event) {
+  const wrap = el("div", { className: `annotation annotation-${event.stage}` });
+  wrap.appendChild(el("div", { className: "annotation-stage", textContent: event.stage }));
+  const data = event.data || {};
+  // Specialized renderers for the known annotation types.
+  if (event.stage === "cache_lookup") renderCacheLookupAnnotation(wrap, data);
+  else if (event.stage === "cache_write") renderCacheWriteAnnotation(wrap, data);
+  else if (event.stage === "cache_scoping_decision") renderCacheScopingAnnotation(wrap, data);
+  else if (event.stage === "cache_stability_decision") renderCacheStabilityAnnotation(wrap, data);
+  else if (event.stage === "extractor_substitution_warning") renderSubstitutionAnnotation(wrap, data);
+  else if (event.stage === "routing_anomaly_detected") renderRoutingAnomalyAnnotation(wrap, data);
+  else if (event.stage === "verifier_failure") renderVerifierFailureAnnotation(wrap, data);
+  else if (event.stage === "turn_cost") renderTurnCostAnnotation(wrap, data);
+  else {
+    // Unknown / generic: dump JSON. Forward-compat with new event types.
+    wrap.appendChild(el("pre", { className: "json-dump",
+      textContent: JSON.stringify(data, null, 2).slice(0, 800) }));
+  }
+  return wrap;
+}
+
+function renderCacheLookupAnnotation(wrap, d) {
+  const result = d.result || (d.error ? "error" : "?");
+  wrap.classList.add(`anno-${result}`);
+  wrap.appendChild(el("span", {
+    className: `cache-badge cache-badge-${result}`,
+    textContent: result === "semantic_hit" ? "SEMANTIC HIT" : result.toUpperCase(),
+  }));
+  if (result === "hit" || result === "semantic_hit") {
+    wrap.appendChild(document.createTextNode(
+      ` ${d.verdict || "?"}` + (d.hit_count != null ? ` · hits=${d.hit_count}` : "")
+      + (d.score != null ? ` · score=${d.score}` : "")));
+  } else if (result === "miss") {
+    wrap.appendChild(document.createTextNode(" no cached verdict"));
+  } else if (d.error) {
+    wrap.appendChild(document.createTextNode(` ${d.error}`));
+  }
+  if (d.canonical_key) {
+    wrap.appendChild(el("div", { className: "mono cache-key",
+      textContent: `key=${d.canonical_key.slice(0, 100)}` }));
+  }
+  if (d.matched_key && d.matched_key !== d.canonical_key) {
+    wrap.appendChild(el("div", { className: "mono cache-key",
+      textContent: `matched=${d.matched_key.slice(0, 100)}` }));
+  }
+}
+
+function renderCacheWriteAnnotation(wrap, d) {
+  if (d.error) {
+    wrap.appendChild(el("span", { className: "cache-badge cache-badge-error", textContent: "WRITE ERR" }));
+    wrap.appendChild(document.createTextNode(` ${d.error}`));
+    return;
+  }
+  wrap.appendChild(el("span", { className: "cache-badge cache-badge-write", textContent: "WROTE" }));
+  const ttl = d.ttl_seconds === null ? "never expires"
+    : d.ttl_seconds != null ? `ttl=${d.ttl_seconds}s` : "no ttl";
+  wrap.appendChild(document.createTextNode(` ${d.verdict || "?"} · ${d.stability_class || "?"} · ${ttl}`));
+}
+
+function renderCacheScopingAnnotation(wrap, d) {
+  wrap.appendChild(renderCacheClaimHeader(d.claim));
+  if (d.error) wrap.appendChild(el("div", { className: "anno-error", textContent: d.error }));
+  else {
+    const dec = d.decision || {};
+    wrap.appendChild(el("div", {
+      textContent: `scope=${dec.scope || "?"} (conf=${(dec.confidence ?? 0).toFixed(2)}) — ${dec.reason || ""}`,
+    }));
+  }
+}
+
+function renderCacheStabilityAnnotation(wrap, d) {
+  wrap.appendChild(renderCacheClaimHeader(d.claim));
+  if (d.error) wrap.appendChild(el("div", { className: "anno-error", textContent: d.error }));
+  else {
+    const dec = d.decision || {};
+    const ttl = dec.ttl_seconds === null ? "never expires"
+      : dec.ttl_seconds === 0 ? "don't cache (volatile)"
+      : `ttl=${dec.ttl_seconds}s`;
+    wrap.appendChild(el("div", {
+      textContent: `${dec.stability_class || "?"} (conf=${(dec.confidence ?? 0).toFixed(2)}) · ${ttl} — ${dec.reason || ""}`,
+    }));
+  }
+}
+
+function renderCacheClaimHeader(claim) {
+  const w = el("div", { className: "cache-claim-header" });
+  if (!claim || (!claim.pattern && !claim.predicate)) {
+    w.appendChild(el("span", { className: "cache-claim-missing", textContent: "(claim not recorded)" }));
+    return w;
+  }
+  w.appendChild(el("span", { className: "pattern-badge", textContent: claim.pattern || "?" }));
+  w.appendChild(el("span", { className: "cache-claim-pred", textContent: "." + (claim.predicate || "?") }));
+  const slots = claim.slots || {};
+  const slotKeys = Object.keys(slots);
+  if (slotKeys.length) {
+    const slotPairs = slotKeys.map((k) => {
+      const v = slots[k];
+      const vstr = typeof v === "object" ? JSON.stringify(v) : String(v);
+      const trimmed = vstr.length > 40 ? vstr.slice(0, 40) + "…" : vstr;
+      return `${k}=${trimmed}`;
+    }).join(", ");
+    w.appendChild(el("span", { className: "cache-claim-slots", textContent: ` (${slotPairs})` }));
+  }
+  return w;
+}
+
+function renderSubstitutionAnnotation(wrap, d) {
+  const w = d.warning || {};
+  const fact = d.fact || {};
+  wrap.appendChild(el("strong", { textContent: "⚠ Extractor substitution" }));
+  wrap.appendChild(el("div", { textContent: w.detail || "source_text doesn't match input" }));
+  if (fact.source_text) {
+    wrap.appendChild(el("div", { className: "mono",
+      textContent: `extractor wrote: ${JSON.stringify(fact.source_text)}` }));
+  }
+}
+
+function renderRoutingAnomalyAnnotation(wrap, d) {
+  wrap.appendChild(el("strong", { textContent: "⚠ Routing anomaly" }));
+  wrap.appendChild(el("div", { textContent: d.warning || "" }));
+}
+
+function renderVerifierFailureAnnotation(wrap, d) {
+  const claim = d.claim || {};
+  wrap.appendChild(el("strong", { textContent: "⚡ Verifier failure" }));
+  wrap.appendChild(el("div", {
+    textContent: `${claim.pattern}/${claim.predicate} — claim NOT hedged (verifier failure isn't evidence of uncertainty)`,
+  }));
+}
+
+function renderTurnCostAnnotation(wrap, d) {
+  const totalUsd = (d.total_usd ?? 0).toFixed(6);
+  const totalCalls = d.total_calls ?? 0;
+  wrap.appendChild(el("strong", { textContent: `$${totalUsd}` }));
+  wrap.appendChild(document.createTextNode(
+    ` · ${totalCalls} call(s) · ${d.total_input_tokens ?? 0}/${d.total_output_tokens ?? 0} tok in/out`));
+  const byModel = d.by_model || {};
+  Object.keys(byModel).sort().forEach((m) => {
+    const slot = byModel[m];
+    wrap.appendChild(el("div", { className: "mono",
+      textContent: `${m}: $${(slot.total_usd ?? 0).toFixed(6)} (${slot.calls} calls)` }));
+  });
+}
+
+// =====================================================================
+// 6. inspector drawer
+// =====================================================================
+
+const inspector = $("#inspector");
+const inspectorBackdrop = $("#inspector-backdrop");
+
+function openInspector(initialTab) {
+  inspector.classList.add("open");
+  inspectorBackdrop.classList.add("open");
+  if (initialTab) selectInspectorTab(initialTab);
+  // Refresh whichever tab is active.
+  const active = $(".inspector-tab.active")?.dataset.inspectorTab;
+  if (active === "facts") refreshFacts();
+  else if (active === "patterns") refreshPatterns();
+  else if (active === "cache") refreshCache();
+}
+
+function closeInspector() {
+  inspector.classList.remove("open");
+  inspectorBackdrop.classList.remove("open");
+}
+
+function selectInspectorTab(name) {
+  $$(".inspector-tab").forEach((b) => b.classList.toggle("active", b.dataset.inspectorTab === name));
+  $$(".inspector-panel").forEach((p) => p.classList.toggle("active", p.id === `inspector-${name}`));
+  if (name === "facts") refreshFacts();
+  if (name === "patterns") refreshPatterns();
+  if (name === "cache") refreshCache();
+}
+
+$("#inspector-btn").addEventListener("click", () => openInspector());
+$("#inspector-close").addEventListener("click", closeInspector);
+inspectorBackdrop.addEventListener("click", closeInspector);
+$$(".inspector-tab").forEach((btn) => {
+  btn.addEventListener("click", () => selectInspectorTab(btn.dataset.inspectorTab));
 });
 
-// ---- cache inspector --------------------------------------
-//
-// v0.6 Tier 2 verification cache. Shows aggregate stats + the most
-// recent cached entries with verdict, stability class, hit count,
-// and expiry status.
+// ---- Facts ----
+
+async function refreshFacts() {
+  const params = new URLSearchParams();
+  const pat = $("#f-pattern").value;
+  const pred = $("#f-predicate").value.trim();
+  const ab = $("#f-asserted-by").value;
+  const st = $("#f-status").value;
+  if (pat) params.set("pattern", pat);
+  if (pred) params.set("predicate", pred);
+  if (ab) params.set("asserted_by", ab);
+  if (st) params.set("verification_status", st);
+  if ($("#f-only-valid").checked) params.set("only_valid", "true");
+
+  const facts = await api("GET", "/api/facts?" + params.toString());
+  const container = $("#facts-table");
+  container.innerHTML = "";
+  if (!facts.length) {
+    container.appendChild(el("p", { className: "hint", textContent: "(no facts match)" }));
+    return;
+  }
+  const table = el("table");
+  table.appendChild(el("tr", {}, [
+    "id", "pattern", "predicate", "slots", "pol", "conf", "asserted_by", "status", "valid_until", "turn",
+  ].map((h) => el("th", { textContent: h }))));
+  facts.forEach((f) => {
+    const row = el("tr", {});
+    if (f.valid_until) row.classList.add("closed");
+    if (f.verification_status === "verified") row.classList.add("verified");
+    if (f.verification_status === "contradicted") row.classList.add("contradicted");
+    [
+      f.id, f.pattern, f.predicate,
+      JSON.stringify(f.slots), f.polarity,
+      (f.confidence ?? 0).toFixed(2),
+      f.asserted_by, f.verification_status,
+      f.valid_until || "", f.source_turn_id,
+    ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
+    table.appendChild(row);
+  });
+  container.appendChild(table);
+}
+
+["#f-predicate"].forEach((s) => {
+  $(s).addEventListener("keydown", (e) => { if (e.key === "Enter") refreshFacts(); });
+});
+["#f-pattern", "#f-asserted-by", "#f-status", "#f-only-valid"].forEach((s) => {
+  $(s).addEventListener("change", refreshFacts);
+});
+$("#facts-refresh").addEventListener("click", refreshFacts);
+
+// ---- Patterns ----
+
+async function refreshPatterns() {
+  const patterns = await api("GET", "/api/patterns");
+  const container = $("#predicates-table");
+  container.innerHTML = "";
+  patterns.forEach((p) => {
+    const card = el("div", { className: "stage" });
+    card.appendChild(el("div", { className: "stage-header" }, [
+      el("span", { className: "pattern-badge", textContent: p.name }),
+    ]));
+    const body = el("div", { className: "stage-body" });
+    body.appendChild(el("div", { textContent: p.description }));
+    body.appendChild(el("h4", { textContent: "Slots" }));
+    const slotsTbl = el("table");
+    slotsTbl.appendChild(el("tr", {}, ["name", "type", "required"].map(
+      (h) => el("th", { textContent: h }))));
+    (p.slots || []).forEach((s) => {
+      slotsTbl.appendChild(el("tr", {}, [
+        el("td", { className: "mono", textContent: s.name }),
+        el("td", { textContent: s.type }),
+        el("td", { textContent: s.required ? "✓" : "" }),
+      ]));
+    });
+    body.appendChild(slotsTbl);
+    if ((p.example_predicates || []).length) {
+      body.appendChild(el("h4", { textContent: "Example predicates" }));
+      body.appendChild(el("div", { className: "mono",
+        textContent: p.example_predicates.join(", ") }));
+    }
+    if ((p.query_strategy || []).length) {
+      body.appendChild(el("h4", { textContent: "Query strategy" }));
+      const ol = el("ol");
+      p.query_strategy.forEach((q) => ol.appendChild(el("li", { className: "mono", textContent: q })));
+      body.appendChild(ol);
+    }
+    card.appendChild(body);
+    container.appendChild(card);
+  });
+}
+
+// ---- Cache ----
 
 async function refreshCache() {
   const data = await api("GET", "/api/cache");
   const stats = data.stats || {};
   const statsEl = $("#cache-stats");
   statsEl.innerHTML = "";
-
-  // Static cache-table totals on the first line.
-  const totalsLine = el("div", { className: "cache-totals" });
-  totalsLine.textContent = (
-    `${stats.total_entries || 0} entries · `
-    + `${stats.immutable_entries || 0} immutable · `
-    + `${stats.total_hits || 0} per-entry hits accumulated`
-  );
-  statsEl.appendChild(totalsLine);
-
-  // Live hit-rate from pipeline_events. Only show if there have been
-  // lookups — a cache without lookups is pre-deployment.
+  statsEl.appendChild(el("div", { className: "cache-totals",
+    textContent: `${stats.total_entries || 0} entries · ${stats.immutable_entries || 0} immutable · ${stats.total_hits || 0} per-entry hits accumulated` }));
   const lookups = stats.lookups || 0;
   if (lookups > 0) {
     const rate = stats.hit_rate;
-    const ratePct = rate !== null && rate !== undefined
-      ? `${(rate * 100).toFixed(1)}%`
-      : "—";
+    const ratePct = rate !== null && rate !== undefined ? `${(rate * 100).toFixed(1)}%` : "—";
     const rateLine = el("div", { className: "cache-hit-rate" });
     rateLine.appendChild(el("strong", { textContent: `Hit rate: ${ratePct}` }));
     rateLine.appendChild(document.createTextNode(
-      ` · ${lookups} lookups (${stats.lookup_hits || 0} hits, `
-      + `${stats.lookup_misses || 0} misses`
-      + (stats.lookup_errors ? `, ${stats.lookup_errors} errors` : "")
-      + ")"
-    ));
+      ` · ${lookups} lookups (${stats.lookup_hits || 0} hits, ${stats.lookup_misses || 0} misses${stats.lookup_errors ? `, ${stats.lookup_errors} errors` : ""})`));
     statsEl.appendChild(rateLine);
-
-    // Per-stability hits, if any. Useful for spotting which class is
-    // most cache-effective.
     const byStab = stats.hits_by_stability || {};
     const stabKeys = Object.keys(byStab).sort();
     if (stabKeys.length) {
-      const stabLine = el("div", { className: "cache-by-stability" });
-      stabLine.textContent = "  Hits by class: " + stabKeys
-        .map((k) => `${k}=${byStab[k]}`).join(" · ");
-      statsEl.appendChild(stabLine);
+      statsEl.appendChild(el("div", { className: "cache-by-stability",
+        textContent: "  Hits by class: " + stabKeys.map((k) => `${k}=${byStab[k]}`).join(" · ") }));
     }
   }
 
@@ -1598,14 +954,9 @@ async function refreshCache() {
   const entries = data.entries || [];
   if (!entries.length) {
     container.appendChild(el("p", { className: "hint",
-      textContent: "Cache is empty. Run some turns with retrieval-"
-                   + "territory questions (world facts, anything that "
-                   + "isn't user-specific or already python-verifiable) "
-                   + "and successful retrieval verdicts will land here "
-                   + "automatically." }));
+      textContent: "Cache is empty. Run some retrieval-territory turns and successful verdicts will land here automatically." }));
     return;
   }
-
   const table = el("table");
   table.appendChild(el("tr", {}, [
     "id", "verdict", "pattern", "predicate", "stability", "hits", "expires", "key",
@@ -1615,21 +966,16 @@ async function refreshCache() {
     if (e.is_expired) row.classList.add("closed");
     if (e.verdict === "verified") row.classList.add("verified");
     if (e.verdict === "contradicted") row.classList.add("contradicted");
-
-    row.appendChild(el("td", { textContent: String(e.id) }));
-    row.appendChild(el("td", { textContent: e.verdict || "?" }));
-    row.appendChild(el("td", { className: "mono",
-      textContent: e.pattern || "" }));
-    row.appendChild(el("td", { className: "mono",
-      textContent: e.predicate || "" }));
-    row.appendChild(el("td", { textContent: e.stability_class || "?" }));
-    row.appendChild(el("td", { textContent: String(e.hit_count ?? 0) }));
-    const expires = e.expires_at
-      ? (e.is_expired ? `${e.expires_at} (EXPIRED)` : e.expires_at)
-      : "(never)";
-    row.appendChild(el("td", { className: "mono", textContent: expires }));
-    row.appendChild(el("td", { className: "mono",
-      textContent: e.canonical_key || "" }));
+    [
+      e.id, e.verdict, e.pattern, e.predicate, e.stability_class,
+      e.hit_count ?? 0,
+      e.expires_at ? (e.is_expired ? `${e.expires_at} (EXPIRED)` : e.expires_at) : "(never)",
+      e.canonical_key || "",
+    ].forEach((v, i) => {
+      const td = el("td", { textContent: String(v) });
+      if (i >= 6) td.className = "mono";
+      row.appendChild(td);
+    });
     table.appendChild(row);
   });
   container.appendChild(table);
@@ -1637,22 +983,45 @@ async function refreshCache() {
 
 $("#cache-refresh").addEventListener("click", refreshCache);
 
-// ---- reset ------------------------------------------------
+// =====================================================================
+// 7. model selector + reset
+// =====================================================================
+
+const MODEL_STORAGE_KEY = "aedos.selected_model";
+
+async function populateModelSelect() {
+  try {
+    const data = await api("GET", "/api/models");
+    modelSelect.innerHTML = "";
+    (data.models || []).forEach((m) => {
+      const opt = el("option", { textContent: m.label + (m.available ? "" : " — unavailable") });
+      opt.value = m.id;
+      if (!m.available) opt.disabled = true;
+      modelSelect.appendChild(opt);
+    });
+    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
+    const ids = (data.models || []).map((m) => m.id);
+    if (saved && ids.includes(saved)) {
+      const opt = data.models.find((m) => m.id === saved);
+      modelSelect.value = (opt && opt.available) ? saved : data.default;
+    } else {
+      modelSelect.value = data.default;
+    }
+  } catch (e) {
+    console.error("populateModelSelect failed:", e);
+  }
+}
+populateModelSelect();
+modelSelect.addEventListener("change", () => {
+  localStorage.setItem(MODEL_STORAGE_KEY, modelSelect.value);
+});
 
 $("#reset-btn").addEventListener("click", async () => {
   if (!confirm("Wipe every fact, turn, and pipeline event. This is not reversible. Proceed?")) return;
   await api("POST", "/api/reset");
   messagesEl.innerHTML = "";
-  traceEl.innerHTML = "";
-  traceEl.appendChild(el("p", { className: "hint", textContent: "Database reset. Send a message to start fresh." }));
-  flowLiveContainer.innerHTML = "";
-  flowLiveContainer.appendChild(
-    el("p", { className: "hint",
-      textContent: "Database reset. Send a message to start fresh." })
-  );
-  flowLiveStatus.textContent = "idle";
-  const active = $(".tab.active")?.dataset.tab;
-  if (active === "facts") refreshFacts();
-  if (active === "trace") refreshTraceTab();
-  if (active === "cache") refreshCache();
+  flowContainer.innerHTML = "";
+  flowContainer.appendChild(el("p", { className: "hint", textContent: "Database reset. Send a message to start fresh." }));
+  flowStatus.textContent = "idle";
+  expandedSteps.clear();
 });
