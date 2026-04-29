@@ -148,6 +148,7 @@ def classify_scope(claim: dict, llm: LLMClient) -> ScopingDecision:
     )
     raw = llm.extract_with_tool(
         _SCOPING_SYSTEM, user_message, _SCOPING_TOOL, max_tokens=512,
+        purpose="cache_scoping",
     )
     scope = raw.get("scope")
     if scope not in SCOPING_METHODS:

@@ -24,7 +24,7 @@ class FakeLLM:
     return_value: dict[str, Any]
     calls: list[dict[str, Any]] = field(default_factory=list)
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         self.calls.append(
             {"system": system, "user_message": user_message, "tool": tool}
         )

@@ -210,6 +210,7 @@ def _call_llm_for_prompt(claim: dict, llm: LLMClient) -> tuple[str, str]:
         system=_PROMPT_SYSTEM,
         user_message=_build_user_message(claim),
         tool=_PROMPT_TOOL,
+        purpose="prompt_builder",
     )
     prompt = str(raw.get("prompt") or "").strip()
     output_type = str(raw.get("expected_output_type") or "").strip().lower()

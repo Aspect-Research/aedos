@@ -186,7 +186,7 @@ def test_turn_cost_event_emitted(tmp_path):
         # Pre-recorded "calls" the pipeline will pop.
         _recorded: list = field(default_factory=list)
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             self._recorded.append(CallCost(
                 model="claude-opus-4-7",
                 input_tokens=100, output_tokens=50,
@@ -195,7 +195,7 @@ def test_turn_cost_event_emitted(tmp_path):
             ))
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             self._recorded.append(CallCost(
                 model="claude-opus-4-7",
                 input_tokens=200, output_tokens=80,
@@ -204,7 +204,7 @@ def test_turn_cost_event_emitted(tmp_path):
             ))
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
         def pop_recorded_calls(self):
@@ -256,13 +256,13 @@ def test_turn_cost_event_skipped_when_no_calls(tmp_path):
         rewrites: list = field(default_factory=list)
         corrector_model: str = "mock"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             return self.chats.pop(0)
 
-        def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+        def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
             return self.extracts.pop(0)
 
-        def rewrite(self, system, user_message, max_tokens=2048, temperature=None):
+        def rewrite(self, system, user_message, max_tokens=2048, temperature=None, **_kwargs):
             return self.rewrites.pop(0)
 
     mock = _LegacyMock(

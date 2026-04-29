@@ -141,7 +141,7 @@ def write_code(
     )
     # Only pass `model` when explicitly overridden — many test doubles
     # (MockLLM in tests/test_integration.py) don't accept it as a kwarg.
-    rewrite_kwargs: dict[str, Any] = {"temperature": temperature}
+    rewrite_kwargs: dict[str, Any] = {"temperature": temperature, "purpose": "code_writer"}
     if model is not None:
         rewrite_kwargs["model"] = model
     raw = llm.rewrite(_CODE_WRITER_SYSTEM, user_message, **rewrite_kwargs)

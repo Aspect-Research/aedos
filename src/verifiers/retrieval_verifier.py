@@ -601,7 +601,8 @@ class RetrievalVerifier:
         try:
             system = _JUDGE_SYSTEM_HISTORICAL if historical else _JUDGE_SYSTEM_CURRENT
             judge_text = self.llm.rewrite(
-                system, _format_judge_user_message(claim, chosen_snippets, historical)
+                system, _format_judge_user_message(claim, chosen_snippets, historical),
+                purpose="retrieval_judge",
             )
         except Exception as e:
             return RetrievalResult(

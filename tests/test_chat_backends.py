@@ -19,7 +19,7 @@ class FakeLLM:
     chats: list[str] = field(default_factory=list)
     last_call: dict | None = None
 
-    def chat(self, system, messages, max_tokens=4096):
+    def chat(self, system, messages, max_tokens=4096, **_kwargs):
         self.last_call = {
             "system": system,
             "messages": list(messages),
@@ -59,7 +59,7 @@ def test_anthropic_backend_logs_event_on_failure(tmp_path):
     class BoomLLM:
         model = "claude-fake"
 
-        def chat(self, system, messages, max_tokens=4096):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
             raise RuntimeError("kaboom")
 
     store = FactStore(tmp_path / "t.db")

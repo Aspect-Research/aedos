@@ -21,7 +21,7 @@ class FakeLLM:
     rewrite_responses: list[str] = field(default_factory=list)
     rewrite_calls: list[dict] = field(default_factory=list)
 
-    def rewrite(self, system, user_message, max_tokens=2048):
+    def rewrite(self, system, user_message, max_tokens=2048, **_kwargs):
         self.rewrite_calls.append({"system": system, "user_message": user_message})
         return self.rewrite_responses.pop(0)
 
@@ -249,7 +249,7 @@ def test_corrector_user_message_includes_verified_values_checklist():
         corrector_model: str = "mock"
 
         def rewrite(self, system, user_message, max_tokens=2048,
-                    temperature=None):
+                    temperature=None, **_kwargs):
             self.rewrite_calls.append({"user_message": user_message})
             return "ok"
 
@@ -306,7 +306,7 @@ def test_corrector_user_message_no_checklist_when_no_replace():
         corrector_model: str = "mock"
 
         def rewrite(self, system, user_message, max_tokens=2048,
-                    temperature=None):
+                    temperature=None, **_kwargs):
             self.rewrite_calls.append({"user_message": user_message})
             return "ok"
 

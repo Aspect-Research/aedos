@@ -30,11 +30,11 @@ class TemperatureScriptedLLM:
     rewrite_calls: list[dict] = field(default_factory=list)
     corrector_model: str = "claude-haiku-4-5"
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         return self.extracts.pop(0)
 
     def rewrite(self, system, user_message, max_tokens=2048, temperature=None,
-                model=None):
+                model=None, **_kwargs):
         # ``model`` is the cross-check override (now drawn from the LLM's
         # active corrector_model so a single operator selection drives
         # every step). The mock keys scripts by temperature only — it

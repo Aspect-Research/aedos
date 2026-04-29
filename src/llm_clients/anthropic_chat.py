@@ -43,7 +43,7 @@ class AnthropicChatBackend:
         error: str | None = None
         text = ""
         try:
-            text = self._llm.chat(system, msg_list, max_tokens=max_tokens)
+            text = self._llm.chat(system, msg_list, max_tokens=max_tokens, purpose="chat")
             return text
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"

@@ -397,7 +397,6 @@ form.addEventListener("submit", async (e) => {
   const liveEvents = [];
   const requestStartMs = Date.now();
   flowStatus.textContent = "running…";
-  expandedSteps.clear();
   expandedClaims.clear();
   renderFlow(null, [], { running: true, requestStartMs });
 
@@ -522,10 +521,9 @@ function flowEdgeClass(displayStatus) {
   return "not_applicable";
 }
 
-// Persistent expansion state: per-step (chat / correction / final) and
-// per-claim (each row in the Claims card). Survive re-renders during
+// Persistent expansion state — per-claim only now. Each row in the
+// Claims card can expand independently. Survives re-renders during
 // SSE streaming; cleared when a new turn starts.
-const expandedSteps = new Set();
 const expandedClaims = new Set();
 
 function renderFlow(turnId, events, { running = false, requestStartMs = null } = {}) {
@@ -562,19 +560,6 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
   const stageMap = {};
   events.forEach((e) => { stageMap[e.stage] = e; });
 
-  // Index annotation events (everything not a primary step event) by
-  // the step they belong to. With the combined Claims card,
-  // extraction- and verification-related annotations both bucket
-  // under "claims".
-  const primaryStages = new Set(["chat_model_call", "assistant_extraction",
-                                 "verification", "correction", "final"]);
-  const annotationsByStep = { chat_model_call: [], claims: [], correction: [], final: [] };
-  events.forEach((e) => {
-    if (primaryStages.has(e.stage)) return;
-    const bucket = annotationStepFor(e.stage);
-    if (bucket && annotationsByStep[bucket]) annotationsByStep[bucket].push(e);
-  });
-
   // Per-step duration = (this step's end) − (previous step's end). The
   // very first step's "previous" is the request-start timestamp.
   const durations = {};
@@ -584,6 +569,22 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
     if (endMs != null && prevMs != null) durations[step.kind] = endMs - prevMs;
     if (endMs != null) prevMs = endMs;
   }
+
+  // LLM call ledger comes from the turn_cost event (lands at the end
+  // of the turn). Each call has {purpose, model, duration_ms, total_usd}.
+  // Bucketed per pipeline step via STEP_PURPOSES.
+  const turnCost = stageMap["turn_cost"];
+  const allCalls = (turnCost && turnCost.data ? turnCost.data.calls : []) || [];
+  const callsByStep = {};
+  for (const step of PIPELINE_STEPS) {
+    const purposes = new Set(STEP_PURPOSES[step.kind] || []);
+    callsByStep[step.kind] = allCalls.filter((c) => purposes.has(c.purpose));
+  }
+
+  // Non-LLM ops (cache lookups, retrieval queries, sandbox execs) —
+  // counted from the existing per-stage events. All belong to the
+  // Claims card.
+  const opsByStep = { claims: opsCountFromEvents(events) };
 
   // Routing decisions (per-claim, fire during verification dispatch).
   // Used by the Claims card's in-flight view to flip individual
@@ -608,8 +609,10 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
     if (renderedAny) chart.appendChild(arrowDown());
     chart.appendChild(renderStep(step, state, stageMap, {
       duration: durations[step.kind],
-      annotations: annotationsByStep[step.kind] || [],
+      calls: callsByStep[step.kind] || [],
+      ops: opsByStep[step.kind] || null,
       routingEvents,
+      turnCost,
     }));
     renderedAny = true;
   }
@@ -620,6 +623,144 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
   }
   return chart;
 }
+
+// Map a step kind → the LLM-call purposes that belong to it.
+// Calls without a recognized purpose ("unknown") fall through to
+// the Final card so they're at least visible somewhere.
+const STEP_PURPOSES = {
+  chat_model_call: ["chat"],
+  claims: ["extractor:user", "extractor:assistant", "router",
+           "cache_scoping", "cache_stability",
+           "prompt_builder", "code_writer", "retrieval_judge"],
+  correction: ["corrector"],
+  final: ["unknown"],
+};
+
+// Count non-LLM operations from the raw event stream — cache lookups,
+// retrieval HTTP calls, sandbox executions. These are all pipeline-
+// internal "operations" the user wants to see at a glance, even though
+// they don't cost LLM tokens.
+function opsCountFromEvents(events) {
+  let cacheHit = 0, cacheSemHit = 0, cacheMiss = 0, cacheWrite = 0;
+  let retrievalQueries = 0;
+  let sandboxExecs = 0;
+  events.forEach((e) => {
+    if (e.stage === "cache_lookup") {
+      const r = (e.data || {}).result;
+      if (r === "hit") cacheHit++;
+      else if (r === "semantic_hit") cacheSemHit++;
+      else if (r === "miss") cacheMiss++;
+    } else if (e.stage === "cache_write") {
+      cacheWrite++;
+    } else if (e.stage === "retrieval_query_attempt") {
+      retrievalQueries++;
+    } else if (e.stage === "code_executed") {
+      sandboxExecs++;
+    }
+  });
+  return { cacheHit, cacheSemHit, cacheMiss, cacheWrite,
+           retrievalQueries, sandboxExecs };
+}
+
+// Group a list of LLM calls by (purpose, model). Used to produce the
+// "extractor × 1 — Opus 4.7 — 0.5s — $0.0008" lines on each card.
+function summarizeCalls(calls) {
+  const byKey = new Map();
+  for (const c of calls) {
+    const key = `${c.purpose || "?"}|${c.model || "?"}`;
+    const slot = byKey.get(key) || {
+      purpose: c.purpose || "?",
+      model: c.model || "?",
+      count: 0,
+      total_usd: 0,
+      total_ms: 0,
+    };
+    slot.count++;
+    slot.total_usd += c.total_usd || 0;
+    if (c.duration_ms) slot.total_ms += c.duration_ms;
+    byKey.set(key, slot);
+  }
+  return Array.from(byKey.values())
+    .sort((a, b) => (b.total_usd - a.total_usd) || a.purpose.localeCompare(b.purpose));
+}
+
+// One-line readable cost. "$0.0021" for non-trivial, "—" for free.
+function fmtCost(usd) {
+  if (!usd || usd <= 0) return "—";
+  if (usd >= 0.01) return `$${usd.toFixed(3)}`;
+  if (usd >= 0.0001) return `$${usd.toFixed(4)}`;
+  return `$${usd.toExponential(1)}`;
+}
+
+// Render the call + ops surface for a single pipeline card. Returns
+// null when there's nothing to show (so the caller can skip the
+// container entirely).
+function renderCallsBlock(calls, ops) {
+  const groups = summarizeCalls(calls);
+  const opLines = ops ? formatOpLines(ops) : [];
+  if (groups.length === 0 && opLines.length === 0) return null;
+
+  const block = el("div", { className: "calls-block" });
+  groups.forEach((g) => {
+    const row = el("div", { className: "call-row" });
+    row.appendChild(el("span", { className: "call-purpose",
+      textContent: friendlyPurpose(g.purpose) }));
+    if (g.count > 1) row.appendChild(el("span", { className: "call-count",
+      textContent: `× ${g.count}` }));
+    row.appendChild(el("span", { className: "call-model", textContent: g.model }));
+    row.appendChild(el("span", { className: "call-meta",
+      textContent: fmtDurationMs(g.total_ms) || "—" }));
+    row.appendChild(el("span", { className: "call-cost", textContent: fmtCost(g.total_usd) }));
+    block.appendChild(row);
+  });
+  opLines.forEach((line) => {
+    const row = el("div", { className: "op-row" });
+    row.appendChild(el("span", { className: "call-purpose op-icon", textContent: line.icon }));
+    row.appendChild(el("span", { className: "op-label", textContent: line.label }));
+    block.appendChild(row);
+  });
+  return block;
+}
+
+function formatOpLines(ops) {
+  const lines = [];
+  const cacheTotal = ops.cacheHit + ops.cacheSemHit + ops.cacheMiss;
+  if (cacheTotal > 0) {
+    const parts = [];
+    if (ops.cacheHit) parts.push(`${ops.cacheHit} hit`);
+    if (ops.cacheSemHit) parts.push(`${ops.cacheSemHit} semantic-hit`);
+    if (ops.cacheMiss) parts.push(`${ops.cacheMiss} miss`);
+    lines.push({ icon: "✦", label: `cache lookup · ${parts.join(", ")}` });
+  }
+  if (ops.cacheWrite) {
+    lines.push({ icon: "✦", label: `cache write · ${ops.cacheWrite}` });
+  }
+  if (ops.retrievalQueries) {
+    lines.push({ icon: "🔎",
+      label: `web retrieval · ${ops.retrievalQueries} quer${ops.retrievalQueries === 1 ? "y" : "ies"}` });
+  }
+  if (ops.sandboxExecs) {
+    lines.push({ icon: "▶",
+      label: `sandbox exec · ${ops.sandboxExecs} run${ops.sandboxExecs === 1 ? "" : "s"}` });
+  }
+  return lines;
+}
+
+// Convert raw purpose tags into the labels the user sees in the UI.
+const PURPOSE_LABELS = {
+  "chat": "assistant chat",
+  "extractor:user": "extract user claims",
+  "extractor:assistant": "extract assistant claims",
+  "router": "route claim",
+  "cache_scoping": "cache: scope",
+  "cache_stability": "cache: stability",
+  "prompt_builder": "code: prompt",
+  "code_writer": "code: write",
+  "retrieval_judge": "retrieval judge",
+  "corrector": "corrector",
+  "unknown": "(unlabeled call)",
+};
+function friendlyPurpose(p) { return PURPOSE_LABELS[p] || p; }
 
 function annotationStepFor(stage) {
   // Map non-primary events to a step bucket.
@@ -641,8 +782,7 @@ function annotationStepFor(stage) {
 
 function renderStep(step, state, stageMap, ctx) {
   if (step.kind === "claims") return renderClaimsNode(state, stageMap, ctx);
-  // Single-event step (chat / correction / final).
-  return renderEventStepNode(step, stageMap[step.stage], ctx.annotations, ctx.duration);
+  return renderEventStepNode(step, stageMap[step.stage], ctx);
 }
 
 // ---- step header (title + duration pill) ----
@@ -660,30 +800,63 @@ function buildStepHeader(title, durationMs, extraRight) {
 
 // ---- generic single-event step (chat / correction / final) ----
 
-function renderEventStepNode(step, event, annotations, durationMs) {
+function renderEventStepNode(step, event, ctx) {
   const wrapper = el("div", { className: "flow-step-wrapper" });
-  const node = el("div", { className: "flow-step flow-step-done", dataset: { stage: step.stage } });
-  node.appendChild(buildStepHeader(step.title, durationMs));
+  const node = el("div", { className: "flow-step flow-step-done flow-step-static",
+    dataset: { stage: step.stage } });
+  node.appendChild(buildStepHeader(step.title, ctx.duration));
   const meta = step.metaFn ? step.metaFn(event) : "";
   if (meta) node.appendChild(el("div", { className: "flow-step-meta", textContent: meta }));
 
-  const detail = el("div", { className: "flow-step-detail" });
-  if (expandedSteps.has(step.kind)) detail.classList.add("expanded");
-  renderStepDetail(detail, step, event, annotations);
+  // Surface the LLM calls + ops for this step. The complicated
+  // per-event detail lives in the Inspector → Pipeline events tab.
+  const callsBlock = renderCallsBlock(ctx.calls || [], ctx.ops || null);
+  if (callsBlock) node.appendChild(callsBlock);
 
-  node.addEventListener("click", () => {
-    if (expandedSteps.has(step.kind)) {
-      expandedSteps.delete(step.kind);
-      detail.classList.remove("expanded");
-    } else {
-      expandedSteps.add(step.kind);
-      detail.classList.add("expanded");
-    }
-  });
+  // Step-specific inline content (no click-to-expand — the user
+  // explicitly asked for high-level cards with no raw-data dumps).
+  if (step.kind === "correction") {
+    renderCorrectionInline(node, (event && event.data) || {});
+  } else if (step.kind === "final" && ctx.turnCost) {
+    node.appendChild(renderFinalSummary(ctx.turnCost.data || {}));
+  }
 
   wrapper.appendChild(node);
-  wrapper.appendChild(detail);
   return wrapper;
+}
+
+// What ran during the Correction step: the interventions the
+// corrector planned, and an inline word-level diff if the rewrite
+// actually changed the draft.
+function renderCorrectionInline(container, data) {
+  const interventions = data.interventions || [];
+  if (interventions.length > 0) {
+    const ivWrap = el("div", { className: "interventions-inline" });
+    interventions.forEach((iv) => {
+      const row = el("div", { className: `intervention intervention-${iv.intervention_type}` });
+      row.appendChild(el("span", {
+        className: `intervention-type intervention-type-${iv.intervention_type}`,
+        textContent: iv.intervention_type,
+      }));
+      row.appendChild(el("div", { className: "intervention-reason", textContent: iv.reason || "" }));
+      ivWrap.appendChild(row);
+    });
+    container.appendChild(ivWrap);
+  }
+  if (data.original && data.corrected && data.original !== data.corrected) {
+    const diff = el("div", { className: "diff-box" });
+    renderInlineDiff(diff, data.original, data.corrected);
+    container.appendChild(diff);
+  }
+}
+
+function renderFinalSummary(d) {
+  const wrap = el("div", { className: "final-summary" });
+  const totalUsd = (d.total_usd ?? 0);
+  const calls = d.total_calls ?? 0;
+  wrap.appendChild(el("div", { className: "final-summary-line",
+    textContent: `Total · ${calls} LLM call${calls === 1 ? "" : "s"} · ${fmtCost(totalUsd)} · ${(d.total_input_tokens ?? 0)} / ${(d.total_output_tokens ?? 0)} tok in/out` }));
+  return wrap;
 }
 
 // ---- combined Claims card ----
@@ -727,6 +900,12 @@ function renderClaimsNode(state, stageMap, ctx) {
   }
   node.appendChild(buildStepHeader(`Claims · ${summary}`, ctx.duration, extraRight));
 
+  // LLM calls + ops surface for this step. Sits between header and
+  // claim rows so the user sees what work happened before the
+  // verdicts. Pipeline-event raw data lives in the Inspector instead.
+  const callsBlock = renderCallsBlock(ctx.calls || [], ctx.ops || null);
+  if (callsBlock) node.appendChild(callsBlock);
+
   if (valid.length === 0) {
     node.appendChild(el("div", { className: "flow-step-meta",
       textContent: "no claims extracted from the draft" }));
@@ -741,25 +920,6 @@ function renderClaimsNode(state, stageMap, ctx) {
       list.appendChild(renderClaimItem(claim, rowState, decision));
     });
     node.appendChild(list);
-  }
-
-  // Card-level annotations (substitution warnings, turn-of-claim cache
-  // events that didn't carry a claim). Tucked at the bottom so they
-  // don't dominate the card.
-  if (ctx.annotations.length > 0) {
-    const annoWrap = el("div", { className: "claims-annotations" });
-    const header = el("div", { className: "annotations-header",
-      textContent: `${ctx.annotations.length} pipeline event${ctx.annotations.length === 1 ? "" : "s"}` });
-    annoWrap.appendChild(header);
-    const body = el("div", { className: "claims-annotations-body" });
-    ctx.annotations.forEach((a) => body.appendChild(renderAnnotation(a)));
-    annoWrap.appendChild(body);
-    header.style.cursor = "pointer";
-    header.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      annoWrap.classList.toggle("expanded");
-    });
-    node.appendChild(annoWrap);
   }
 
   wrapper.appendChild(node);
@@ -906,31 +1066,6 @@ function arrowDown() {
 // substitution warnings) render below the step's primary detail as
 // collapsible blocks.
 
-function renderStepDetail(container, step, event, annotations) {
-  const data = event.data || {};
-  // Per-step primary detail. The "claims" step has no whole-card
-  // detail — it dispatches per-claim instead.
-  if (step.kind === "chat_model_call") renderChatModelCallDetail(container, data);
-  else if (step.kind === "correction") renderCorrectionDetail(container, data);
-  else if (step.kind === "final") renderFinalDetail(container, data);
-
-  if (annotations.length > 0) {
-    const annoHeader = el("div", { className: "annotations-header",
-      textContent: `${annotations.length} annotation${annotations.length === 1 ? "" : "s"}` });
-    container.appendChild(annoHeader);
-    annotations.forEach((a) => container.appendChild(renderAnnotation(a)));
-  }
-}
-
-function renderChatModelCallDetail(container, data) {
-  const tbl = el("dl", { className: "kv" });
-  for (const [k, v] of Object.entries(data || {})) {
-    tbl.appendChild(el("dt", { textContent: k }));
-    tbl.appendChild(el("dd", { textContent: typeof v === "object" ? JSON.stringify(v) : String(v) }));
-  }
-  container.appendChild(tbl);
-}
-
 function renderClaimBlock(claim) {
   const wrap = el("div", { className: "claim-block" });
   wrap.appendChild(el("div", { className: "claim-header" }, [
@@ -1019,38 +1154,7 @@ function renderRetrievalBlock(rr) {
   return wrap;
 }
 
-function renderCorrectionDetail(container, data) {
-  if (!data.interventions || data.interventions.length === 0) {
-    container.appendChild(el("p", { className: "hint", textContent: "no interventions applied" }));
-    return;
-  }
-  data.interventions.forEach((iv) => {
-    const node = el("div", { className: `intervention intervention-${iv.intervention_type}` });
-    node.appendChild(el("span", { className: `intervention-type intervention-type-${iv.intervention_type}`,
-      textContent: iv.intervention_type }));
-    node.appendChild(el("div", { className: "intervention-reason", textContent: iv.reason }));
-    if (iv.verified_value !== undefined && iv.verified_value !== null) {
-      node.appendChild(el("div", { className: "intervention-value",
-        textContent: `verified_value = ${JSON.stringify(iv.verified_value)}` }));
-    }
-    container.appendChild(node);
-  });
-  if (data.original && data.corrected && data.original !== data.corrected) {
-    container.appendChild(el("h5", { textContent: "Inline diff" }));
-    const diff = el("div", { className: "diff-box" });
-    renderInlineDiff(diff, data.original, data.corrected);
-    container.appendChild(diff);
-  } else if (data.original && data.corrected) {
-    container.appendChild(el("p", { className: "hint",
-      textContent: "interventions planned but rewrite was identical to draft" }));
-  }
-}
-
-function renderFinalDetail(container, data) {
-  container.appendChild(el("div", { className: "draft-box", textContent: data.content || "" }));
-}
-
-// ---- annotation renderer (the long tail) ----
+// ---- annotation renderer (used by the Inspector → Pipeline events tab) ----
 
 function renderAnnotation(event) {
   const wrap = el("div", { className: `annotation annotation-${event.stage}` });
@@ -1207,11 +1311,11 @@ function openInspector(initialTab) {
   inspector.classList.add("open");
   inspectorBackdrop.classList.add("open");
   if (initialTab) selectInspectorTab(initialTab);
-  // Refresh whichever tab is active.
   const active = $(".inspector-tab.active")?.dataset.inspectorTab;
   if (active === "facts") refreshFacts();
   else if (active === "patterns") refreshPatterns();
   else if (active === "cache") refreshCache();
+  else if (active === "pipeline") refreshPipelineEvents();
 }
 
 function closeInspector() {
@@ -1225,6 +1329,7 @@ function selectInspectorTab(name) {
   if (name === "facts") refreshFacts();
   if (name === "patterns") refreshPatterns();
   if (name === "cache") refreshCache();
+  if (name === "pipeline") refreshPipelineEvents();
 }
 
 $("#inspector-btn").addEventListener("click", () => openInspector());
@@ -1385,6 +1490,52 @@ async function refreshCache() {
 
 $("#cache-refresh").addEventListener("click", refreshCache);
 
+// ---- Pipeline events (raw event log for the latest assistant turn) ----
+//
+// All the per-event detail that used to clutter the in-card flow lives
+// here. Chronological list of every pipeline_events row for the most
+// recent assistant turn, grouped by stage, with the data dict shown
+// inline via the existing renderAnnotation helpers.
+
+async function refreshPipelineEvents() {
+  const container = $("#pipeline-events");
+  const stats = $("#pipeline-stats");
+  container.innerHTML = "";
+  stats.textContent = "loading…";
+  try {
+    const turns = await api("GET", "/api/turns");
+    const lastAsst = [...turns].reverse().find((t) => t.role === "assistant");
+    if (!lastAsst) {
+      stats.textContent = "no assistant turn yet";
+      container.appendChild(el("p", { className: "hint",
+        textContent: "Send a message — pipeline events will appear here for inspection." }));
+      return;
+    }
+    const events = await api("GET", `/api/trace/${lastAsst.id}`);
+    stats.textContent = `${events.length} event${events.length === 1 ? "" : "s"} for turn ${lastAsst.id}`;
+    if (events.length === 0) {
+      container.appendChild(el("p", { className: "hint", textContent: "(no events)" }));
+      return;
+    }
+    events.forEach((ev, idx) => {
+      const node = el("div", { className: "pipeline-event-row" });
+      node.appendChild(el("span", { className: "pipeline-event-idx", textContent: `#${idx + 1}` }));
+      node.appendChild(el("span", { className: "pipeline-event-stage", textContent: ev.stage }));
+      const body = el("div", { className: "pipeline-event-body" });
+      // Reuse the annotation renderer for consistency with the old
+      // in-card UI — same data, same formatting.
+      body.appendChild(renderAnnotation(ev));
+      node.appendChild(body);
+      container.appendChild(node);
+    });
+  } catch (err) {
+    stats.textContent = "error";
+    container.appendChild(el("p", { className: "hint", textContent: String(err) }));
+  }
+}
+
+$("#pipeline-refresh").addEventListener("click", refreshPipelineEvents);
+
 // =====================================================================
 // 7. model selector + reset
 // =====================================================================
@@ -1425,5 +1576,5 @@ $("#reset-btn").addEventListener("click", async () => {
   flowContainer.innerHTML = "";
   flowContainer.appendChild(el("p", { className: "hint", textContent: "Database reset. Send a message to start fresh." }));
   flowStatus.textContent = "idle";
-  expandedSteps.clear();
+  expandedClaims.clear();
 });

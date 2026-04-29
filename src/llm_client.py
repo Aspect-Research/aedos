@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -124,10 +125,13 @@ class LLMClient:
         finally:
             self.model, self.extractor_model, self.corrector_model = saved
 
-    def _record_call(self, model: str, response: Any) -> None:
+    def _record_call(
+        self, model: str, response: Any,
+        purpose: str | None = None, duration_ms: float | None = None,
+    ) -> None:
         """Capture token counts from an Anthropic response and stash a
-        CallCost entry. Best-effort — never crash the call on metric
-        failure."""
+        CallCost entry with purpose + duration. Best-effort — never
+        crash the call on metric failure."""
         try:
             usage = getattr(response, "usage", None)
             if usage is None:
@@ -135,20 +139,23 @@ class LLMClient:
             in_toks = int(getattr(usage, "input_tokens", 0) or 0)
             out_toks = int(getattr(usage, "output_tokens", 0) or 0)
             self._recorded_calls.append(
-                cost_for_call(model, in_toks, out_toks)
+                cost_for_call(model, in_toks, out_toks,
+                              purpose=purpose, duration_ms=duration_ms)
             )
         except Exception:
             pass
 
     def record_external_call(
         self, model: str, input_tokens: int, output_tokens: int,
+        purpose: str | None = None, duration_ms: float | None = None,
     ) -> None:
         """Public hook for non-Anthropic chat backends (e.g. ModalGLMBackend)
-        to feed their token usage into the per-turn cost ledger.
-        Best-effort — never raises."""
+        to feed their token usage + purpose into the per-turn cost
+        ledger. Best-effort — never raises."""
         try:
             self._recorded_calls.append(
-                cost_for_call(model, int(input_tokens), int(output_tokens))
+                cost_for_call(model, int(input_tokens), int(output_tokens),
+                              purpose=purpose, duration_ms=duration_ms)
             )
         except Exception:
             pass
@@ -160,8 +167,10 @@ class LLMClient:
         system: str,
         messages: Iterable[ChatMessage],
         max_tokens: int = 4096,
+        purpose: str | None = "chat",
     ) -> str:
         """Single-shot chat. Returns the first text block of the response."""
+        t0 = time.monotonic()
         response = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -174,7 +183,8 @@ class LLMClient:
             ],
             messages=[{"role": m.role, "content": m.content} for m in messages],
         )
-        self._record_call(self.model, response)
+        self._record_call(self.model, response,
+                          purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
         return _first_text(response)
 
     # ---- extraction via forced tool use ---------------------------------
@@ -185,8 +195,10 @@ class LLMClient:
         user_message: str,
         tool: dict[str, Any],
         max_tokens: int = 2048,
+        purpose: str | None = None,
     ) -> dict[str, Any]:
         """Force the model to call ``tool`` and return its parsed input."""
+        t0 = time.monotonic()
         response = self._client.messages.create(
             model=self.extractor_model,
             max_tokens=max_tokens,
@@ -201,7 +213,8 @@ class LLMClient:
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
         )
-        self._record_call(self.extractor_model, response)
+        self._record_call(self.extractor_model, response,
+                          purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == tool["name"]:
                 return dict(block.input)
@@ -219,6 +232,7 @@ class LLMClient:
         max_tokens: int = 2048,
         temperature: float | None = None,
         model: str | None = None,
+        purpose: str | None = None,
     ) -> str:
         """Single-shot text-rewrite call.
 
@@ -242,8 +256,10 @@ class LLMClient:
                     "accepts it; cross-check will not see temperature variation",
                     temperature, chosen_model,
                 )
+        t0 = time.monotonic()
         response = self._client.messages.create(**kwargs)
-        self._record_call(chosen_model, response)
+        self._record_call(chosen_model, response,
+                          purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
         return _first_text(response)
 
 

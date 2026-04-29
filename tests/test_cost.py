@@ -145,4 +145,31 @@ def test_call_cost_to_dict_shape():
     assert set(d.keys()) == {
         "model", "input_tokens", "output_tokens",
         "input_usd", "output_usd", "total_usd", "pricing_known",
+        # v0.7.3: purpose label + per-call wall-clock duration
+        "purpose", "duration_ms",
     }
+
+
+def test_call_cost_to_dict_includes_purpose_and_duration():
+    c = cost_for_call("claude-opus-4-7", 10, 20, purpose="extractor:user", duration_ms=420.7)
+    d = c.to_dict()
+    assert d["purpose"] == "extractor:user"
+    assert d["duration_ms"] == 420.7
+
+
+def test_aggregate_costs_includes_per_purpose_and_calls_list():
+    calls = [
+        cost_for_call("claude-opus-4-7", 100, 200, purpose="extractor:assistant", duration_ms=350.0),
+        cost_for_call("claude-sonnet-4-6", 50, 100, purpose="router", duration_ms=180.0),
+        cost_for_call("claude-sonnet-4-6", 50, 100, purpose="router", duration_ms=200.0),
+    ]
+    from src.cost import aggregate_costs
+    agg = aggregate_costs(calls)
+    assert agg["total_calls"] == 3
+    assert "by_purpose" in agg
+    assert agg["by_purpose"]["router"]["calls"] == 2
+    assert agg["by_purpose"]["extractor:assistant"]["calls"] == 1
+    assert agg["by_purpose"]["router"]["duration_ms"] == 380.0
+    assert "calls" in agg
+    assert len(agg["calls"]) == 3
+    assert agg["calls"][0]["purpose"] == "extractor:assistant"

@@ -45,7 +45,7 @@ class FakeLLM:
     rewrite_responses: list[str] = field(default_factory=list)
     rewrite_calls: list[dict] = field(default_factory=list)
 
-    def rewrite(self, system, user_message, max_tokens=2048):
+    def rewrite(self, system, user_message, max_tokens=2048, **_kwargs):
         self.rewrite_calls.append({"system": system, "user_message": user_message})
         return self.rewrite_responses.pop(0)
 

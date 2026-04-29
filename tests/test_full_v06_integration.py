@@ -49,10 +49,10 @@ class _MockLLM:
     corrector_model: str = "claude-mock"
     _recorded: list = field(default_factory=list)
 
-    def chat(self, system, messages, max_tokens=4096):
+    def chat(self, system, messages, max_tokens=4096, **_kwargs):
         return self.chats.pop(0)
 
-    def extract_with_tool(self, system, user_message, tool, max_tokens=2048):
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
         # Pretend each extract call costs some tokens.
         self._recorded.append(CallCost(
             model=self.corrector_model,
@@ -63,7 +63,7 @@ class _MockLLM:
         return self.extracts.pop(0)
 
     def rewrite(self, system, user_message, max_tokens=2048,
-                temperature=None, model=None):
+                temperature=None, model=None, **_kwargs):
         self._recorded.append(CallCost(
             model=model or self.corrector_model,
             input_tokens=100, output_tokens=50,

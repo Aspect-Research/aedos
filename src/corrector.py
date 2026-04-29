@@ -189,7 +189,8 @@ class Corrector:
         if not interventions:
             return draft
 
-        return self.llm.rewrite(CORRECTOR_SYSTEM, _format_user_message(draft, interventions))
+        return self.llm.rewrite(CORRECTOR_SYSTEM, _format_user_message(draft, interventions),
+                                 purpose="corrector")
 
 def _format_user_message(draft: str, interventions: list[Intervention]) -> str:
     lines = [

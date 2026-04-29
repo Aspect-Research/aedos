@@ -157,6 +157,8 @@ class ModalGLMBackend:
                         self.model,
                         usage.get("input_tokens", 0),
                         usage.get("output_tokens", 0),
+                        purpose="chat",
+                        duration_ms=(time.monotonic() - started) * 1000,
                     )
                 except Exception:
                     pass
