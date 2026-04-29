@@ -826,7 +826,12 @@ def test_attempts_logged_to_pipeline_events(store):
 
 
 def test_current_claim_uses_current_judge_prompt(store):
-    """A claim with no valid_until should use the CURRENT judge prompt."""
+    """A claim with no valid_until uses the CURRENT judge prompt. Note
+    that the CURRENT prompt now ALSO instructs the model to handle
+    past-tense source text as a historical assertion (v0.7.6) so it
+    references the word HISTORICAL inside its tense-awareness rules —
+    the discriminator is the CURRENT-TENSE header, not the absence of
+    'HISTORICAL'."""
     def fake_search(q):
         return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
 
@@ -835,7 +840,9 @@ def test_current_claim_uses_current_judge_prompt(store):
     v.verify(_claim())  # no valid_until
     sys = llm.rewrite_calls[0]["system"]
     assert "CURRENT-TENSE" in sys
-    assert "HISTORICAL" not in sys
+    # The HISTORICAL prompt has its own distinct opening line; check
+    # we didn't accidentally route to it.
+    assert "HISTORICAL claim with an explicit time period" not in sys
 
 
 def test_historical_claim_uses_historical_judge_prompt(store):

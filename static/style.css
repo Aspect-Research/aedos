@@ -165,13 +165,13 @@ main {
   word-wrap: break-word;
   line-height: 1.55;
 }
-/* User message bubble: muted burnt-orange (same hue as the soften /
- * hedge accent palette, but desaturated so it doesn't compete with
- * the rest of the UI). Dark text reads cleanly against it. */
+/* User message bubble: a warm orange wash matched to the soften /
+ * hedge intervention pills (var(--accent) family). Brighter than the
+ * dark accent-soft we used before; dark text reads cleanly against it. */
 .msg.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #b85d20 0%, #9a4a14 100%);
-  border: 1px solid rgba(184, 93, 32, 0.45);
+  background: linear-gradient(135deg, #f9731c 0%, #e6651a 100%);
+  border: 1px solid rgba(249, 115, 28, 0.45);
   color: #1a0a02;
 }
 .msg.user .msg-body { color: #1a0a02; }
