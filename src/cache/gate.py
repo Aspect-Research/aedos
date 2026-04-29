@@ -45,6 +45,27 @@ _RETRIEVAL_VERDICTS_TO_CACHE = frozenset({
     "verified", "contradicted", "retrieval_inconclusive",
 })
 
+# v0.7.12: don't cache low-conviction verdicts. Caching an entry the
+# verifier wasn't sure about pollutes future lookups with weak signal —
+# better to re-run retrieval next time. The router assigns confidence
+# per outcome (CONF_RETRIEVAL_INCONCLUSIVE = 0.4 by default), so this
+# floor naturally filters out inconclusive retrievals while keeping
+# high-conviction verified / contradicted verdicts.
+_MIN_CONFIDENCE_TO_CACHE = 0.5
+
+# v0.7.12: rough per-hit cost estimate. Each cache hit avoids one
+# retrieval-judge LLM call (the most expensive part of the retrieval
+# path). Real cost varies by model + snippet length; this is an
+# order-of-magnitude estimate so the operator can see "the cache is
+# saving ~$X per turn". Override via AEDOS_CACHE_AVG_HIT_SAVINGS_USD.
+import os as _os
+try:
+    _CACHE_HIT_AVG_SAVINGS_USD = float(
+        _os.getenv("AEDOS_CACHE_AVG_HIT_SAVINGS_USD", "0.001")
+    )
+except (TypeError, ValueError):
+    _CACHE_HIT_AVG_SAVINGS_USD = 0.001
+
 
 @dataclass
 class ClaimCacheState:
@@ -112,6 +133,10 @@ class CacheGate:
         self._store = store
         # Per-turn state. Reset by reset_for_turn().
         self._states: dict[str, ClaimCacheState] = {}
+        # v0.7.12: per-turn cache-savings tally. Bumped on every hit;
+        # Pipeline reads at end-of-turn for the cache_savings event.
+        self._turn_hits: int = 0
+        self._turn_savings_usd: float = 0.0
 
     @property
     def enabled(self) -> bool:
@@ -134,9 +159,22 @@ class CacheGate:
         return {k for k, st in self._states.items() if st.eligible_for_cache}
 
     def reset_for_turn(self) -> None:
-        """Clear per-claim decisions. Pipeline calls at the start of
-        each turn so prior classifications don't leak."""
+        """Clear per-claim decisions + per-turn savings tally.
+        Pipeline calls at the start of each turn so prior
+        classifications don't leak."""
         self._states.clear()
+        self._turn_hits = 0
+        self._turn_savings_usd = 0.0
+
+    def turn_savings(self) -> dict:
+        """Returned at end-of-turn for the cache_savings event.
+        Cheap aggregate the Pipeline emits alongside turn_cost so the
+        operator can see "the cache saved $X this turn"."""
+        return {
+            "hits": self._turn_hits,
+            "estimated_usd_saved": round(self._turn_savings_usd, 6),
+            "per_hit_estimate_usd": _CACHE_HIT_AVG_SAVINGS_USD,
+        }
 
     # ---- classify (was Pipeline stage 5b) ------------------------------
 
@@ -227,6 +265,7 @@ class CacheGate:
             })
             return None
         if cached is not None:
+            self._record_hit_savings()
             self._emit("cache_lookup", turn_id, {
                 "canonical_key": key, "result": "hit",
                 "verdict": cached.verdict,
@@ -234,6 +273,7 @@ class CacheGate:
                 "hit_count": cached.hit_count,
                 "cached_at": cached.cached_at,
                 "expires_at": cached.expires_at,
+                "estimated_usd_saved": _CACHE_HIT_AVG_SAVINGS_USD,
             })
             return CacheHit(verdict=cached, is_semantic=False)
 
@@ -255,6 +295,7 @@ class CacheGate:
             })
             return None
 
+        self._record_hit_savings()
         self._emit("cache_lookup", turn_id, {
             "canonical_key": key, "result": "semantic_hit",
             "matched_key": semantic.matched_key,
@@ -264,11 +305,16 @@ class CacheGate:
             "hit_count": semantic.verdict.hit_count,
             "cached_at": semantic.verdict.cached_at,
             "expires_at": semantic.verdict.expires_at,
+            "estimated_usd_saved": _CACHE_HIT_AVG_SAVINGS_USD,
         })
         return CacheHit(
             verdict=semantic.verdict, is_semantic=True,
             matched_key=semantic.matched_key, score=semantic.score,
         )
+
+    def _record_hit_savings(self) -> None:
+        self._turn_hits += 1
+        self._turn_savings_usd += _CACHE_HIT_AVG_SAVINGS_USD
 
     # ---- maybe_write (was Pipeline._maybe_write_cache) -----------------
 
@@ -303,6 +349,21 @@ class CacheGate:
         # bookkeeping (every hit would look like a fresh confirmation).
         if getattr(decision, "served_from_cache", False):
             return
+        # v0.7.12: confidence floor. Don't write a verdict the verifier
+        # wasn't sure about — caching low-conviction answers pollutes
+        # future lookups; better to re-run on the next ask. The
+        # router's CONF_RETRIEVAL_INCONCLUSIVE = 0.4 < 0.5 floor, so
+        # this naturally filters retrieval_inconclusive verdicts out.
+        confidence = getattr(decision, "confidence", None)
+        if confidence is not None and confidence < _MIN_CONFIDENCE_TO_CACHE:
+            self._emit("cache_write", turn_id, {
+                "canonical_key": key,
+                "verdict": verdict,
+                "skipped": "below_confidence_floor",
+                "confidence": confidence,
+                "floor": _MIN_CONFIDENCE_TO_CACHE,
+            })
+            return
         evidence = None
         retrieval_result = getattr(decision, "retrieval_result", None)
         if retrieval_result is not None:
@@ -323,6 +384,7 @@ class CacheGate:
                 stability_class=state.stability.stability_class,
                 ttl_seconds=state.stability.ttl_seconds,
                 evidence=evidence,
+                confidence=confidence,
             )
             self._emit("cache_write", turn_id, {
                 "canonical_key": key,
