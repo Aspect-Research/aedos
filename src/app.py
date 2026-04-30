@@ -128,6 +128,17 @@ async def chat_stream(req: ChatRequest):
 
     token = p.store.register_event_subscriber(subscriber)
 
+    # v0.9.0 streaming chat draft: pipeline calls live_emit(turn_id,
+    # stage, data) for non-persisted live events (chat_draft_token).
+    # Same SSE channel as pipeline_event so the UI handler is uniform.
+    def live_emit(turn_id: int, stage: str, data: Any) -> None:
+        loop.call_soon_threadsafe(
+            queue.put_nowait,
+            ("event", {"turn_id": turn_id, "stage": stage, "data": data}),
+        )
+
+    p.live_emit = live_emit
+
     async def _run_pipeline() -> None:
         try:
             trace = await asyncio.to_thread(
@@ -140,6 +151,7 @@ async def chat_stream(req: ChatRequest):
                 "error_message": str(exc),
             }))
         finally:
+            p.live_emit = None
             await queue.put(("close", None))
 
     async def event_stream():

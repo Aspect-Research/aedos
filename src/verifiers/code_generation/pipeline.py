@@ -20,6 +20,7 @@ The router decides what to do with these statuses.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -255,24 +256,29 @@ class CodeGenerationVerifier:
         # if you want the cross-check to actually disagree on real
         # ambiguity.
         cross_check_model = self.llm.corrector_model
-        result_a = verify_via_code_generation(
-            claim,
-            self.llm,
-            store=self.store,
-            source_turn_id=source_turn_id,
-            sandbox_timeout_seconds=self.sandbox_timeout_seconds,
-            code_writer_temperature=0.0,
-            code_writer_model=cross_check_model,
-        )
-        result_b = verify_via_code_generation(
-            claim,
-            self.llm,
-            store=self.store,
-            source_turn_id=source_turn_id,
-            sandbox_timeout_seconds=self.sandbox_timeout_seconds,
-            code_writer_temperature=0.3,
-            code_writer_model=cross_check_model,
-        )
+
+        # v0.9.0: the two generations are independent — only the
+        # final agreement comparison needs both results. Dispatching
+        # them on a 2-worker pool halves the wall-clock for this
+        # claim. Both calls release the GIL on network I/O. SQLite
+        # writes (pipeline_event logs) are connection-thread-safe via
+        # check_same_thread=False; the per-statement commits serialize
+        # at the SQLite mutex.
+        def _run(temp: float):
+            return verify_via_code_generation(
+                claim,
+                self.llm,
+                store=self.store,
+                source_turn_id=source_turn_id,
+                sandbox_timeout_seconds=self.sandbox_timeout_seconds,
+                code_writer_temperature=temp,
+                code_writer_model=cross_check_model,
+            )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_a = pool.submit(_run, 0.0)
+            future_b = pool.submit(_run, 0.3)
+            result_a = future_a.result()
+            result_b = future_b.result()
 
         cross_check_payload = {
             "a": {

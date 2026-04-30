@@ -37,13 +37,25 @@ class AnthropicChatBackend:
         cost_recorder: Any | None = None,  # accepted but unused — LLMClient
                                             # records cost natively for
                                             # Anthropic calls
+        on_token: Any | None = None,        # v0.9.0: when supplied, stream
+                                            # tokens via LLMClient.chat_stream
+                                            # and call on_token(delta) for
+                                            # each text fragment as it arrives.
     ) -> str:
         msg_list = list(messages)
         started = time.monotonic()
         error: str | None = None
         text = ""
         try:
-            text = self._llm.chat(system, msg_list, max_tokens=max_tokens, purpose="chat")
+            if on_token is not None:
+                text = self._llm.chat_stream(
+                    system, msg_list, on_token=on_token,
+                    max_tokens=max_tokens, purpose="chat",
+                )
+            else:
+                text = self._llm.chat(
+                    system, msg_list, max_tokens=max_tokens, purpose="chat",
+                )
             return text
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
@@ -62,5 +74,6 @@ class AnthropicChatBackend:
                         "response_chars": len(text),
                         "duration_ms": int((time.monotonic() - started) * 1000),
                         "error": error,
+                        "streamed": on_token is not None,
                     },
                 )

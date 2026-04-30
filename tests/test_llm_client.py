@@ -383,3 +383,89 @@ def test_openai_client_records_cost_into_shared_ledger(monkeypatch):
     assert calls[0].purpose == "router"
     assert calls[0].input_tokens == 100
     assert calls[0].output_tokens == 50
+
+
+# ---- v0.9.0 streaming chat -----------------------------------------------
+
+
+class _FakeAnthropicStreamCtx:
+    """Context manager mimicking Anthropic's messages.stream() return."""
+
+    def __init__(self, deltas: list[str]):
+        self._deltas = deltas
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    @property
+    def text_stream(self):
+        return iter(self._deltas)
+
+    def get_final_message(self):
+        class _U:
+            input_tokens = 10
+            output_tokens = 4
+        class _M:
+            usage = _U()
+        return _M()
+
+
+def test_chat_stream_calls_on_token_for_each_delta(monkeypatch):
+    """v0.9.0: chat_stream invokes on_token for every text delta and
+    returns the full accumulated text."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    c = LLMClient(model="claude-haiku-4-5")
+
+    deltas = ["Hel", "lo, ", "world", "!"]
+
+    class _FakeAnthropic:
+        def __init__(self):
+            self.messages = self
+            self.last_kwargs = None
+
+        def stream(self, **kwargs):
+            self.last_kwargs = kwargs
+            return _FakeAnthropicStreamCtx(deltas)
+
+    fake = _FakeAnthropic()
+    c._client = fake
+
+    received: list[str] = []
+    full = c.chat_stream("sys", [], on_token=received.append)
+
+    assert received == deltas
+    assert full == "Hello, world!"
+    # Cost still recorded from the final message.
+    calls = c.pop_recorded_calls()
+    assert len(calls) == 1
+    assert calls[0].input_tokens == 10
+    assert calls[0].output_tokens == 4
+    assert calls[0].purpose == "chat"
+
+
+def test_chat_stream_swallows_on_token_exceptions(monkeypatch):
+    """A buggy on_token must not break the chat call. Tokens after
+    the failing one still get attempted; the full text returns."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    c = LLMClient(model="claude-haiku-4-5")
+
+    class _FakeAnthropic:
+        def __init__(self):
+            self.messages = self
+        def stream(self, **kwargs):
+            return _FakeAnthropicStreamCtx(["a", "b", "c"])
+
+    c._client = _FakeAnthropic()
+
+    received: list[str] = []
+    def boom(delta):
+        received.append(delta)
+        if delta == "b":
+            raise RuntimeError("token handler failed")
+
+    full = c.chat_stream("sys", [], on_token=boom)
+    assert received == ["a", "b", "c"]
+    assert full == "abc"

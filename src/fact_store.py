@@ -14,10 +14,76 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+class _LockedConnection:
+    """Thread-safety wrapper around ``sqlite3.Connection``.
+
+    Python's sqlite3 module accepts ``check_same_thread=False`` so a
+    single connection can be used from multiple threads, but the
+    connection's transaction state is shared. Concurrent ``execute``
+    calls on different threads can race on the implicit BEGIN /
+    COMMIT, surfacing as ``cannot start a transaction within a
+    transaction``.
+
+    v0.9.0 introduces per-claim parallelism in
+    ``Pipeline._stage_verify``; with multiple worker threads writing
+    pipeline_events + facts concurrently, that race is hit immediately.
+    This wrapper serializes every operation on a single RLock so the
+    underlying connection sees one statement at a time. SQLite's own
+    locking already serializes writes; the lock just keeps the
+    Python-side transaction state consistent.
+
+    The wrapper is transparent: every attribute not handled here
+    delegates to the wrapped connection (so ``conn.row_factory`` etc.
+    still work). RLock allows nested access on the same thread without
+    deadlock — useful because the schema migration calls executescript
+    while still holding the lock from __init__.
+    """
+
+    __slots__ = ("_conn", "_lock")
+
+    def __init__(self, conn: sqlite3.Connection, lock: threading.RLock):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_lock", lock)
+
+    def execute(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.executemany(*args, **kwargs)
+
+    def executescript(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.executescript(*args, **kwargs)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def rollback(self):
+        with self._lock:
+            return self._conn.rollback()
+
+    def close(self):
+        with self._lock:
+            return self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        if name in ("_conn", "_lock"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._conn, name, value)
 
 # Valid enumerations.
 POLARITIES = {0, 1}
@@ -329,8 +395,15 @@ class FactStore:
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        raw_conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        raw_conn.row_factory = sqlite3.Row
+        # v0.9.0: wrap the connection so every execute/commit goes
+        # through a shared RLock. Required for the per-claim parallel
+        # verify in Pipeline._stage_verify — without this, two worker
+        # threads racing on insert_pipeline_event hit
+        # "cannot start a transaction within a transaction".
+        self._db_lock = threading.RLock()
+        self._conn = _LockedConnection(raw_conn, self._db_lock)
         self._conn.executescript(SCHEMA)
         self._migrate_user_id()
         self._migrate_cache_provenance()

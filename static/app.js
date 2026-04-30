@@ -411,6 +411,19 @@ form.addEventListener("submit", async (e) => {
             turn_id: ev.turn_id, stage: ev.stage, data: ev.data,
             arrivedMs, created_at: new Date(arrivedMs).toISOString(),
           });
+          // v0.9.0: chat_draft_token streams partial drafts AS they
+          // arrive from the chat backend (Anthropic / OpenAI both
+          // stream). data.text is the cumulative buffer so the UI
+          // doesn't have to splice deltas itself.
+          if (ev.stage === "chat_draft_token" && ev.data && ev.data.text) {
+            setBubbleDraft(bubble, ev.data.text);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            // chat_draft_token frames are not persisted to
+            // pipeline_events — drop them from the in-memory liveEvents
+            // log so the Flow View doesn't render one row per token.
+            liveEvents.pop();
+            return;
+          }
           // Update the assistant bubble when the draft text becomes available.
           if (ev.stage === "assistant_draft" && ev.data && ev.data.content) {
             setBubbleDraft(bubble, ev.data.content);
