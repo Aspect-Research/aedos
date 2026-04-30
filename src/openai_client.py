@@ -102,6 +102,67 @@ class OpenAIClient:
         choice = response.choices[0]
         return choice.message.content or ""
 
+    # ---- chat_stream (v0.9.0) ---------------------------------------
+
+    def chat_stream(
+        self,
+        system: str,
+        messages: Iterable[Any],   # list[ChatMessage]; duck-typed
+        on_token: Any,
+        max_tokens: int = 4096,
+        purpose: str | None = "chat",
+        model: str = "gpt-4.1-mini",
+    ) -> str:
+        """Streaming variant of chat. Calls ``on_token(text_delta)`` for
+        each chunk; returns the full accumulated text.
+
+        OpenAI streaming requires ``stream_options={"include_usage":
+        True}`` to get usage metrics in the final chunk; without it
+        the cost ledger entry would be a zero-token sentinel.
+        ``on_token`` exceptions are silently swallowed."""
+        oa_messages = [{"role": "system", "content": system}]
+        for m in messages:
+            oa_messages.append({"role": m.role, "content": m.content})
+        t0 = time.monotonic()
+        stream = self._client.chat.completions.create(
+            model=model,
+            messages=oa_messages,
+            max_completion_tokens=max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        full_text_parts: list[str] = []
+        in_toks = 0
+        out_toks = 0
+        for chunk in stream:
+            # Each chunk has zero or one choices with a delta.
+            choices = getattr(chunk, "choices", None) or []
+            if choices:
+                delta = getattr(choices[0], "delta", None)
+                if delta is not None:
+                    content = getattr(delta, "content", None)
+                    if content:
+                        full_text_parts.append(content)
+                        try:
+                            on_token(content)
+                        except Exception:
+                            pass
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                in_toks = int(getattr(usage, "prompt_tokens", 0) or 0)
+                out_toks = int(getattr(usage, "completion_tokens", 0) or 0)
+        # Record cost from the usage chunk that arrived last.
+        if self._cost_recorder is not None and (in_toks or out_toks):
+            try:
+                self._cost_recorder(cost_for_call(
+                    model, in_toks, out_toks,
+                    purpose=purpose,
+                    duration_ms=(time.monotonic() - t0) * 1000,
+                ))
+            except Exception:
+                pass
+        return "".join(full_text_parts)
+
     # ---- extract_with_tool ------------------------------------------
 
     def extract_with_tool(

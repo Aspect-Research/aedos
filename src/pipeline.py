@@ -23,6 +23,7 @@ straight from that table.
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -154,6 +155,12 @@ class Pipeline:
         # parameter is supplied. Used by _invoke_chat_backend to dispatch
         # to the right chat backend without mutating self.chat_backend.
         self._active_chat_model: str | None = None
+        # v0.9.0: optional callback for live (non-persisted) events
+        # like ``chat_draft_token``. Set by /api/chat/stream to push
+        # streaming tokens to the SSE consumer; None disables streaming
+        # (the chat backend then makes a single blocking call). Stays
+        # None for the non-stream /api/chat path and for tests.
+        self.live_emit: Any | None = None
 
     def run_turn(
         self, user_message: str, *, model: str | None = None,
@@ -300,10 +307,13 @@ class Pipeline:
                      Free SQL.
           * Tier 4 — fresh classify + route + verify. Pays the LLM cost.
 
-        This replaces the prior flow which paid for classify (2 LLMs)
-        + router (1 LLM) + verifier on EVERY claim, only consulting
-        the cache inside _route_retrieval. A microtheory or store hit
-        now skips ~$0.0015 of LLM calls per claim.
+        v0.9.0: Tiers 1-3 are fast SQL — kept sequential. Tier 4 (the
+        LLM-heavy path) is dispatched on a thread pool because the per-
+        claim work (classify + route + verifier) is independent across
+        claims. SQLite serializes writes internally; CacheGate guards
+        its in-memory state with a lock; the LLM SDKs release the GIL on
+        network I/O. Output ordering is preserved by tagging each claim
+        with its index and reassembling.
         """
         self._cache_gate.reset_for_turn()
         # Hand the gate to the router so it can still short-circuit on
@@ -311,35 +321,54 @@ class Pipeline:
         # router's cache-as-evidence wiring depends on it).
         self.router._cache_gate = self._cache_gate
 
-        verification_decisions: list[Decision] = []
-        for claim in valid_facts:
-            # Tier 1: microtheory.
-            decision = self._tier_microtheory_lookup(claim, assistant_turn_id)
-            tier_used = "microtheory" if decision else None
-            # Tier 2: cross-session user store.
-            if decision is None:
-                decision = self._tier_user_store_lookup(claim, assistant_turn_id)
-                if decision is not None:
-                    tier_used = "user_store"
-            # Tier 3: verification cache (no classify needed).
-            if decision is None:
-                decision = self._tier_cache_lookup(claim, assistant_turn_id)
-                if decision is not None:
-                    tier_used = "cache"
-            # Tier 4: pay the LLM cost — classify, then route + verify.
-            if decision is None:
+        # ---- Phase 1: walk tiers 1-3 sequentially (fast SQL) ----------
+        decisions: list[Decision | None] = [None] * len(valid_facts)
+        fresh_indices: list[int] = []
+        for i, claim in enumerate(valid_facts):
+            d = self._tier_microtheory_lookup(claim, assistant_turn_id)
+            tier = "microtheory" if d else None
+            if d is None:
+                d = self._tier_user_store_lookup(claim, assistant_turn_id)
+                tier = "user_store" if d else tier
+            if d is None:
+                d = self._tier_cache_lookup(claim, assistant_turn_id)
+                tier = "cache" if d else tier
+            if d is None:
+                fresh_indices.append(i)
+            else:
+                d.served_from_tier = tier
+                decisions[i] = d
+
+        # ---- Phase 2: parallel Tier 4 (LLM-bound) --------------------
+        # Single-claim turns skip the pool overhead. Larger turns get a
+        # bounded worker pool sized to the claim count (capped at 8 to
+        # avoid hammering the upstream APIs on pathological turns).
+        if fresh_indices:
+            def _run_fresh(idx: int) -> Decision:
+                claim = valid_facts[idx]
                 self._cache_gate.classify(claim, turn_id=assistant_turn_id)
-                decision = self.router.route(
+                d = self.router.route(
                     claim, origin="model", source_turn_id=assistant_turn_id,
                 )
-                tier_used = "fresh"
-                # Opportunistic cache write.
                 self._cache_gate.maybe_write(
-                    decision, claim, turn_id=assistant_turn_id,
+                    d, claim, turn_id=assistant_turn_id,
                 )
+                d.served_from_tier = "fresh"
+                return d
 
-            decision.served_from_tier = tier_used
-            verification_decisions.append(decision)
+            if len(fresh_indices) == 1:
+                idx = fresh_indices[0]
+                decisions[idx] = _run_fresh(idx)
+            else:
+                workers = min(len(fresh_indices), 8)
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    for idx, dec in zip(
+                        fresh_indices,
+                        pool.map(_run_fresh, fresh_indices),
+                    ):
+                        decisions[idx] = dec
+
+        verification_decisions: list[Decision] = [d for d in decisions if d is not None]
 
         self.store.insert_pipeline_event(
             assistant_turn_id, "verification",
@@ -608,7 +637,15 @@ class Pipeline:
         ``provider`` attribute (the AnthropicChatBackend wrapper does;
         LLMClient and MockLLM don't) get provenance + cost-recorder
         kwargs so the chat_model_call event lands without forcing
-        test doubles to grow new arguments."""
+        test doubles to grow new arguments.
+
+        v0.9.0: when ``self.live_emit`` is set AND the backend accepts
+        ``on_token``, the call streams: each text fragment fires a
+        ``chat_draft_token`` live event with the cumulative text so far.
+        These events are NOT persisted to pipeline_events (one DB row
+        per token would be wasteful); they go through the live emit
+        channel to the SSE consumer only.
+        """
         backend = self.chat_backend
         if hasattr(backend, "provider"):
             kwargs: dict[str, Any] = {
@@ -619,12 +656,29 @@ class Pipeline:
             recorder = getattr(self.llm, "record_external_call", None)
             if recorder is not None:
                 kwargs["cost_recorder"] = recorder
+            # Streaming on_token wiring: only when an SSE consumer is
+            # attached AND the backend accepts the kwarg. Buffer
+            # cumulatively so the UI can render the in-progress draft
+            # without rebuilding from deltas client-side.
+            if self.live_emit is not None:
+                buf: list[str] = []
+                emit = self.live_emit
+                def _on_token(delta: str) -> None:
+                    buf.append(delta)
+                    try:
+                        emit(turn_id, "chat_draft_token",
+                             {"text": "".join(buf)})
+                    except Exception:
+                        pass
+                kwargs["on_token"] = _on_token
             try:
                 return backend.chat(system_prompt, history, **kwargs)
             except TypeError:
-                # Backend may not accept cost_recorder yet (older
-                # versions or stubs in tests). Retry without it.
+                # Backend may not accept cost_recorder/on_token yet
+                # (older versions or stubs in tests). Retry without
+                # the optional kwargs.
                 kwargs.pop("cost_recorder", None)
+                kwargs.pop("on_token", None)
                 return backend.chat(system_prompt, history, **kwargs)
         return backend.chat(system_prompt, history)
 

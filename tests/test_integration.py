@@ -275,6 +275,195 @@ def test_multi_pattern_single_sentence(tmp_path):
 
 
 # ---------------------------------------------------------------------
+# v0.9.0: parallel Tier 4 verification — ordering + concurrency
+# ---------------------------------------------------------------------
+
+
+def test_v090_parallel_verify_preserves_decision_order(tmp_path):
+    """With multiple model claims dispatched on a worker pool, the
+    final decisions must come back in the same order as the input
+    claims regardless of which worker finishes first."""
+    import threading
+    import time
+
+    from src.verifiers.retrieval_verifier import Snippet
+
+    # Three retrieval claims; per-claim search latency varies so the
+    # workers naturally finish out-of-order.
+    facts = [
+        {
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "Tokyo", "category": "city"},
+            "polarity": 1, "source_text": "Tokyo is a city",
+        },
+        {
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "Mars", "category": "planet"},
+            "polarity": 1, "source_text": "Mars is a planet",
+        },
+        {
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "Beethoven", "category": "composer"},
+            "polarity": 1, "source_text": "Beethoven was a composer",
+        },
+    ]
+    finish_order: list[str] = []
+    finish_lock = threading.Lock()
+
+    # Per-entity delay; the verifier walks query_strategy templates so
+    # multiple queries fire per claim — key by the first slot value
+    # that appears in the query string.
+    delays = {"Tokyo": 0.30, "Mars": 0.10, "Beethoven": 0.20}
+
+    def search_fn(query):
+        for entity, delay in delays.items():
+            if entity in query:
+                time.sleep(delay)
+                with finish_lock:
+                    if entity not in finish_order:
+                        finish_order.append(entity)
+                break
+        # Two snippets so the retrieval verifier accepts the first
+        # attempt (≥2 results) instead of falling through templates.
+        return [
+            Snippet("t1", f"{query} confirmed.", "https://x"),
+            Snippet("t2", f"{query} confirmed again.", "https://y"),
+        ]
+
+    mock = MockLLM(
+        chats=["Tokyo, Mars, and Beethoven."],
+        extracts=[{"facts": []}, {"facts": facts}],
+        rewrites=["SUPPORTED\n"] * 3,
+        routings=[
+            _route_retrieval(query="Tokyo city"),
+            _route_retrieval(query="Mars planet"),
+            _route_retrieval(query="Beethoven composer"),
+        ],
+    )
+    p = _make_pipeline(tmp_path, mock, search_fn=search_fn)
+    trace = p.run_turn("tell me about three things")
+
+    # Workers finished out-of-input-order (Mars first, Beethoven, Tokyo).
+    assert finish_order == ["Mars", "Beethoven", "Tokyo"]
+    # But decisions came back in input order.
+    decision_entities = [
+        d["claim"]["slots"]["entity"]
+        for d in trace.verification_decisions
+    ]
+    assert decision_entities == ["Tokyo", "Mars", "Beethoven"]
+    statuses = [d["verification_status"] for d in trace.verification_decisions]
+    assert all(s == "verified" for s in statuses)
+
+
+def test_v090_parallel_verify_overlaps_wall_clock(tmp_path):
+    """Three claims, each 200ms of (simulated) retrieval time. Pre-v0.9.0
+    the for-loop took ~600ms wall-clock; with parallel dispatch it
+    should finish near 200ms. Threshold padded for CI noise."""
+    import time
+
+    from src.verifiers.retrieval_verifier import Snippet
+
+    facts = [
+        {
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": e, "category": "thing"},
+            "polarity": 1, "source_text": f"{e} is a thing",
+        }
+        for e in ("A", "B", "C")
+    ]
+    def slow_search(_q):
+        time.sleep(0.20)
+        return [
+            Snippet("t1", "ok.", "https://x"),
+            Snippet("t2", "ok again.", "https://y"),
+        ]
+
+    mock = MockLLM(
+        chats=["A, B, and C are all things."],
+        extracts=[{"facts": []}, {"facts": facts}],
+        rewrites=["SUPPORTED\n"] * 3,
+        routings=[
+            _route_retrieval(query="A"),
+            _route_retrieval(query="B"),
+            _route_retrieval(query="C"),
+        ],
+    )
+    p = _make_pipeline(tmp_path, mock, search_fn=slow_search)
+    t0 = time.monotonic()
+    trace = p.run_turn("tell me about A, B, C")
+    elapsed = time.monotonic() - t0
+
+    assert len(trace.verification_decisions) == 3
+    # Sequential would be ~600ms; parallel with 3 workers should be
+    # well under 500ms even with overhead. Conservative threshold.
+    assert elapsed < 0.50, (
+        f"verification took {elapsed:.2f}s — expected parallel dispatch "
+        f"to finish under 0.5s with 200ms search latency × 3 claims"
+    )
+
+
+# ---------------------------------------------------------------------
+# v0.9.0: streaming chat draft via live_emit
+# ---------------------------------------------------------------------
+
+
+def test_v090_streaming_chat_draft_fires_chat_draft_token_events(tmp_path):
+    """When pipeline.live_emit is wired and the backend accepts
+    on_token, every text fragment from the chat backend gets pushed
+    through live_emit as a chat_draft_token event with the cumulative
+    buffer."""
+    fact = {
+        "pattern": "categorical", "predicate": "is_a",
+        "slots": {"entity": "Tokyo", "category": "city"},
+        "polarity": 1, "source_text": "Tokyo is a city",
+    }
+
+    deltas = ["Tok", "yo is ", "a city."]
+
+    class _StreamingBackend:
+        provider = "fake"
+        model = "fake-model"
+
+        def chat(self, system, messages, *, max_tokens, store, turn_id,
+                 cost_recorder=None, on_token=None):
+            full = ""
+            for d in deltas:
+                full += d
+                if on_token is not None:
+                    on_token(d)
+            return full
+
+    from src.verifiers.retrieval_verifier import Snippet
+    mock = MockLLM(
+        chats=[],  # backend handles the chat call
+        extracts=[{"facts": []}, {"facts": [fact]}],
+        rewrites=["SUPPORTED\n"],
+        routings=[_route_retrieval(query="Tokyo city")],
+    )
+    p = _make_pipeline(
+        tmp_path, mock,
+        search_fn=lambda q: [Snippet("t1", "ok.", "https://x"),
+                             Snippet("t2", "ok2.", "https://y")],
+    )
+    p.chat_backend = _StreamingBackend()
+
+    live: list[tuple] = []
+    p.live_emit = lambda turn_id, stage, data: live.append(
+        (turn_id, stage, data),
+    )
+
+    trace = p.run_turn("hi")
+
+    # Three deltas → three chat_draft_token events with cumulative text.
+    token_events = [(s, d) for (_t, s, d) in live if s == "chat_draft_token"]
+    assert [t[1]["text"] for t in token_events] == [
+        "Tok", "Tokyo is ", "Tokyo is a city.",
+    ]
+    # The final draft on the trace matches the streamed text.
+    assert "Tokyo is a city." in trace.final_content
+
+
+# ---------------------------------------------------------------------
 # Scenario 4: temporal scoping
 # ---------------------------------------------------------------------
 

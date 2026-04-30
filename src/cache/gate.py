@@ -24,6 +24,7 @@ same events, same wire format.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -150,6 +151,15 @@ class CacheGate:
         # Hits aren't tracked because they short-circuit and the
         # router never reaches _maybe_cache_hit on hit.
         self._missed_keys_this_turn: set[str] = set()
+        # v0.9.0: Pipeline._stage_verify now dispatches per-claim work
+        # on a thread pool. The LLM I/O inside classify/maybe_hit
+        # releases the GIL on network calls, but the in-memory state
+        # mutations below (`_states` dict, `_turn_hits` int,
+        # `_missed_keys_this_turn` set) need explicit serialization.
+        # An RLock keeps semantics simple: methods can call into other
+        # gate methods without deadlock (none currently do, but the
+        # flexibility is cheap).
+        self._lock = threading.RLock()
 
     @property
     def enabled(self) -> bool:
@@ -169,16 +179,18 @@ class CacheGate:
         """The set of canonical keys the current turn's classify pass
         marked as cache-eligible. The router consults this to gate
         cache lookups."""
-        return {k for k, st in self._states.items() if st.eligible_for_cache}
+        with self._lock:
+            return {k for k, st in self._states.items() if st.eligible_for_cache}
 
     def reset_for_turn(self) -> None:
         """Clear per-claim decisions + per-turn savings tally +
         already-looked-up tracking. Pipeline calls at the start of
         each turn so prior classifications don't leak."""
-        self._states.clear()
-        self._turn_hits = 0
-        self._turn_savings_usd = 0.0
-        self._missed_keys_this_turn.clear()
+        with self._lock:
+            self._states.clear()
+            self._turn_hits = 0
+            self._turn_savings_usd = 0.0
+            self._missed_keys_this_turn.clear()
 
     def turn_savings(self) -> dict:
         """Returned at end-of-turn for the cache_savings event.
@@ -245,7 +257,8 @@ class CacheGate:
             state = ClaimCacheState(
                 canonical_key=key, scope=scope, stability=stab,
             )
-            self._states[key] = state
+            with self._lock:
+                self._states[key] = state
             return state
 
         # ---- legacy two-call path ------------------------------------
@@ -265,7 +278,8 @@ class CacheGate:
             state = ClaimCacheState(
                 canonical_key=canonicalize_claim_key(claim), scope=scope,
             )
-            self._states[state.canonical_key] = state
+            with self._lock:
+                self._states[state.canonical_key] = state
             return state
 
         key = canonicalize_claim_key(claim)
@@ -284,7 +298,8 @@ class CacheGate:
                     "error": f"{type(exc).__name__}: {exc}",
                 })
 
-        self._states[key] = state
+        with self._lock:
+            self._states[key] = state
         return state
 
     # ---- maybe_hit (was Router._maybe_cache_hit) -----------------------
@@ -312,14 +327,15 @@ class CacheGate:
         if self._cache is None or not self.enabled:
             return None
         key = canonicalize_claim_key(claim)
-        if require_eligible and key not in self.eligible_keys:
-            return None
-        # v0.7.14 dedup: if a previous lookup this turn missed on this
-        # key, the second call (from defense-in-depth in
-        # _route_retrieval after a tier-3 miss) would just emit a
-        # duplicate cache_lookup event for nothing. Short-circuit.
-        if key in self._missed_keys_this_turn:
-            return None
+        with self._lock:
+            if require_eligible and key not in self.eligible_keys:
+                return None
+            # v0.7.14 dedup: if a previous lookup this turn missed on
+            # this key, the second call (from defense-in-depth in
+            # _route_retrieval after a tier-3 miss) would just emit a
+            # duplicate cache_lookup event for nothing. Short-circuit.
+            if key in self._missed_keys_this_turn:
+                return None
         # Exact lookup.
         try:
             cached = self._cache.lookup(key)
@@ -328,7 +344,8 @@ class CacheGate:
                 "canonical_key": key,
                 "error": f"{type(exc).__name__}: {exc}",
             })
-            self._missed_keys_this_turn.add(key)
+            with self._lock:
+                self._missed_keys_this_turn.add(key)
             return None
         if cached is not None:
             self._record_hit_savings()
@@ -354,13 +371,15 @@ class CacheGate:
                     f"semantic_lookup raised: {type(exc).__name__}: {exc}"
                 ),
             })
-            self._missed_keys_this_turn.add(key)
+            with self._lock:
+                self._missed_keys_this_turn.add(key)
             return None
         if semantic is None:
             self._emit("cache_lookup", turn_id, {
                 "canonical_key": key, "result": "miss",
             })
-            self._missed_keys_this_turn.add(key)
+            with self._lock:
+                self._missed_keys_this_turn.add(key)
             return None
 
         self._record_hit_savings()
@@ -381,8 +400,9 @@ class CacheGate:
         )
 
     def _record_hit_savings(self) -> None:
-        self._turn_hits += 1
-        self._turn_savings_usd += _CACHE_HIT_AVG_SAVINGS_USD
+        with self._lock:
+            self._turn_hits += 1
+            self._turn_savings_usd += _CACHE_HIT_AVG_SAVINGS_USD
 
     # ---- maybe_write (was Pipeline._maybe_write_cache) -----------------
 
@@ -402,7 +422,8 @@ class CacheGate:
         if self._cache is None:
             return
         key = canonicalize_claim_key(claim)
-        state = self._states.get(key)
+        with self._lock:
+            state = self._states.get(key)
         if state is None or not state.writable:
             return
         verdict = getattr(decision, "verification_status", None)

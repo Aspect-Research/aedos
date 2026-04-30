@@ -272,6 +272,66 @@ class LLMClient:
                           purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
         return _first_text(response)
 
+    # ---- streaming chat (v0.9.0) ----------------------------------------
+
+    def chat_stream(
+        self,
+        system: str,
+        messages: Iterable[ChatMessage],
+        on_token: Any,
+        max_tokens: int = 4096,
+        purpose: str | None = "chat",
+    ) -> str:
+        """Streaming variant of chat. Calls ``on_token(text_delta)`` for
+        each text fragment as the response arrives, then returns the
+        full accumulated text. Used by the live chat-draft path so the
+        UI can render the assistant's response token-by-token instead
+        of waiting for the full response.
+
+        Same dispatch as ``chat`` — the chat purpose always uses
+        ``self.model``. gpt-* targets route to OpenAI's streaming
+        endpoint; claude-* targets use Anthropic's
+        ``client.messages.stream()``.
+
+        ``on_token`` exceptions are silently swallowed so a buggy
+        subscriber can't break the chat call. Returns the full text
+        regardless of whether on_token errored on individual tokens.
+        """
+        target_model = (
+            self.model if purpose == "chat"
+            else _resolve_purpose_model(purpose, self.model)
+        )
+        if is_openai_model(target_model):
+            return self.openai.chat_stream(
+                system, messages, on_token=on_token,
+                max_tokens=max_tokens,
+                purpose=purpose, model=target_model,
+            )
+        t0 = time.monotonic()
+        full_text_parts: list[str] = []
+        with self._client.messages.stream(
+            model=target_model,
+            max_tokens=max_tokens,
+            system=[
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": m.role, "content": m.content} for m in messages],
+        ) as stream:
+            for delta in stream.text_stream:
+                full_text_parts.append(delta)
+                try:
+                    on_token(delta)
+                except Exception:
+                    pass
+            final_message = stream.get_final_message()
+        self._record_call(target_model, final_message,
+                          purpose=purpose, duration_ms=(time.monotonic() - t0) * 1000)
+        return "".join(full_text_parts)
+
     # ---- extraction via forced tool use ---------------------------------
 
     def extract_with_tool(
