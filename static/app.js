@@ -1403,7 +1403,7 @@ function openInspector(initialTab) {
   const active = $(".inspector-tab.active")?.dataset.inspectorTab;
   if (active === "facts") refreshFacts();
   else if (active === "patterns") refreshPatterns();
-  else if (active === "cache") refreshCache();
+  else if (active === "memory") refreshMemory();
   else if (active === "pipeline") refreshPipelineEvents();
 }
 
@@ -1417,7 +1417,7 @@ function selectInspectorTab(name) {
   $$(".inspector-panel").forEach((p) => p.classList.toggle("active", p.id === `inspector-${name}`));
   if (name === "facts") refreshFacts();
   if (name === "patterns") refreshPatterns();
-  if (name === "cache") refreshCache();
+  if (name === "memory") refreshMemory();
   if (name === "pipeline") refreshPipelineEvents();
 }
 
@@ -1519,10 +1519,121 @@ async function refreshPatterns() {
   });
 }
 
-// ---- Cache ----
+// ---- Memory tab — three-scope view -----------------------------------
+//
+// Mirrors the v0.7.14 tiered verifier:
+//   * conversation memory = user-asserted facts with session_id != null
+//   * user memory         = user-asserted facts with session_id == null
+//   * world cache         = verification_cache (existing)
+//
+// Loads facts + cache in parallel so switching scopes is instant.
 
-async function refreshCache() {
-  const data = await api("GET", "/api/cache");
+let _memoryFactsByScope = { conversation: [], user: [] };
+
+function _renderMemoryFactsTable(facts, container) {
+  container.innerHTML = "";
+  if (!facts.length) {
+    container.appendChild(el("p", { className: "hint",
+      textContent: "(no facts in this scope yet)" }));
+    return;
+  }
+  const table = el("table");
+  table.appendChild(el("tr", {}, [
+    "id", "pattern", "predicate", "slots", "pol", "conf", "status",
+    "valid_until", "turn",
+  ].map((h) => el("th", { textContent: h }))));
+  facts.forEach((f) => {
+    const row = el("tr", {});
+    if (f.valid_until) row.classList.add("closed");
+    if (f.verification_status === "verified") row.classList.add("verified");
+    if (f.verification_status === "contradicted") row.classList.add("contradicted");
+    [
+      f.id, f.pattern, f.predicate,
+      JSON.stringify(f.slots), f.polarity,
+      (f.confidence ?? 0).toFixed(2),
+      f.verification_status,
+      f.valid_until || "", f.source_turn_id,
+    ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
+    table.appendChild(row);
+  });
+  container.appendChild(table);
+}
+
+function renderMemoryConversation() {
+  const container = $("#memory-conversation-table");
+  container.innerHTML = "";
+  const facts = _memoryFactsByScope.conversation;
+  if (!facts.length) {
+    container.appendChild(el("p", { className: "hint",
+      textContent: "No session-scoped user facts yet. The microtheory layer fills as the user makes assertions tagged to a specific conversation." }));
+    return;
+  }
+  // Group by session_id so each conversation is its own block.
+  const bySession = {};
+  facts.forEach((f) => {
+    const k = f.session_id || "(unset)";
+    (bySession[k] ||= []).push(f);
+  });
+  Object.keys(bySession).sort().forEach((sid) => {
+    const group = el("div", { className: "memory-session-group" });
+    const header = el("div", { className: "memory-session-header" });
+    header.appendChild(el("span", { textContent: "session" }));
+    header.appendChild(el("span", { className: "memory-session-id",
+      textContent: sid }));
+    header.appendChild(el("span", {
+      textContent: `${bySession[sid].length} fact(s)` }));
+    group.appendChild(header);
+    const tableHolder = el("div");
+    _renderMemoryFactsTable(bySession[sid], tableHolder);
+    group.appendChild(tableHolder);
+    container.appendChild(group);
+  });
+}
+
+function renderMemoryUser() {
+  _renderMemoryFactsTable(
+    _memoryFactsByScope.user, $("#memory-user-table"),
+  );
+}
+
+function selectMemoryScope(scope) {
+  $$(".memory-scope-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.memoryScope === scope));
+  $$(".memory-section").forEach((s) =>
+    s.classList.toggle("active", s.id === `memory-scope-${scope}`));
+}
+
+function _setScopeCount(scope, n) {
+  const badge = document.querySelector(`[data-memory-count="${scope}"]`);
+  if (badge) badge.textContent = String(n);
+}
+
+async function refreshMemory() {
+  // Three loads in parallel — keeps switching scopes instant.
+  const [userFacts, cacheData] = await Promise.all([
+    api("GET", "/api/facts?asserted_by=user"),
+    api("GET", "/api/cache"),
+  ]);
+  // Split user-asserted facts by session_id presence.
+  _memoryFactsByScope.conversation = userFacts.filter((f) => f.session_id);
+  _memoryFactsByScope.user = userFacts.filter((f) => !f.session_id);
+  _setScopeCount("conversation", _memoryFactsByScope.conversation.length);
+  _setScopeCount("user", _memoryFactsByScope.user.length);
+  _setScopeCount("world", (cacheData.entries || []).length);
+  renderMemoryConversation();
+  renderMemoryUser();
+  renderWorldCache(cacheData);
+}
+
+$$(".memory-scope-tab").forEach((btn) => {
+  btn.addEventListener("click", () =>
+    selectMemoryScope(btn.dataset.memoryScope));
+});
+$("#memory-refresh").addEventListener("click", refreshMemory);
+
+// ---- World cache (Tier 3) — the original /api/cache view ------------
+
+async function renderWorldCache(data) {
   const stats = data.stats || {};
   const health = data.health || {};
   const recent = data.recent_invalidations || [];
@@ -1703,19 +1814,17 @@ function renderCacheTable() {
 
 async function cacheActionForceRefresh(key) {
   await api("POST", "/api/cache/refresh-one", { canonical_key: key });
-  await refreshCache();
+  await refreshMemory();
 }
 async function cacheActionInvalidateOne(key) {
   if (!confirm(`Hard-delete cache entry?\n${key.slice(0, 100)}…`)) return;
   await api("POST", "/api/cache/invalidate-one", { canonical_key: key });
-  await refreshCache();
+  await refreshMemory();
 }
 async function cacheActionClearFlag(key) {
   await api("POST", "/api/cache/clear-flag", { canonical_key: key });
-  await refreshCache();
+  await refreshMemory();
 }
-
-$("#cache-refresh").addEventListener("click", refreshCache);
 
 // ---- Pipeline events (raw event log for the latest assistant turn) ----
 //
