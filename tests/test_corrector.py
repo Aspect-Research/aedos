@@ -195,8 +195,12 @@ def test_apply_with_interventions_calls_llm_once_for_batch():
     assert out == "rewritten text"
     assert len(llm.rewrite_calls) == 1
     user_msg = llm.rewrite_calls[0]["user_message"]
-    assert "[hedge]" in user_msg
-    assert "[replace]" in user_msg
+    # v0.11 holistic format: the user message embeds the draft +
+    # a per-claim ledger with verdicts. No more "[hedge]/[replace]"
+    # action tags — the corrector decides what to do per claim.
+    assert "draft text" in user_msg
+    assert "verdict: retrieval_inconclusive" in user_msg
+    assert "verdict: contradicted" in user_msg
 
 
 def test_unknown_verification_status_returns_no_intervention():
@@ -211,34 +215,33 @@ def test_unknown_verification_status_returns_no_intervention():
     assert interventions == []
 
 
-def test_corrector_system_prompt_lists_intervention_types():
+def test_corrector_system_prompt_frames_holistic_rewrite():
+    """v0.11: the corrector reframed from 'apply per-claim edits' to
+    'rewrite holistically given the verifier ledger'. The system
+    prompt no longer enumerates intervention-type keywords (the model
+    decides per-claim what to do); it does still call out internal
+    consistency + the no-narration constraint."""
     from src.corrector import CORRECTOR_SYSTEM
-    for kw in ("hedge", "replace", "soften", "remove"):
-        assert kw in CORRECTOR_SYSTEM
-
-
-def test_corrector_system_prompt_demands_internal_consistency():
-    """The user reported a draft where the corrector replaced '2 words'
-    with '0 words' but left the sentence 'These are likely: Donald,
-    children, prompt, vowels' untouched — internally contradictory.
-    The system prompt now explicitly tells the model to fix adjacent
-    contradicting prose, not just the named source_text."""
-    from src.corrector import CORRECTOR_SYSTEM
-    # Key phrases pinning the new contract.
+    # Holistic framing — naming the inputs the corrector is given.
+    assert "user's question" in CORRECTOR_SYSTEM
+    assert "draft" in CORRECTOR_SYSTEM
+    assert "verification ledger" in CORRECTOR_SYSTEM.lower()
+    # Internal consistency + enumeration-cascade lesson preserved.
     assert "internal consistency" in CORRECTOR_SYSTEM.lower()
-    # The Donald/children/prompt/vowels case is called out explicitly
-    # as the canonical example so a future LLM doesn't lose the lesson.
-    assert "Donald" in CORRECTOR_SYSTEM and "vowels" in CORRECTOR_SYSTEM
-    # And the old "MINIMAL CHANGES. Preserve everything" framing is
-    # gone — that's what produced the bug.
+    assert "vowels" in CORRECTOR_SYSTEM
+    # Conditional-claim guidance ("if X then Y" verifier mismatch).
+    assert "conditional" in CORRECTOR_SYSTEM.lower()
+    # No "MINIMAL CHANGES" framing — that's what produced the bugs.
     assert "MINIMAL CHANGES" not in CORRECTOR_SYSTEM
+    # No narration / no apologies.
+    assert "narrate" in CORRECTOR_SYSTEM.lower() or "apolog" in CORRECTOR_SYSTEM.lower()
 
 
-def test_corrector_user_message_includes_verified_values_checklist():
-    """When any intervention is a `replace`, the user message renders
-    a 'Verified values that the rewritten response must agree with:'
-    block listing every replacement target. Gives the model an
-    explicit checklist to scan adjacent prose against."""
+def test_corrector_user_message_renders_verification_ledger():
+    """v0.11: every contradicted claim shows up in the per-claim
+    ledger with its verified value + reason, so the corrector's
+    rewrite has the full picture (no separate 'Verified values'
+    checklist any more — the ledger IS the checklist)."""
     from src.corrector import (
         Corrector, INTERVENTION_REPLACE, INTERVENTION_HEDGE, Intervention,
     )
@@ -277,27 +280,27 @@ def test_corrector_user_message_includes_verified_values_checklist():
             reason="hedge",
         ),
     ]
-    c.apply("draft", interventions)
+    c.apply("draft", interventions, user_message="how many words?")
 
     msg = llm.rewrite_calls[0]["user_message"]
-    # Checklist block present.
-    assert "Verified values" in msg
-    # The replace's verified value is enumerated (= 0).
-    assert "= 0" in msg
-    # The descriptor uses subject.property when both are available.
-    assert "prompt.words_with_more_than_two_vowels" in msg
-    # Hedge interventions don't appear in the checklist (they have no
-    # verified_value to enforce).
-    checklist_section = msg.split("Verified values")[1]
-    assert "[hedge]" not in checklist_section
+    # User question relayed.
+    assert "how many words?" in msg
+    # Per-claim ledger header.
+    assert "verification ledger" in msg.lower()
+    # Contradicted entry shows verified value + reason.
+    assert "verdict: contradicted" in msg
+    assert "verified value: 0" in msg
+    assert "actual is 0" in msg
+    # Inconclusive entry shows up (every claim, not just contradictions).
+    assert "verdict: retrieval_inconclusive" in msg
 
 
-def test_corrector_user_message_no_checklist_when_no_replace():
-    """When no intervention is a replace, the checklist block is
-    omitted — there's nothing to enforce internal consistency
-    against."""
+def test_corrector_user_message_includes_user_question():
+    """The user's question is the input the corrector needs to derive
+    a coherent reply when the draft's reasoning chain depended on a
+    contradicted premise. Make sure it's threaded through."""
     from src.corrector import (
-        Corrector, INTERVENTION_HEDGE, Intervention,
+        Corrector, INTERVENTION_REPLACE, Intervention,
     )
 
     @dataclass
@@ -312,18 +315,19 @@ def test_corrector_user_message_no_checklist_when_no_replace():
 
     llm = _LLM()
     c = Corrector(llm)
-    interventions = [
-        Intervention(
-            intervention_type=INTERVENTION_HEDGE,
-            claim={"pattern": "categorical", "predicate": "is_a",
-                   "slots": {"entity": "x", "category": "y"},
-                   "polarity": 1, "source_text": "src"},
-            verification_status="retrieval_inconclusive",
-            reason="hedge",
-        ),
-    ]
-    c.apply("draft", interventions)
+    iv = Intervention(
+        intervention_type=INTERVENTION_REPLACE,
+        claim={"pattern": "quantitative", "predicate": "current_time",
+               "slots": {"subject": "Cairo", "property": "time", "value": "9:56 pm"},
+               "polarity": 1, "source_text": "9:56 pm in Cairo"},
+        verification_status="contradicted",
+        verified_value="11:13 am",
+        reason="zoneinfo says 11:13 am",
+    )
+    c.apply("draft about cairo time", [iv],
+            user_message="What time is it in Cairo right now?")
     msg = llm.rewrite_calls[0]["user_message"]
-    assert "Verified values" not in msg
+    assert "User's question:" in msg
+    assert "What time is it in Cairo right now?" in msg
 
 
