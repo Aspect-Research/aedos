@@ -182,12 +182,44 @@ CALIBRATION_CASES: list[tuple[str, dict, str]] = [
         },
         "unverifiable",
     ),
+    # Three time/timezone cases added when the router was misrouting
+    # these to retrieval ("external real-time data") despite Python's
+    # stdlib having a system clock + IANA tzdata via zoneinfo.
+    (
+        "current local time in a city",
+        {
+            "pattern": "quantitative", "predicate": "current_time",
+            "slots": {"subject": "Cairo", "property": "time", "value": "9:56 am"},
+            "polarity": 1, "source_text": "It's currently 9:56 am in Cairo",
+        },
+        "python",
+    ),
+    (
+        "current local time in another city",
+        {
+            "pattern": "quantitative", "predicate": "current_time",
+            "slots": {"subject": "New York", "property": "time", "value": "2:56 am"},
+            "polarity": 1, "source_text": "It's 2:56 am in New York right now",
+        },
+        "python",
+    ),
+    (
+        "time difference between two cities",
+        {
+            "pattern": "quantitative", "predicate": "time_difference",
+            "slots": {"subject": "New York vs Cairo",
+                      "property": "time_difference_hours", "value": 7},
+            "polarity": 1,
+            "source_text": "New York is typically 7 hours behind Cairo",
+        },
+        "python",
+    ),
 ]
 
-# A few of the cases above are deliberate boundary calls — at least 14
-# of 16 must match. The two acceptable misses are usually the
+# A few of the cases above are deliberate boundary calls — at least
+# 17 of 19 must match. The two acceptable misses are usually the
 # Gettysburg edge and the canonical-constants vs. python boundary.
-MIN_CORRECT = 14
+MIN_CORRECT = 17
 
 
 @pytest.mark.skipif(
