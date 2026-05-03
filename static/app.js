@@ -587,6 +587,16 @@ form.addEventListener("submit", async (e) => {
 
 const PIPELINE_STEPS = [
   {
+    // Virtual user-side step. Consumes user_extraction (claim seeds)
+    // AND user_storage (per-claim decisions including v0.10.0 user-
+    // world-claim verdicts). Renders for both user-only flows
+    // (clicking a user bubble) AND turn-pair flows (clicking an
+    // assistant bubble — the user-side events come from the merged
+    // preceding user turn).
+    kind: "user_claims",
+    title: "User Message",
+  },
+  {
     kind: "chat_model_call",
     stage: "chat_model_call",
     title: "Chat Model",
@@ -675,6 +685,11 @@ function stepState(step, stageMap) {
     if (stageMap["assistant_extraction"]) return "in_flight";
     return "pending";
   }
+  if (step.kind === "user_claims") {
+    if (stageMap["user_storage"]) return "done";
+    if (stageMap["user_extraction"]) return "in_flight";
+    return "pending";
+  }
   return stageMap[step.stage] ? "done" : "pending";
 }
 
@@ -684,6 +699,12 @@ function stepEndMs(step, stageMap) {
     const v = stageMap["verification"];
     if (v && typeof v.arrivedMs === "number") return v.arrivedMs;
     const e = stageMap["assistant_extraction"];
+    return e && typeof e.arrivedMs === "number" ? e.arrivedMs : null;
+  }
+  if (step.kind === "user_claims") {
+    const s = stageMap["user_storage"];
+    if (s && typeof s.arrivedMs === "number") return s.arrivedMs;
+    const e = stageMap["user_extraction"];
     return e && typeof e.arrivedMs === "number" ? e.arrivedMs : null;
   }
   const ev = stageMap[step.stage];
@@ -762,9 +783,16 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
 // Calls without a recognized purpose ("unknown") fall through to
 // the Final card so they're at least visible somewhere.
 const STEP_PURPOSES = {
+  // v0.10.0: user-side step gets the extractor:user calls AND any
+  // verification calls fired on user-world claims (router,
+  // prompt_builder, code_writer, judge) — those land on the user
+  // turn id when _route_user routes a non-self-attribute claim.
+  user_claims: ["extractor:user", "router", "cache_classify",
+                "cache_scoping", "cache_stability",
+                "prompt_builder", "code_writer", "retrieval_judge"],
   chat_model_call: ["chat"],
-  claims: ["extractor:user", "extractor:assistant", "router",
-           "cache_scoping", "cache_stability",
+  claims: ["extractor:assistant", "router",
+           "cache_classify", "cache_scoping", "cache_stability",
            "prompt_builder", "code_writer", "retrieval_judge"],
   correction: ["corrector"],
   final: ["unknown"],
@@ -917,7 +945,68 @@ function annotationStepFor(stage) {
 
 function renderStep(step, state, stageMap, ctx) {
   if (step.kind === "claims") return renderClaimsNode(state, stageMap, ctx);
+  if (step.kind === "user_claims") return renderUserClaimsNode(state, stageMap, ctx);
   return renderEventStepNode(step, stageMap[step.stage], ctx);
+}
+
+// v0.10.0: user-side claims card. Mirrors renderClaimsNode but reads
+// from user_extraction (claim seeds the user message contained) and
+// user_storage (per-claim Decision: stored as user_asserted, or
+// verified/contradicted via the user-world-claim path).
+function renderUserClaimsNode(state, stageMap, ctx) {
+  const extractionEvent = stageMap["user_extraction"];
+  const storageEvent = stageMap["user_storage"];
+  const valid = (extractionEvent && extractionEvent.data
+                  ? extractionEvent.data.valid_facts : []) || [];
+  const decisions = (storageEvent && storageEvent.data
+                      ? storageEvent.data.decisions : []) || [];
+
+  const decisionByKey = {};
+  decisions.forEach((d) => { decisionByKey[claimKey(d.claim || {})] = d; });
+  const routedKeys = new Set(
+    (ctx.routingEvents || []).map((e) =>
+      claimKey((e.data || {}).claim || {})),
+  );
+
+  const wrapper = el("div", { className: "flow-step-wrapper" });
+  const node = el("div", {
+    className: "flow-step flow-step-claims" + (state === "in_flight"
+      ? " flow-step-thinking" : " flow-step-done"),
+    dataset: { stage: "user_claims" },
+  });
+
+  let summary = `${valid.length} claim${valid.length === 1 ? "" : "s"}`;
+  let extraRight = null;
+  if (state === "in_flight") {
+    extraRight = el("span", { className: "flow-step-duration thinking-dots" }, [
+      document.createTextNode("verifying"),
+      el("span", { className: "thinking-anim" }),
+    ]);
+  }
+  node.appendChild(buildStepHeader(`User Message · ${summary}`,
+                                   ctx.duration, extraRight));
+
+  const callsBlock = renderCallsBlock(ctx.calls || [], ctx.ops || null);
+  if (callsBlock) node.appendChild(callsBlock);
+
+  if (valid.length === 0) {
+    node.appendChild(el("div", { className: "flow-step-meta",
+      textContent: "no claims extracted from the user message" }));
+  } else {
+    const list = el("ul", { className: "claim-list claim-list-detailed" });
+    valid.forEach((claim) => {
+      const decision = decisionByKey[claimKey(claim)] || null;
+      let rowState;
+      if (decision) rowState = "done";
+      else if (routedKeys.has(claimKey(claim))) rowState = "in_flight";
+      else rowState = "pending";
+      list.appendChild(renderClaimItem(claim, rowState, decision));
+    });
+    node.appendChild(list);
+  }
+
+  wrapper.appendChild(node);
+  return wrapper;
 }
 
 // ---- step header (title + duration pill) ----
