@@ -223,6 +223,7 @@ class Pipeline:
         )
         final_content, original_content, interventions = self._stage_correct(
             draft, verification_decisions, assistant_turn_id,
+            user_message=user_message,
         )
         self._stage_finalize(final_content, assistant_turn_id)
 
@@ -564,18 +565,29 @@ class Pipeline:
                     },
                 )
 
-    def _stage_correct(self, draft, verification_decisions, assistant_turn_id):
+    def _stage_correct(self, draft, verification_decisions, assistant_turn_id,
+                       *, user_message: str = ""):
         """Stage 7b: plan + apply interventions. Returns
         (final_content, original_content, interventions). When no
         interventions or the rewrite is identical to the draft,
-        original_content stays None."""
+        original_content stays None.
+
+        v0.11: the corrector is now holistic — it sees the user's
+        question + the draft + the FULL verification ledger (all
+        decisions, not just the ones with interventions) and rewrites
+        the response from scratch. Threading user_message + decisions
+        through is what makes that possible."""
         interventions: list[Intervention] = self.corrector.plan_interventions(
             verification_decisions
         )
         original_content: str | None = None
         final_content = draft
         if interventions:
-            rewritten = self.corrector.apply(draft, interventions)
+            rewritten = self.corrector.apply(
+                draft, interventions,
+                user_message=user_message,
+                decisions=verification_decisions,
+            )
             if rewritten and rewritten != draft:
                 final_content = rewritten
                 original_content = draft

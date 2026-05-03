@@ -395,10 +395,12 @@ def test_v090_parallel_verify_overlaps_wall_clock(tmp_path):
 
     assert len(trace.verification_decisions) == 3
     # Sequential would be ~600ms; parallel with 3 workers should be
-    # well under 500ms even with overhead. Conservative threshold.
-    assert elapsed < 0.50, (
+    # near 200ms. Threshold padded to 0.55s for CI / busy-machine
+    # noise — the proof-of-overlap signal is "well under sequential",
+    # not "exactly the lower bound".
+    assert elapsed < 0.55, (
         f"verification took {elapsed:.2f}s — expected parallel dispatch "
-        f"to finish under 0.5s with 200ms search latency × 3 claims"
+        f"to finish under 0.55s with 200ms search latency × 3 claims"
     )
 
 

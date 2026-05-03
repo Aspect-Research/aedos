@@ -783,13 +783,16 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
 // Calls without a recognized purpose ("unknown") fall through to
 // the Final card so they're at least visible somewhere.
 const STEP_PURPOSES = {
-  // v0.10.0: user-side step gets the extractor:user calls AND any
-  // verification calls fired on user-world claims (router,
-  // prompt_builder, code_writer, judge) — those land on the user
-  // turn id when _route_user routes a non-self-attribute claim.
-  user_claims: ["extractor:user", "router", "cache_classify",
-                "cache_scoping", "cache_stability",
-                "prompt_builder", "code_writer", "retrieval_judge"],
+  // v0.10.0 user-side step: only the extractor:user call is uniquely
+  // attributable. The verifier-side purposes (router, prompt_builder,
+  // code_writer, etc.) are SHARED with the assistant-side claims
+  // step — same purpose names whether they fire from _route_user_
+  // world_claim or _route_model — so listing them here would
+  // double-count. Until the LLM ledger carries a per-call origin
+  // tag, they're attributed to the assistant claims card by default.
+  // Net effect on a user-only-extracts-zero-claims turn: the User
+  // Message card is empty (correct), no longer shows bogus calls.
+  user_claims: ["extractor:user"],
   chat_model_call: ["chat"],
   claims: ["extractor:assistant", "router",
            "cache_classify", "cache_scoping", "cache_stability",

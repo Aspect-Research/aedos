@@ -1,20 +1,30 @@
-"""Response corrector with per-claim intervention planning.
+"""Holistic response corrector.
 
-The corrector now decides, per claim, what kind of edit (if any) the
-assistant draft needs:
+Pre-v0.11 the corrector took a draft + a list of per-claim "intervention"
+edit instructions (REPLACE this value, HEDGE that claim, etc.) and asked
+the LLM to apply them surgically. That worked for single-fact
+corrections but fell apart on cascades:
 
-    verified / user_asserted   → noop          (no intervention)
-    contradicted               → REPLACE       (use the verified value)
-    unverifiable_pending_…     → HEDGE         (insert a verification hedge)
-    unverifiable_in_principle  → SOFTEN        (predictive language)
-    routing_anomaly            → noop          (logged separately by pipeline)
+  * Replacing a count without rewriting the enumeration that the count
+    referred to ("there are 0 vowels: a, e, i, o, u").
+  * Substituting a derived value with an unrelated lookup ("9:56 pm in
+    Cairo → 11:13 am in Cairo" while the surrounding sentence still
+    says "given NY is 2:56 pm, that means…").
+  * Flipping a sign in a comparison without flipping the comparison
+    direction ("7 hours ahead" → "-7 hours ahead").
 
-Multiple interventions on the same draft are batched into a single LLM
-rewrite. If every claim is verified or otherwise needs no intervention,
-the LLM is not called at all and the draft is returned verbatim.
+v0.11 reframes the corrector. It now does ONE LLM call that sees:
 
-The decision logic is deterministic and testable. Only the rewrite step
-calls the LLM.
+  * The user's question (so the answer can be re-derived if needed).
+  * The assistant's draft.
+  * The full per-claim verification ledger (verdicts + verified values
+    + verifier reasoning).
+
+…and writes a fresh response that integrates the verifier's findings
+holistically. The intervention planner still runs (its output drives
+the trace UI's correction card and lets us skip the LLM call when
+nothing was contradicted), but it no longer prescribes line edits.
+The model is told to think about the whole answer, not to substitute.
 """
 
 from __future__ import annotations
@@ -51,49 +61,70 @@ class Intervention:
         }
 
 
-CORRECTOR_SYSTEM = """You apply targeted edits to an assistant response.
+CORRECTOR_SYSTEM = """You rewrite an assistant's draft reply so it's accurate and coherent given pipeline verification feedback.
 
-Each intervention names a specific claim and the kind of edit needed.
+You will receive:
 
-Intervention types:
-- hedge: the claim was not verified by any source. Add a hedge near it
-  ("I believe...", "as of my last training data...", "you may want to
-  verify with a current source"). Do NOT delete the claim itself.
-- replace: the claim is wrong. Replace the wrong value with the verified
-  one wherever it appears in the response.
-- soften: the claim is an unverifiable prediction stated as if certain.
-  Soften with words like "might", "could", "is expected to". If the
-  source text is already adequately hedged, leave it alone.
-- remove: rare; only delete the claim if the instruction explicitly says
-  remove. Otherwise prefer hedge.
+  1. The user's question (the message the assistant was responding to).
+  2. The assistant's draft reply.
+  3. A per-claim verification ledger — each factual claim the draft made,
+     paired with the verifier's verdict (verified / contradicted /
+     inconclusive / unverifiable) and, for contradicted claims, what the
+     verifier actually computed.
 
-CRITICAL — internal consistency for ``replace`` interventions:
+Your job: write a NEW reply that answers the user's question correctly
+given the verifier's findings. Treat this as a real rewrite, not as
+applying surgical edits.
 
-When you change a verified_value, you MUST also fix every adjacent
-sentence in the response that contradicts the new value. The wrong
-value often gets restated, expanded, or used as a premise nearby —
-those sentences become internally inconsistent the moment you change
-the number/name/list at the named source_text.
+# Principles
 
-Concrete example: original draft says "there are 2 words with 3+
-vowels in your prompt. These are likely: 'Donald,' 'children,'
-'prompt,' 'vowels'." The verified_value is 0. You must rewrite BOTH
-the count AND the listing — leaving "These are likely: ..." untouched
-produces a response that says "0" and then immediately enumerates 4
-words. That's worse than no correction.
+- **Think holistically.** When a claim was contradicted, don't just
+  swap the wrong value for the right one in place. Think about what
+  the user asked, what's actually true, and what the right answer
+  looks like end-to-end. If the draft's reasoning chain depends on a
+  contradicted premise, REDERIVE the answer from the verified facts.
 
-When in doubt, rewrite the smallest enclosing paragraph (or section,
-if the contradiction spans paragraphs) so the verified value is the
-single source of truth.
+- **Internal consistency is non-negotiable.** If you change a number,
+  also fix every list, enumeration, sub-claim, or follow-up sentence
+  that built on the old number. A response that says "0 vowels in
+  'apple'" and then enumerates "a, e" is worse than the original.
 
-Other rules:
-- Preserve voice, tone, and structure where you can. Don't restructure
-  unaffected sections.
-- Do NOT apologize, narrate the correction, or add "actually" / "to be
-  precise" preludes.
-- Output ONLY the rewritten response. No preamble, no explanation.
-- If multiple interventions apply, do them all in one rewritten
-  response."""
+- **Conditional claims need their premises.** If the draft said "if X
+  then Y" and the verifier returned a value for Y under different
+  assumptions, the right move is usually to either (a) restate the
+  conditional with the correct arithmetic, or (b) note the actual
+  value alongside, NOT to silently replace Y with an unrelated value
+  that breaks the if-then logic.
+
+- **Hedge what wasn't verified.** Inconclusive claims should read as
+  uncertain in the rewritten reply — phrasing like "I think", "as
+  best I can tell", "you may want to confirm". Do not drop them
+  silently and do not present them as confirmed.
+
+- **Preserve voice and structure** where the verifier didn't
+  contradict anything. The user wrote a question expecting a certain
+  shape of answer; don't restructure unaffected sections.
+
+- **Don't narrate the correction.** No "actually", no "to be
+  precise", no "I made an error in my previous draft". The user
+  doesn't see the draft — only your rewrite. Just write the right
+  answer.
+
+- **Don't reference the verifier itself.** No "the comparator says",
+  no "external sources confirm". The pipeline's mechanics are
+  invisible to the user. State the facts directly.
+
+# Special case: verified-only ledger
+
+If every claim in the ledger is `verified` (or `user_asserted`), the
+draft is fine — return it unchanged. You'll still have been called,
+so just echo the draft verbatim.
+
+# Output
+
+Return ONLY the rewritten reply. No preamble, no explanation, no
+markdown fences. The first line of your output is the first line of
+the new reply."""
 
 
 class Corrector:
@@ -101,6 +132,13 @@ class Corrector:
         self.llm = llm
 
     # ---- planning -------------------------------------------------------
+    #
+    # The intervention planner is unchanged — it still classifies each
+    # Decision into hedge / replace / soften / noop. v0.11 doesn't use
+    # the result to drive line edits any more, but the trace UI still
+    # renders an "interventions applied" list so the operator can see
+    # what the corrector reacted to. The list is also a fast skip
+    # signal: when it's empty, we don't bother calling the LLM.
 
     def plan_interventions(self, decisions: Iterable[Decision]) -> list[Intervention]:
         """Decide what edit (if any) each Decision implies.
@@ -184,63 +222,127 @@ class Corrector:
 
     # ---- application ----------------------------------------------------
 
-    def apply(self, draft: str, interventions: Iterable[Intervention]) -> str:
+    def apply(
+        self,
+        draft: str,
+        interventions: Iterable[Intervention],
+        *,
+        user_message: str = "",
+        decisions: Iterable[Decision] | None = None,
+    ) -> str:
+        """Holistic rewrite given the user's question, the draft, and
+        the per-claim verification ledger.
+
+        The legacy positional signature ``apply(draft, interventions)``
+        still works — the new ``user_message`` and ``decisions``
+        parameters are keyword-only with safe defaults. When
+        ``decisions`` is None, the ledger is reconstructed from the
+        interventions (a degraded view, since verified claims aren't
+        in the intervention list — but enough to drive the rewrite).
+        """
         interventions = list(interventions)
         if not interventions:
             return draft
-
-        return self.llm.rewrite(CORRECTOR_SYSTEM, _format_user_message(draft, interventions),
-                                 purpose="corrector")
-
-def _format_user_message(draft: str, interventions: list[Intervention]) -> str:
-    lines = [
-        "Original response:",
-        '"""',
-        draft,
-        '"""',
-        "",
-        f"Apply these {len(interventions)} intervention(s) in a single rewrite:",
-        "",
-    ]
-    for i, iv in enumerate(interventions, 1):
-        c = iv.claim
-        triple = (
-            f"({c.get('subject', '?')}, "
-            f"{c.get('predicate', '?')}, "
-            f"{c.get('object', '?')}, "
-            f"polarity={c.get('polarity', '?')})"
+        decisions_list = list(decisions) if decisions is not None else None
+        user_msg = _format_user_message(
+            draft, interventions,
+            user_message=user_message,
+            decisions=decisions_list,
         )
-        src = (c.get("source_text") or "").strip() or "(no source text recorded)"
-        lines.append(f"{i}. [{iv.intervention_type}] claim={triple}")
-        lines.append(f"   verification_status: {iv.verification_status}")
-        lines.append(f"   source_text: {src!r}")
-        if iv.intervention_type == INTERVENTION_REPLACE and iv.verified_value is not None:
-            lines.append(f"   verified_value: {iv.verified_value!r}")
-        lines.append(f"   reason: {iv.reason}")
+        return self.llm.rewrite(CORRECTOR_SYSTEM, user_msg, purpose="corrector")
+
+
+def _claim_inline(claim: dict | None) -> str:
+    """One-line readable description of a claim for the ledger."""
+    if not claim:
+        return "(no claim payload)"
+    src = (claim.get("source_text") or "").strip()
+    if src:
+        return src
+    pattern = claim.get("pattern", "?")
+    predicate = claim.get("predicate", "?")
+    slots = claim.get("slots") or {}
+    slot_str = ", ".join(f"{k}={v!r}" for k, v in slots.items())
+    return f"[{pattern}] {predicate}({slot_str})"
+
+
+def _ledger_line_for_decision(d: Decision) -> str:
+    """Render one verification-ledger entry for the rewrite prompt.
+
+    Each line names the claim, its verdict, the verified value (when
+    contradicted), and a short reason. The corrector LLM uses this
+    block to write a coherent reply — same input shape regardless of
+    intervention type."""
+    status = d.verification_status
+    claim_str = _claim_inline(d.claim)
+    parts = [f"- {claim_str}", f"  verdict: {status}"]
+    if status == "contradicted":
+        corrected = (d.correction or {}).get("corrected_object")
+        if corrected is not None:
+            parts.append(f"  verified value: {corrected!r}")
+        explanation = (d.correction or {}).get("explanation")
+        if explanation:
+            parts.append(f"  reason: {explanation}")
+    elif status == "retrieval_inconclusive":
+        parts.append("  reason: retrieval found evidence but couldn't confirm")
+    elif status == "unverifiable_pending_implementation":
+        parts.append("  reason: verifier returned no conclusive result")
+    elif status == "unverifiable_in_principle":
+        parts.append("  reason: this predicate isn't verifiable in principle")
+    return "\n".join(parts)
+
+
+def _ledger_line_from_intervention(iv: Intervention) -> str:
+    """Fallback when no Decision objects were threaded through. Builds
+    the same shape of line directly from an Intervention so the prompt
+    stays uniform."""
+    claim_str = _claim_inline(iv.claim)
+    status = iv.verification_status
+    parts = [f"- {claim_str}", f"  verdict: {status}"]
+    if iv.verified_value is not None:
+        parts.append(f"  verified value: {iv.verified_value!r}")
+    if iv.reason:
+        parts.append(f"  reason: {iv.reason}")
+    return "\n".join(parts)
+
+
+def _format_user_message(
+    draft: str,
+    interventions: list[Intervention],
+    *,
+    user_message: str = "",
+    decisions: list[Decision] | None = None,
+) -> str:
+    """Render the corrector's user message: question + draft + ledger.
+
+    Ledger rows come from the full Decision list when available (so
+    verified claims are visible too — the LLM should know what's
+    confirmed, not just what needs fixing). Falls back to the
+    intervention list when the caller didn't pass decisions."""
+    lines: list[str] = []
+    if user_message.strip():
+        lines.append("User's question:")
+        lines.append('"""')
+        lines.append(user_message.strip())
+        lines.append('"""')
         lines.append("")
-    # If any intervention is a replace, prominently restate the verified
-    # values at the bottom so the model has a checklist to consult while
-    # scanning the rest of the response for contradicting prose.
-    replaces = [iv for iv in interventions
-                if iv.intervention_type == INTERVENTION_REPLACE
-                and iv.verified_value is not None]
-    if replaces:
-        lines.append("Verified values that the rewritten response must agree with:")
-        for iv in replaces:
-            c = iv.claim
-            slot_subj = (c.get("slots") or {}).get("subject") or c.get("subject")
-            slot_prop = (c.get("slots") or {}).get("property") or c.get("predicate")
-            descriptor = (
-                f"{slot_subj}.{slot_prop}" if slot_subj and slot_prop
-                else c.get("predicate", "?")
-            )
-            lines.append(f"  - {descriptor} = {iv.verified_value!r}")
-        lines.append("")
+    lines.append("Assistant's draft reply:")
+    lines.append('"""')
+    lines.append(draft)
+    lines.append('"""')
+    lines.append("")
+    lines.append("Per-claim verification ledger:")
+    if decisions is not None and decisions:
+        for d in decisions:
+            lines.append(_ledger_line_for_decision(d))
+    else:
+        for iv in interventions:
+            lines.append(_ledger_line_from_intervention(iv))
+    lines.append("")
     lines.append(
-        "Apply the interventions and ensure the response is internally "
-        "consistent with each verified value. Fix adjacent sentences "
-        "that would contradict the new value (counts, lists, examples, "
-        "premises). Preserve voice and structure where you can. Return "
-        "ONLY the rewritten response."
+        "Rewrite the assistant reply so it answers the user's question "
+        "accurately, integrates every verified fact, gracefully handles "
+        "any contradictions or unverified claims, and stays internally "
+        "consistent end-to-end. Output ONLY the rewritten reply."
     )
     return "\n".join(lines)
