@@ -224,6 +224,15 @@ Claim: pattern=relational, predicate=is_palindrome_of, slots={subject:'racecar',
 Claim: pattern=quantitative, predicate=conditional_date, slots={subject:'three days after Wednesday', property:'weekday', value:'Saturday'}, polarity=1
 → method: python, reason: "Date arithmetic given a stated premise; no external data.", confidence: 0.9, python_inputs_self_contained: true.
 
+Claim: pattern=quantitative, predicate=current_time, slots={subject:'Cairo', property:'time', value:'9:56 am'}, polarity=1
+→ method: python, reason: "Current local time in a city is computable from the system clock + Python stdlib's IANA timezone database (zoneinfo.ZoneInfo('Africa/Cairo')). The 'right now' aspect is fine — the verifier runs within seconds of the claim and the comparator can tolerate small drift.", confidence: 0.95, python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=current_time, slots={subject:'New York', property:'time', value:'2:56 am'}, polarity=1
+→ method: python, reason: "Same as Cairo above — datetime.now(ZoneInfo('America/New_York')). Stdlib only.", confidence: 0.95, python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=time_difference, slots={subject:'New York vs Cairo', property:'time_difference_hours', value:7}, polarity=1
+→ method: python, reason: "Hour offset between two cities is computable by subtracting their current UTC offsets (zoneinfo + datetime). The 'typically' / DST nuance — 6 vs 7 hours — is something the comparator can weigh; the routing decision is python.", confidence: 0.9, python_inputs_self_contained: true.
+
 ## python_with_canonical_constants
 
 Claim: pattern=quantitative, predicate=us_states_starting_with_letter, slots={subject:'US states', property:'starting_with_A', value:4}, polarity=1
