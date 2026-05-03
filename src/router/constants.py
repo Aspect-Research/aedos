@@ -128,3 +128,71 @@ def is_user(value: Any) -> bool:
     """Whether a slot value names the chatting user. Used by routing
     rules that distinguish first-party claims from third-party ones."""
     return isinstance(value, str) and value.strip().lower() in {"user", "me", "i"}
+
+
+# v0.10.0 — per-claim-class user trust.
+#
+# The pre-v0.10 architecture trusted the user as ground truth on
+# every claim regardless of subject. That makes sense for "I like
+# peanut butter" — there's no external check possible. It does NOT
+# make sense for "It's currently 9:56 AM in Cairo" — wrong is wrong
+# whether the user or the model said it.
+#
+# The fix: split user claims into TWO classes by what the claim is
+# about, not who said it:
+#
+#   * Self-attribute  — the user is the subject. The user is the
+#                       only authority. Sacrosanct.
+#                       Examples: preferences, beliefs/attitudes,
+#                       user's own location/role/relationships.
+#   * World claim     — the subject is anything else. Same
+#                       verification stack as model claims.
+#                       Examples: timezone offsets, populations,
+#                       historical dates, who-is-the-president.
+#
+# This map names the slot whose value identifies the claim's
+# subject for each pattern. ``is_self_attribute`` checks whether
+# that slot's value is the user. Mirrors the spirit of
+# USER_SUBJECT_PATTERNS but covers every pattern, not just the two
+# where user-subject is mandatory.
+SUBJECT_SLOT_BY_PATTERN: dict[str, str] = {
+    "preference":             "agent",
+    "propositional_attitude": "agent",
+    "spatial_temporal":       "entity",
+    "categorical":            "entity",
+    "role_assignment":        "agent",
+    "relational":             "subject",
+    "quantitative":           "subject",
+    # `event` has no single subject — `participants` is a list.
+    # Self-attribute check below handles the list case.
+    "event":                  "participants",
+}
+
+
+def is_self_attribute(claim: dict) -> bool:
+    """Whether this claim's primary subject IS the user.
+
+    True → the user is authoritative; route to the sacrosanct
+    user-asserted path (no external verification, store at
+    CONF_USER_ASSERTED).
+
+    False → the claim is about the world, the user is just the one
+    who said it; route through the same LLM router + verifier that
+    handles model claims and store with whatever verdict comes back.
+
+    The check looks up the pattern's subject slot and tests whether
+    its value names the user. The `event` pattern carries
+    `participants` as a list; we treat the claim as a self-attribute
+    iff the user appears in it (so "I attended the Olympics" is
+    sacrosanct on the participation aspect — but distinct claims
+    like "the Olympics happened in 2020" route as world claims
+    because their subject is `event_type`, not `participants`)."""
+    pattern = claim.get("pattern", "")
+    slot_name = SUBJECT_SLOT_BY_PATTERN.get(pattern)
+    if slot_name is None:
+        return False
+    slots = claim.get("slots") or {}
+    value = slots.get(slot_name)
+    if isinstance(value, list):
+        return any(is_user(v) for v in value)
+    return is_user(value)

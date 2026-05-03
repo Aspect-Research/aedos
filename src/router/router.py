@@ -99,6 +99,15 @@ class Router:
         # write. None = no caching. Pipeline assigns this per-turn so
         # the gate can stash classify state across the route() calls.
         self._cache_gate = cache_gate
+        # v0.10.0 — origin currently being routed. Set by route() at
+        # entry, read by every dispatch helper as the asserted_by value
+        # when storing facts. Default "model" preserves existing
+        # behavior for direct dispatch-helper calls (e.g. tests). The
+        # parallel verify in v0.9.0 only parallelizes model-origin
+        # routing, so a single shared instance attribute is race-free
+        # in practice — every concurrent route() carries the same
+        # origin value.
+        self._origin_for_storage: str = "model"
 
     # ---- entry point ---------------------------------------------------
 
@@ -112,13 +121,31 @@ class Router:
             )
         pattern = self.registry.get(pattern_name)
 
-        if origin == "user":
-            return self._route_user(claim, pattern, source_turn_id)
-        return self._route_model(claim, pattern, source_turn_id)
+        # v0.10.0: thread the origin through the dispatch helpers as
+        # the storage author. Save/restore so re-entrant calls (e.g.
+        # tests calling route() multiple times) don't leak state.
+        prior_origin = self._origin_for_storage
+        self._origin_for_storage = origin
+        try:
+            if origin == "user":
+                return self._route_user(claim, pattern, source_turn_id)
+            return self._route_model(claim, pattern, source_turn_id)
+        finally:
+            self._origin_for_storage = prior_origin
 
     # ---- user-origin claims --------------------------------------------
 
     def _route_user(self, claim: dict, pattern: Pattern, source_turn_id: int) -> Decision:
+        # v0.10.0: per-claim-class user trust. The user is authoritative
+        # ONLY about themselves — preferences, beliefs, self-location,
+        # personal relationships. World claims the user makes ("Cairo
+        # is 9:56 AM", "Trump is the 47th president") get verified
+        # through the same stack as model claims; the user being
+        # wrong doesn't make a checkable fact true.
+        from src.router.constants import is_self_attribute
+        if not is_self_attribute(claim):
+            return self._route_user_world_claim(claim, pattern, source_turn_id)
+
         slots = claim.get("slots", {})
         polarity = int(claim["polarity"])
         key_slots = self._key_slots(pattern, slots)
@@ -194,6 +221,33 @@ class Router:
             confidence=CONF_USER_ASSERTED,
             stored_fact_id=new_id,
         )
+
+    def _route_user_world_claim(
+        self, claim: dict, pattern: Pattern, source_turn_id: int,
+    ) -> Decision:
+        """v0.10.0 — user-stated claim that is NOT a self-attribute.
+
+        The user said something about the world: a current time, a
+        timezone offset, who-is-the-president, a population, etc.
+        These get verified the same way model claims do — same LLM
+        router, same verifier dispatch, same outcomes — but the
+        resulting fact is stored with ``asserted_by="user"`` so the
+        chat-prompt builder knows the user (not the model) is the
+        source. The Decision's ``verification_status`` carries the
+        verifier's verdict, which the corrector and chat prompt use
+        to decide whether to gently surface a contradiction.
+
+        Implementation note: this reuses the model-side dispatch via
+        ``_route_model`` because the verification logic is identical.
+        ``self._origin_for_storage`` was set to "user" by ``route()``,
+        so every internal ``_store(..., asserted_by=self._origin_for_storage)``
+        writes the row as user-asserted. The Decision's
+        ``user_world_claim`` flag is set so downstream consumers
+        (chat-prompt builder, corrector, UI) can treat it differently
+        from a sacrosanct user assertion."""
+        decision = self._route_model(claim, pattern, source_turn_id)
+        decision.user_world_claim = True
+        return decision
 
     # ---- model-origin claims -------------------------------------------
 
@@ -286,7 +340,7 @@ class Router:
                 verification_status="unverifiable_pending_implementation",
                 confidence=CONF_PENDING_IMPLEMENTATION,
                 stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
+                    claim, source_turn_id, asserted_by=self._origin_for_storage,
                     confidence=CONF_PENDING_IMPLEMENTATION,
                     verification_status="unverifiable_pending_implementation",
                 ),
@@ -309,7 +363,7 @@ class Router:
                 verification_status="verified",
                 confidence=CONF_PYTHON_VERIFIED,
                 stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
+                    claim, source_turn_id, asserted_by=self._origin_for_storage,
                     confidence=CONF_PYTHON_VERIFIED, verification_status="verified",
                 ),
                 code_gen_result=result.to_dict(),
@@ -319,6 +373,18 @@ class Router:
             corrected_slots = _apply_correction_to_slots(claim, result)
             corrected_claim = dict(claim)
             corrected_claim["slots"] = corrected_slots
+            # v0.10.0: when the original claim came from the user
+            # (user-stated world claim), also store the user's wrong
+            # version with verification_status="contradicted" so the
+            # chat-prompt builder + UI can surface "the user said X
+            # but verification produced Y". Model-side keeps the
+            # legacy behavior — we only persist the corrected value.
+            if self._origin_for_storage == "user":
+                self._store(
+                    claim, source_turn_id, asserted_by="user",
+                    confidence=CONF_USER_ASSERTED,
+                    verification_status="contradicted",
+                )
             corrected_id = self._store(
                 corrected_claim, source_turn_id, asserted_by="python_verifier",
                 confidence=CONF_PYTHON_CORRECTION, verification_status="verified",
@@ -349,7 +415,7 @@ class Router:
             verification_status="unverifiable_pending_implementation",
             confidence=CONF_PENDING_IMPLEMENTATION,
             stored_fact_id=self._store(
-                claim, source_turn_id, asserted_by="model",
+                claim, source_turn_id, asserted_by=self._origin_for_storage,
                 confidence=CONF_PENDING_IMPLEMENTATION,
                 verification_status="unverifiable_pending_implementation",
             ),
@@ -401,7 +467,7 @@ class Router:
             verification_status="unverifiable_pending_implementation",
             confidence=CONF_PENDING_IMPLEMENTATION,
             stored_fact_id=self._store(
-                claim, source_turn_id, asserted_by="model",
+                claim, source_turn_id, asserted_by=self._origin_for_storage,
                 confidence=CONF_PENDING_IMPLEMENTATION,
                 verification_status="unverifiable_pending_implementation",
             ),
@@ -548,7 +614,7 @@ class Router:
                 verification_status="retrieval_failed",
                 confidence=CONF_RETRIEVAL_FAILED,
                 stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by="model",
+                    claim, source_turn_id, asserted_by=self._origin_for_storage,
                     confidence=CONF_RETRIEVAL_FAILED,
                     verification_status="retrieval_failed",
                 ),
@@ -623,7 +689,7 @@ class Router:
         if is_failed:
             confidence = path_prior
             fact_id = self._store(
-                claim, source_turn_id, asserted_by="model",
+                claim, source_turn_id, asserted_by=self._origin_for_storage,
                 confidence=confidence, verification_status=status,
             )
         else:
@@ -654,7 +720,7 @@ class Router:
             verification_status="unverifiable_in_principle",
             confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
             stored_fact_id=self._store(
-                claim, source_turn_id, asserted_by="model",
+                claim, source_turn_id, asserted_by=self._origin_for_storage,
                 confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
                 verification_status="unverifiable_in_principle",
             ),
@@ -670,7 +736,7 @@ class Router:
             verification_status="routing_anomaly",
             confidence=CONF_ROUTING_ANOMALY,
             stored_fact_id=self._store(
-                claim, source_turn_id, asserted_by="model",
+                claim, source_turn_id, asserted_by=self._origin_for_storage,
                 confidence=CONF_ROUTING_ANOMALY, verification_status="routing_anomaly",
             ),
             anomaly_slot=anomaly,
@@ -801,10 +867,14 @@ class Router:
             except Exception:
                 existing = []
 
-        # Prefer the most-recent model-asserted match; ignore
-        # user-asserted ones (those have their own reinforcement
-        # path via _route_store).
-        existing = [f for f in existing if f.asserted_by == "model"]
+        # v0.10.0: same-origin reinforcement only. Model-asserted
+        # facts boost on model re-assertion; user-stated world-claim
+        # facts boost on user re-assertion. Cross-origin matches are
+        # NOT treated as reinforcement — they go through the regular
+        # contradiction/confirmation path so the Decision carries the
+        # right semantics for the chat-prompt builder.
+        existing = [f for f in existing
+                    if f.asserted_by == self._origin_for_storage]
 
         base = max(0.0, min(1.0, path_prior * verifier_confidence))
         if existing:
@@ -824,7 +894,7 @@ class Router:
             base, refresh_count=0, contradiction_count=0,
         )
         fact_id = self._store(
-            claim, source_turn_id, asserted_by="model",
+            claim, source_turn_id, asserted_by=self._origin_for_storage,
             confidence=fresh_conf, verification_status=verification_status,
         )
         return fact_id, fresh_conf, 0

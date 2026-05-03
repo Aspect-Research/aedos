@@ -48,10 +48,21 @@ from src.router import Decision, Router, RoutingOutcome
 
 CHAT_SYSTEM_TEMPLATE = """You are a helpful assistant in a single-conversation demo.
 
-Facts the user has stated about themselves (ground truth — never contradict these):
 {facts_block}
 
-Respond naturally and directly. When answering questions whose answer appears above, state it plainly. Do not speculate about user preferences that aren't listed — say you don't know instead."""
+Respond naturally and directly. When answering questions whose answer appears in the user-self section above, state it plainly. Do not speculate about user preferences that aren't listed — say you don't know instead."""
+
+# Sub-template injected when the user just made a verifiable claim
+# about the world that the verifier disagrees with. The model is
+# instructed to acknowledge gently — not "you're wrong", more like
+# "just to flag, external sources suggest …". Respects user agency.
+CHAT_USER_DISPUTE_TEMPLATE = """\
+
+IMPORTANT — the user just made claim(s) about the world that don't match what external verification found. Surface this gently in your reply, do NOT silently accept the user's version. Acknowledge what the user said, then note what external sources show, and let the user decide. Sample phrasing: "Just to flag — external sources suggest X, so closer to Y. Want me to use that instead?" Avoid blunt corrections like "you're wrong"; the user's agency comes first.
+
+Disputed claims:
+{disputes_block}
+"""
 
 
 @dataclass
@@ -198,7 +209,9 @@ class Pipeline:
         user_turn_id, user_extraction, user_decisions = (
             self._stage_user_side(user_message)
         )
-        assistant_turn_id, draft = self._stage_chat_draft(user_message)
+        assistant_turn_id, draft = self._stage_chat_draft(
+            user_message, user_decisions=user_decisions,
+        )
         asst_extraction = self._stage_assistant_extract(
             draft, user_message, assistant_turn_id,
         )
@@ -254,13 +267,20 @@ class Pipeline:
         )
         return user_turn_id, user_extraction, user_decisions
 
-    def _stage_chat_draft(self, user_message: str):
+    def _stage_chat_draft(self, user_message: str, user_decisions=None):
         """Stage 4: generate the assistant draft with ground-truth
         context. Returns (assistant_turn_id, draft). The assistant
         turn is created BEFORE the chat call so the chat_model_call
-        event always has a turn_id even if the backend raises."""
+        event always has a turn_id even if the backend raises.
+
+        v0.10.0: ``user_decisions`` carries the per-claim verification
+        decisions for THIS turn's user message — including the new
+        user-stated world-claim verdicts. The chat-prompt builder uses
+        them to inject gentle-contradiction framing when the verifier
+        disagreed with something the user just said."""
         system_prompt = self._build_chat_system_prompt(
             self.store.all_user_facts(user_id=self.user_id),
+            user_decisions=user_decisions or [],
         )
         history = self._build_chat_history()
         assistant_turn_id = self.store.insert_turn(
@@ -682,20 +702,99 @@ class Pipeline:
                 return backend.chat(system_prompt, history, **kwargs)
         return backend.chat(system_prompt, history)
 
-    def _build_chat_system_prompt(self, user_facts: list[Fact]) -> str:
-        if not user_facts:
-            facts_block = "(the user has not yet stated any facts about themselves)"
+    def _build_chat_system_prompt(
+        self, user_facts: list[Fact], user_decisions=None,
+    ) -> str:
+        """Render the chat backend's system prompt.
+
+        v0.10.0: facts now split into TWO categories:
+          * Self-attributes (preferences, beliefs, user's own state).
+            Sacrosanct ground truth — model must defer to these.
+          * Verified user-stated world claims. Background context the
+            model can use freely.
+        Plus an optional disputed-claims section when the verifier
+        disagreed with something the user just said this turn — the
+        model is told to surface the discrepancy gently."""
+        from src.router.constants import is_self_attribute as _is_self
+        # Bucket stored facts.
+        self_facts: list[Fact] = []
+        verified_world: list[Fact] = []
+        for f in user_facts:
+            claim_shape = {"pattern": f.pattern, "slots": f.slots}
+            if _is_self(claim_shape):
+                self_facts.append(f)
+            else:
+                verified_world.append(f)
+
+        sections: list[str] = []
+        if self_facts:
+            sections.append("Facts the user has stated about themselves "
+                            "(ground truth — never contradict these):")
+            for f in self_facts:
+                sections.append(self._format_fact_line(f))
         else:
-            lines = []
-            for f in user_facts:
-                pol = "+" if f.polarity == 1 else "-"
-                slot_str = ", ".join(f"{k}={v!r}" for k, v in f.slots.items())
-                lines.append(
-                    f"- [{f.pattern}] {f.predicate}({slot_str}) "
-                    f"[polarity={pol}, confidence={f.confidence:.2f}]"
-                )
-            facts_block = "\n".join(lines)
-        return CHAT_SYSTEM_TEMPLATE.format(facts_block=facts_block)
+            sections.append("(the user has not yet stated any facts "
+                            "about themselves)")
+
+        if verified_world:
+            sections.append("")
+            sections.append("Verified world facts the user has shared "
+                            "(treat as confirmed background context):")
+            for f in verified_world:
+                sections.append(self._format_fact_line(f))
+
+        facts_block = "\n".join(sections)
+        prompt = CHAT_SYSTEM_TEMPLATE.format(facts_block=facts_block)
+
+        # Build a disputes_block from this turn's user_decisions where
+        # the verifier disagreed with the user's claim. Each entry
+        # carries what the user said + what verification produced.
+        disputes = self._format_disputes(user_decisions or [])
+        if disputes:
+            prompt += CHAT_USER_DISPUTE_TEMPLATE.format(disputes_block=disputes)
+        return prompt
+
+    def _format_fact_line(self, f: Fact) -> str:
+        pol = "+" if f.polarity == 1 else "-"
+        slot_str = ", ".join(f"{k}={v!r}" for k, v in f.slots.items())
+        return (
+            f"- [{f.pattern}] {f.predicate}({slot_str}) "
+            f"[polarity={pol}, confidence={f.confidence:.2f}]"
+        )
+
+    def _format_disputes(self, user_decisions) -> str:
+        """Pick out user-world-claim Decisions whose verifier verdict
+        contradicted the user, and format them for the prompt's
+        disputes_block. Returns empty string when there's nothing
+        to dispute."""
+        from src.router.types import RoutingOutcome
+        lines: list[str] = []
+        for d in user_decisions:
+            if not getattr(d, "user_world_claim", False):
+                continue
+            if d.outcome is not RoutingOutcome.CONTRADICTED:
+                continue
+            claim = d.claim or {}
+            said = claim.get("source_text") or self._format_claim_inline(claim)
+            verdict_value = None
+            corr = d.correction or {}
+            if corr.get("corrected_object") is not None:
+                verdict_value = corr["corrected_object"]
+            elif d.code_gen_result and d.code_gen_result.get("actual_value") is not None:
+                verdict_value = d.code_gen_result["actual_value"]
+            verdict_str = (f"verification produced: {verdict_value!r}"
+                           if verdict_value is not None
+                           else "verification disagreed (no specific value)")
+            explanation = corr.get("explanation") or ""
+            lines.append(f"- User said: {said!r}")
+            lines.append(f"  → {verdict_str}"
+                         + (f" — {explanation}" if explanation else ""))
+        return "\n".join(lines)
+
+    def _format_claim_inline(self, claim: dict) -> str:
+        slots = claim.get("slots") or {}
+        slot_str = ", ".join(f"{k}={v!r}" for k, v in slots.items())
+        return f"[{claim.get('pattern')}] {claim.get('predicate')}({slot_str})"
 
     def _build_chat_history(self) -> list[ChatMessage]:
         """Every past turn for this user, in order, in the shape the LLM
