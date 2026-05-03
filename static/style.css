@@ -176,6 +176,11 @@ main {
 }
 .msg.user .msg-body { color: #1a0a02; }
 .msg.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); }
+/* Click-to-load-flow affordance: subtle hover lift, accent border
+ * when the bubble's pipeline is currently shown in the Flow View. */
+.msg.assistant.clickable-flow { cursor: pointer; transition: border-color 0.12s ease, background 0.12s ease; }
+.msg.assistant.clickable-flow:hover { border-color: var(--accent); }
+.msg.assistant.clickable-flow.flow-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
 .msg-body { white-space: normal; word-wrap: break-word; }
 /* Markdown rendered into .msg-body — style the elements the renderer
  * emits. Preserve compact spacing so chat bubbles stay tight. */
@@ -996,6 +1001,17 @@ main {
   cursor: pointer;
   border-radius: 4px;
   font-size: 1rem;
+  /* Without explicit color, native <button> defaults to black —
+   * unreadable on the dark inspector header. Same fix as the
+   * inspector tabs and the new memory-scope tabs. */
+  font-family: inherit;
+  color: var(--ink-soft);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+#inspector-close:hover {
+  background: var(--panel-hover);
+  color: var(--ink);
+  border-color: var(--accent);
 }
 .inspector-panel {
   display: none;
@@ -1160,6 +1176,16 @@ main {
   background: var(--panel);
   border-radius: 4px;
   cursor: pointer;
+  /* Native button color → dark theme. The Refresh buttons in the
+   * Memory and Pipeline-events panels were unreadable without this. */
+  font-family: inherit;
+  color: var(--ink-soft);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.toolbar button:hover {
+  background: var(--panel-hover);
+  color: var(--ink);
+  border-color: var(--accent);
 }
 
 /* Tables */
@@ -1402,6 +1428,68 @@ tr.contradicted td { background: var(--bad-soft); }
 }
 .pipeline-event-body .annotation-stage { display: none; }
 .pipeline-stats { font-family: var(--mono); font-size: 0.72rem; }
+
+/* Per-turn collapsible block — one <details> per assistant turn,
+ * newest first. Latest turn opens by default; older turns are
+ * collapsed so the panel doesn't drown the operator on long
+ * conversations. */
+.pipeline-turn-block {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+}
+.pipeline-turn-block > .pipeline-event-row {
+  margin: 0.3rem 0.6rem;
+}
+.pipeline-turn-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  list-style: none;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.pipeline-turn-summary::-webkit-details-marker { display: none; }
+.pipeline-turn-summary::before {
+  content: "▸";
+  font-size: 0.7rem;
+  color: var(--muted);
+  width: 0.9em;
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+.pipeline-turn-block[open] > .pipeline-turn-summary::before {
+  transform: rotate(90deg);
+}
+.pipeline-turn-id {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+.pipeline-turn-when {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.pipeline-turn-count {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+.pipeline-turn-preview {
+  flex: 1;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
 
 /* ==== Tighter scrollbar for the dark theme (Webkit) =============== */
 ::-webkit-scrollbar { width: 10px; height: 10px; }

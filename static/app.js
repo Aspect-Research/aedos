@@ -120,6 +120,58 @@ const form = $("#chat-form");
 const input = $("#input");
 const modelSelect = $("#model-select");
 
+// Enter sends; Shift+Enter inserts a newline (standard chat-app
+// idiom). The textarea otherwise eats Enter as a literal newline,
+// forcing the user to click Send.
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    if (input.value.trim()) {
+      form.requestSubmit();
+    }
+  }
+});
+
+// Click any assistant message → swap the Flow View to that turn's
+// pipeline. Lets the operator scroll back through earlier turns and
+// inspect their pipeline events without losing the conversation
+// context. Click on the live one (the most recent) re-renders it
+// from the cache.
+messagesEl.addEventListener("click", async (e) => {
+  // Don't hijack clicks on links, buttons (e.g. show-diff toggle),
+  // or anything inside an <a>/<button>.
+  if (e.target.closest("a, button")) return;
+  const bubble = e.target.closest(".msg.assistant.clickable-flow");
+  if (!bubble) return;
+  const turnId = parseInt(bubble.dataset.turnId, 10);
+  if (!Number.isFinite(turnId)) return;
+  await loadFlowForTurn(turnId);
+});
+
+async function loadFlowForTurn(turnId) {
+  flowStatus.textContent = `loading turn ${turnId}…`;
+  try {
+    const events = await api("GET", `/api/trace/${turnId}`);
+    const wrapped = events.map((ev, i) => ({
+      turn_id: ev.turn_id,
+      stage: ev.stage,
+      data: ev.data,
+      arrivedMs: Date.parse(ev.created_at) || (Date.now() + i),
+      created_at: ev.created_at,
+    }));
+    expandedClaims.clear();
+    renderFlow(turnId, wrapped, { running: false });
+    flowStatus.textContent = `viewing turn ${turnId} · ${events.length} event${events.length === 1 ? "" : "s"}`;
+    // Visual emphasis on which bubble's flow is currently shown.
+    $$(".msg.assistant.clickable-flow").forEach((b) => {
+      b.classList.toggle("flow-active", parseInt(b.dataset.turnId, 10) === turnId);
+    });
+  } catch (err) {
+    flowStatus.textContent = `error loading turn ${turnId}`;
+    console.error(err);
+  }
+}
+
 // ---- chat bubble helpers ----
 //
 // Lifecycle for an assistant bubble during streaming:
@@ -182,6 +234,14 @@ function appendUserMessage(text) {
 function appendHydratedAssistant(turn) {
   const node = el("div", { className: "msg assistant" });
   finalizeBubble(node, turn.content, turn.original_content);
+  // Tag with the turn id so clicking the bubble swaps the Flow View
+  // to that turn's events. Lets the operator scroll back through a
+  // long conversation and inspect any prior turn's pipeline.
+  if (turn.id != null) {
+    node.dataset.turnId = String(turn.id);
+    node.classList.add("clickable-flow");
+    node.title = "Click to view this turn's pipeline";
+  }
   messagesEl.appendChild(node);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -434,6 +494,12 @@ form.addEventListener("submit", async (e) => {
         },
         onDone: (trace) => {
           finalizeBubble(bubble, trace.final_content, trace.original_content);
+          // Tag the just-completed bubble with its turn id so the
+          // user can click it later to swap the Flow View back to
+          // this turn's pipeline.
+          bubble.dataset.turnId = String(trace.assistant_turn_id);
+          bubble.classList.add("clickable-flow");
+          bubble.title = "Click to view this turn's pipeline";
           messagesEl.scrollTop = messagesEl.scrollHeight;
           renderFlow(trace.assistant_turn_id, liveEvents, { running: false, requestStartMs });
           flowStatus.textContent = `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
@@ -1886,30 +1952,73 @@ async function refreshPipelineEvents() {
   stats.textContent = "loading…";
   try {
     const turns = await api("GET", "/api/turns");
-    const lastAsst = [...turns].reverse().find((t) => t.role === "assistant");
-    if (!lastAsst) {
+    const asstTurns = turns.filter((t) => t.role === "assistant");
+    if (!asstTurns.length) {
       stats.textContent = "no assistant turn yet";
       container.appendChild(el("p", { className: "hint",
         textContent: "Send a message — pipeline events will appear here for inspection." }));
       return;
     }
-    const events = await api("GET", `/api/trace/${lastAsst.id}`);
-    stats.textContent = `${events.length} event${events.length === 1 ? "" : "s"} for turn ${lastAsst.id}`;
-    if (events.length === 0) {
-      container.appendChild(el("p", { className: "hint", textContent: "(no events)" }));
-      return;
-    }
-    events.forEach((ev, idx) => {
-      const node = el("div", { className: "pipeline-event-row" });
-      node.appendChild(el("span", { className: "pipeline-event-idx", textContent: `#${idx + 1}` }));
-      node.appendChild(el("span", { className: "pipeline-event-stage", textContent: ev.stage }));
-      const body = el("div", { className: "pipeline-event-body" });
-      // Reuse the annotation renderer for consistency with the old
-      // in-card UI — same data, same formatting.
-      body.appendChild(renderAnnotation(ev));
-      node.appendChild(body);
-      container.appendChild(node);
-    });
+    // Fetch every turn's events in parallel — the trace table is
+    // small and per-turn fetches are local SQLite reads.
+    const allEvents = await Promise.all(
+      asstTurns.map((t) => api("GET", `/api/trace/${t.id}`).catch(() => [])),
+    );
+    const totalEvents = allEvents.reduce((acc, e) => acc + e.length, 0);
+    stats.textContent =
+      `${asstTurns.length} turn${asstTurns.length === 1 ? "" : "s"}` +
+      ` · ${totalEvents} event${totalEvents === 1 ? "" : "s"} total`;
+    // Render newest-first so the most recent turn is visible without
+    // scrolling. The latest turn opens by default; older turns are
+    // collapsed.
+    asstTurns
+      .map((t, i) => ({ turn: t, events: allEvents[i] }))
+      .reverse()
+      .forEach(({ turn, events }, idx) => {
+        const block = el("details", { className: "pipeline-turn-block" });
+        if (idx === 0) block.setAttribute("open", "");
+        const summary = el("summary", { className: "pipeline-turn-summary" });
+        const ts = (turn.created_at || "").slice(0, 19).replace("T", " ");
+        summary.appendChild(el("span", {
+          className: "pipeline-turn-id",
+          textContent: `Turn ${turn.id}`,
+        }));
+        summary.appendChild(el("span", {
+          className: "pipeline-turn-when",
+          textContent: ts,
+        }));
+        summary.appendChild(el("span", {
+          className: "pipeline-turn-count",
+          textContent: `${events.length} event${events.length === 1 ? "" : "s"}`,
+        }));
+        const preview = (turn.content || "").trim();
+        if (preview) {
+          summary.appendChild(el("span", {
+            className: "pipeline-turn-preview",
+            textContent: preview.length > 90
+              ? preview.slice(0, 87) + "…"
+              : preview,
+          }));
+        }
+        block.appendChild(summary);
+        if (events.length === 0) {
+          block.appendChild(el("p", { className: "hint",
+            textContent: "(no events for this turn)" }));
+        } else {
+          events.forEach((ev, eidx) => {
+            const node = el("div", { className: "pipeline-event-row" });
+            node.appendChild(el("span", { className: "pipeline-event-idx",
+              textContent: `#${eidx + 1}` }));
+            node.appendChild(el("span", { className: "pipeline-event-stage",
+              textContent: ev.stage }));
+            const body = el("div", { className: "pipeline-event-body" });
+            body.appendChild(renderAnnotation(ev));
+            node.appendChild(body);
+            block.appendChild(node);
+          });
+        }
+        container.appendChild(block);
+      });
   } catch (err) {
     stats.textContent = "error";
     container.appendChild(el("p", { className: "hint", textContent: String(err) }));
