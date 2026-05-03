@@ -177,10 +177,13 @@ main {
 .msg.user .msg-body { color: #1a0a02; }
 .msg.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); }
 /* Click-to-load-flow affordance: subtle hover lift, accent border
- * when the bubble's pipeline is currently shown in the Flow View. */
-.msg.assistant.clickable-flow { cursor: pointer; transition: border-color 0.12s ease, background 0.12s ease; }
-.msg.assistant.clickable-flow:hover { border-color: var(--accent); }
-.msg.assistant.clickable-flow.flow-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+ * when the bubble's pipeline is currently shown in the Flow View.
+ * Both user AND assistant bubbles get the affordance — user bubbles
+ * carry the v0.10.0 user-world-claim verification events, which
+ * live on the user turn id, not the assistant's. */
+.msg.clickable-flow { cursor: pointer; transition: border-color 0.12s ease, background 0.12s ease; }
+.msg.clickable-flow:hover { border-color: var(--accent); }
+.msg.clickable-flow.flow-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
 .msg-body { white-space: normal; word-wrap: break-word; }
 /* Markdown rendered into .msg-body — style the elements the renderer
  * emits. Preserve compact spacing so chat bubbles stay tight. */
@@ -1466,11 +1469,27 @@ tr.contradicted td { background: var(--bad-soft); }
 .pipeline-turn-block[open] > .pipeline-turn-summary::before {
   transform: rotate(90deg);
 }
+.pipeline-turn-role {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pipeline-turn-role-user {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.pipeline-turn-role-assistant {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 .pipeline-turn-id {
   font-family: var(--mono);
   font-size: 0.78rem;
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--ink-soft);
+  font-weight: 500;
 }
 .pipeline-turn-when {
   font-family: var(--mono);
