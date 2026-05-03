@@ -57,7 +57,7 @@
     <nav class="inspector-tabs">
       <button class="inspector-tab active" data-inspector-tab="facts">Facts</button>
       <button class="inspector-tab" data-inspector-tab="patterns">Patterns</button>
-      <button class="inspector-tab" data-inspector-tab="cache">Cache</button>
+      <button class="inspector-tab" data-inspector-tab="memory">Memory</button>
       <button class="inspector-tab" data-inspector-tab="pipeline">Pipeline events</button>
     </nav>
     <button id="inspector-close" title="Close inspector">✕</button>
@@ -111,12 +111,55 @@
     <div id="predicates-table" class="predicates-table"></div>
   </section>
 
-  <section id="inspector-cache" class="inspector-panel">
-    <div class="toolbar">
-      <div id="cache-stats" class="cache-stats"></div>
-      <button id="cache-refresh">Refresh</button>
+  <!-- Memory tab — three scopes the tiered verifier walks through:
+       conversation-specific (microtheory), user-specific (cross-session
+       user store), and world-specific (verification cache). -->
+  <section id="inspector-memory" class="inspector-panel">
+    <div class="toolbar memory-toolbar">
+      <div class="memory-scope-tabs" role="tablist" aria-label="Memory scope">
+        <button class="memory-scope-tab active" data-memory-scope="conversation"
+          title="Facts the user asserted in a specific conversation (session-scoped)">
+          <span class="memory-scope-label">Conversation</span>
+          <span class="memory-scope-count" data-memory-count="conversation">0</span>
+        </button>
+        <button class="memory-scope-tab" data-memory-scope="user"
+          title="Facts the user asserted that persist across all conversations">
+          <span class="memory-scope-label">User</span>
+          <span class="memory-scope-count" data-memory-count="user">0</span>
+        </button>
+        <button class="memory-scope-tab" data-memory-scope="world"
+          title="World facts cached from retrieval verifications">
+          <span class="memory-scope-label">World</span>
+          <span class="memory-scope-count" data-memory-count="world">0</span>
+        </button>
+      </div>
+      <button id="memory-refresh">Refresh</button>
     </div>
-    <div id="cache-table" class="facts-table"></div>
+    <div id="memory-scope-conversation" class="memory-section active">
+      <p class="hint memory-scope-hint">
+        Microtheory layer (Tier 1). User-asserted facts scoped to a
+        single conversation via <code>session_id</code>. The verifier
+        consults this first — a conversation-specific assertion wins
+        over the cross-session user store.
+      </p>
+      <div id="memory-conversation-table" class="facts-table"></div>
+    </div>
+    <div id="memory-scope-user" class="memory-section">
+      <p class="hint memory-scope-hint">
+        User memory (Tier 2). Cross-session user assertions
+        (<code>session_id IS NULL</code>). These persist across every
+        conversation and are treated as ground truth.
+      </p>
+      <div id="memory-user-table" class="facts-table"></div>
+    </div>
+    <div id="memory-scope-world" class="memory-section">
+      <div id="cache-stats" class="cache-stats"></div>
+      <p class="hint memory-scope-hint">
+        World cache (Tier 3). Retrieval verdicts on world facts,
+        cached for reuse with TTL keyed by stability class.
+      </p>
+      <div id="cache-table" class="facts-table"></div>
+    </div>
   </section>
 
   <section id="inspector-pipeline" class="inspector-panel">

@@ -973,6 +973,16 @@ main {
   cursor: pointer;
   border-radius: 6px;
   font-size: 0.9rem;
+  font-family: inherit;
+  /* Without this, native <button> defaults to black — invisible on
+   * the dark inspector header. Use the muted-warm-white color so
+   * inactive tabs read clearly without competing with the active one. */
+  color: var(--ink-soft);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.inspector-tab:hover {
+  background: var(--panel-hover);
+  color: var(--ink);
 }
 .inspector-tab.active {
   background: var(--accent-soft);
@@ -995,6 +1005,105 @@ main {
   overflow: hidden;
 }
 .inspector-panel.active { display: flex; }
+
+/* ==== Memory tab — three-scope segmented control ==================== */
+/* The Memory inspector exposes the tiered verifier's storage shape:
+ * conversation-specific (microtheory), user-specific (cross-session),
+ * world-specific (verification cache). Each scope is one section;
+ * the segmented control above swaps which is visible. */
+.memory-toolbar {
+  /* Push the Refresh button to the right while the scope-tabs sit left. */
+  justify-content: space-between;
+}
+.memory-scope-tabs {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0.2rem;
+}
+.memory-scope-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.memory-scope-tab:hover {
+  background: var(--panel-hover);
+  color: var(--ink);
+}
+.memory-scope-tab.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.memory-scope-count {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-soft);
+  border: 1px solid var(--border-soft);
+}
+.memory-scope-tab.active .memory-scope-count {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.memory-section {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.memory-section.active { display: flex; }
+.memory-scope-hint {
+  margin: 0.6rem 1rem 0.2rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 2px solid var(--accent);
+  background: var(--panel);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 0.82rem;
+}
+.memory-scope-hint code {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  background: var(--bg-elev);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+.memory-session-group {
+  margin: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.memory-session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.7rem;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.memory-session-id {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--accent);
+}
 
 /* Toolbar shared by inspector panels */
 .toolbar {
