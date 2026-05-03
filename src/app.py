@@ -28,6 +28,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.responses import Response
 
 from src.pipeline import Pipeline, build_pipeline
 from src.pattern_registry import load_default_registry
@@ -522,12 +523,45 @@ def invalidate_cache(req: InvalidateRequest) -> dict[str, Any]:
 # ---- static UI -------------------------------------------------------
 
 
-app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+class _NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that disables browser caching.
+
+    Aedos is a single-developer research tool — every UI change is
+    pushed by editing static/* files in place and reloading. Without
+    these headers, browsers happily keep showing the OLD style.css /
+    app.js after an edit (especially CSS, which Chrome caches very
+    aggressively even on Ctrl+R), making "did the new code load?"
+    a constant source of confusion.
+
+    The cost of disabling caching is one extra GET per asset per
+    page load — trivial for the static surface (HTML + 1 JS + 1 CSS).
+    """
+
+    async def get_response(self, path, scope):
+        response: Response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = (
+            "no-cache, no-store, must-revalidate"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
+app.mount("/static", _NoCacheStaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(_STATIC_DIR / "index.html")
+    # Same no-cache treatment for the HTML shell so a fresh load
+    # always picks up the latest static/* references.
+    return FileResponse(
+        _STATIC_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 if __name__ == "__main__":
