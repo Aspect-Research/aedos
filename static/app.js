@@ -1660,26 +1660,25 @@ async function renderWorldCache(data) {
     }
   }
 
-  // v0.7.11 health panel — drift / contradictions / flagged.
-  const healthLine = el("div", { className: "cache-health" });
-  const flagged = health.flagged_for_review ?? 0;
+  // Health line — contradictions + refreshes + oldest entry.
   const everC = health.ever_contradicted_entries ?? 0;
   const totC = health.total_contradictions ?? 0;
   const totR = health.total_refreshes ?? 0;
-  healthLine.appendChild(el("span", { className: "cache-health-flagged" + (flagged > 0 ? " active" : ""),
-    textContent: `${flagged} flagged for review` }));
-  healthLine.appendChild(document.createTextNode(" · "));
-  healthLine.appendChild(el("span", {
-    textContent: `${everC} entries ever contradicted (${totC} total flips)` }));
-  healthLine.appendChild(document.createTextNode(" · "));
-  healthLine.appendChild(el("span", { textContent: `${totR} refreshes confirmed` }));
-  if (health.oldest_cached_at) {
+  if (everC || totR || health.oldest_cached_at) {
+    const healthLine = el("div", { className: "cache-health" });
+    healthLine.appendChild(el("span", {
+      textContent: `${everC} entries ever contradicted (${totC} total flips)` }));
     healthLine.appendChild(document.createTextNode(" · "));
     healthLine.appendChild(el("span", {
-      className: "cache-oldest",
-      textContent: `oldest entry: ${health.oldest_cached_at.slice(0, 10)}` }));
+      textContent: `${totR} refreshes confirmed` }));
+    if (health.oldest_cached_at) {
+      healthLine.appendChild(document.createTextNode(" · "));
+      healthLine.appendChild(el("span", {
+        className: "cache-oldest",
+        textContent: `oldest entry: ${health.oldest_cached_at.slice(0, 10)}` }));
+    }
+    statsEl.appendChild(healthLine);
   }
-  statsEl.appendChild(healthLine);
 
   // Recent invalidations (collapsed audit log).
   if (recent.length > 0) {
@@ -1707,7 +1706,7 @@ async function renderWorldCache(data) {
   const container = $("#cache-table");
   container.innerHTML = "";
 
-  // Search + status filter row (v0.7.11 operator surface).
+  // Search filter row.
   const filterBar = el("div", { className: "cache-filter-bar" });
   const searchInput = el("input", {
     className: "cache-search-input",
@@ -1715,18 +1714,9 @@ async function renderWorldCache(data) {
   });
   searchInput.placeholder = "filter (pattern / predicate / key substring)";
   searchInput.value = _cacheFilterText;
-  const flagOnly = el("input", { className: "cache-flag-toggle" });
-  flagOnly.type = "checkbox";
-  flagOnly.checked = _cacheShowFlaggedOnly;
-  const flagLabel = el("label", {}, [flagOnly, document.createTextNode(" only flagged")]);
   filterBar.appendChild(searchInput);
-  filterBar.appendChild(flagLabel);
   searchInput.addEventListener("input", () => {
     _cacheFilterText = searchInput.value.toLowerCase();
-    renderCacheTable();
-  });
-  flagOnly.addEventListener("change", () => {
-    _cacheShowFlaggedOnly = flagOnly.checked;
     renderCacheTable();
   });
   container.appendChild(filterBar);
@@ -1737,7 +1727,6 @@ async function renderWorldCache(data) {
 
 let _cacheEntries = [];
 let _cacheFilterText = "";
-let _cacheShowFlaggedOnly = false;
 
 function renderCacheTable() {
   const container = $("#cache-table");
@@ -1746,7 +1735,6 @@ function renderCacheTable() {
 
   const text = _cacheFilterText;
   const filtered = _cacheEntries.filter((e) => {
-    if (_cacheShowFlaggedOnly && !e.flagged_for_review) return false;
     if (!text) return true;
     return ((e.canonical_key || "").toLowerCase().includes(text)
          || (e.pattern || "").toLowerCase().includes(text)
@@ -1762,14 +1750,13 @@ function renderCacheTable() {
   const table = el("table");
   table.appendChild(el("tr", {}, [
     "verdict", "pattern", "predicate", "stability", "hits", "refresh",
-    "contradictions", "flagged", "expires", "actions", "key",
+    "contradictions", "expires", "actions", "key",
   ].map((h) => el("th", { textContent: h }))));
   filtered.forEach((e) => {
     const row = el("tr", {});
     if (e.is_expired) row.classList.add("closed");
     if (e.verdict === "verified") row.classList.add("verified");
     if (e.verdict === "contradicted") row.classList.add("contradicted");
-    if (e.flagged_for_review) row.classList.add("flagged");
     [
       e.verdict,
       e.pattern,
@@ -1778,24 +1765,13 @@ function renderCacheTable() {
       String(e.hit_count ?? 0),
       String(e.refresh_count ?? 0),
       String(e.contradiction_count ?? 0),
-      e.flagged_for_review ? "⚐" : "",
       e.expires_at ? (e.is_expired ? `${e.expires_at} (EXP)` : e.expires_at) : "(never)",
     ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
 
-    // Action cell — buttons.
+    // Action cell — only delete remains. The previous force-refresh
+    // and clear-flag actions belonged to the now-removed flagging
+    // system.
     const actions = el("td", { className: "cache-actions" });
-    const refreshBtn = el("button", { className: "cache-action-btn",
-      title: "Mark for re-verification on next use", textContent: "↻" });
-    refreshBtn.addEventListener("click", () =>
-      cacheActionForceRefresh(e.canonical_key));
-    actions.appendChild(refreshBtn);
-    if (e.flagged_for_review) {
-      const clearBtn = el("button", { className: "cache-action-btn",
-        title: "Clear the flag without re-verifying", textContent: "✓" });
-      clearBtn.addEventListener("click", () =>
-        cacheActionClearFlag(e.canonical_key));
-      actions.appendChild(clearBtn);
-    }
     const delBtn = el("button", { className: "cache-action-btn cache-action-danger",
       title: "Hard-delete this entry", textContent: "✕" });
     delBtn.addEventListener("click", () =>
@@ -1812,17 +1788,9 @@ function renderCacheTable() {
   container.appendChild(table);
 }
 
-async function cacheActionForceRefresh(key) {
-  await api("POST", "/api/cache/refresh-one", { canonical_key: key });
-  await refreshMemory();
-}
 async function cacheActionInvalidateOne(key) {
   if (!confirm(`Hard-delete cache entry?\n${key.slice(0, 100)}…`)) return;
   await api("POST", "/api/cache/invalidate-one", { canonical_key: key });
-  await refreshMemory();
-}
-async function cacheActionClearFlag(key) {
-  await api("POST", "/api/cache/clear-flag", { canonical_key: key });
   await refreshMemory();
 }
 

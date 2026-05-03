@@ -1188,12 +1188,14 @@ tr.contradicted td { background: var(--bad-soft); }
   color: var(--muted);
 }
 
-/* Cache stats block */
+/* Cache stats block. Inside the new Memory > World section it sits
+ * in a flex-column container; `flex: 1` here would make it grow to
+ * fill the entire vertical space and push the table off-screen. */
 .cache-stats {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  flex: 1;
+  margin: 0.5rem 1rem 0;
 }
 .cache-stats .cache-totals { font-size: 0.78rem; color: var(--muted); }
 .cache-stats .cache-hit-rate { color: var(--ink); font-size: 0.85rem; }
@@ -1487,22 +1489,12 @@ tr.contradicted td { background: var(--bad-soft); }
   .inspector { width: 100vw; max-width: 100vw; }
 }
 
-/* ==== v0.7.11 — cache panel additions ============================ */
+/* ==== Cache panel — health + audit log =========================== */
 .cache-health {
   margin-top: 0.4rem;
   font-size: 0.78rem;
   color: var(--ink-soft);
   line-height: 1.5;
-}
-.cache-health .cache-health-flagged {
-  color: var(--muted);
-  padding: 0.05rem 0.4rem;
-  border-radius: var(--r-sm);
-}
-.cache-health .cache-health-flagged.active {
-  color: var(--warn);
-  background: var(--warn-soft);
-  font-weight: 600;
 }
 .cache-health .cache-oldest {
   font-family: var(--mono);
@@ -1538,7 +1530,6 @@ tr.contradicted td { background: var(--bad-soft); }
   background: var(--panel-2);
   color: var(--muted);
 }
-.cache-audit-reason.cache-audit-contradiction_cascade { background: var(--warn-soft); color: var(--warn); }
 .cache-audit-reason.cache-audit-manual_by_slot { background: var(--info-soft); color: var(--info); }
 .cache-audit-reason.cache-audit-admin_one { background: var(--accent-soft); color: var(--accent); }
 .cache-audit-key { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1566,7 +1557,6 @@ tr.contradicted td { background: var(--bad-soft); }
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
-.cache-flag-toggle + * { margin-left: 0.3rem; }
 .cache-filter-bar label {
   font-size: 0.78rem;
   color: var(--muted);
@@ -1602,13 +1592,6 @@ tr.contradicted td { background: var(--bad-soft); }
   color: var(--bad);
 }
 
-/* Flagged-row highlight in the cache table */
-tr.flagged td {
-  background: rgba(232, 176, 77, 0.08);
-}
-tr.flagged td:first-child {
-  border-left: 2px solid var(--warn);
-}
 .cache-key-cell {
   max-width: 280px;
   overflow: hidden;

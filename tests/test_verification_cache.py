@@ -412,12 +412,12 @@ def test_cached_verdict_to_dict_shape(tmp_path):
     hit = cache.lookup("k1")
     d = hit.to_dict()
     # v0.7.10 added provenance + bookkeeping fields.
+    # flagged_for_review removed when the flagging system was retired.
     assert set(d.keys()) == {
         "canonical_key", "pattern", "predicate", "verdict", "evidence",
         "stability_class", "cached_at", "expires_at", "hit_count",
         "evidence_hash", "source_urls", "confidence",
         "last_refreshed_at", "refresh_count", "contradiction_count",
-        "flagged_for_review",
     }
     assert d["verdict"] == "verified"
     assert d["evidence"] == {"snippets": ["x", "y"]}
@@ -656,7 +656,6 @@ def test_verification_cache_table_exists(tmp_path):
         # v0.7.10: provenance + bookkeeping
         "evidence_hash", "source_urls", "confidence",
         "last_refreshed_at", "refresh_count", "contradiction_count",
-        "flagged_for_review",
     }
     store.close()
 
@@ -701,14 +700,13 @@ def test_v0710_migration_backfills_columns_on_old_db(tmp_path):
     ).fetchall()}
     for new in ("evidence_hash", "source_urls", "confidence",
                 "last_refreshed_at", "refresh_count",
-                "contradiction_count", "flagged_for_review"):
+                "contradiction_count"):
         assert new in cols
     cache = VerificationCache(store)
     hit = cache.lookup("k_old")
     assert hit is not None
     assert hit.refresh_count == 0
     assert hit.contradiction_count == 0
-    assert hit.flagged_for_review is False
     store.close()
 
 
@@ -1001,94 +999,6 @@ def test_invalidate_by_slot_case_insensitive(tmp_path):
 # ---- v0.7.11: causal cascade + admin actions + log ----------------------
 
 
-def test_flag_neighbors_for_review_marks_semantic_neighbors(tmp_path):
-    """When entry K's verdict flips, semantic-neighbor entries (same
-    pattern + identity slots, predicates with token overlap) get
-    flagged_for_review."""
-    from src.cache.verification_cache import canonicalize_claim_key
-    store = FactStore(tmp_path / "v.db")
-    cache = VerificationCache(store)
-
-    claim_a = {
-        "pattern": "relational", "predicate": "child_of",
-        "slots": {"subject": "Barron", "relation": "child_of", "object": "Donald"},
-        "polarity": 1,
-    }
-    claim_b = {
-        "pattern": "relational", "predicate": "son_of",
-        "slots": {"subject": "Barron", "relation": "son_of", "object": "Donald"},
-        "polarity": 1,
-    }
-    key_a = canonicalize_claim_key(claim_a)
-    key_b = canonicalize_claim_key(claim_b)
-    cache.write(canonical_key=key_a, pattern="relational", predicate="child_of",
-                verdict="verified", stability_class="years_stable",
-                ttl_seconds=90 * 24 * 3600)
-    cache.write(canonical_key=key_b, pattern="relational", predicate="son_of",
-                verdict="verified", stability_class="years_stable",
-                ttl_seconds=90 * 24 * 3600)
-
-    flagged = cache.flag_neighbors_for_review(
-        primary_canonical_key=key_a, claim=claim_a,
-        identity_slot_names=["subject", "object"],
-    )
-    assert key_b in flagged
-    # Lookup of B now returns None because it's flagged.
-    assert cache.lookup(key_b) is None
-    # A itself was NOT flagged (it's the primary).
-    assert cache.lookup(key_a) is not None
-    store.close()
-
-
-def test_flag_neighbors_does_not_cascade_unrelated_entries(tmp_path):
-    """1-hop only — entries with different identity slots stay alone."""
-    from src.cache.verification_cache import canonicalize_claim_key
-    store = FactStore(tmp_path / "v.db")
-    cache = VerificationCache(store)
-
-    claim_a = {
-        "pattern": "relational", "predicate": "child_of",
-        "slots": {"subject": "Barron", "relation": "child_of", "object": "Donald"},
-        "polarity": 1,
-    }
-    claim_unrelated = {
-        "pattern": "relational", "predicate": "child_of",
-        "slots": {"subject": "Charlotte", "relation": "child_of", "object": "William"},
-        "polarity": 1,
-    }
-    key_a = canonicalize_claim_key(claim_a)
-    key_u = canonicalize_claim_key(claim_unrelated)
-    cache.write(canonical_key=key_a, pattern="relational", predicate="child_of",
-                verdict="verified", stability_class="years_stable",
-                ttl_seconds=90 * 24 * 3600)
-    cache.write(canonical_key=key_u, pattern="relational", predicate="child_of",
-                verdict="verified", stability_class="years_stable",
-                ttl_seconds=90 * 24 * 3600)
-    cache.flag_neighbors_for_review(
-        primary_canonical_key=key_a, claim=claim_a,
-        identity_slot_names=["subject", "object"],
-    )
-    # Unrelated entry untouched.
-    assert cache.lookup(key_u) is not None
-    store.close()
-
-
-def test_force_refresh_makes_lookup_return_none(tmp_path):
-    store = FactStore(tmp_path / "v.db")
-    cache = VerificationCache(store)
-    cache.write(canonical_key="k1", pattern="x", predicate="y",
-                verdict="verified", stability_class="years_stable",
-                ttl_seconds=90 * 24 * 3600)
-    assert cache.lookup("k1") is not None
-    ok = cache.force_refresh("k1")
-    assert ok
-    assert cache.lookup("k1") is None  # flagged → treated as miss
-    # Clearing the flag restores the entry.
-    cache.clear_flag("k1")
-    assert cache.lookup("k1") is not None
-    store.close()
-
-
 def test_invalidate_one_deletes_entry(tmp_path):
     store = FactStore(tmp_path / "v.db")
     cache = VerificationCache(store)
@@ -1107,7 +1017,6 @@ def test_invalidation_log_records_each_action(tmp_path):
     cache.write(canonical_key="k1", pattern="x", predicate="y",
                 verdict="verified", stability_class="years_stable",
                 ttl_seconds=90 * 24 * 3600)
-    cache.force_refresh("k1")
     cache.invalidate_one("k1")
     log = cache.recent_invalidations()
     actions = [e["reason"] for e in log]
@@ -1135,14 +1044,13 @@ def test_health_metrics_aggregate_correctly(tmp_path):
     cache.write(canonical_key="k2", pattern="x", predicate="y",
                 verdict="verified", stability_class="years_stable",
                 ttl_seconds=90 * 24 * 3600)  # refresh → refresh_count++
-    cache.force_refresh("k2")  # flag k2
 
     h = cache.health()
     assert h["total_entries"] == 2
-    assert h["flagged_for_review"] == 1
     assert h["ever_contradicted_entries"] == 1
     assert h["total_contradictions"] == 1
     assert h["total_refreshes"] == 1
+    assert "flagged_for_review" not in h
     store.close()
 
 
