@@ -82,17 +82,34 @@ weekdays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunda
 start = weekdays.index('Wednesday')
 print(weekdays[(start + 3) % 7])
 
-# Time and timezone questions — MANDATORY rule
+# General principle: use the right stdlib tool, don't hardcode
 
-For ANY question about a current local time in a city, a city's UTC
-offset, or a time difference / conversion between two cities, you MUST
-use `zoneinfo.ZoneInfo` to look the offset up from the IANA database
-shipped with Python's stdlib. NEVER hardcode a timezone offset like
-`timedelta(hours=-4)` or `timedelta(hours=3)` — your stored beliefs
-about offsets are unreliable (DST rules change, countries adopt and
-abandon DST, regions shift). The IANA database is the authority.
+When a stdlib module exists for the kind of fact the question asks
+about, use it. Don't substitute your training-time recollection of
+the answer. Common traps:
 
-Pick the IANA zone name for each named city (the most common one):
+  - Time / timezone / clock questions → use `zoneinfo` + `datetime`,
+    NEVER hardcode UTC offsets like `timedelta(hours=-4)`. DST rules
+    change, countries adopt/drop DST, regions shift. The IANA tz
+    database that ships with Python's stdlib is the authority.
+  - Statistics → use `statistics.mean / median / stdev / variance`,
+    don't compute by hand and rely on memory.
+  - Exact decimal arithmetic → use `decimal.Decimal`, not float.
+  - Hashing / encoding → use `hashlib`, `base64`, `urllib.parse`,
+    don't recite hash values from memory.
+  - Calendar math (weekday from date, days in a month, leap years) →
+    use `datetime` / `calendar`, not memorized rules.
+  - String operations (counting characters, regex matches, unicode
+    normalization) → use `str` methods, `re`, `unicodedata`.
+
+# Detail: timezones (the most failure-prone case)
+
+LLMs are particularly bad at timezone offsets — DST rules change,
+many city↔IANA-zone mappings are non-obvious, and the offset varies
+by date. ALWAYS use `zoneinfo` for any time-of-day, UTC-offset, or
+city-to-city time question.
+
+Common city → IANA zone mapping:
 
   - "New York"      → "America/New_York"
   - "Cairo"         → "Africa/Cairo"
@@ -103,11 +120,11 @@ Pick the IANA zone name for each named city (the most common one):
   - "Mumbai"/"Delhi"→ "Asia/Kolkata"
   - "Los Angeles"   → "America/Los_Angeles"
 
-Use `datetime.now(ZoneInfo("..."))` to get a city's wall-clock time.
-Use `now.utcoffset().total_seconds() / 3600` to get its current UTC
-offset in hours (signed: positive = east of UTC). The `now` argument
-must be a timezone-aware datetime taken at the SAME moment for both
-cities so DST is resolved consistently.
+Use `datetime.now(ZoneInfo("..."))` for a city's wall-clock time.
+Use `now.utcoffset().total_seconds() / 3600` for its current UTC
+offset in hours (signed: positive = east of UTC). Both cities'
+offsets must be sampled at the SAME moment so DST resolves
+consistently.
 
 Question: "Compute the current hour of day (0-23) in New York. Print only the integer result."
 expected_output_type: int
