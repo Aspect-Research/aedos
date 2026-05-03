@@ -132,16 +132,18 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-// Click any assistant message → swap the Flow View to that turn's
-// pipeline. Lets the operator scroll back through earlier turns and
-// inspect their pipeline events without losing the conversation
-// context. Click on the live one (the most recent) re-renders it
-// from the cache.
+// Click any chat bubble (user or assistant) → swap the Flow View
+// to that turn's pipeline. Lets the operator scroll back through
+// earlier turns and inspect their pipeline events without losing
+// the conversation context. Click on the live one re-renders from
+// cache. User bubbles surface user-side verification (the v0.10.0
+// user-world-claim path's routing + code-gen events); assistant
+// bubbles surface model-side verification + correction.
 messagesEl.addEventListener("click", async (e) => {
   // Don't hijack clicks on links, buttons (e.g. show-diff toggle),
   // or anything inside an <a>/<button>.
   if (e.target.closest("a, button")) return;
-  const bubble = e.target.closest(".msg.assistant.clickable-flow");
+  const bubble = e.target.closest(".msg.clickable-flow");
   if (!bubble) return;
   const turnId = parseInt(bubble.dataset.turnId, 10);
   if (!Number.isFinite(turnId)) return;
@@ -151,19 +153,52 @@ messagesEl.addEventListener("click", async (e) => {
 async function loadFlowForTurn(turnId) {
   flowStatus.textContent = `loading turn ${turnId}…`;
   try {
-    const events = await api("GET", `/api/trace/${turnId}`);
-    const wrapped = events.map((ev, i) => ({
-      turn_id: ev.turn_id,
-      stage: ev.stage,
-      data: ev.data,
-      arrivedMs: Date.parse(ev.created_at) || (Date.now() + i),
-      created_at: ev.created_at,
-    }));
+    // The clicked turn might be either the user's message or the
+    // assistant's reply. The user-side verification events
+    // (routing_decision, code_*, etc. for user-world claims) live
+    // on the USER turn id; the assistant's own pipeline lives on
+    // the assistant turn id. To show the operator a complete
+    // turn-pair view, fetch BOTH turns when an assistant bubble is
+    // clicked, OR just the user turn when a user bubble is clicked.
+    const turns = await api("GET", "/api/turns");
+    const target = turns.find((t) => t.id === turnId);
+    let toFetch = [turnId];
+    let label;
+    if (target && target.role === "assistant") {
+      // Walk backwards to find the user turn that fed this reply.
+      const idx = turns.indexOf(target);
+      for (let i = idx - 1; i >= 0; i--) {
+        if (turns[i].role === "user") {
+          toFetch = [turns[i].id, turnId];
+          break;
+        }
+      }
+      label = toFetch.length === 2
+        ? `viewing user turn ${toFetch[0]} → assistant turn ${turnId}`
+        : `viewing assistant turn ${turnId}`;
+    } else {
+      label = `viewing user turn ${turnId}`;
+    }
+    const allEvents = await Promise.all(
+      toFetch.map((id) => api("GET", `/api/trace/${id}`).catch(() => [])),
+    );
+    const merged = [];
+    allEvents.forEach((events) => {
+      events.forEach((ev, i) => {
+        merged.push({
+          turn_id: ev.turn_id,
+          stage: ev.stage,
+          data: ev.data,
+          arrivedMs: Date.parse(ev.created_at) || (Date.now() + merged.length + i),
+          created_at: ev.created_at,
+        });
+      });
+    });
     expandedClaims.clear();
-    renderFlow(turnId, wrapped, { running: false });
-    flowStatus.textContent = `viewing turn ${turnId} · ${events.length} event${events.length === 1 ? "" : "s"}`;
+    renderFlow(turnId, merged, { running: false });
+    flowStatus.textContent = `${label} · ${merged.length} event${merged.length === 1 ? "" : "s"}`;
     // Visual emphasis on which bubble's flow is currently shown.
-    $$(".msg.assistant.clickable-flow").forEach((b) => {
+    $$(".msg.clickable-flow").forEach((b) => {
       b.classList.toggle("flow-active", parseInt(b.dataset.turnId, 10) === turnId);
     });
   } catch (err) {
@@ -224,9 +259,17 @@ function finalizeBubble(bubble, finalText, originalText) {
   }
 }
 
-function appendUserMessage(text) {
+function appendUserMessage(text, turnId) {
   const node = el("div", { className: "msg user" });
   node.appendChild(el("div", { className: "msg-body", textContent: text }));
+  // Make user bubbles clickable too — their turn id carries the
+  // user-side verification events (v0.10.0 user-world-claim path),
+  // which the operator otherwise can't reach from the chat pane.
+  if (turnId != null) {
+    node.dataset.turnId = String(turnId);
+    node.classList.add("clickable-flow");
+    node.title = "Click to view this turn's pipeline";
+  }
   messagesEl.appendChild(node);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -424,7 +467,7 @@ async function hydrate() {
     const turns = await api("GET", "/api/turns");
     messagesEl.innerHTML = "";
     turns.forEach((t) => {
-      if (t.role === "user") appendUserMessage(t.content);
+      if (t.role === "user") appendUserMessage(t.content, t.id);
       else appendHydratedAssistant(t);
     });
     if (turns.length) {
@@ -449,6 +492,9 @@ form.addEventListener("submit", async (e) => {
   input.value = "";
 
   appendUserMessage(text);
+  // Grab the just-added user bubble so we can tag it with its turn
+  // id once the trace comes back on `done`.
+  const userBubble = messagesEl.lastElementChild;
   const bubble = makeAssistantBubble();
   messagesEl.appendChild(bubble);
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -494,12 +540,18 @@ form.addEventListener("submit", async (e) => {
         },
         onDone: (trace) => {
           finalizeBubble(bubble, trace.final_content, trace.original_content);
-          // Tag the just-completed bubble with its turn id so the
-          // user can click it later to swap the Flow View back to
-          // this turn's pipeline.
+          // Tag both bubbles with their turn ids so either can be
+          // clicked to swap the Flow View — the user turn carries
+          // the user-world-claim verification events; the assistant
+          // turn carries the model-side pipeline.
           bubble.dataset.turnId = String(trace.assistant_turn_id);
           bubble.classList.add("clickable-flow");
           bubble.title = "Click to view this turn's pipeline";
+          if (userBubble && trace.user_turn_id != null) {
+            userBubble.dataset.turnId = String(trace.user_turn_id);
+            userBubble.classList.add("clickable-flow");
+            userBubble.title = "Click to view this turn's pipeline (user-side verification)";
+          }
           messagesEl.scrollTop = messagesEl.scrollHeight;
           renderFlow(trace.assistant_turn_id, liveEvents, { running: false, requestStartMs });
           flowStatus.textContent = `done · ${liveEvents.length} events · turn ${trace.assistant_turn_id}`;
@@ -1951,74 +2003,95 @@ async function refreshPipelineEvents() {
   container.innerHTML = "";
   stats.textContent = "loading…";
   try {
+    // Show ALL turns — user AND assistant. User turns carry the
+    // v0.10.0 user-world-claim verification events (routing_decision,
+    // code_generated, code_executed) since _route_user logs to the
+    // user's turn_id. Filtering to assistant-only hid those events.
     const turns = await api("GET", "/api/turns");
-    const asstTurns = turns.filter((t) => t.role === "assistant");
-    if (!asstTurns.length) {
-      stats.textContent = "no assistant turn yet";
+    if (!turns.length) {
+      stats.textContent = "no turns yet";
       container.appendChild(el("p", { className: "hint",
-        textContent: "Send a message — pipeline events will appear here for inspection." }));
+        textContent: "Send a message — pipeline events will appear here." }));
       return;
     }
-    // Fetch every turn's events in parallel — the trace table is
-    // small and per-turn fetches are local SQLite reads.
     const allEvents = await Promise.all(
-      asstTurns.map((t) => api("GET", `/api/trace/${t.id}`).catch(() => [])),
+      turns.map((t) => api("GET", `/api/trace/${t.id}`).catch(() => [])),
     );
     const totalEvents = allEvents.reduce((acc, e) => acc + e.length, 0);
+    const userN = turns.filter((t) => t.role === "user").length;
+    const asstN = turns.filter((t) => t.role === "assistant").length;
     stats.textContent =
-      `${asstTurns.length} turn${asstTurns.length === 1 ? "" : "s"}` +
+      `${userN} user · ${asstN} assistant turn${asstN === 1 ? "" : "s"}` +
       ` · ${totalEvents} event${totalEvents === 1 ? "" : "s"} total`;
-    // Render newest-first so the most recent turn is visible without
-    // scrolling. The latest turn opens by default; older turns are
-    // collapsed.
-    asstTurns
-      .map((t, i) => ({ turn: t, events: allEvents[i] }))
-      .reverse()
-      .forEach(({ turn, events }, idx) => {
-        const block = el("details", { className: "pipeline-turn-block" });
-        if (idx === 0) block.setAttribute("open", "");
-        const summary = el("summary", { className: "pipeline-turn-summary" });
-        const ts = (turn.created_at || "").slice(0, 19).replace("T", " ");
+    // Newest-first so the most recent turn-pair is on top. Latest
+    // assistant turn AND its preceding user turn open by default;
+    // older turns collapse so long conversations don't drown the
+    // panel. Pair them by walking backwards.
+    const reversed = [...turns].reverse();
+    const newestAsstId = (turns.filter((t) => t.role === "assistant").pop() || {}).id;
+    let openLatestPair = newestAsstId != null;
+    let userTurnFollowsAsst = false;
+    reversed.forEach((turn, i) => {
+      const events = allEvents[turns.indexOf(turn)];
+      const block = el("details", { className: "pipeline-turn-block" });
+      // Open: the newest assistant turn AND the user turn directly
+      // above it (so the user-claim verification events are visible
+      // alongside the assistant's pipeline).
+      if (turn.id === newestAsstId) {
+        block.setAttribute("open", "");
+        userTurnFollowsAsst = true;
+      } else if (userTurnFollowsAsst && turn.role === "user") {
+        block.setAttribute("open", "");
+        userTurnFollowsAsst = false;
+      } else {
+        userTurnFollowsAsst = false;
+      }
+      const summary = el("summary", { className: "pipeline-turn-summary" });
+      const ts = (turn.created_at || "").slice(0, 19).replace("T", " ");
+      summary.appendChild(el("span", {
+        className: `pipeline-turn-role pipeline-turn-role-${turn.role}`,
+        textContent: turn.role,
+      }));
+      summary.appendChild(el("span", {
+        className: "pipeline-turn-id",
+        textContent: `turn ${turn.id}`,
+      }));
+      summary.appendChild(el("span", {
+        className: "pipeline-turn-when",
+        textContent: ts,
+      }));
+      summary.appendChild(el("span", {
+        className: "pipeline-turn-count",
+        textContent: `${events.length} event${events.length === 1 ? "" : "s"}`,
+      }));
+      const preview = (turn.content || "").trim();
+      if (preview) {
         summary.appendChild(el("span", {
-          className: "pipeline-turn-id",
-          textContent: `Turn ${turn.id}`,
+          className: "pipeline-turn-preview",
+          textContent: preview.length > 90
+            ? preview.slice(0, 87) + "…"
+            : preview,
         }));
-        summary.appendChild(el("span", {
-          className: "pipeline-turn-when",
-          textContent: ts,
-        }));
-        summary.appendChild(el("span", {
-          className: "pipeline-turn-count",
-          textContent: `${events.length} event${events.length === 1 ? "" : "s"}`,
-        }));
-        const preview = (turn.content || "").trim();
-        if (preview) {
-          summary.appendChild(el("span", {
-            className: "pipeline-turn-preview",
-            textContent: preview.length > 90
-              ? preview.slice(0, 87) + "…"
-              : preview,
-          }));
-        }
-        block.appendChild(summary);
-        if (events.length === 0) {
-          block.appendChild(el("p", { className: "hint",
-            textContent: "(no events for this turn)" }));
-        } else {
-          events.forEach((ev, eidx) => {
-            const node = el("div", { className: "pipeline-event-row" });
-            node.appendChild(el("span", { className: "pipeline-event-idx",
-              textContent: `#${eidx + 1}` }));
-            node.appendChild(el("span", { className: "pipeline-event-stage",
-              textContent: ev.stage }));
-            const body = el("div", { className: "pipeline-event-body" });
-            body.appendChild(renderAnnotation(ev));
-            node.appendChild(body);
-            block.appendChild(node);
-          });
-        }
-        container.appendChild(block);
-      });
+      }
+      block.appendChild(summary);
+      if (events.length === 0) {
+        block.appendChild(el("p", { className: "hint",
+          textContent: "(no events for this turn)" }));
+      } else {
+        events.forEach((ev, eidx) => {
+          const node = el("div", { className: "pipeline-event-row" });
+          node.appendChild(el("span", { className: "pipeline-event-idx",
+            textContent: `#${eidx + 1}` }));
+          node.appendChild(el("span", { className: "pipeline-event-stage",
+            textContent: ev.stage }));
+          const body = el("div", { className: "pipeline-event-body" });
+          body.appendChild(renderAnnotation(ev));
+          node.appendChild(body);
+          block.appendChild(node);
+        });
+      }
+      container.appendChild(block);
+    });
   } catch (err) {
     stats.textContent = "error";
     container.appendChild(el("p", { className: "hint", textContent: String(err) }));
