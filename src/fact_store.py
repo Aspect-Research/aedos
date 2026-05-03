@@ -147,11 +147,6 @@ PIPELINE_STAGES = {
     # v0.7.8 — fired once at app startup with the prune_expired result
     # (number of dead rows reclaimed).
     "cache_pruned",
-    # v0.7.11 — 1-hop causal cascade: when an entry's verdict flips,
-    # its semantic neighbors get flagged_for_review. This event lists
-    # the cascaded keys so the operator can see "the contradiction
-    # marked these N other entries as suspect".
-    "cache_drift_cascade",
     # v0.7.12 — end-of-turn: how much $ the cache saved this turn
     # (rough estimate: each hit avoids one judge LLM call).
     "cache_savings",
@@ -286,18 +281,12 @@ CREATE TABLE IF NOT EXISTS verification_cache (
     confidence REAL,                         -- judge's reported confidence, NULL when not provided
     last_refreshed_at TEXT,                  -- bumped on every refresh; cached_at stays as first-cache
     refresh_count INTEGER NOT NULL DEFAULT 0,
-    contradiction_count INTEGER NOT NULL DEFAULT 0,
-    flagged_for_review INTEGER NOT NULL DEFAULT 0  -- 1 = lookup() treats as miss until next refresh
+    contradiction_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_cache_key
     ON verification_cache(canonical_key);
 CREATE INDEX IF NOT EXISTS idx_verification_cache_expires
     ON verification_cache(expires_at);
--- The flagged_for_review index lives in _migrate_cache_provenance so
--- that older DBs (where the column is added by ALTER) get the index
--- created AFTER the column exists. New DBs created from this SCHEMA
--- get the column inline above; the migration creates the index for
--- both cases.
 
 -- v0.7.11: every cache invalidation (manual, contradiction-cascade,
 -- drift) gets a row here so the operator can audit "why did N entries
@@ -431,11 +420,15 @@ class FactStore:
     def _migrate_cache_provenance(self) -> None:
         """v0.7.10: backfill the new verification_cache columns
         (evidence_hash, source_urls, confidence, last_refreshed_at,
-        refresh_count, contradiction_count, flagged_for_review) on
-        databases created before they existed. Each ALTER is wrapped
-        in a column-existence check so it's idempotent across boots.
-        Existing rows get NULL/0 defaults — write() backfills the
-        provenance fields the next time each entry is refreshed.
+        refresh_count, contradiction_count) on databases created
+        before they existed. Each ALTER is wrapped in a column-
+        existence check so it's idempotent across boots. Existing rows
+        get NULL/0 defaults — write() backfills the provenance fields
+        the next time each entry is refreshed.
+
+        flagged_for_review was removed; old DBs may still have the
+        column — it's harmless dead weight since no read or write
+        references it any more.
         """
         cols = {r["name"] for r in self._conn.execute(
             "PRAGMA table_info(verification_cache)"
@@ -447,17 +440,12 @@ class FactStore:
             ("last_refreshed_at",    "TEXT"),
             ("refresh_count",        "INTEGER NOT NULL DEFAULT 0"),
             ("contradiction_count",  "INTEGER NOT NULL DEFAULT 0"),
-            ("flagged_for_review",   "INTEGER NOT NULL DEFAULT 0"),
         ]
         for name, decl in new_cols:
             if name not in cols:
                 self._conn.execute(
                     f"ALTER TABLE verification_cache ADD COLUMN {name} {decl}"
                 )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_verification_cache_flagged "
-            "ON verification_cache(flagged_for_review)"
-        )
 
     def _migrate_user_id(self) -> None:
         """v0.5.x: add user_id column to pre-existing facts/turns tables.
@@ -827,12 +815,19 @@ class FactStore:
         self._conn.close()
 
     def reset(self) -> None:
+        # Drop EVERY table the app owns so "Reset DB" really wipes
+        # the slate. Forgetting verification_cache here meant world
+        # memory survived a reset while user/conversation memory
+        # didn't — confusing and load-bearing for tests of the
+        # tiered verifier.
         self._conn.executescript(
             "DROP VIEW IF EXISTS facts_flat;"
             "DROP TABLE IF EXISTS facts;"
             "DROP TABLE IF EXISTS turns;"
             "DROP TABLE IF EXISTS pipeline_events;"
             "DROP TABLE IF EXISTS retrieval_cache;"
+            "DROP TABLE IF EXISTS verification_cache;"
+            "DROP TABLE IF EXISTS cache_invalidation_log;"
         )
         self._conn.executescript(SCHEMA)
         # Run the same idempotent migration init() does so the user_id

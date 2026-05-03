@@ -472,31 +472,11 @@ def _cache_admin(p: "Pipeline"):
     return cache
 
 
-@app.post("/api/cache/refresh-one")
-def cache_refresh_one(req: CacheEntryRequest) -> dict[str, Any]:
-    """Mark a single entry as flagged_for_review so the next
-    verification path re-runs retrieval. Doesn't invalidate the data
-    itself — the entry stays in the cache, lookup() just treats it
-    as miss until the next refresh confirms (or contradicts again)."""
-    cache = _cache_admin(_pipeline(app))
-    ok = cache.force_refresh(req.canonical_key)
-    return {"ok": ok, "canonical_key": req.canonical_key}
-
-
 @app.post("/api/cache/invalidate-one")
 def cache_invalidate_one(req: CacheEntryRequest) -> dict[str, Any]:
     """Hard-delete a single cache entry by canonical_key."""
     cache = _cache_admin(_pipeline(app))
     ok = cache.invalidate_one(req.canonical_key)
-    return {"ok": ok, "canonical_key": req.canonical_key}
-
-
-@app.post("/api/cache/clear-flag")
-def cache_clear_flag(req: CacheEntryRequest) -> dict[str, Any]:
-    """Manually clear flagged_for_review on an entry — operator
-    asserts it's still trustworthy without re-running retrieval."""
-    cache = _cache_admin(_pipeline(app))
-    ok = cache.clear_flag(req.canonical_key)
     return {"ok": ok, "canonical_key": req.canonical_key}
 
 

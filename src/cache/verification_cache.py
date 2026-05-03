@@ -63,7 +63,6 @@ class CachedVerdict:
     last_refreshed_at: str | None = None
     refresh_count: int = 0
     contradiction_count: int = 0
-    flagged_for_review: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,7 +81,6 @@ class CachedVerdict:
             "last_refreshed_at": self.last_refreshed_at,
             "refresh_count": self.refresh_count,
             "contradiction_count": self.contradiction_count,
-            "flagged_for_review": self.flagged_for_review,
         }
 
 
@@ -223,7 +221,6 @@ def _row_to_cached_verdict(row, *, hit_count_bump: int = 0) -> "CachedVerdict":
         last_refreshed_at=_safe_str(row, "last_refreshed_at"),
         refresh_count=_safe_int(row, "refresh_count"),
         contradiction_count=_safe_int(row, "contradiction_count"),
-        flagged_for_review=bool(_safe_int(row, "flagged_for_review")),
     )
 
 
@@ -317,15 +314,10 @@ class VerificationCache:
         self.store = store
 
     def lookup(self, canonical_key: str) -> Optional[CachedVerdict]:
-        """Return a cached verdict if it exists, hasn't expired, and
-        isn't flagged for review.
+        """Return a cached verdict if it exists and hasn't expired.
 
-        Increments hit_count on a hit. Returns None for miss / expired /
-        flagged / unknown key. Flagged entries are entries the v0.7.11
-        causal-cascade marked as "trust me less" because a related
-        contradiction landed; they get re-verified on the next
-        verification path and ``write()`` will clear the flag once a
-        successful refresh confirms (or contradicts again).
+        Increments hit_count on a hit. Returns None for miss /
+        expired / unknown key.
         """
         row = self.store._conn.execute(
             "SELECT * FROM verification_cache WHERE canonical_key = ?",
@@ -343,12 +335,6 @@ class VerificationCache:
                 return None
             if expiry < datetime.now(timezone.utc):
                 return None
-
-        # v0.7.11: flagged-for-review entries are treated as miss so
-        # the next verification path runs fresh. The flag clears
-        # automatically on the next successful write().
-        if int(_safe_int(row, "flagged_for_review")) == 1:
-            return None
 
         # Hit. Bump counter (best-effort — never crash on this).
         try:
@@ -390,8 +376,6 @@ class VerificationCache:
           * last_refreshed_at — bumped on every successful write
           * refresh_count — +1 when refreshed (verdict unchanged)
           * contradiction_count — +1 when verdict flips
-          * flagged_for_review — cleared on every refresh; the entry
-            "earned trust back" by re-confirming.
         """
         if ttl_seconds == 0:
             return WriteOutcome(action="skipped_volatile", prior_verdict=None)
@@ -439,9 +423,8 @@ class VerificationCache:
                 canonical_key, pattern, predicate, verdict, evidence,
                 stability_class, cached_at, expires_at, hit_count, created_at,
                 evidence_hash, source_urls, confidence,
-                last_refreshed_at, refresh_count, contradiction_count,
-                flagged_for_review
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 0)
+                last_refreshed_at, refresh_count, contradiction_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(canonical_key) DO UPDATE SET
                 verdict = excluded.verdict,
                 evidence = excluded.evidence,
@@ -453,8 +436,7 @@ class VerificationCache:
                 confidence = excluded.confidence,
                 last_refreshed_at = excluded.last_refreshed_at,
                 refresh_count = excluded.refresh_count,
-                contradiction_count = excluded.contradiction_count,
-                flagged_for_review = 0
+                contradiction_count = excluded.contradiction_count
             """,
             (canonical_key, pattern, predicate, verdict, evidence_json,
              stability_class, cached_at, expires_at, _now_iso(),
@@ -536,98 +518,7 @@ class VerificationCache:
             )
         return n
 
-    # ---- v0.7.11: causal cascade + invalidation log -------------------
-
-    def flag_neighbors_for_review(
-        self, primary_canonical_key: str, claim: dict,
-        identity_slot_names: list[str],
-    ) -> list[str]:
-        """When ``primary_canonical_key``'s verdict just flipped, mark
-        its semantic neighbors as ``flagged_for_review`` so the next
-        verification path treats them as miss instead of serving the
-        now-suspect cached verdict.
-
-        1-hop only — we don't recursively flag neighbors-of-neighbors.
-        Cost is bounded; cascades stay predictable.
-
-        Returns the list of canonical_keys that were flagged.
-        """
-        # Reuse semantic_lookup's candidate-finding logic by running
-        # it directly without the threshold gate (we want neighbors,
-        # not the single best match). Identity-slot anchoring stays —
-        # without it we'd flag unrelated entries.
-        slots = claim.get("slots") or {}
-        pattern = str(claim.get("pattern", "")).strip().lower()
-        polarity = int(claim.get("polarity", 1))
-        tense = claim_tense(claim)
-
-        identity_pairs = []
-        for name in identity_slot_names:
-            v = slots.get(name)
-            if isinstance(v, str) and v.strip():
-                identity_pairs.append((name, " ".join(v.split()).lower()))
-        if not identity_pairs:
-            return []
-
-        rows = self.store._conn.execute(
-            "SELECT canonical_key FROM verification_cache "
-            "WHERE pattern = ? AND canonical_key != ?",
-            (pattern, primary_canonical_key),
-        ).fetchall()
-
-        flagged: list[str] = []
-        for row in rows:
-            cached_key = row["canonical_key"]
-            # Polarity + tense must match (same axis as semantic_lookup).
-            if f"|p={polarity}|" not in cached_key:
-                continue
-            if f"|t={tense}|" not in cached_key:
-                continue
-            # Identity slots must match.
-            slots_block = cached_key.rsplit("|", 1)[-1]
-            slot_dict = _parse_slots_block(slots_block)
-            if not all(slot_dict.get(name) == value
-                       for name, value in identity_pairs):
-                continue
-            flagged.append(cached_key)
-
-        if flagged:
-            placeholders = ",".join("?" * len(flagged))
-            self.store._conn.execute(
-                f"UPDATE verification_cache SET flagged_for_review = 1 "
-                f"WHERE canonical_key IN ({placeholders})",
-                tuple(flagged),
-            )
-            self.store._conn.commit()
-            self._log_invalidation(
-                reason="contradiction_cascade",
-                primary_key=primary_canonical_key,
-                propagated_to_keys=flagged,
-                detail={"identity_slots": dict(identity_pairs)},
-                triggered_by="auto",
-            )
-        return flagged
-
-    def force_refresh(self, canonical_key: str) -> bool:
-        """Mark a single entry as flagged_for_review so the next
-        verification path re-runs retrieval. Returns True if an entry
-        existed and was flagged, False if no such key.
-        """
-        cur = self.store._conn.execute(
-            "UPDATE verification_cache SET flagged_for_review = 1 "
-            "WHERE canonical_key = ?", (canonical_key,),
-        )
-        self.store._conn.commit()
-        if cur.rowcount and cur.rowcount > 0:
-            self._log_invalidation(
-                reason="admin_one",
-                primary_key=canonical_key,
-                propagated_to_keys=None,
-                detail={"action": "force_refresh"},
-                triggered_by="user",
-            )
-            return True
-        return False
+    # ---- invalidation log --------------------------------------------
 
     def invalidate_one(self, canonical_key: str) -> bool:
         """Delete a single cache entry by canonical_key. Returns True
@@ -647,17 +538,6 @@ class VerificationCache:
             )
             return True
         return False
-
-    def clear_flag(self, canonical_key: str) -> bool:
-        """Manually clear the flagged_for_review bit. Use when the
-        operator inspects a flagged entry and decides it's still
-        trustworthy without re-running retrieval."""
-        cur = self.store._conn.execute(
-            "UPDATE verification_cache SET flagged_for_review = 0 "
-            "WHERE canonical_key = ?", (canonical_key,),
-        )
-        self.store._conn.commit()
-        return bool(cur.rowcount and cur.rowcount > 0)
 
     def _log_invalidation(
         self, *, reason: str, primary_key: str,
@@ -714,7 +594,6 @@ class VerificationCache:
         row = self.store._conn.execute(
             "SELECT "
             " COUNT(*)                                                   AS total, "
-            " COUNT(CASE WHEN flagged_for_review = 1 THEN 1 END)         AS flagged, "
             " COUNT(CASE WHEN contradiction_count > 0 THEN 1 END)        AS ever_contradicted, "
             " SUM(contradiction_count)                                   AS total_contradictions, "
             " SUM(refresh_count)                                         AS total_refreshes, "
@@ -725,7 +604,6 @@ class VerificationCache:
         ).fetchone()
         return {
             "total_entries": int(row["total"] or 0),
-            "flagged_for_review": int(row["flagged"] or 0),
             "ever_contradicted_entries": int(row["ever_contradicted"] or 0),
             "total_contradictions": int(row["total_contradictions"] or 0),
             "total_refreshes": int(row["total_refreshes"] or 0),
@@ -823,11 +701,6 @@ class VerificationCache:
                         continue
                 except ValueError:
                     continue
-
-            # v0.7.11: respect flagged_for_review at the semantic
-            # layer too — flagged neighbors shouldn't serve hits.
-            if int(_safe_int(row, "flagged_for_review")) == 1:
-                continue
 
             if best is None or score > best.score:
                 verdict = _row_to_cached_verdict(row)
