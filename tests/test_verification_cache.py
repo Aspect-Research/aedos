@@ -1559,20 +1559,26 @@ def test_router_stamps_session_id_on_session_scoped_user_assertion(tmp_path):
         "slots": {"agent": "user", "object": "tea"},
         "polarity": 1, "source_text": "I like tea",
     }
+    # v0.10.0: session_id stamping still rides on the user-asserted
+    # storage path, which now requires a SELF-ATTRIBUTE claim (the
+    # subject is the user). A categorical claim about "X" would be
+    # routed through the world-claim verification path instead.
     session_scoped_claim = {
-        "pattern": "categorical", "predicate": "is_a",
-        "slots": {"entity": "X", "category": "thing"},
+        "pattern": "preference", "predicate": "prefers",
+        "slots": {"agent": "user", "object": "espresso"},
         "polarity": 1,
-        "source_text": "for this conversation, X is a thing",
+        "source_text": "for this conversation, I prefer espresso",
     }
     pattern_a = reg.get("preference")
-    pattern_b = reg.get("categorical")
+    pattern_b = reg.get("preference")
     router._route_user(cross_session_claim, pattern_a, source_turn_id=1)
     router._route_user(session_scoped_claim, pattern_b, source_turn_id=2)
 
-    facts = store.find_currently_valid("preference")
+    facts = store.find_currently_valid("preference",
+                                       slot_match={"object": "tea"})
     assert facts[0].session_id is None
-    facts = store.find_currently_valid("categorical")
+    facts = store.find_currently_valid("preference",
+                                       slot_match={"object": "espresso"})
     assert facts[0].session_id == "sess_x"
     store.close()
 

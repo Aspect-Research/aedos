@@ -98,6 +98,13 @@ class Decision:
     # Surfaces in the per-claim Decision UI so the operator sees where
     # each verdict came from. None = legacy code path that didn't tag.
     served_from_tier: Optional[str] = None
+    # v0.10.0: True when this Decision came from the user-stated
+    # WORLD-CLAIM path (not a self-attribute) — meaning the user
+    # said something checkable and the verifier was run. Pairs with
+    # asserted_by="user" on the stored fact. The chat-prompt builder
+    # reads this flag to decide whether to inject the gentle-
+    # contradiction framing.
+    user_world_claim: bool = False
 
     @property
     def display_status(self) -> str:
@@ -132,4 +139,5 @@ class Decision:
             "routing_decision": self.routing_decision,
             "served_from_cache": self.served_from_cache,
             "served_from_tier": self.served_from_tier,
+            "user_world_claim": self.user_world_claim,
         }

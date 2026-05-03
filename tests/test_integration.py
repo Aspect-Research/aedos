@@ -407,6 +407,121 @@ def test_v090_parallel_verify_overlaps_wall_clock(tmp_path):
 # ---------------------------------------------------------------------
 
 
+def test_v100_user_world_claim_routed_through_verifier_not_sacrosanct(tmp_path):
+    """v0.10.0 — user-stated world claim ("Cairo is 9:56 AM") gets the
+    same verifier treatment as a model claim. Self-attribute claims
+    ("I like peanut butter") still bypass verification."""
+    # User says: "It's 9:56 AM in Cairo right now" — entity is Cairo,
+    # not the user → world claim → verify. Stub the code-gen verifier
+    # to return contradicted with actual_value="11:00 AM".
+    user_world_claim = {
+        "pattern": "quantitative", "predicate": "current_time",
+        "slots": {"subject": "Cairo", "property": "time", "value": "9:56 AM"},
+        "polarity": 1, "source_text": "It's 9:56 AM in Cairo right now",
+    }
+    cg_result = CodeGenVerificationResult(
+        status="contradicted", actual_value="11:00 AM",
+        explanation="zoneinfo shows Cairo current time as 11:00 AM",
+    )
+    mock = MockLLM(
+        chats=["Got it."],
+        extracts=[
+            {"facts": [user_world_claim]},  # user extraction
+            {"facts": []},                  # assistant extraction
+        ],
+        rewrites=[],
+        routings=[
+            # The new world-claim path consults the LLM router for the
+            # user-side claim, then dispatches to the code-gen verifier.
+            _route_python(reason="time + zoneinfo is python territory"),
+        ],
+    )
+    p = _make_pipeline(tmp_path, mock,
+                       code_gen_results=[cg_result])
+    trace = p.run_turn("It's 9:56 AM in Cairo right now")
+
+    # The user's claim got verified — and the verifier disagreed.
+    assert len(trace.user_decisions) == 1
+    d = trace.user_decisions[0]
+    assert d["user_world_claim"] is True
+    assert d["verification_status"] == "contradicted"
+    # The fact is stored with asserted_by="user" but with the
+    # verifier's verdict — not the legacy "user_asserted" status.
+    facts = p.store.query_facts(
+        pattern="quantitative", asserted_by="user", user_id=None,
+    )
+    assert len(facts) == 1
+    assert facts[0].verification_status == "contradicted"
+
+
+def test_v100_user_self_attribute_stays_sacrosanct(tmp_path):
+    """v0.10.0 — user preference about themselves still bypasses
+    verification, stores at CONF_USER_ASSERTED."""
+    self_claim = {
+        "pattern": "preference", "predicate": "likes",
+        "slots": {"agent": "user", "object": "peanut butter"},
+        "polarity": 1, "source_text": "I like peanut butter",
+    }
+    mock = MockLLM(
+        chats=["Noted."],
+        extracts=[
+            {"facts": [self_claim]},  # user extraction
+            {"facts": []},            # assistant extraction
+        ],
+        rewrites=[],
+        routings=[],  # no routings should be popped — sacrosanct path
+    )
+    p = _make_pipeline(tmp_path, mock)
+    trace = p.run_turn("I like peanut butter")
+
+    assert len(trace.user_decisions) == 1
+    d = trace.user_decisions[0]
+    assert d["user_world_claim"] is False
+    assert d["verification_status"] == "user_asserted"
+    # The router LLM was NOT consulted (no routings popped).
+    assert mock.routings == []
+
+
+def test_v100_disputed_user_claim_surfaces_in_chat_system_prompt(tmp_path):
+    """When the verifier contradicted a user world claim, the chat
+    system prompt for the same turn includes a 'gentle correction'
+    section so the model addresses it conversationally."""
+    user_world_claim = {
+        "pattern": "quantitative", "predicate": "current_time",
+        "slots": {"subject": "Cairo", "property": "time", "value": "9:56 AM"},
+        "polarity": 1, "source_text": "It's 9:56 AM in Cairo right now",
+    }
+    cg_result = CodeGenVerificationResult(
+        status="contradicted", actual_value="11:00 AM",
+        explanation="zoneinfo shows 11:00 AM",
+    )
+    captured_prompts: list[str] = []
+
+    class _CapturingMockLLM(MockLLM):
+        def chat(self, system, messages, max_tokens=4096, **_kwargs):
+            captured_prompts.append(system)
+            return self.chats.pop(0)
+
+    mock = _CapturingMockLLM(
+        chats=["OK."],
+        extracts=[
+            {"facts": [user_world_claim]},
+            {"facts": []},
+        ],
+        rewrites=[],
+        routings=[_route_python(reason="time + zoneinfo")],
+    )
+    p = _make_pipeline(tmp_path, mock, code_gen_results=[cg_result])
+    p.run_turn("It's 9:56 AM in Cairo right now")
+
+    assert len(captured_prompts) == 1
+    sys_prompt = captured_prompts[0]
+    # The disputes section is present and names the verifier's value.
+    assert "IMPORTANT" in sys_prompt
+    assert "11:00 AM" in sys_prompt
+    assert "It's 9:56 AM in Cairo right now" in sys_prompt
+
+
 def test_v090_streaming_chat_draft_fires_chat_draft_token_events(tmp_path):
     """When pipeline.live_emit is wired and the backend accepts
     on_token, every text fragment from the chat backend gets pushed
