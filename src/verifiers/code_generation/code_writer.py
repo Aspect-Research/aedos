@@ -82,11 +82,82 @@ weekdays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunda
 start = weekdays.index('Wednesday')
 print(weekdays[(start + 3) % 7])
 
+# Time and timezone questions — MANDATORY rule
+
+For ANY question about a current local time in a city, a city's UTC
+offset, or a time difference / conversion between two cities, you MUST
+use `zoneinfo.ZoneInfo` to look the offset up from the IANA database
+shipped with Python's stdlib. NEVER hardcode a timezone offset like
+`timedelta(hours=-4)` or `timedelta(hours=3)` — your stored beliefs
+about offsets are unreliable (DST rules change, countries adopt and
+abandon DST, regions shift). The IANA database is the authority.
+
+Pick the IANA zone name for each named city (the most common one):
+
+  - "New York"      → "America/New_York"
+  - "Cairo"         → "Africa/Cairo"
+  - "London"        → "Europe/London"
+  - "Tokyo"         → "Asia/Tokyo"
+  - "Sydney"        → "Australia/Sydney"
+  - "São Paulo"     → "America/Sao_Paulo"
+  - "Mumbai"/"Delhi"→ "Asia/Kolkata"
+  - "Los Angeles"   → "America/Los_Angeles"
+
+Use `datetime.now(ZoneInfo("..."))` to get a city's wall-clock time.
+Use `now.utcoffset().total_seconds() / 3600` to get its current UTC
+offset in hours (signed: positive = east of UTC). The `now` argument
+must be a timezone-aware datetime taken at the SAME moment for both
+cities so DST is resolved consistently.
+
+Question: "Compute the current hour of day (0-23) in New York. Print only the integer result."
+expected_output_type: int
+Reply:
+from datetime import datetime
+from zoneinfo import ZoneInfo
+print(datetime.now(ZoneInfo("America/New_York")).hour)
+
+Question: "Compute the current local time in Cairo, formatted as H:MM AM/PM (12-hour clock). Print only the resulting string."
+expected_output_type: string
+Reply:
+from datetime import datetime
+from zoneinfo import ZoneInfo
+now = datetime.now(ZoneInfo("Africa/Cairo"))
+hour12 = now.hour % 12 or 12
+suffix = 'am' if now.hour < 12 else 'pm'
+print(f"{hour12}:{now.minute:02d} {suffix}")
+
+Question: "Compute the current UTC offset for the city Cairo, in hours. Print only the integer result (positive = east of UTC)."
+expected_output_type: int
+Reply:
+from datetime import datetime
+from zoneinfo import ZoneInfo
+off = datetime.now(ZoneInfo("Africa/Cairo")).utcoffset().total_seconds() / 3600
+print(int(off))
+
+Question: "Compute how many hours Cairo is ahead of New York at the current moment. Print only the signed integer result; positive means Cairo is ahead, negative means Cairo is behind."
+expected_output_type: int
+Reply:
+from datetime import datetime
+from zoneinfo import ZoneInfo
+now_utc = datetime.utcnow()
+cairo = datetime.now(ZoneInfo("Africa/Cairo")).utcoffset().total_seconds() / 3600
+ny = datetime.now(ZoneInfo("America/New_York")).utcoffset().total_seconds() / 3600
+print(int(cairo - ny))
+
 # Forbidden pattern (do NOT do this)
 
 Question: "Compute the count of integers strictly greater than 5 and strictly less than 6. Print only the integer result."
 WRONG reply: print(0)        ← hardcoded; the LM did the work, not python.
-RIGHT reply: print(sum(1 for n in range(6, 6)))"""
+RIGHT reply: print(sum(1 for n in range(6, 6)))
+
+Question: "Compute the current hour in New York. Print only the integer."
+WRONG reply (hardcoded offset, ignores DST + IANA database):
+  from datetime import datetime, timezone, timedelta
+  print(datetime.now(timezone(timedelta(hours=-4))).hour)
+RIGHT reply (uses zoneinfo):
+  from datetime import datetime
+  from zoneinfo import ZoneInfo
+  print(datetime.now(ZoneInfo("America/New_York")).hour)"""
 
 
 @dataclass
