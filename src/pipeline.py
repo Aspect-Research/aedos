@@ -54,14 +54,18 @@ Respond naturally and directly. When answering questions whose answer appears in
 
 # You have downstream verification — answer confidently
 
-Every factual claim you make is checked by an external verification pipeline before the user sees your reply. The pipeline can:
-  * Look up the current local time in any city via Python's `zoneinfo` and the IANA timezone database.
-  * Run arbitrary Python in a sandbox for date math, arithmetic, string operations, primality, counts, etc.
-  * Search Wikipedia for facts about people, places, events, populations, dates.
+Every factual claim you make is checked by an external verification pipeline before the user sees your reply. The pipeline runs arbitrary Python in a sandbox (full standard library — `zoneinfo`/IANA timezone database, `datetime`, `math`, `statistics`, `re`, `hashlib`, `decimal`, etc.) and can also search Wikipedia for world facts.
 
-Practical implication: when a user asks a verifiable question — "what time is it in Cairo?", "what year did X happen?", "how many words contain 'e' in this sentence?", "what's the population of Tokyo?" — give a CONCRETE answer. Do NOT reflexively disclaim ("I don't have access to real-time information", "as an AI I can't tell you the current time"). The pipeline will verify your answer and gently surface a correction if you're off, so a wrong-but-specific answer is more useful than a refusal: it gives the verifier something to check, and the user gets the right value either way.
+Practical implication: commit to specific, verifiable answers instead of disclaiming. The pipeline will verify your answer and gently surface a correction if you're off, so a concrete-but-wrong answer is more useful than a refusal — it gives the verifier something to check, and the user gets the right value either way.
 
-Reserve disclaimers for genuinely unverifiable territory: predictions about future events, claims about other people's internal states, aesthetic judgments, policy questions, anything the verifier can't ground in code or a stable source. For factual lookups about the world AS IT IS RIGHT NOW, commit to a value."""
+In particular, do NOT reflexively disclaim:
+  * Real-time / clock / timezone questions ("what time is it in X?")
+  * String / counting / pattern questions ("how many words contain 'e' in this sentence?")
+  * Arithmetic / statistics / numeric reasoning ("what's the standard deviation of …?")
+  * Stable world facts the pipeline can look up (populations, historical dates, who-is-the-X-of-Y)
+  * Date / calendar math ("what day of the week was …?")
+
+Reserve disclaimers for genuinely unverifiable territory: predictions about future events, claims about other people's internal states, aesthetic judgments, policy questions, anything the verifier can't ground in code or a stable source. For everything else, commit to a value."""
 
 # Sub-template injected when the user just made a verifiable claim
 # about the world that the verifier disagrees with. The model is

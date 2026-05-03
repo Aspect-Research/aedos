@@ -167,32 +167,32 @@ Notice the difference: when the claim asserts a relation BETWEEN values that are
 
 # What python can actually do — full Python stdlib is available
 
-The python verifier runs the generated code in a sandbox with the FULL Python standard library. That includes capabilities that are easy to mistake for "external data":
+The python verifier runs the generated code in a sandbox with the FULL Python standard library. Many things that look like "external data" or "real-time information" are actually local computation. Capabilities that commonly trip up routing decisions:
 
-  - **System clock**: `datetime.now(timezone.utc)`, `time.time()`. The current wall-clock time is NOT external data — it's a primitive available to python.
-  - **IANA timezone database**: `zoneinfo.ZoneInfo("Africa/Cairo")`, `ZoneInfo("America/New_York")`. The IANA tz database (with all DST rules, historical offsets, etc.) ships with Python's stdlib. Timezone offsets, current local times in arbitrary cities, conversions between cities — all python.
-  - **Calendar math**: `calendar`, `dateutil.rrule` (though dateutil is third-party; stick to `datetime` + `zoneinfo` + `calendar` for stdlib-only).
-  - **Math + statistics**: `math`, `statistics`, `fractions`, `decimal`, `random` (seeded).
-  - **String / regex / unicode**: full `re`, `unicodedata`, encoding tables.
+  - **System clock + IANA timezone database**: `datetime.now(...)`, `zoneinfo.ZoneInfo(...)`. Wall-clock times, current local times in any city, UTC offsets, DST resolution — all derive from the OS clock plus the IANA tz database that ships with Python.
+  - **Math + statistics + exact arithmetic**: `math`, `statistics`, `fractions`, `decimal`, `random` (seedable). Means, medians, stdev, factorials, primality, exact decimals.
+  - **String / regex / unicode**: `re`, `unicodedata`, encoding tables. Word and character counts, pattern matches, normalization.
+  - **Hashing / encoding**: `hashlib`, `base64`, `binascii`, `urllib.parse`. SHA hashes, URL-encoding, parsing.
+  - **Calendar math**: `calendar`, `datetime` arithmetic. Days in month, weekday from date, Easter dates.
+  - **Subprocess + a real Python interpreter**: arbitrary algorithmic computation that can be expressed in stdlib code.
 
-These are NOT external data sources. They are stable, deterministic, ship-with-the-language facilities. A claim that needs ONLY these (plus values stated in the claim) routes to **python**.
+None of these are "external data." A claim that needs ONLY these (plus values stated in the claim) is **python**.
 
-The shape to recognize for time/clock/timezone claims:
+# The general test
 
-  - "It is 9:56 am in Cairo right now" → python. The system clock + zoneinfo gives the answer.
-  - "Cairo is 7 hours ahead of New York" → python. Subtract the two zoneinfo UTC offsets at the current moment.
-  - "At 2:56 AM in New York, it's 9:56 AM in Cairo" → python. Pure timezone arithmetic.
-  - "Today is a Tuesday" → python. `datetime.now().weekday()` resolves it.
-  - "It's the year 2026" → python. `datetime.now().year`.
+For each claim, ask: *can the answer be produced from (claim slots) + (Python stdlib + system clock) ALONE, with no lookup against an external corpus?*
 
-These all look like "external real-time data" if you don't notice the system-clock + zoneinfo escape hatch. They're python.
+  - **Yes → python.** Even when the claim looks like real-time data ("what time is it in Cairo"), aesthetic computation ("how many vowels in 'apple'"), or stable canonical math ("first 100 primes sum to ...").
+  - **No → retrieval.** When the answer requires a specific fact about a person, place, event, or current world state that isn't derivable from stdlib ("Tokyo's population", "Marie Curie's birth year", "the cause of the 1992 Cairo earthquake").
 
-The shape that ISN'T python despite looking similar:
+Edge boundary — same pattern, different routing depending on what's being asked:
 
-  - "The Cairo earthquake of 1992 killed 545 people" → retrieval. Specific historical event details — not derivable from clock/timezone facilities.
-  - "Sunrise in Cairo today is at 5:42 AM" → retrieval. Astronomical data needs an ephemeris, not stdlib.
-
-The test: can the answer be produced from (claim slots) + (system clock) + (zoneinfo) + (math/string stdlib) ALONE, with no external lookup? If yes — **python**.
+  - "It is 9:56 am in Cairo right now" → **python** (system clock + zoneinfo).
+  - "Sunrise in Cairo today is at 5:42 AM" → **retrieval** (astronomical ephemeris, not stdlib).
+  - "How many vowels in 'apple'" → **python** (string operation).
+  - "How many books has Stephen King published" → **retrieval** (external author bibliography).
+  - "Current year is 2026" → **python** (`datetime.now().year`).
+  - "Year of the most recent US presidential election" → **retrieval** (event lookup).
 
 # Multi-claim convention (important)
 
@@ -254,19 +254,16 @@ Claim: pattern=quantitative, predicate=conditional_date, slots={subject:'three d
 → method: python, reason: "Date arithmetic given a stated premise; no external data.", confidence: 0.9, python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=current_time, slots={subject:'Cairo', property:'time', value:'9:56 am'}, polarity=1
-→ method: python, reason: "Current local time in a city is computable from the system clock + Python stdlib's IANA timezone database (zoneinfo.ZoneInfo('Africa/Cairo')). The 'right now' aspect is fine — the verifier runs within seconds of the claim and the comparator can tolerate small drift.", confidence: 0.95, python_inputs_self_contained: true.
+→ method: python, reason: "Current local time in a city derives from the system clock + Python stdlib's IANA timezone database (zoneinfo.ZoneInfo('Africa/Cairo')). The 'right now' aspect is fine — the verifier runs within seconds of the claim and the comparator can tolerate small drift.", confidence: 0.95, python_inputs_self_contained: true.
 
-Claim: pattern=quantitative, predicate=current_time, slots={subject:'New York', property:'time', value:'2:56 am'}, polarity=1
-→ method: python, reason: "Same as Cairo above — datetime.now(ZoneInfo('America/New_York')). Stdlib only.", confidence: 0.95, python_inputs_self_contained: true.
-
-Claim: pattern=quantitative, predicate=time_difference, slots={subject:'New York vs Cairo', property:'time_difference_hours', value:7}, polarity=1
-→ method: python, reason: "Hour offset between two cities is computable by subtracting their current UTC offsets (zoneinfo + datetime). The 'typically' / DST nuance — 6 vs 7 hours — is something the comparator can weigh; the routing decision is python.", confidence: 0.9, python_inputs_self_contained: true.
+Claim: pattern=quantitative, predicate=time_difference, slots={subject:'Cairo', object:'New York', property:'hours_ahead', value:7}, polarity=1
+→ method: python, reason: "Hour offset between two cities = subtraction of their current UTC offsets (zoneinfo + datetime). DST nuance is the comparator's concern; routing is python.", confidence: 0.9, python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'New York', property:'time_zone_offset_from_Cairo_in_hours', value:-7}, polarity=1
-→ method: python, reason: "The predicate label 'has_count' is incidental — the property is a timezone offset between two cities, computable from zoneinfo + datetime. Don't be fooled by the predicate; read the property/subject. Python.", confidence: 0.9, python_inputs_self_contained: true.
+→ method: python, reason: "Predicate label 'has_count' is incidental — read the property and subject. The property describes a timezone offset between two cities, computable from zoneinfo + datetime. The same lesson applies to any claim where the predicate label is generic but the property names a stdlib-resolvable computation: read what's actually being asserted.", confidence: 0.9, python_inputs_self_contained: true.
 
-Claim: pattern=quantitative, predicate=has_count, slots={subject:'At 2:56 AM in New York', property:'time_in_Cairo', value:'9:56 AM'}, polarity=1
-→ method: python, reason: "Timezone conversion of a stated NY time to a Cairo time. zoneinfo + datetime arithmetic resolves this without any external lookup. The property name 'time_in_Cairo' is the giveaway — anything 'time in <city>' is zoneinfo territory.", confidence: 0.95, python_inputs_self_contained: true.
+Claim: pattern=quantitative, predicate=has_count, slots={subject:'apple', property:'vowel_count', value:2}, polarity=1
+→ method: python, reason: "Same predicate-label-is-incidental lesson — the property is a string operation on a literal value. Pure stdlib (string iteration over the vowel set). Python.", confidence: 0.99, python_inputs_self_contained: true.
 
 ## python_with_canonical_constants
 

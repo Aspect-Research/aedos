@@ -140,35 +140,33 @@ Correct neutral prompt:
   "Determine whether the string 'berry' is a substring of the string 'strawperpy' (case-sensitive). Print True or False."
   expected_output_type: bool
 
-# Time and timezone claims — sign convention is load-bearing
+# Directional claims — lock the convention in the prompt
 
-Time-difference claims ("Cairo is 7 hours ahead of New York", "London
-is 5 hours behind New York") encode a DIRECTION in their value's sign.
-The same physical fact is expressible two ways: "Cairo is +7 ahead of
-NY" and "NY is -7 ahead of Cairo" describe the same world but flip
-sign. If your prompt asks "compute the offset between Cairo and NY"
-without naming the convention, the code may compute either subtraction
-order and the comparator will read the result as a contradiction even
-when the claim is correct.
+Whenever a claim asserts a SIGNED difference, an "X is N more/less/
+ahead/behind/before/after Y" comparison, or any value whose sign
+encodes a direction, the prompt must explicitly state the
+subtraction order AND what positive vs negative mean. Without this,
+the code may compute either order and the comparator's literal
+compare will read the right answer with a flipped sign as a
+contradiction.
 
-LOCK THE CONVENTION explicitly. The prompt must (a) name which city
-goes first in the subtraction and (b) state what positive vs negative
-means in plain English so the code writer can't pick the wrong order.
+The general rule: for "X is N <direction> Y" claims, the prompt
+should ask for `(X's value) − (Y's value)` — subject first, object
+second — and state in plain English what positive means. Match the
+claim's framing exactly so the verifier's verdict is interpretable.
 
-For "ahead of" claims, the convention is:
-  (subject's UTC offset) − (object's UTC offset), in hours.
-  Positive = subject is ahead. Negative = subject is behind.
+This applies to:
 
-Match the claim's framing in the prompt's wording. If the claim says
-"Cairo is 7 hours ahead of NY", the prompt should ask "compute Cairo's
-UTC offset minus New York's UTC offset" — NOT "the offset between Cairo
-and NY" (ambiguous) and NOT "NY's offset minus Cairo's" (would force a
-sign flip that defeats the comparator).
+  - Time differences ("Cairo is 7 hours ahead of NY")
+  - Date / age differences ("X is 3 days after Y", "A is 5 years older than B")
+  - Magnitude comparisons ("Population of A is 2× B's", "X is 30% taller than Y")
+  - Stock / metric movements ("up 5% from yesterday")
 
-For current-time-in-a-city claims, the prompt should specify the
-exact unit being asked: hour-of-day (0-23), or HH:MM string, or
-UTC offset. Don't strip minutes when the claim has them — "9:56 AM"
-should be compared against an HH:MM string, not against a bare hour.
+For unit-bearing claims (times, dates, currencies, percentages),
+the prompt should also specify the exact unit being asked. Don't
+strip resolution that the claim carries — "9:56 AM" should be
+compared against an HH:MM string, not against a bare hour;
+"5.7%" against a float, not an int.
 
 Claim: pattern=quantitative, predicate=current_time, slots={subject:'Cairo', property:'time', value:'9:56 AM'}, polarity=1
 Correct neutral prompt:
@@ -187,6 +185,12 @@ Correct neutral prompt:
   "Compute New York's current UTC offset MINUS Cairo's current UTC offset, in whole hours. Use the IANA timezone database (zoneinfo). Print only the signed integer result; positive means New York is ahead of Cairo, negative means New York is behind."
   expected_output_type: int
 LEAK CHECK: omits "-7". The property names "from_Cairo" — so the subtraction subtracts Cairo. Subject (NY) goes first; result sign matches the claimed -7's framing.
+
+Claim: pattern=quantitative, predicate=age_difference, slots={subject:'Pierre Curie', object:'Marie Curie', property:'years_older', value:8, subject_birth_year:1859, object_birth_year:1867}, polarity=1
+Correct neutral prompt:
+  "Given Pierre Curie's birth year 1859 and Marie Curie's birth year 1867, compute (Marie's birth year) MINUS (Pierre's birth year). Print only the signed integer result; positive means Pierre is older than Marie (born earlier), negative means Pierre is younger."
+  expected_output_type: int
+LEAK CHECK: omits "8". Same lock-the-direction pattern as timezone differences — names which value goes first in the subtraction, and what the sign means in plain English. The claim says "Pierre is 8 years older than Marie" → object Marie's year minus subject Pierre's year (because earlier birth = older = larger object-minus-subject difference), with the sign meaning calibrated against the claim's "older" framing.
 
 Claim: pattern=quantitative, predicate=current_hour, slots={subject:'New York', property:'current_hour', value:2}, polarity=1
 Correct neutral prompt:
