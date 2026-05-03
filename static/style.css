@@ -1105,6 +1105,30 @@ main {
   color: var(--accent);
 }
 
+/* Memory tab fact tables — the natural-language claim leads each row;
+ * status / confidence / etc. trail behind. Wide first column lets the
+ * sentence breathe without truncation. */
+.memory-facts-table {
+  table-layout: auto;
+  width: 100%;
+}
+.memory-facts-table th:first-child,
+.memory-facts-table td:first-child {
+  min-width: 18rem;
+}
+.memory-claim-cell {
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.memory-claim-text {
+  color: var(--ink);
+}
+.memory-claim-meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+  margin-left: 0.25rem;
+}
+
 /* Toolbar shared by inspector panels */
 .toolbar {
   display: flex;

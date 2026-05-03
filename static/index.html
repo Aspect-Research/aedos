@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=0.9.2">
+<link rel="stylesheet" href="/static/style.css?v=0.9.3">
 </head>
 <body>
 <header>
@@ -55,66 +55,23 @@
 <aside id="inspector" class="inspector">
   <div class="inspector-header">
     <nav class="inspector-tabs">
-      <button class="inspector-tab active" data-inspector-tab="facts">Facts</button>
+      <button class="inspector-tab active" data-inspector-tab="memory">Memory</button>
       <button class="inspector-tab" data-inspector-tab="patterns">Patterns</button>
-      <button class="inspector-tab" data-inspector-tab="memory">Memory</button>
       <button class="inspector-tab" data-inspector-tab="pipeline">Pipeline events</button>
     </nav>
     <button id="inspector-close" title="Close inspector">✕</button>
   </div>
 
-  <section id="inspector-facts" class="inspector-panel active">
-    <div class="toolbar">
-      <label>Pattern
-        <select id="f-pattern">
-          <option value="">(any)</option>
-          <option value="role_assignment">role_assignment</option>
-          <option value="preference">preference</option>
-          <option value="quantitative">quantitative</option>
-          <option value="spatial_temporal">spatial_temporal</option>
-          <option value="categorical">categorical</option>
-          <option value="relational">relational</option>
-          <option value="event">event</option>
-          <option value="propositional_attitude">propositional_attitude</option>
-        </select>
-      </label>
-      <label>Predicate <input id="f-predicate" placeholder="e.g. likes"></label>
-      <label>Asserted by
-        <select id="f-asserted-by">
-          <option value="">(any)</option>
-          <option value="user">user</option>
-          <option value="model">model</option>
-          <option value="python_verifier">python_verifier</option>
-          <option value="external">external</option>
-        </select>
-      </label>
-      <label>Status
-        <select id="f-status">
-          <option value="">(any)</option>
-          <option value="verified">verified</option>
-          <option value="contradicted">contradicted</option>
-          <option value="user_asserted">user_asserted</option>
-          <option value="unverifiable_in_principle">unverifiable_in_principle</option>
-          <option value="retrieval_inconclusive">retrieval_inconclusive</option>
-          <option value="retrieval_failed">retrieval_failed</option>
-          <option value="unverifiable_pending_implementation">unverifiable_pending_implementation</option>
-          <option value="routing_anomaly">routing_anomaly</option>
-        </select>
-      </label>
-      <label><input type="checkbox" id="f-only-valid"> only currently valid</label>
-      <button id="facts-refresh">Refresh</button>
-    </div>
-    <div id="facts-table" class="facts-table"></div>
-  </section>
-
   <section id="inspector-patterns" class="inspector-panel">
     <div id="predicates-table" class="predicates-table"></div>
   </section>
 
-  <!-- Memory tab — three scopes the tiered verifier walks through:
-       conversation-specific (microtheory), user-specific (cross-session
-       user store), and world-specific (verification cache). -->
-  <section id="inspector-memory" class="inspector-panel">
+  <!-- Memory tab — every fact-shaped record the system holds, grouped
+       by where it came from. Replaces the old separate Facts + Cache
+       tabs; same data, organized by scope so it maps onto the tiered
+       verifier (microtheory → user store → world cache) plus the
+       model-asserted bucket the Facts tab used to surface. -->
+  <section id="inspector-memory" class="inspector-panel active">
     <div class="toolbar memory-toolbar">
       <div class="memory-scope-tabs" role="tablist" aria-label="Memory scope">
         <button class="memory-scope-tab active" data-memory-scope="conversation"
@@ -126,6 +83,11 @@
           title="Facts the user asserted that persist across all conversations">
           <span class="memory-scope-label">User</span>
           <span class="memory-scope-count" data-memory-count="user">0</span>
+        </button>
+        <button class="memory-scope-tab" data-memory-scope="model"
+          title="Facts the model asserted (and any verification verdict)">
+          <span class="memory-scope-label">Model</span>
+          <span class="memory-scope-count" data-memory-count="model">0</span>
         </button>
         <button class="memory-scope-tab" data-memory-scope="world"
           title="World facts cached from retrieval verifications">
@@ -152,6 +114,15 @@
       </p>
       <div id="memory-user-table" class="facts-table"></div>
     </div>
+    <div id="memory-scope-model" class="memory-section">
+      <p class="hint memory-scope-hint">
+        Model claims. Facts the assistant has asserted in its drafts,
+        plus the verifier's verdict on each. These are NOT consulted
+        by the tiered verifier — they're the system's record of what
+        the model has said and how it landed.
+      </p>
+      <div id="memory-model-table" class="facts-table"></div>
+    </div>
     <div id="memory-scope-world" class="memory-section">
       <div id="cache-stats" class="cache-stats"></div>
       <p class="hint memory-scope-hint">
@@ -172,6 +143,6 @@
 </aside>
 <div id="inspector-backdrop" class="inspector-backdrop"></div>
 
-<script src="/static/app.js?v=0.9.2"></script>
+<script src="/static/app.js?v=0.9.3"></script>
 </body>
 </html>
