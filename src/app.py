@@ -69,6 +69,26 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Aedos", version="0.1.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def _no_cache_api(request, call_next):
+    """Stamp every /api/* response with no-cache headers.
+
+    Without this, browsers happily cache GET /api/cache and similar
+    inspector calls, so a "Reset DB" followed by an inspector reload
+    can show the pre-reset entries until the cache TTL elapses. Pair
+    of the static-asset wrapper (_NoCacheStaticFiles) — same intent
+    on the dynamic side.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = (
+            "no-cache, no-store, must-revalidate"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 def _pipeline(app: FastAPI) -> Pipeline:
     return app.state.pipeline
 

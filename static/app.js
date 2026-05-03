@@ -1401,8 +1401,7 @@ function openInspector(initialTab) {
   inspectorBackdrop.classList.add("open");
   if (initialTab) selectInspectorTab(initialTab);
   const active = $(".inspector-tab.active")?.dataset.inspectorTab;
-  if (active === "facts") refreshFacts();
-  else if (active === "patterns") refreshPatterns();
+  if (active === "patterns") refreshPatterns();
   else if (active === "memory") refreshMemory();
   else if (active === "pipeline") refreshPipelineEvents();
 }
@@ -1415,10 +1414,20 @@ function closeInspector() {
 function selectInspectorTab(name) {
   $$(".inspector-tab").forEach((b) => b.classList.toggle("active", b.dataset.inspectorTab === name));
   $$(".inspector-panel").forEach((p) => p.classList.toggle("active", p.id === `inspector-${name}`));
-  if (name === "facts") refreshFacts();
   if (name === "patterns") refreshPatterns();
   if (name === "memory") refreshMemory();
   if (name === "pipeline") refreshPipelineEvents();
+}
+
+// Re-trigger the active inspector tab's refresh — invoked after the
+// "Reset DB" button so a Memory panel that was open before the wipe
+// reflects the now-empty store immediately, no manual Refresh click.
+function refreshActiveInspector() {
+  if (!inspector.classList.contains("open")) return;
+  const active = $(".inspector-tab.active")?.dataset.inspectorTab;
+  if (active === "patterns") refreshPatterns();
+  else if (active === "memory") refreshMemory();
+  else if (active === "pipeline") refreshPipelineEvents();
 }
 
 $("#inspector-btn").addEventListener("click", () => openInspector());
@@ -1427,56 +1436,6 @@ inspectorBackdrop.addEventListener("click", closeInspector);
 $$(".inspector-tab").forEach((btn) => {
   btn.addEventListener("click", () => selectInspectorTab(btn.dataset.inspectorTab));
 });
-
-// ---- Facts ----
-
-async function refreshFacts() {
-  const params = new URLSearchParams();
-  const pat = $("#f-pattern").value;
-  const pred = $("#f-predicate").value.trim();
-  const ab = $("#f-asserted-by").value;
-  const st = $("#f-status").value;
-  if (pat) params.set("pattern", pat);
-  if (pred) params.set("predicate", pred);
-  if (ab) params.set("asserted_by", ab);
-  if (st) params.set("verification_status", st);
-  if ($("#f-only-valid").checked) params.set("only_valid", "true");
-
-  const facts = await api("GET", "/api/facts?" + params.toString());
-  const container = $("#facts-table");
-  container.innerHTML = "";
-  if (!facts.length) {
-    container.appendChild(el("p", { className: "hint", textContent: "(no facts match)" }));
-    return;
-  }
-  const table = el("table");
-  table.appendChild(el("tr", {}, [
-    "id", "pattern", "predicate", "slots", "pol", "conf", "asserted_by", "status", "valid_until", "turn",
-  ].map((h) => el("th", { textContent: h }))));
-  facts.forEach((f) => {
-    const row = el("tr", {});
-    if (f.valid_until) row.classList.add("closed");
-    if (f.verification_status === "verified") row.classList.add("verified");
-    if (f.verification_status === "contradicted") row.classList.add("contradicted");
-    [
-      f.id, f.pattern, f.predicate,
-      JSON.stringify(f.slots), f.polarity,
-      (f.confidence ?? 0).toFixed(2),
-      f.asserted_by, f.verification_status,
-      f.valid_until || "", f.source_turn_id,
-    ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
-    table.appendChild(row);
-  });
-  container.appendChild(table);
-}
-
-["#f-predicate"].forEach((s) => {
-  $(s).addEventListener("keydown", (e) => { if (e.key === "Enter") refreshFacts(); });
-});
-["#f-pattern", "#f-asserted-by", "#f-status", "#f-only-valid"].forEach((s) => {
-  $(s).addEventListener("change", refreshFacts);
-});
-$("#facts-refresh").addEventListener("click", refreshFacts);
 
 // ---- Patterns ----
 
@@ -1519,17 +1478,26 @@ async function refreshPatterns() {
   });
 }
 
-// ---- Memory tab — three-scope view -----------------------------------
+// ---- Memory tab — four-scope view -------------------------------------
 //
-// Mirrors the v0.7.14 tiered verifier:
-//   * conversation memory = user-asserted facts with session_id != null
-//   * user memory         = user-asserted facts with session_id == null
-//   * world cache         = verification_cache (existing)
+// Single home for everything fact-shaped. Mirrors the v0.7.14 tiered
+// verifier (microtheory → user store → world cache) plus a Model
+// bucket for the assistant's own claims (which used to live in the
+// Facts tab).
+//
+//   * Conversation = user-asserted facts with session_id  (Tier 1)
+//   * User         = user-asserted facts, session_id NULL (Tier 2)
+//   * Model        = facts with asserted_by=model
+//   * World        = verification_cache rows               (Tier 3)
 //
 // Loads facts + cache in parallel so switching scopes is instant.
 
-let _memoryFactsByScope = { conversation: [], user: [] };
+let _memoryFactsByScope = { conversation: [], user: [], model: [] };
 
+// Render a fact-shaped row as a natural-language-ish sentence + a
+// "see details" expander. Replaces the dense "id | pattern |
+// predicate | slots | pol | conf | status | valid_until | turn"
+// table, which buried the actual claim under metadata.
 function _renderMemoryFactsTable(facts, container) {
   container.innerHTML = "";
   if (!facts.length) {
@@ -1537,22 +1505,28 @@ function _renderMemoryFactsTable(facts, container) {
       textContent: "(no facts in this scope yet)" }));
     return;
   }
-  const table = el("table");
+  const table = el("table", { className: "memory-facts-table" });
   table.appendChild(el("tr", {}, [
-    "id", "pattern", "predicate", "slots", "pol", "conf", "status",
-    "valid_until", "turn",
+    "claim", "status", "conf", "asserted by", "turn",
   ].map((h) => el("th", { textContent: h }))));
   facts.forEach((f) => {
     const row = el("tr", {});
     if (f.valid_until) row.classList.add("closed");
     if (f.verification_status === "verified") row.classList.add("verified");
     if (f.verification_status === "contradicted") row.classList.add("contradicted");
+    const claimCell = el("td", { className: "memory-claim-cell" });
+    claimCell.appendChild(el("span", { className: "memory-claim-text",
+      textContent: humanizeFact(f) }));
+    if (f.valid_until) {
+      claimCell.appendChild(el("span", { className: "memory-claim-meta",
+        textContent: ` · valid until ${f.valid_until}` }));
+    }
+    row.appendChild(claimCell);
     [
-      f.id, f.pattern, f.predicate,
-      JSON.stringify(f.slots), f.polarity,
-      (f.confidence ?? 0).toFixed(2),
       f.verification_status,
-      f.valid_until || "", f.source_turn_id,
+      (f.confidence ?? 0).toFixed(2),
+      f.asserted_by,
+      f.source_turn_id,
     ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
     table.appendChild(row);
   });
@@ -1596,6 +1570,12 @@ function renderMemoryUser() {
   );
 }
 
+function renderMemoryModel() {
+  _renderMemoryFactsTable(
+    _memoryFactsByScope.model, $("#memory-model-table"),
+  );
+}
+
 function selectMemoryScope(scope) {
   $$(".memory-scope-tab").forEach((b) =>
     b.classList.toggle("active", b.dataset.memoryScope === scope));
@@ -1609,19 +1589,27 @@ function _setScopeCount(scope, n) {
 }
 
 async function refreshMemory() {
-  // Three loads in parallel — keeps switching scopes instant.
-  const [userFacts, cacheData] = await Promise.all([
-    api("GET", "/api/facts?asserted_by=user"),
+  // Three API calls in parallel — keeps switching scopes instant.
+  const [allFacts, cacheData] = await Promise.all([
+    api("GET", "/api/facts"),
     api("GET", "/api/cache"),
   ]);
-  // Split user-asserted facts by session_id presence.
-  _memoryFactsByScope.conversation = userFacts.filter((f) => f.session_id);
-  _memoryFactsByScope.user = userFacts.filter((f) => !f.session_id);
+  // Bucket every fact by its origin: user-conversation / user-cross /
+  // model. Anything else (python_verifier, external) drops here too —
+  // surface it under Model so it doesn't disappear.
+  _memoryFactsByScope.conversation = allFacts.filter(
+    (f) => f.asserted_by === "user" && f.session_id);
+  _memoryFactsByScope.user = allFacts.filter(
+    (f) => f.asserted_by === "user" && !f.session_id);
+  _memoryFactsByScope.model = allFacts.filter(
+    (f) => f.asserted_by !== "user");
   _setScopeCount("conversation", _memoryFactsByScope.conversation.length);
   _setScopeCount("user", _memoryFactsByScope.user.length);
+  _setScopeCount("model", _memoryFactsByScope.model.length);
   _setScopeCount("world", (cacheData.entries || []).length);
   renderMemoryConversation();
   renderMemoryUser();
+  renderMemoryModel();
   renderWorldCache(cacheData);
 }
 
@@ -1630,6 +1618,85 @@ $$(".memory-scope-tab").forEach((btn) => {
     selectMemoryScope(btn.dataset.memoryScope));
 });
 $("#memory-refresh").addEventListener("click", refreshMemory);
+
+// ---- humanize helpers — pull a readable sentence out of a fact /
+// cache entry so the table leads with the claim itself rather than
+// metadata.
+
+// Per-pattern slot ordering for readable subject-first sentences.
+// Mirrors KEY_SLOTS_BY_PATTERN in src/router/constants.py — kept in
+// sync manually since the UI doesn't fetch it.
+const _SLOT_ORDER_BY_PATTERN = {
+  "preference":             ["agent", "object"],
+  "propositional_attitude": ["agent", "proposition"],
+  "spatial_temporal":       ["entity", "location"],
+  "categorical":            ["entity", "category"],
+  "role_assignment":        ["agent", "role", "org"],
+  "relational":             ["subject", "object"],
+  "quantitative":           ["subject", "property"],
+  "event":                  ["event_type", "occurred_at"],
+};
+
+function _humanizePredicate(pred) {
+  return String(pred || "").replace(/_/g, " ");
+}
+
+function _orderedSlotValues(pattern, slots) {
+  const order = _SLOT_ORDER_BY_PATTERN[pattern]
+    || Object.keys(slots || {}).sort();
+  const out = [];
+  const seen = new Set();
+  order.forEach((k) => {
+    if (slots && slots[k] != null && String(slots[k]).length) {
+      out.push(String(slots[k]));
+      seen.add(k);
+    }
+  });
+  // Append any slots we didn't have an order for, alphabetically.
+  Object.keys(slots || {}).sort().forEach((k) => {
+    if (!seen.has(k) && slots[k] != null && String(slots[k]).length) {
+      out.push(String(slots[k]));
+    }
+  });
+  return out;
+}
+
+// Format a Fact (from /api/facts) as "<subject> <predicate> <obj>".
+// Polarity 0 prepends "NOT ". Falls back to the JSON-y form if slots
+// are missing.
+function humanizeFact(f) {
+  const pred = _humanizePredicate(f.predicate);
+  const values = _orderedSlotValues(f.pattern, f.slots);
+  const not = (f.polarity === 0 || f.polarity === "0") ? "NOT " : "";
+  if (values.length === 0) return `${not}${pred}`;
+  if (values.length === 1) return `${not}${values[0]} ${pred}`;
+  const [subj, ...rest] = values;
+  return `${not}${subj} ${pred} ${rest.join(" · ")}`;
+}
+
+// Parse a canonical_key like
+//   pattern|predicate|p=POL|t=TENSE|slot1=v1&slot2=v2
+// and produce the same humanized sentence. Cache rows don't carry a
+// `slots` dict — only the canonical key — so we rebuild it here.
+function humanizeCacheKey(key, pattern, predicate) {
+  const parts = String(key || "").split("|");
+  if (parts.length < 5) return key || "";
+  const polarity = parts[2];   // "p=1" or "p=0"
+  const slotsBlock = parts.slice(4).join("|");
+  const slots = {};
+  slotsBlock.split("&").forEach((kv) => {
+    if (!kv) return;
+    const eq = kv.indexOf("=");
+    if (eq < 0) return;
+    slots[kv.slice(0, eq)] = kv.slice(eq + 1);
+  });
+  return humanizeFact({
+    pattern: pattern || parts[0],
+    predicate: predicate || parts[1],
+    slots,
+    polarity: polarity === "p=0" ? 0 : 1,
+  });
+}
 
 // ---- World cache (Tier 3) — the original /api/cache view ------------
 
@@ -1747,30 +1814,45 @@ function renderCacheTable() {
         : "(no entries match the current filter)" }));
     return;
   }
-  const table = el("table");
+  const table = el("table", { className: "memory-facts-table" });
   table.appendChild(el("tr", {}, [
-    "verdict", "pattern", "predicate", "stability", "hits", "refresh",
-    "contradictions", "expires", "actions", "key",
+    "claim", "verdict", "stability", "hits", "expires", "actions",
   ].map((h) => el("th", { textContent: h }))));
   filtered.forEach((e) => {
     const row = el("tr", {});
     if (e.is_expired) row.classList.add("closed");
     if (e.verdict === "verified") row.classList.add("verified");
     if (e.verdict === "contradicted") row.classList.add("contradicted");
+
+    // Claim cell: the natural-language sentence parsed out of the
+    // canonical_key, with the raw key still available via title.
+    const claimCell = el("td", { className: "memory-claim-cell" });
+    const sentence = humanizeCacheKey(
+      e.canonical_key, e.pattern, e.predicate,
+    );
+    claimCell.appendChild(el("span", {
+      className: "memory-claim-text", textContent: sentence,
+      title: e.canonical_key || "",
+    }));
+    const refresh = e.refresh_count ?? 0;
+    const contradictions = e.contradiction_count ?? 0;
+    if (refresh || contradictions) {
+      const meta = [];
+      if (refresh) meta.push(`${refresh} refresh${refresh === 1 ? "" : "es"}`);
+      if (contradictions) meta.push(`${contradictions} flip${contradictions === 1 ? "" : "s"}`);
+      claimCell.appendChild(el("span", { className: "memory-claim-meta",
+        textContent: ` · ${meta.join(" · ")}` }));
+    }
+    row.appendChild(claimCell);
+
     [
       e.verdict,
-      e.pattern,
-      e.predicate,
       e.stability_class,
       String(e.hit_count ?? 0),
-      String(e.refresh_count ?? 0),
-      String(e.contradiction_count ?? 0),
       e.expires_at ? (e.is_expired ? `${e.expires_at} (EXP)` : e.expires_at) : "(never)",
     ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
 
-    // Action cell — only delete remains. The previous force-refresh
-    // and clear-flag actions belonged to the now-removed flagging
-    // system.
+    // Action cell — only delete remains.
     const actions = el("td", { className: "cache-actions" });
     const delBtn = el("button", { className: "cache-action-btn cache-action-danger",
       title: "Hard-delete this entry", textContent: "✕" });
@@ -1779,10 +1861,6 @@ function renderCacheTable() {
     actions.appendChild(delBtn);
     row.appendChild(actions);
 
-    // Key column last (mono-spaced, narrowest).
-    const keyTd = el("td", { className: "mono cache-key-cell",
-      textContent: e.canonical_key || "" });
-    row.appendChild(keyTd);
     table.appendChild(row);
   });
   container.appendChild(table);
@@ -1882,11 +1960,15 @@ modelSelect.addEventListener("change", () => {
 });
 
 $("#reset-btn").addEventListener("click", async () => {
-  if (!confirm("Wipe every fact, turn, and pipeline event. This is not reversible. Proceed?")) return;
+  if (!confirm("Wipe every fact, turn, pipeline event, and cache entry. This is not reversible. Proceed?")) return;
   await api("POST", "/api/reset");
   messagesEl.innerHTML = "";
   flowContainer.innerHTML = "";
   flowContainer.appendChild(el("p", { className: "hint", textContent: "Database reset. Send a message to start fresh." }));
   flowStatus.textContent = "idle";
   expandedClaims.clear();
+  // Re-load whichever inspector tab is open so a Memory panel that
+  // was visible during the wipe reflects the empty store immediately
+  // — no manual Refresh required.
+  refreshActiveInspector();
 });
