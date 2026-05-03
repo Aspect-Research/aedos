@@ -214,12 +214,43 @@ CALIBRATION_CASES: list[tuple[str, dict, str]] = [
         },
         "python",
     ),
+    # Two more time/timezone cases reflecting the actual extractor
+    # output shape: predicate=has_count with the time concept in the
+    # `property` slot. The router was misrouting these to retrieval
+    # (and one to unverifiable) because the previous worked examples
+    # used cleaner predicate labels (current_time, time_difference).
+    (
+        "timezone offset under has_count predicate",
+        {
+            "pattern": "quantitative", "predicate": "has_count",
+            "slots": {"subject": "New York",
+                      "property": "time_zone_offset_from_Cairo_in_hours",
+                      "value": -7},
+            "polarity": 1,
+            "source_text": "Cairo is 7 hours ahead of New York",
+        },
+        "python",
+    ),
+    (
+        "city-to-city time conversion under has_count predicate",
+        {
+            "pattern": "quantitative", "predicate": "has_count",
+            "slots": {"subject": "At 2:56 AM in New York",
+                      "property": "time_in_Cairo", "value": "9:56 AM"},
+            "polarity": 1,
+            "source_text": (
+                "At 2:56 AM in New York, it would be approximately "
+                "9:56 AM in Cairo"
+            ),
+        },
+        "python",
+    ),
 ]
 
 # A few of the cases above are deliberate boundary calls — at least
-# 17 of 19 must match. The two acceptable misses are usually the
+# 19 of 21 must match. The acceptable misses are usually the
 # Gettysburg edge and the canonical-constants vs. python boundary.
-MIN_CORRECT = 17
+MIN_CORRECT = 19
 
 
 @pytest.mark.skipif(
