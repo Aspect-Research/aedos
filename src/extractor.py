@@ -281,6 +281,19 @@ Input: "Why did the Soviet Union dissolve in 1991?"
 Output: facts=[{{"pattern":"event","predicate":"dissolved","slots":{{"event_type":"dissolution","participants":["Soviet Union"],"occurred_at":"1991"}},"polarity":1,"source_text":"the Soviet Union dissolve in 1991"}}]
 Reasoning: This is a question, BUT it embeds a factual premise ("the Soviet Union dissolved in 1991") presented as given. Extract the embedded premise. Distinguish between "asks about" (no fact) and "asks why X happened" where X is stated as background (extract X). Apply this only when the premise is unambiguously presented as fact, not when it's part of the speaker's own hypothetical.
 
+Input: "It's 2:56 pm in New York right now. What time is it in Cairo?"
+Output: facts=[
+  {{"pattern":"quantitative","predicate":"current_time","slots":{{"subject":"New York","property":"time","value":"2:56 pm"}},"polarity":1,"source_text":"It's 2:56 pm in New York right now"}}
+]
+Reasoning: STATEMENT-THEN-QUESTION. The first sentence is a declarative assertion ("It's 2:56 pm in New York right now") — extract it as a fact even though the message ends with a question. Process clauses INDEPENDENTLY: a trailing "What time is it in Cairo?" does not retroactively turn the leading statement into a question. The fact is checkable; the user being wrong about NY's current time is exactly the kind of thing the verifier should catch. Common shape: "I'm in <situation/state>. Can you help me with <Y>?" → extract the situation, ignore the request.
+
+Input: "I'm at JFK airport heading to Tokyo. What's the weather there?"
+Output: facts=[
+  {{"pattern":"spatial_temporal","predicate":"located_at","slots":{{"entity":"user","location":"JFK airport","relation_kind":"current"}},"polarity":1,"source_text":"I'm at JFK airport"}},
+  {{"pattern":"event","predicate":"traveling_to","slots":{{"event_type":"travel","participants":["user"],"destination":"Tokyo"}},"polarity":1,"source_text":"heading to Tokyo"}}
+]
+Reasoning: Two declarative claims followed by a question. Extract both claims (user's current location + travel destination). The question about weather adds no fact and yields no claim — but it doesn't suppress the leading statements either.
+
 # Information requests vs. assertions
 
 A QUESTION ("Who/what/when/where/how/why ...?") or COMMAND ("Tell me…",
@@ -290,6 +303,13 @@ about the speaker's knowledge, beliefs, or feelings just because they
 asked a question. The ONLY claims to extract from a question are
 factual PREMISES the question states as given (see "Why did the Soviet
 Union dissolve in 1991?" above).
+
+CRITICAL: process clauses independently. A message that contains BOTH
+declarative statements AND a question is NOT a "question message." The
+trailing question does not nullify the leading statements. If the user
+says "X is true. What about Y?", extract X — then ignore the question.
+The presence of a `?` at the end of the message must NOT cause you to
+abstain on earlier declarative content.
 
 # Output
 
