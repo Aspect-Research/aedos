@@ -150,7 +150,22 @@ You have FIVE verification methods available. Pick one.
 
 **user_authoritative** — the claim is about the user (preferences, beliefs, location, plans, etc.) and the user is ground truth. Use this when the claim's subject is the user and the predicate concerns user state. Common slots that signal this: agent='user', entity='user'.
 
-**unverifiable** — no method above applies. Use for: claims about other people's internal states (their preferences, beliefs), claims requiring human judgment ("the poem is beautiful"), unfalsifiable claims, claims about future events, claims about model behavior or training data, probabilistic claims about non-users.
+**unverifiable** — no method above applies. Reserve this for the small set of claims that genuinely have no checkable answer:
+  - **Future predictions** — "Mars will be colonized by 2050", "the Fed will cut rates next quarter".
+  - **Internal mental states of non-users** — "Sarah believes X", "the critic thought Y was elegant".
+  - **Aesthetic / normative judgments** — "the poem is beautiful", "the law is unfair".
+  - **Vacuous tautologies / framing artifacts** — "sipping is a drinking method", "someone who's very thirsty is a thirsty person". These usually come from the extractor over-extracting; route them to unverifiable so the corrector can drop them.
+  - **Model-self-knowledge claims** — "GPT-4 was trained on X", "this model can't browse the web".
+
+Crucially, **encyclopedic-but-fuzzy claims are NOT unverifiable** — they're retrieval. If a claim is the kind of thing Wikipedia, a medical reference, or any reasonable encyclopedia would have an answer to, route it to retrieval even when the assertion is approximate or expressed as a range. Examples that look unverifiable but are actually retrieval:
+
+  - "A typical human can drink roughly 0.5 to 1 gallon of water per minute." → retrieval. Physiological capacity has published ranges; a judge can compare.
+  - "The safe rate for sustained hydration is a few cups over several hours." → retrieval. Hydration guidelines are published by health authorities.
+  - "Some people have faster swallowing reflexes." → retrieval. Variability in pharyngeal reflex is documented in medical literature.
+  - "Water intoxication is hyponatremia." → retrieval. The relationship is medically defined.
+  - "Drinking too much water can cause hyponatremia." → retrieval. Causal medical claim with published evidence.
+
+The test for retrieval-vs-unverifiable: **could a competent human answer this by reading sources?** If yes, retrieval. Unverifiable is reserved for things where no source could settle the question — predictions, tastes, internal states of others.
 
 # Preference order
 
@@ -295,7 +310,21 @@ Claim: pattern=preference, predicate=likes, slots={agent:'user', object:'peanut 
 Claim: pattern=spatial_temporal, predicate=lives_in, slots={entity:'user', location:'San Francisco'}, polarity=1
 → method: user_authoritative, reason: "User location; user is authoritative. If no prior is in the store, the dispatcher will mark this as unverified.", confidence: 0.95.
 
-## unverifiable
+## retrieval (encyclopedic-but-fuzzy — NOT unverifiable)
+
+Claim: pattern=quantitative, predicate=can_drink, slots={subject:'typical human', property:'water_intake_per_minute', value:'0.5 to 1 gallon'}, polarity=1
+→ method: retrieval, reason: "Physiological capacity claim with a published range — medical literature can confirm or contradict.", confidence: 0.85, retrieval_query_hint: "human water intake rate per minute physiology".
+
+Claim: pattern=quantitative, predicate=safe_rate_for_sustained_hydration, slots={subject:'safe hydration rate', property:'rate', value:'a few cups over several hours'}, polarity=1
+→ method: retrieval, reason: "Health guideline that authorities publish; not a future prediction or aesthetic judgment.", confidence: 0.8, retrieval_query_hint: "safe hydration rate guidelines per hour".
+
+Claim: pattern=categorical, predicate=is_a, slots={entity:'water intoxication', category:'hyponatremia'}, polarity=1
+→ method: retrieval, reason: "Medical equivalence claim — checkable in encyclopedic / medical sources.", confidence: 0.9, retrieval_query_hint: "water intoxication hyponatremia definition".
+
+Claim: pattern=relational, predicate=can_cause, slots={subject:'excess water consumption', relation:'can_cause', object:'hyponatremia'}, polarity=1
+→ method: retrieval, reason: "Causal medical claim with established literature.", confidence: 0.9, retrieval_query_hint: "water intoxication causes hyponatremia".
+
+## unverifiable (genuinely no checkable answer)
 
 Claim: pattern=propositional_attitude, predicate=feels, slots={agent:'user', proposition:'the novel is elegant'}, polarity=1
 → method: user_authoritative, reason: "User's own attitude is authoritative.", confidence: 0.9.
@@ -308,6 +337,12 @@ Claim: pattern=propositional_attitude, predicate=likely, slots={agent:'Sarah', p
 
 Claim: pattern=event, predicate=will_happen, slots={event_type:'Fed rate cut', occurred_at:'2026-05'}, polarity=1
 → method: unverifiable, reason: "Future event prediction.", confidence: 0.9.
+
+Claim: pattern=categorical, predicate=is_a, slots={entity:'sipping', category:'drinking method'}, polarity=1
+→ method: unverifiable, reason: "Vacuous lexical tautology — the category is a paraphrase of the entity. Likely an extractor artifact; nothing meaningful to check.", confidence: 0.85.
+
+Claim: pattern=categorical, predicate=is_a, slots={entity:"someone who's very thirsty", category:'very thirsty person'}, polarity=1
+→ method: unverifiable, reason: "Vacuous tautology — the category restates the entity description. Extractor artifact.", confidence: 0.85.
 
 # Output
 

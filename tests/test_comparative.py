@@ -299,16 +299,31 @@ def test_comparative_retries_on_inconclusive(store):
     assert len(llm.rewrite_calls) == 2
 
 
-def test_non_comparative_does_not_retry_on_inconclusive(store):
-    """For non-comparative claims, an INCONCLUSIVE first judge pass
-    is final — backwards compat with old behavior."""
+def test_non_comparative_now_retries_on_inconclusive(store):
+    """v0.12.x (Phase 2a): non-comparative claims also walk the strategy
+    list when the judge returns INCONCLUSIVE. Was previously single-shot
+    and reserved for comparative-only retry; now applies to all claims
+    because Phase-1 router changes pushed more medical/encyclopedic-
+    fuzzy claims into retrieval, where second-attempt reformulation
+    often lands the right snippets."""
     snips_a = [Snippet("a", "x", "u1"), Snippet("b", "y", "u2")]
+    snips_b = [Snippet("c", "z", "u3"), Snippet("d", "w", "u4")]
     sr = {
-        # Standard relational template — both produce ≥ 2 results.
+        # Standard relational templates — both produce ≥ 2 results.
         "Donald Trump capital of United States": snips_a,
-        "Donald Trump United States": snips_a,
+        "Donald Trump United States": snips_b,
+        "Donald Trump": snips_b,
     }
-    llm = _StubLLM(["INSUFFICIENT_EVIDENCE\nJ: tangential"])
+    # Three INCONCLUSIVE responses since the verifier now walks all
+    # three viable attempts up to the retry cap. Plus one EMPTY
+    # response for the Phase 2b reformulation hop (empty → no
+    # additional judge call).
+    llm = _StubLLM([
+        "INSUFFICIENT_EVIDENCE\nJ: tangential",
+        "INSUFFICIENT_EVIDENCE\nJ: still tangential",
+        "INSUFFICIENT_EVIDENCE\nJ: nope",
+        "",
+    ])
     v, issued = _verifier_with_search(store, llm, sr)
 
     claim = {
@@ -324,8 +339,10 @@ def test_non_comparative_does_not_retry_on_inconclusive(store):
     }
     result = v.verify(claim)
     assert result.outcome.value == "inconclusive"
-    # Only one judge call (no retry).
-    assert len(llm.rewrite_calls) == 1
+    # Three viable judges (capped at MAX_JUDGE_RETRIES) + one
+    # reformulation call = 4. Empty reformulation skipped the extra
+    # judge.
+    assert len(llm.rewrite_calls) == 4
 
 
 def test_comparative_detected_event_emitted(store):

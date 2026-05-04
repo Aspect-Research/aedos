@@ -245,12 +245,80 @@ CALIBRATION_CASES: list[tuple[str, dict, str]] = [
         },
         "python",
     ),
+    # Five cases added after the water-drinking trace exposed router
+    # over-routing to "unverifiable". Encyclopedic-but-fuzzy claims
+    # (physiological, medical, lexical relationships) belong in
+    # retrieval — Wikipedia / medical references can adjudicate.
+    # Vacuous tautologies stay unverifiable.
+    (
+        "physiological capacity with stated range — retrieval",
+        {
+            "pattern": "quantitative", "predicate": "can_drink",
+            "slots": {"subject": "typical human",
+                      "property": "water_intake_per_minute",
+                      "value": "0.5 to 1 gallon"},
+            "polarity": 1,
+            "source_text": ("A typical human can drink roughly 0.5 to "
+                            "1 gallon of water in a minute"),
+        },
+        "retrieval",
+    ),
+    (
+        "health guideline expressed loosely — retrieval",
+        {
+            "pattern": "quantitative",
+            "predicate": "safe_rate_for_sustained_hydration",
+            "slots": {"subject": "safe rate for sustained hydration",
+                      "property": "rate",
+                      "value": "a few cups over several hours"},
+            "polarity": 1,
+            "source_text": ("The safe rate for sustained hydration is "
+                            "much slower — typically a few cups over "
+                            "several hours"),
+        },
+        "retrieval",
+    ),
+    (
+        "medical equivalence — retrieval (not unverifiable)",
+        {
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "water intoxication",
+                      "category": "hyponatremia"},
+            "polarity": 1,
+            "source_text": "water intoxication (hyponatremia)",
+        },
+        "retrieval",
+    ),
+    (
+        "causal medical claim — retrieval",
+        {
+            "pattern": "relational", "predicate": "can_cause",
+            "slots": {"subject": "excess water consumption",
+                      "relation": "can_cause",
+                      "object": "hyponatremia"},
+            "polarity": 1,
+            "source_text": ("Consuming too much water in a short period "
+                            "can lead to water intoxication"),
+        },
+        "retrieval",
+    ),
+    (
+        "vacuous lexical tautology — unverifiable (extractor artifact)",
+        {
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "sipping",
+                      "category": "drinking method"},
+            "polarity": 1, "source_text": "sipping",
+        },
+        "unverifiable",
+    ),
 ]
 
 # A few of the cases above are deliberate boundary calls — at least
-# 19 of 21 must match. The acceptable misses are usually the
-# Gettysburg edge and the canonical-constants vs. python boundary.
-MIN_CORRECT = 19
+# 23 of 26 must match (was 19/21 pre-water-drinking-trace expansion).
+# The acceptable misses are usually the Gettysburg edge and the
+# canonical-constants vs. python boundary.
+MIN_CORRECT = 23
 
 
 @pytest.mark.skipif(

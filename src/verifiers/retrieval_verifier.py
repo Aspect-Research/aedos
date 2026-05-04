@@ -39,11 +39,62 @@ _REQUEST_TIMEOUT = 10.0
 _TOP_N = 3
 _MIN_RESULTS_TO_USE = 2  # spec: "If a query returns ≥ 2 results, use those"
 _DEFAULT_TTL_HOURS = 24
-# v0.7.9: comparative-claim retry budget. When the first viable
-# attempt's snippets don't settle the claim, we step through up to
-# this many additional viable attempts before giving up. Bounded so
-# a pathological case can't run away with LLM cost.
+# Retry budget when the judge returns INSUFFICIENT_EVIDENCE on the
+# first viable attempt's snippets. Originally added in v0.7.9 for
+# comparative claims only; v0.12.x extends the same retry-walk to
+# ALL claims because the medical/encyclopedic-but-fuzzy cases that
+# now route to retrieval (post-Phase-1) often need a second query
+# phrasing to land relevant snippets. Bounded so a pathological
+# case can't run away with LLM cost.
 _MAX_JUDGE_RETRIES = 3
+
+
+# Phase 2b (v0.12.x): reformulation prompt. Fired ONCE per claim
+# after the pattern's static query-strategy list has been exhausted
+# AND the judge cleanly returned INSUFFICIENT_EVIDENCE on at least
+# one attempt. The judge's justification tells us WHY the snippets
+# weren't enough; the reformulator targets the specific gap.
+#
+# Uses the cache_classify-tier model (gpt-4.1-nano in the default
+# routing) because the task is narrow and the cost matters — this
+# fires on every retrieval-bound claim that the static strategies
+# can't settle, so it's a per-turn cost amplifier if it goes to a
+# big model.
+_REFORMULATE_SYSTEM = """You rewrite search queries.
+
+A previous Wikipedia search for a factual claim came back with snippets that didn't settle the question. The judge said WHY (its justification line). Your job: write ONE new Wikipedia search query that targets the SPECIFIC fact the judge said was missing.
+
+Rules:
+  - Output ONLY the query string — no quotes, no explanation, no preamble.
+  - Keep it short (2-8 words). Wikipedia ranks better on focused queries than long ones.
+  - Don't repeat queries that were already tried (you'll see them in the prompt).
+  - Target the specific entity, relationship, number, date, or definition the judge said was absent.
+  - If the judge said "snippets describe X and Y separately without explicitly stating the relationship", search for the relationship itself ("X is a type of Y", "X causes Y").
+  - If the judge said "the snippets are about a different time period", add the relevant year or era to the query.
+  - If the judge said "no comparison context across other entities", search for a list/ranking page ("list of X by Y", "comparison of X").
+
+Reply with the new query and nothing else."""
+
+
+def _format_reformulate_user_message(
+    claim: dict, last_verdict: "JudgeVerdict",
+    tried_queries: list[str],
+) -> str:
+    slots = claim.get("slots") or {}
+    slot_lines = "\n".join(f"  {k}: {v!r}" for k, v in slots.items())
+    tried_block = "\n".join(f"  - {q!r}" for q in tried_queries) or "  (none)"
+    return (
+        f"Claim:\n"
+        f"  pattern: {claim.get('pattern')!r}\n"
+        f"  predicate: {claim.get('predicate')!r}\n"
+        f"  slots:\n{slot_lines}\n"
+        f"  source_text: {claim.get('source_text', '')!r}\n\n"
+        f"Queries already tried:\n{tried_block}\n\n"
+        f"Last judge verdict: {last_verdict.verdict}\n"
+        f"Last judge justification: {last_verdict.justification}\n\n"
+        "Write ONE new search query targeting the specific gap. "
+        "Reply with the query string only."
+    )
 
 
 @dataclass
@@ -571,103 +622,204 @@ class RetrievalVerifier:
             )
 
         attempts: list[QueryAttempt] = []
-        viable: list[tuple[QueryAttempt, list[Snippet]]] = []
-
-        # First pass: run every query, collect every viable attempt
-        # (>= MIN_RESULTS_TO_USE results). For non-comparative claims
-        # we stop at the first viable to preserve old behavior. For
-        # comparative claims we collect ALL viable so the retry path
-        # has alternatives.
-        for q in queries:
-            cached = self.store.get_cached_retrieval(q, self.ttl_seconds)
-            if cached is not None:
-                sn = [Snippet(**s) for s in cached]
-                attempt = QueryAttempt(
-                    query=q, result_count=len(sn), used=False, from_cache=True
-                )
-            else:
-                try:
-                    sn = list(self._search(q))
-                    attempt = QueryAttempt(
-                        query=q, result_count=len(sn), used=False, from_cache=False
-                    )
-                    self.store.cache_retrieval(q, [s.to_dict() for s in sn])
-                except (httpx.HTTPError, httpx.TimeoutException) as e:
-                    attempt = QueryAttempt(
-                        query=q, result_count=0, used=False, from_cache=False,
-                        error=f"{type(e).__name__}: {e}",
-                    )
-                    sn = []
-                except Exception as e:
-                    attempt = QueryAttempt(
-                        query=q, result_count=0, used=False, from_cache=False,
-                        error=f"{type(e).__name__}: {e}",
-                    )
-                    sn = []
-
-            attempts.append(attempt)
-            self._log_attempt(source_turn_id, attempt)
-
-            if attempt.result_count >= _MIN_RESULTS_TO_USE:
-                viable.append((attempt, sn))
-                if comparative is None:
-                    # Old behavior: stop at first viable.
-                    break
-
-        if not viable:
-            any_error = any(a.error for a in attempts)
-            flag = "retrieval_error" if any_error else "no_results"
-            err_summary = next((a.error for a in attempts if a.error), None)
-            return RetrievalResult(
-                outcome=VerificationOutcome.INCONCLUSIVE,
-                attempts=attempts,
-                error_flag=flag,
-                explanation=(
-                    err_summary
-                    or f"all {len(attempts)} query attempt(s) returned < "
-                    f"{_MIN_RESULTS_TO_USE} results"
-                ),
-                historical=historical,
-            )
-
-        # Judge phase: walk viable attempts. For non-comparative claims
-        # there's only one viable in the list. For comparative claims
-        # we step through up to MAX_JUDGE_RETRIES, returning the first
-        # conclusive (SUPPORTED / CONTRADICTED) verdict. INCONCLUSIVE
-        # advances to the next attempt.
-        max_retries = _MAX_JUDGE_RETRIES if comparative is not None else 1
         last_inconclusive: RetrievalResult | None = None
+        judge_calls = 0
 
-        for idx, (attempt, sn) in enumerate(viable[:max_retries]):
+        # Single lazy loop: walk queries in order, run the judge each
+        # time a viable attempt lands, stop on a conclusive verdict.
+        # Caps judging at _MAX_JUDGE_RETRIES so a pathologically
+        # ambiguous claim doesn't burn the whole pattern's strategy
+        # list at LLM-call cost. Non-viable attempts (< MIN_RESULTS)
+        # don't consume the budget — they're free (cached or empty
+        # search) and just feed the trace.
+        for q in queries:
+            attempt, sn = self._run_query(q, source_turn_id)
+            attempts.append(attempt)
+
+            if attempt.result_count < _MIN_RESULTS_TO_USE:
+                continue
+
             attempt.used = True
-            self._log_attempt(source_turn_id, attempt, is_decision=True)
+            judge_calls += 1
             result = self._judge_one(claim, attempt, sn, attempts, historical)
             if result.outcome != VerificationOutcome.INCONCLUSIVE:
                 return result
-            last_inconclusive = result
-            # Log the retry decision so the trace shows we tried again.
-            if comparative is not None and idx + 1 < min(len(viable), max_retries):
-                if source_turn_id is not None:
-                    try:
-                        self.store.insert_pipeline_event(
-                            source_turn_id,
-                            "judge_retry_after_inconclusive",
-                            {
-                                "tried_query": attempt.query,
-                                "verdict": (result.verdict.verdict if result.verdict else None),
-                                "next_attempt_idx": idx + 1,
-                            },
-                        )
-                    except Exception:
-                        pass
+            # Prefer a "clean" inconclusive (judge ran, returned
+            # INSUFFICIENT_EVIDENCE) over an error result (judge_error
+            # / judge_parse_error). The downstream dispatcher maps
+            # these to different statuses (retrieval_inconclusive vs
+            # retrieval_failed) and a clean inconclusive carries more
+            # information than a later crash. So once we have a
+            # clean inconclusive we keep it; we only overwrite if
+            # the previous tracked result was itself an error.
+            if (
+                last_inconclusive is None
+                or (last_inconclusive.error_flag and not result.error_flag)
+            ):
+                last_inconclusive = result
 
-        # All retries inconclusive — return the last one.
-        return last_inconclusive or RetrievalResult(
+            if judge_calls >= _MAX_JUDGE_RETRIES:
+                break
+
+            # Log the retry decision so the trace shows we tried again.
+            if source_turn_id is not None:
+                try:
+                    self.store.insert_pipeline_event(
+                        source_turn_id,
+                        "judge_retry_after_inconclusive",
+                        {
+                            "tried_query": attempt.query,
+                            "verdict": (result.verdict.verdict if result.verdict else None),
+                            "judge_calls_so_far": judge_calls,
+                        },
+                    )
+                except Exception:
+                    pass
+
+        # Phase 2b: LLM reformulation hop. Fires once when the static
+        # strategy list exhausted with at least one CLEAN inconclusive
+        # (judge ran, said insufficient — not a parse error or crash).
+        # The reformulator targets the specific gap the judge named.
+        if (
+            last_inconclusive is not None
+            and last_inconclusive.error_flag is None
+            and last_inconclusive.verdict is not None
+            and last_inconclusive.verdict.justification.strip()
+        ):
+            tried = [a.query for a in attempts]
+            reformulated_q = self._reformulate_query(
+                claim, last_inconclusive.verdict, tried, source_turn_id,
+            )
+            if reformulated_q and reformulated_q not in tried:
+                ref_attempt, ref_snippets = self._run_query(
+                    reformulated_q, source_turn_id,
+                )
+                attempts.append(ref_attempt)
+                if ref_attempt.result_count >= _MIN_RESULTS_TO_USE:
+                    ref_attempt.used = True
+                    ref_result = self._judge_one(
+                        claim, ref_attempt, ref_snippets, attempts, historical,
+                    )
+                    if ref_result.outcome != VerificationOutcome.INCONCLUSIVE:
+                        return ref_result
+                    # Reformulation also inconclusive — keep the cleaner
+                    # of the two for the final verdict (same rule as
+                    # the static-loop tracking).
+                    if (
+                        last_inconclusive.error_flag
+                        and not ref_result.error_flag
+                    ):
+                        last_inconclusive = ref_result
+
+        if last_inconclusive is not None:
+            return last_inconclusive
+
+        # No viable attempt landed. Distinguish search-side errors from
+        # genuinely empty results so the trace shows the right flag.
+        any_error = any(a.error for a in attempts)
+        flag = "retrieval_error" if any_error else "no_results"
+        err_summary = next((a.error for a in attempts if a.error), None)
+        return RetrievalResult(
             outcome=VerificationOutcome.INCONCLUSIVE,
-            attempts=attempts, historical=historical,
-            error_flag="no_viable_judge",
-            explanation="reached judge phase without any viable attempt",
+            attempts=attempts,
+            error_flag=flag,
+            explanation=(
+                err_summary
+                or f"all {len(attempts)} query attempt(s) returned < "
+                f"{_MIN_RESULTS_TO_USE} results"
+            ),
+            historical=historical,
         )
+
+    def _run_query(
+        self, q: str, source_turn_id: int | None,
+    ) -> tuple[QueryAttempt, list[Snippet]]:
+        """Run a single query through the cache + search path. Returns
+        the attempt record and the snippets. Logs the attempt.
+
+        Used by both the static strategy loop and the Phase 2b
+        reformulation hop so they share retrieval semantics."""
+        cached = self.store.get_cached_retrieval(q, self.ttl_seconds)
+        if cached is not None:
+            sn = [Snippet(**s) for s in cached]
+            attempt = QueryAttempt(
+                query=q, result_count=len(sn), used=False, from_cache=True,
+            )
+        else:
+            try:
+                sn = list(self._search(q))
+                attempt = QueryAttempt(
+                    query=q, result_count=len(sn), used=False, from_cache=False,
+                )
+                self.store.cache_retrieval(q, [s.to_dict() for s in sn])
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                attempt = QueryAttempt(
+                    query=q, result_count=0, used=False, from_cache=False,
+                    error=f"{type(e).__name__}: {e}",
+                )
+                sn = []
+            except Exception as e:
+                attempt = QueryAttempt(
+                    query=q, result_count=0, used=False, from_cache=False,
+                    error=f"{type(e).__name__}: {e}",
+                )
+                sn = []
+        self._log_attempt(source_turn_id, attempt)
+        return attempt, sn
+
+    def _reformulate_query(
+        self, claim: dict, last_verdict: "JudgeVerdict",
+        tried_queries: list[str], source_turn_id: int | None,
+    ) -> str | None:
+        """Ask a small model for ONE new search query targeting the
+        specific gap the judge named. Returns the query string or
+        None if the call failed / produced empty output / repeated a
+        prior attempt. Best-effort: any exception falls back to None
+        so verification still returns the prior inconclusive."""
+        try:
+            raw = self.llm.rewrite(
+                _REFORMULATE_SYSTEM,
+                _format_reformulate_user_message(
+                    claim, last_verdict, tried_queries,
+                ),
+                purpose="cache_classify",
+            )
+        except Exception as e:
+            if source_turn_id is not None:
+                try:
+                    self.store.insert_pipeline_event(
+                        source_turn_id, "reformulation_failed",
+                        {"error": f"{type(e).__name__}: {e}"},
+                    )
+                except Exception:
+                    pass
+            return None
+        # Tolerate the model wrapping the query in quotes or backticks.
+        candidate = (raw or "").strip().strip("`").strip('"').strip("'").strip()
+        # Drop a leading "Query:" prefix some models add despite the
+        # rules block.
+        candidate = re.sub(r"^[Qq]uery\s*:\s*", "", candidate).strip()
+        # Single-line: take the first non-empty line only.
+        for line in candidate.splitlines():
+            line = line.strip().strip("`").strip('"').strip("'").strip()
+            if line:
+                candidate = line
+                break
+        if not candidate:
+            return None
+        if source_turn_id is not None:
+            try:
+                self.store.insert_pipeline_event(
+                    source_turn_id, "reformulation_emitted",
+                    {
+                        "reformulated_query": candidate,
+                        "tried_queries": tried_queries,
+                        "judge_justification": last_verdict.justification,
+                    },
+                )
+            except Exception:
+                pass
+        return candidate
 
     def _judge_one(
         self, claim: dict, attempt: QueryAttempt,

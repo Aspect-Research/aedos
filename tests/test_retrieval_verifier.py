@@ -524,32 +524,296 @@ def test_each_attempt_caches_independently(store):
 
 
 def test_judge_parse_error(store):
+    """Phase 2a (v0.12.x): when the judge returns malformed output on
+    every viable attempt, the verifier walks the strategy list (now
+    ALL claims, not just comparative — was previously single-shot for
+    non-comparative). After all attempts return judge_parse_error,
+    the LAST inconclusive result with that flag is returned."""
     def fake_search(q):
         return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
 
-    llm = FakeLLM(rewrite_responses=["uhh"])
+    # All three queries are viable + all three judge calls return junk.
+    # Capped at _MAX_JUDGE_RETRIES (3) so 3 responses suffice.
+    llm = FakeLLM(rewrite_responses=["uhh", "uhh", "uhh"])
     v = _verifier(store, llm, fake_search)
     r = v.verify(_claim())
     assert r.outcome is VerificationOutcome.INCONCLUSIVE
     assert r.error_flag == "judge_parse_error"
+    # Three judge calls fired — one per viable attempt.
+    assert len(llm.rewrite_calls) == 3
 
 
 def test_judge_call_failure_returns_judge_error(store):
+    """Phase 2a (v0.12.x): same retry-walk applies when the judge call
+    raises. CrashLLM raises every time → 3 judge_error inconclusives →
+    last one returned."""
     @dataclass
     class CrashLLM:
+        rewrite_calls: int = 0
+
         def rewrite(self, *args, **kwargs):
+            self.rewrite_calls += 1
             raise RuntimeError("boom")
 
     def fake_search(q):
         return [Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2")]
 
+    crash = CrashLLM()
     v = RetrievalVerifier(
-        store=store, llm=CrashLLM(), registry=load_default_registry(),
+        store=store, llm=crash, registry=load_default_registry(),
         search_fn=fake_search, ttl_hours=1,
     )
     r = v.verify(_claim())
     assert r.outcome is VerificationOutcome.INCONCLUSIVE
     assert r.error_flag == "judge_error"
+    # Verifier retried up to MAX_JUDGE_RETRIES (3).
+    assert crash.rewrite_calls == 3
+
+
+# ---------- judge retry on INSUFFICIENT_EVIDENCE (Phase 2a) ----------
+
+
+def test_judge_insufficient_then_supported_returns_verified(store):
+    """Phase 2a: when the first viable attempt's snippets yield
+    INSUFFICIENT_EVIDENCE, the verifier walks to the next query
+    strategy and runs the judge again. A SUPPORTED verdict on the
+    second attempt wins."""
+    call_log: list[str] = []
+    snippets_by_query = {
+        "Donald Trump 47th President": [
+            Snippet("off-topic 1", "no relevant content", "u1"),
+            Snippet("off-topic 2", "still nothing", "u2"),
+        ],
+        "Donald Trump United States 47th President": [
+            Snippet("right-page 1", "Trump is the 47th president", "u3"),
+            Snippet("right-page 2", "confirms it", "u4"),
+        ],
+    }
+
+    def fake_search(q):
+        call_log.append(q)
+        return snippets_by_query.get(
+            q, [Snippet("fallback", "x", "u")] * 2,
+        )
+
+    llm = FakeLLM(rewrite_responses=[
+        "INSUFFICIENT_EVIDENCE\nJustification: snippets off-topic",
+        "SUPPORTED\nJustification: snippet 1 confirms",
+    ])
+    v = _verifier(store, llm, fake_search)
+    r = v.verify(_claim())
+    assert r.outcome is VerificationOutcome.VERIFIED
+    # Both viable attempts got judged.
+    assert len(llm.rewrite_calls) == 2
+    # Trace records both attempts; the SUCCESSFUL one is .used=True.
+    used = [a for a in r.attempts if a.used]
+    assert len(used) == 2  # both ran the judge
+    # The returned snippets are the SUPPORTING ones.
+    assert any(s.title == "right-page 1" for s in r.snippets)
+
+
+def test_judge_insufficient_caps_at_max_retries(store):
+    """Phase 2a: judge retry budget caps at _MAX_JUDGE_RETRIES (3) so
+    a pathologically ambiguous claim can't burn the whole strategy
+    list at LLM-call cost.
+
+    Queue 3 INSUFFICIENT judge responses + 1 EMPTY reformulation
+    response (Phase 2b's reformulation hop fires after the static
+    loop; an empty reformulation is treated as 'no new query' and
+    skips the additional judge call). End-state: 3 judge calls + 1
+    reformulation call = 4 rewrite() invocations."""
+    def fake_search(q):
+        # Every query returns 2 results so every attempt is viable.
+        return [Snippet(f"t-{q}", "x", f"u-{q}")] * 2
+
+    llm = FakeLLM(rewrite_responses=[
+        "INSUFFICIENT_EVIDENCE\nJustification: 1",
+        "INSUFFICIENT_EVIDENCE\nJustification: 2",
+        "INSUFFICIENT_EVIDENCE\nJustification: 3",
+        "",  # reformulation: empty → no additional judge call
+    ])
+    v = _verifier(store, llm, fake_search)
+    r = v.verify(_claim())
+    assert r.outcome is VerificationOutcome.INCONCLUSIVE
+    # 3 judge calls (capped) + 1 reformulation call = 4.
+    assert len(llm.rewrite_calls) == 4
+
+
+def test_judge_retry_logs_pipeline_event(store):
+    """Phase 2a: each retry decision emits a judge_retry_after_inconclusive
+    pipeline event so the trace UI shows the verifier did try again."""
+    def fake_search(q):
+        return [Snippet("t", "x", "u")] * 2
+
+    llm = FakeLLM(rewrite_responses=[
+        "INSUFFICIENT_EVIDENCE\nJustification: 1",
+        "SUPPORTED\nJustification: 2",
+    ])
+    v = _verifier(store, llm, fake_search)
+    tid = store.insert_turn("assistant", "draft")
+    v.verify(_claim(), source_turn_id=tid)
+    events = store.get_pipeline_events(tid)
+    retries = [e for e in events if e["stage"] == "judge_retry_after_inconclusive"]
+    assert len(retries) == 1
+    assert retries[0]["data"]["judge_calls_so_far"] == 1
+
+
+# ---------- Phase 2b: LLM reformulation hop ------------------------------
+
+
+def test_reformulation_lands_supporting_snippets(store):
+    """Phase 2b: when all static strategies come back inconclusive but
+    the judge gave a reason ('snippets discuss X and Y separately
+    without saying X→Y'), a reformulated query targeting that gap
+    runs through search + judge. SUPPORTED on the reformulated
+    query → VERIFIED."""
+    snips_inconclusive = [
+        Snippet("water intox", "Water intoxication is dangerous.", "u1"),
+        Snippet("hyponatremia", "Hyponatremia is a sodium disorder.", "u2"),
+    ]
+    snips_supporting = [
+        Snippet("link", "Water intoxication causes hyponatremia.", "u3"),
+        Snippet("more", "Hyponatremia is the diagnosis when over-hydration "
+                        "dilutes serum sodium.", "u4"),
+    ]
+    reformulated_q = "water intoxication causes hyponatremia"
+
+    def fake_search(q):
+        if q == reformulated_q:
+            return snips_supporting
+        return snips_inconclusive
+
+    llm = FakeLLM(rewrite_responses=[
+        # 3 INSUFFICIENT for static strategies (categorical pattern has 3).
+        "INSUFFICIENT_EVIDENCE\nJustification: snippets describe X and Y separately",
+        "INSUFFICIENT_EVIDENCE\nJustification: still no link",
+        "INSUFFICIENT_EVIDENCE\nJustification: nope",
+        # Reformulation call returns the targeted query.
+        reformulated_q,
+        # Judge on reformulated snippets.
+        "SUPPORTED\nJustification: snippet 1 confirms",
+    ])
+    v = _verifier(store, llm, fake_search)
+    claim = _claim(
+        pattern="categorical", predicate="is_a",
+        slots={"entity": "water intoxication", "category": "hyponatremia"},
+    )
+    r = v.verify(claim)
+    assert r.outcome is VerificationOutcome.VERIFIED
+    # Static strategies (3 queries, 3 judges) + reformulation (1 query
+    # call + 1 judge) = 5 rewrite calls and 4 search attempts in
+    # the trace.
+    assert len(llm.rewrite_calls) == 5
+    assert reformulated_q in [a.query for a in r.attempts]
+
+
+def test_reformulation_skipped_when_no_clean_inconclusive(store):
+    """Phase 2b: reformulation requires at least one CLEAN judge
+    inconclusive (judge ran, said insufficient — not crashed). If
+    every static attempt's judge crashed, no reformulation fires
+    because there's no useful justification to feed the rewriter."""
+
+    @dataclass
+    class CrashLLM:
+        rewrite_calls: int = 0
+
+        def rewrite(self, *args, **kwargs):
+            self.rewrite_calls += 1
+            raise RuntimeError("boom")
+
+    def fake_search(q):
+        return [Snippet("t", "x", "u")] * 2
+
+    crash = CrashLLM()
+    v = RetrievalVerifier(
+        store=store, llm=crash, registry=load_default_registry(),
+        search_fn=fake_search, ttl_hours=1,
+    )
+    r = v.verify(_claim())
+    assert r.outcome is VerificationOutcome.INCONCLUSIVE
+    assert r.error_flag == "judge_error"
+    # 3 static-loop judge attempts only — no reformulation hop.
+    assert crash.rewrite_calls == 3
+
+
+def test_reformulation_logs_emitted_event(store):
+    """Phase 2b: a reformulation_emitted pipeline event records the
+    new query, the queries already tried, and the judge's
+    justification — so the trace UI can show the verifier did
+    something smart."""
+    def fake_search(q):
+        return [Snippet("t", "x", "u")] * 2
+
+    llm = FakeLLM(rewrite_responses=[
+        "INSUFFICIENT_EVIDENCE\nJustification: missing piece X",
+        "INSUFFICIENT_EVIDENCE\nJustification: still missing X",
+        "INSUFFICIENT_EVIDENCE\nJustification: nope",
+        "targeted query about X",
+        "INSUFFICIENT_EVIDENCE\nJustification: still nothing",
+    ])
+    v = _verifier(store, llm, fake_search)
+    tid = store.insert_turn("assistant", "draft")
+    v.verify(_claim(), source_turn_id=tid)
+    events = store.get_pipeline_events(tid)
+    emitted = [e for e in events if e["stage"] == "reformulation_emitted"]
+    assert len(emitted) == 1
+    data = emitted[0]["data"]
+    assert data["reformulated_query"] == "targeted query about X"
+    assert "missing piece X" in data["judge_justification"] or \
+           "still missing X" in data["judge_justification"] or \
+           "nope" in data["judge_justification"]
+
+
+def test_reformulation_skipped_when_query_repeats(store):
+    """Phase 2b: if the reformulator emits a query that's already in
+    the tried list, skip the hop — it would just re-cache-hit the
+    same snippets. No extra judge call should fire."""
+    def fake_search(q):
+        return [Snippet("t", "x", "u")] * 2
+
+    # The first static query for this role_assignment claim is
+    # "Donald Trump 47th President" — make the reformulator emit
+    # exactly that.
+    llm = FakeLLM(rewrite_responses=[
+        "INSUFFICIENT_EVIDENCE\nJ: 1",
+        "INSUFFICIENT_EVIDENCE\nJ: 2",
+        "INSUFFICIENT_EVIDENCE\nJ: 3",
+        "Donald Trump 47th President",  # duplicate of static attempt 1
+    ])
+    v = _verifier(store, llm, fake_search)
+    r = v.verify(_claim())
+    assert r.outcome is VerificationOutcome.INCONCLUSIVE
+    # 3 static judge calls + 1 reformulation call (no extra judge
+    # because the reformulated query was already tried).
+    assert len(llm.rewrite_calls) == 4
+
+
+def test_reformulation_strips_quotes_and_query_prefix(store):
+    """Phase 2b tolerance: the reformulator may wrap the query in
+    quotes or prepend 'Query:' despite the rules. The helper
+    strips both before issuing the search."""
+    captured: list[str] = []
+    snips = [Snippet("t", "x", "u")] * 2
+
+    def fake_search(q):
+        captured.append(q)
+        return snips
+
+    llm = FakeLLM(rewrite_responses=[
+        "INSUFFICIENT_EVIDENCE\nJ: 1",
+        "INSUFFICIENT_EVIDENCE\nJ: 2",
+        "INSUFFICIENT_EVIDENCE\nJ: 3",
+        # Wrapped in quotes + has Query: prefix.
+        'Query: "specific entity X"',
+        "SUPPORTED\nJ: ok",
+    ])
+    v = _verifier(store, llm, fake_search)
+    r = v.verify(_claim())
+    assert r.outcome is VerificationOutcome.VERIFIED
+    # The reformulated query was issued as the bare phrase.
+    assert "specific entity X" in captured[-1]
+    assert '"' not in captured[-1]
+    assert "Query:" not in captured[-1]
 
 
 def test_no_query_constructible_for_pattern(store):

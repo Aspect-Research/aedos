@@ -163,6 +163,15 @@ PIPELINE_STAGES = {
     # the verifier steps to the next viable attempt.
     "comparative_detected",
     "judge_retry_after_inconclusive",
+    # v0.12.x (Phase 2b) — LLM-driven query reformulation. Fires once
+    # per claim AFTER the pattern's static query strategies have all
+    # come back INSUFFICIENT_EVIDENCE. ``reformulation_emitted`` carries
+    # the new query + the queries already tried + the judge's
+    # justification (so the trace shows what gap was being targeted).
+    # ``reformulation_failed`` fires if the rewriter call itself
+    # crashed.
+    "reformulation_emitted",
+    "reformulation_failed",
     # v0.6 — end-of-turn cost aggregate. One per turn. Sum of all
     # LLM calls (extractor + router + code-writer + judge + corrector +
     # any classifiers) into total_usd / by_model breakdown.

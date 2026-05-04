@@ -203,6 +203,147 @@ def test_apply_with_interventions_calls_llm_once_for_batch():
     assert "verdict: contradicted" in user_msg
 
 
+# ---------- Phase 3: corrector restraint + reason surfacing ----------
+
+
+def test_corrector_system_prompt_includes_restraint_guidance():
+    """Phase 3: the prompt must teach the model to treat soft verdicts
+    (inconclusive / unverifiable_in_principle / unverifiable_pending)
+    as SUGGESTIONS, not commands. Common-knowledge claims should keep
+    their original phrasing instead of getting piled on with hedges."""
+    from src.corrector import CORRECTOR_SYSTEM
+    txt = CORRECTOR_SYSTEM.lower()
+    # Restraint framing is present.
+    assert "signals, not commands" in txt or "suggestion" in txt
+    # Common-knowledge carve-out.
+    assert "common knowledge" in txt
+    # Anti-pile-on language: stacking hedges erodes trust.
+    assert "erode" in txt or "trust" in txt
+    # The "meaningful unknowns" boundary.
+    assert "meaningful unknown" in txt or "specific number" in txt
+    # Explicit naming of all three soft statuses so the rule clearly
+    # applies across all of them, not just retrieval_inconclusive.
+    assert "retrieval_inconclusive" in CORRECTOR_SYSTEM
+    assert "unverifiable_in_principle" in CORRECTOR_SYSTEM
+
+
+def test_ledger_surfaces_router_reason_for_unverifiable_in_principle():
+    """Phase 3: when a claim was routed unverifiable, surface the
+    router's actual reason (e.g. "Vacuous lexical tautology") so the
+    corrector can decide how to handle it. The old generic
+    placeholder ("this predicate isn't verifiable in principle")
+    didn't differentiate a tautology from a future prediction."""
+    from src.corrector import _format_user_message, Intervention
+
+    decision = Decision(
+        claim={
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "sipping", "category": "drinking method"},
+            "polarity": 1, "source_text": "sipping",
+        },
+        outcome=RoutingOutcome.UNVERIFIABLE_IN_PRINCIPLE,
+        verification_status="unverifiable_in_principle",
+        confidence=0.85,
+        routing_decision={
+            "method": "unverifiable",
+            "reason": "Vacuous lexical tautology — extractor artifact",
+            "confidence": 0.85,
+        },
+    )
+    msg = _format_user_message(
+        draft="sipping is a drinking method",
+        interventions=[Intervention(
+            intervention_type="soften",
+            claim=decision.claim,
+            verification_status="unverifiable_in_principle",
+            reason="predicate is unverifiable by design",
+        )],
+        user_message="what's sipping?",
+        decisions=[decision],
+    )
+    assert "Vacuous lexical tautology" in msg
+    assert "router said" in msg.lower()
+
+
+def test_ledger_surfaces_judge_justification_for_inconclusive():
+    """Phase 3: when retrieval was inconclusive, surface the JUDGE's
+    actual justification (e.g. "snippets describe X and Y separately
+    without explicitly stating relationship") rather than a generic
+    "couldn't confirm". The corrector uses this to judge whether the
+    gap matters for the rewrite."""
+    from src.corrector import _format_user_message, Intervention
+    from src.verifiers.retrieval_verifier import (
+        JudgeVerdict, RetrievalResult,
+    )
+    from src.verifiers.types import VerificationOutcome
+
+    rr = RetrievalResult(
+        outcome=VerificationOutcome.INCONCLUSIVE,
+        verdict=JudgeVerdict(
+            verdict="INSUFFICIENT_EVIDENCE",
+            justification=(
+                "snippets describe water intoxication and hyponatremia "
+                "separately without explicitly stating relationship"
+            ),
+        ),
+    )
+    decision = Decision(
+        claim={
+            "pattern": "categorical", "predicate": "is_a",
+            "slots": {"entity": "water intoxication",
+                      "category": "hyponatremia"},
+            "polarity": 1,
+            "source_text": "water intoxication (hyponatremia)",
+        },
+        outcome=RoutingOutcome.UNVERIFIED,
+        verification_status="retrieval_inconclusive",
+        confidence=0.5,
+        retrieval_result=rr,
+    )
+    msg = _format_user_message(
+        draft="water intoxication (hyponatremia)",
+        interventions=[Intervention(
+            intervention_type="hedge",
+            claim=decision.claim,
+            verification_status="retrieval_inconclusive",
+            reason="retrieval found evidence but couldn't confirm",
+        )],
+        user_message="tell me about water intoxication",
+        decisions=[decision],
+    )
+    assert "snippets describe water intoxication and hyponatremia" in msg
+    assert "judge said" in msg.lower()
+
+
+def test_ledger_falls_back_to_generic_reason_when_verdict_missing():
+    """Phase 3: when the retrieval result has no judge verdict (rare —
+    e.g. the verifier crashed before the judge ran), the ledger falls
+    back to the original generic "couldn't confirm" reason. No
+    AttributeError, no missing reason line."""
+    from src.corrector import _format_user_message
+    from src.verifiers.retrieval_verifier import RetrievalResult
+    from src.verifiers.types import VerificationOutcome
+
+    decision = Decision(
+        claim={"pattern": "categorical", "predicate": "is_a",
+               "slots": {"entity": "x", "category": "y"},
+               "polarity": 1, "source_text": "x is y"},
+        outcome=RoutingOutcome.UNVERIFIED,
+        verification_status="retrieval_inconclusive",
+        confidence=0.4,
+        retrieval_result=RetrievalResult(
+            outcome=VerificationOutcome.INCONCLUSIVE,
+            verdict=None,  # no verdict object
+        ),
+    )
+    msg = _format_user_message(
+        draft="x is y", interventions=[],
+        user_message="tell me about x",
+        decisions=[decision],
+    )
+    assert "retrieval found evidence but couldn't confirm" in msg
+
+
 def test_unknown_verification_status_returns_no_intervention():
     """plan_intervention returns None for an unknown status — be
     conservative, don't intervene if we don't know what the verifier

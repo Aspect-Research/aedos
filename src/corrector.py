@@ -96,10 +96,34 @@ applying surgical edits.
   value alongside, NOT to silently replace Y with an unrelated value
   that breaks the if-then logic.
 
-- **Hedge what wasn't verified.** Inconclusive claims should read as
-  uncertain in the rewritten reply — phrasing like "I think", "as
-  best I can tell", "you may want to confirm". Do not drop them
-  silently and do not present them as confirmed.
+- **Verdicts are signals, not commands.** `verified` and
+  `contradicted` verdicts are load-bearing — treat them as ground
+  truth. But `retrieval_inconclusive`, `unverifiable_in_principle`,
+  and `unverifiable_pending_implementation` mean the verifier
+  couldn't reach a conclusion either way. They're a suggestion to
+  hedge, not a command. Apply your own judgment:
+
+  - **If the claim is widely-accepted common knowledge** — medical
+    basics ("excess water consumption can cause hyponatremia"),
+    definitional or lexical relationships ("sipping is a drinking
+    method"), established physiological / scientific facts ("a
+    typical human can drink roughly 0.5–1 gallons of water per
+    minute"), well-known causal chains — keep the original
+    phrasing. Stacking hedges on every soft verdict ("I think",
+    "approximately", "you may want to verify") on top of claims
+    every reader would accept makes a correct reply read as wrong
+    and erodes trust faster than the occasional uncorrected
+    near-miss.
+  - **If the claim is genuinely uncertain to you** — a specific
+    number you don't recognize, an obscure entity, an unfamiliar
+    causal chain, or a fact you'd want to look up yourself — then
+    hedge it ("I think", "roughly", "you may want to confirm").
+    Don't drop it silently; don't present it as confirmed.
+
+  Reserve hedges for meaningful unknowns. The verdict tells you
+  what UPSTREAM couldn't check; YOU decide whether the claim is
+  actually uncertain in the rewritten reply. The reason line on
+  each ledger entry exists so you can judge that.
 
 - **Preserve voice and structure** where the verifier didn't
   contradict anything. The user wrote a question expecting a certain
@@ -270,9 +294,13 @@ def _ledger_line_for_decision(d: Decision) -> str:
     """Render one verification-ledger entry for the rewrite prompt.
 
     Each line names the claim, its verdict, the verified value (when
-    contradicted), and a short reason. The corrector LLM uses this
-    block to write a coherent reply — same input shape regardless of
-    intervention type."""
+    contradicted), and a SPECIFIC reason — pulled from upstream
+    artifacts where available so the corrector can apply judgment
+    instead of treating every soft verdict identically. v0.12.x
+    Phase-3 change: surface the actual router reason (e.g. "Vacuous
+    lexical tautology") and judge justification (e.g. "snippets
+    describe X and Y separately") rather than the generic
+    placeholders the older code used."""
     status = d.verification_status
     claim_str = _claim_inline(d.claim)
     parts = [f"- {claim_str}", f"  verdict: {status}"]
@@ -284,12 +312,48 @@ def _ledger_line_for_decision(d: Decision) -> str:
         if explanation:
             parts.append(f"  reason: {explanation}")
     elif status == "retrieval_inconclusive":
-        parts.append("  reason: retrieval found evidence but couldn't confirm")
+        # The judge's justification names the SPECIFIC gap — use it
+        # so the corrector can decide whether the gap matters for
+        # this claim or whether it's common knowledge worth keeping.
+        justification = _judge_justification(d)
+        if justification:
+            parts.append(f"  reason: judge said: {justification}")
+        else:
+            parts.append(
+                "  reason: retrieval found evidence but couldn't confirm"
+            )
     elif status == "unverifiable_pending_implementation":
         parts.append("  reason: verifier returned no conclusive result")
     elif status == "unverifiable_in_principle":
-        parts.append("  reason: this predicate isn't verifiable in principle")
+        # The router's reason distinguishes "vacuous tautology" from
+        # "future prediction" from "aesthetic judgment" — each calls
+        # for a different rewrite behavior. Surface it.
+        router_reason = (d.routing_decision or {}).get("reason", "").strip()
+        if router_reason:
+            parts.append(f"  reason: router said: {router_reason}")
+        else:
+            parts.append(
+                "  reason: this predicate isn't verifiable in principle"
+            )
     return "\n".join(parts)
+
+
+def _judge_justification(d: Decision) -> str:
+    """Pull the judge's verdict justification out of the retrieval
+    result, when available. Tolerates both the RetrievalResult dataclass
+    and the plain-dict shape the cache-as-evidence path uses."""
+    rr = d.retrieval_result
+    if rr is None:
+        return ""
+    verdict = getattr(rr, "verdict", None)
+    if verdict is None and isinstance(rr, dict):
+        verdict = rr.get("verdict")
+    if verdict is None:
+        return ""
+    justification = getattr(verdict, "justification", None)
+    if justification is None and isinstance(verdict, dict):
+        justification = verdict.get("justification")
+    return (justification or "").strip()
 
 
 def _ledger_line_from_intervention(iv: Intervention) -> str:
