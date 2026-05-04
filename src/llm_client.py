@@ -197,33 +197,28 @@ class LLMClient:
     ) -> None:
         """Capture token counts from an Anthropic response and stash a
         CallCost entry with purpose + duration. Best-effort — never
-        crash the call on metric failure."""
+        crash the call on metric failure.
+
+        v0.9.x: reads the prompt-cache fields (``cache_creation_input_tokens``,
+        ``cache_read_input_tokens``) so the ledger reflects what we actually
+        get billed once a cached system prompt is in play. ``input_tokens``
+        on the Anthropic usage object is the UNCACHED remainder — adding
+        the cache fields gives the full input volume."""
         try:
             usage = getattr(response, "usage", None)
             if usage is None:
                 return
             in_toks = int(getattr(usage, "input_tokens", 0) or 0)
+            cc_toks = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+            cr_toks = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
             out_toks = int(getattr(usage, "output_tokens", 0) or 0)
             self._recorded_calls.append(
-                cost_for_call(model, in_toks, out_toks,
-                              purpose=purpose, duration_ms=duration_ms)
-            )
-        except Exception:
-            pass
-
-    def record_external_call(
-        self, model: str, input_tokens: int, output_tokens: int,
-        purpose: str | None = None, duration_ms: float | None = None,
-    ) -> None:
-        """Public hook for non-Anthropic chat backends to feed their
-        token usage + purpose into the per-turn cost ledger. Currently
-        unused (post-v0.7.15 the only chat backend is Anthropic, which
-        records cost natively); kept as a stable extension point for
-        future backends. Best-effort — never raises."""
-        try:
-            self._recorded_calls.append(
-                cost_for_call(model, int(input_tokens), int(output_tokens),
-                              purpose=purpose, duration_ms=duration_ms)
+                cost_for_call(
+                    model, in_toks, out_toks,
+                    cache_creation_tokens=cc_toks,
+                    cache_read_tokens=cr_toks,
+                    purpose=purpose, duration_ms=duration_ms,
+                )
             )
         except Exception:
             pass

@@ -32,6 +32,31 @@ from src.cost import CallCost, cost_for_call
 _log = logging.getLogger(__name__)
 
 
+def _call_cost_from_openai_usage(
+    model: str, usage: Any, *, purpose: str | None, duration_ms: float,
+) -> CallCost:
+    """Build a CallCost from an OpenAI usage object.
+
+    OpenAI reports ``prompt_tokens`` as the *total* (uncached + cached);
+    the cached portion lives in ``usage.prompt_tokens_details.cached_tokens``.
+    Cost accounting needs them split so the 50%-cached-input discount
+    actually gets applied — passing the full ``prompt_tokens`` to
+    ``cost_for_call`` would bill cached tokens at the full rate.
+    """
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    out_toks = int(getattr(usage, "completion_tokens", 0) or 0)
+    cached = 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached = int(getattr(details, "cached_tokens", 0) or 0)
+    uncached = max(prompt - cached, 0)
+    return cost_for_call(
+        model, uncached, out_toks,
+        cache_read_tokens=cached,
+        purpose=purpose, duration_ms=duration_ms,
+    )
+
+
 class OpenAIClient:
     """OpenAI-side counterpart to ``LLMClient``. Same external API
     shape (chat / extract_with_tool / rewrite) so the dispatcher
@@ -69,11 +94,8 @@ class OpenAIClient:
             usage = getattr(response, "usage", None)
             if usage is None:
                 return
-            in_toks = int(getattr(usage, "prompt_tokens", 0) or 0)
-            out_toks = int(getattr(usage, "completion_tokens", 0) or 0)
-            self._cost_recorder(cost_for_call(
-                model, in_toks, out_toks,
-                purpose=purpose, duration_ms=duration_ms,
+            self._cost_recorder(_call_cost_from_openai_usage(
+                model, usage, purpose=purpose, duration_ms=duration_ms,
             ))
         except Exception:
             pass
@@ -132,8 +154,7 @@ class OpenAIClient:
             stream_options={"include_usage": True},
         )
         full_text_parts: list[str] = []
-        in_toks = 0
-        out_toks = 0
+        final_usage: Any = None
         for chunk in stream:
             # Each chunk has zero or one choices with a delta.
             choices = getattr(chunk, "choices", None) or []
@@ -149,13 +170,15 @@ class OpenAIClient:
                             pass
             usage = getattr(chunk, "usage", None)
             if usage is not None:
-                in_toks = int(getattr(usage, "prompt_tokens", 0) or 0)
-                out_toks = int(getattr(usage, "completion_tokens", 0) or 0)
-        # Record cost from the usage chunk that arrived last.
-        if self._cost_recorder is not None and (in_toks or out_toks):
+                final_usage = usage
+        # Record cost from the usage chunk that arrived last. Pull
+        # cached_tokens out of prompt_tokens_details so the cache
+        # discount gets applied (otherwise OpenAI's prompt_tokens
+        # double-bills the cached portion at the full input rate).
+        if self._cost_recorder is not None and final_usage is not None:
             try:
-                self._cost_recorder(cost_for_call(
-                    model, in_toks, out_toks,
+                self._cost_recorder(_call_cost_from_openai_usage(
+                    model, final_usage,
                     purpose=purpose,
                     duration_ms=(time.monotonic() - t0) * 1000,
                 ))

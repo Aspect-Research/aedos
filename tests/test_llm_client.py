@@ -232,14 +232,74 @@ def test_record_call_swallows_exceptions(monkeypatch):
     assert c.pop_recorded_calls() == []
 
 
-def test_record_external_call_swallows_exceptions(monkeypatch):
-    """The public hook for non-Anthropic backends must also be
-    bulletproof — never raise."""
+# ---- v0.9.x: prompt-cache token reading (Anthropic side) ------------
+
+
+def test_record_call_reads_anthropic_cache_creation_tokens(monkeypatch):
+    """When the Anthropic usage object reports cache_creation_input_tokens
+    (first call after deploy fills the cache), the cost ledger must
+    include them billed at the 1.25× write multiplier — not silently drop."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     c = LLMClient()
-    # Pass a value that can't be int()'d.
-    c.record_external_call("claude-opus-4-7", "not-a-number", 5)  # type: ignore[arg-type]
-    assert c.pop_recorded_calls() == []
+
+    class _Usage:
+        input_tokens = 100
+        cache_creation_input_tokens = 2000
+        cache_read_input_tokens = 0
+        output_tokens = 50
+
+    class _Resp:
+        usage = _Usage()
+
+    c._record_call("claude-opus-4-7", _Resp(),
+                   purpose="extractor:user", duration_ms=10.0)
+    [cc] = c.pop_recorded_calls()
+    assert cc.input_tokens == 100
+    assert cc.cache_creation_tokens == 2000
+    assert cc.cache_read_tokens == 0
+    # 2000 cache_creation tokens × $15/MTok × 1.25 = $0.0375
+    import pytest
+    assert cc.cache_creation_usd == pytest.approx(2000 / 1_000_000 * 15.00 * 1.25)
+
+
+def test_record_call_reads_anthropic_cache_read_tokens(monkeypatch):
+    """A cache hit on a subsequent call must show up as cache_read at 0.10×."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    c = LLMClient()
+
+    class _Usage:
+        input_tokens = 100
+        cache_creation_input_tokens = 0
+        cache_read_input_tokens = 2000
+        output_tokens = 50
+
+    class _Resp:
+        usage = _Usage()
+
+    c._record_call("claude-haiku-4-5", _Resp(), purpose="chat", duration_ms=5.0)
+    [cc] = c.pop_recorded_calls()
+    assert cc.cache_read_tokens == 2000
+    import pytest
+    assert cc.cache_read_usd == pytest.approx(2000 / 1_000_000 * 1.00 * 0.10)
+
+
+def test_record_call_handles_missing_cache_fields(monkeypatch):
+    """Older mocks / responses without the cache fields must not crash —
+    cache_creation_tokens / cache_read_tokens default to 0."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    c = LLMClient()
+
+    class _Usage:
+        input_tokens = 100
+        output_tokens = 50
+
+    class _Resp:
+        usage = _Usage()
+
+    c._record_call("claude-opus-4-7", _Resp())
+    [cc] = c.pop_recorded_calls()
+    assert cc.cache_creation_tokens == 0
+    assert cc.cache_read_tokens == 0
 
 
 # ---- v0.8.0: per-purpose dispatch + OpenAI routing ----------------
@@ -383,6 +443,72 @@ def test_openai_client_records_cost_into_shared_ledger(monkeypatch):
     assert calls[0].purpose == "router"
     assert calls[0].input_tokens == 100
     assert calls[0].output_tokens == 50
+
+
+# ---- v0.9.x: OpenAI prompt-cache token reading ---------------------------
+
+
+def test_call_cost_from_openai_usage_splits_cached_from_prompt():
+    """OpenAI's prompt_tokens INCLUDES the cached portion. The helper
+    must subtract cached_tokens out so the cache discount is applied
+    once, not double-billed at the full input rate."""
+    from src.openai_client import _call_cost_from_openai_usage
+
+    class _Details:
+        cached_tokens = 800
+
+    class _Usage:
+        prompt_tokens = 1000        # total: 200 uncached + 800 cached
+        completion_tokens = 50
+        prompt_tokens_details = _Details()
+
+    cc = _call_cost_from_openai_usage(
+        "gpt-4.1-mini", _Usage(), purpose="router", duration_ms=12.3,
+    )
+    assert cc.input_tokens == 200
+    assert cc.cache_read_tokens == 800
+    # gpt-4.1-mini: $0.40/MTok input. Cached portion: 800 × $0.20/MTok.
+    import pytest
+    assert cc.input_usd == pytest.approx(200 / 1_000_000 * 0.40)
+    assert cc.cache_read_usd == pytest.approx(800 / 1_000_000 * 0.40 * 0.50)
+
+
+def test_call_cost_from_openai_usage_no_cache_details():
+    """OpenAI may omit prompt_tokens_details for short prompts that
+    don't qualify for caching. cached_tokens defaults to 0."""
+    from src.openai_client import _call_cost_from_openai_usage
+
+    class _Usage:
+        prompt_tokens = 200
+        completion_tokens = 50
+        # No prompt_tokens_details attr.
+
+    cc = _call_cost_from_openai_usage(
+        "gpt-4.1-mini", _Usage(), purpose="router", duration_ms=5.0,
+    )
+    assert cc.input_tokens == 200
+    assert cc.cache_read_tokens == 0
+    assert cc.cache_read_usd == 0.0
+
+
+def test_call_cost_from_openai_usage_clamps_negative_uncached():
+    """If a malformed usage object reports cached > prompt (shouldn't
+    happen but defend), uncached clamps to 0 instead of negative."""
+    from src.openai_client import _call_cost_from_openai_usage
+
+    class _Details:
+        cached_tokens = 500
+
+    class _Usage:
+        prompt_tokens = 100   # impossible: cached > prompt
+        completion_tokens = 0
+        prompt_tokens_details = _Details()
+
+    cc = _call_cost_from_openai_usage(
+        "gpt-4.1-mini", _Usage(), purpose="router", duration_ms=1.0,
+    )
+    assert cc.input_tokens == 0
+    assert cc.cache_read_tokens == 500
 
 
 # ---- v0.9.0 streaming chat -----------------------------------------------
