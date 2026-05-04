@@ -731,11 +731,22 @@ def test_retrieval_inconclusive_DOES_hedge(tmp_path):
         Snippet("a", "irrelevant snippet", "u1"),
         Snippet("b", "also irrelevant", "u2"),
     ]
+    # v0.12.x retrieval changes:
+    #   Phase 2a — walk the static strategy list on INSUFFICIENT
+    #   for ALL claims (categorical has 3 strategies → 3 judges).
+    #   Phase 2b — after the static loop, fire ONE reformulation hop
+    #   targeting the gap the judge named. Empty reformulation skips
+    #   the additional judge.
+    # Sequence: 3 judge INSUFFICIENT + 1 EMPTY reformulation + 1
+    # corrector hedge rewrite = 5 rewrite responses.
     mock = MockLLM(
         chats=["X is a Y"],
         extracts=[{"facts": []}, {"facts": [fact]}],
         rewrites=[
             "INSUFFICIENT_EVIDENCE\nJ: snippets do not address the claim.",
+            "INSUFFICIENT_EVIDENCE\nJ: still nothing.",
+            "INSUFFICIENT_EVIDENCE\nJ: nope.",
+            "",  # reformulation: empty → skip the extra judge
             "I believe X is a Y, though you may want to verify.",
         ],
         routings=[_route_retrieval(query="X is Y")],
