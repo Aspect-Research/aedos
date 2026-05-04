@@ -55,8 +55,11 @@ htmlcov/
 # uv
 uv.lock
 
-# Claude Code local settings (per-machine, not part of the project)
-.claude/settings.local.json
+# Claude Code local state (per-machine: settings, scheduled-task locks, etc.)
+.claude/
+
+# Ad-hoc smoke-test stdout/stderr dumps
+*.log
 
 # Smoke-test / dogfooding diagnostic dumps (operator-local; not in repo).
 diagnostic_output/
