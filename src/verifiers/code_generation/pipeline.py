@@ -50,7 +50,6 @@ class CodeGenVerificationResult:
     """
 
     status: CodeGenStatus
-    confidence: float = 0.99
     explanation: str = ""
     actual_value: Any | None = None
     trace: dict[str, Any] = field(default_factory=dict)
@@ -58,7 +57,6 @@ class CodeGenVerificationResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
-            "confidence": self.confidence,
             "explanation": self.explanation,
             "actual_value": self.actual_value,
             "trace": self.trace,
@@ -192,7 +190,6 @@ def verify_via_code_generation(
 
     return CodeGenVerificationResult(
         status=comparison.verdict,  # "verified" | "contradicted" | "comparison_error"
-        confidence=0.99,
         explanation=comparison.explanation,
         actual_value=comparison.computed_value,
         trace=base_trace,
@@ -320,7 +317,6 @@ class CodeGenerationVerifier:
         )
         return CodeGenVerificationResult(
             status="canonical_constants_disagreement",
-            confidence=0.4,
             explanation=(
                 "two independent code generations disagreed: "
                 f"a={result_a.status}({result_a.actual_value!r}), "

@@ -59,10 +59,21 @@ class CachedVerdict:
     # (NULL/0 from the migration).
     evidence_hash: str | None = None
     source_urls: list[str] | None = None
-    confidence: float | None = None
     last_refreshed_at: str | None = None
     refresh_count: int = 0
     contradiction_count: int = 0
+
+    @property
+    def confidence(self) -> float:
+        """v0.13: confidence is derived purely from observed counts.
+
+        Beta(1,1) Laplace-smoothed posterior estimate of P(true |
+        evidence). No LLM-emitted self-rating, no per-outcome path
+        prior — just refresh_count and contradiction_count."""
+        from src.router.constants import confidence_from_counts
+        return confidence_from_counts(
+            self.refresh_count, self.contradiction_count,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -189,14 +200,6 @@ def _safe_str(row, name: str) -> str | None:
     return v
 
 
-def _safe_float(row, name: str) -> float | None:
-    try:
-        v = row[name]
-    except (IndexError, KeyError):
-        return None
-    return float(v) if v is not None else None
-
-
 def _row_to_cached_verdict(row, *, hit_count_bump: int = 0) -> "CachedVerdict":
     """Hydrate a CachedVerdict from a sqlite3.Row, tolerating older
     row shapes that lack the v0.7.10 provenance columns."""
@@ -217,7 +220,6 @@ def _row_to_cached_verdict(row, *, hit_count_bump: int = 0) -> "CachedVerdict":
         hit_count=int(row["hit_count"]) + hit_count_bump,
         evidence_hash=_safe_str(row, "evidence_hash"),
         source_urls=source_urls,
-        confidence=_safe_float(row, "confidence"),
         last_refreshed_at=_safe_str(row, "last_refreshed_at"),
         refresh_count=_safe_int(row, "refresh_count"),
         contradiction_count=_safe_int(row, "contradiction_count"),
@@ -358,7 +360,6 @@ class VerificationCache:
         stability_class: str,
         ttl_seconds: int | None,
         evidence: dict[str, Any] | None = None,
-        confidence: float | None = None,
     ) -> "WriteOutcome":
         """INSERT a new entry, or UPDATE if the key already exists.
 
@@ -368,11 +369,10 @@ class VerificationCache:
         logs it as a ``cache_contradiction_replaced`` pipeline event
         and triggers the v0.7.11 semantic-neighbor cascade.
 
-        v0.7.10 provenance fields populated on every write:
+        Provenance fields populated on every write:
           * evidence_hash — SHA-256 of the evidence JSON (stable
             "same answer" identity across refreshes)
           * source_urls — JSON array of unique URLs from the snippets
-          * confidence — judge's confidence (caller-provided, NULL ok)
           * last_refreshed_at — bumped on every successful write
           * refresh_count — +1 when refreshed (verdict unchanged)
           * contradiction_count — +1 when verdict flips
@@ -422,9 +422,9 @@ class VerificationCache:
             INSERT INTO verification_cache (
                 canonical_key, pattern, predicate, verdict, evidence,
                 stability_class, cached_at, expires_at, hit_count, created_at,
-                evidence_hash, source_urls, confidence,
+                evidence_hash, source_urls,
                 last_refreshed_at, refresh_count, contradiction_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(canonical_key) DO UPDATE SET
                 verdict = excluded.verdict,
                 evidence = excluded.evidence,
@@ -433,14 +433,13 @@ class VerificationCache:
                 expires_at = excluded.expires_at,
                 evidence_hash = excluded.evidence_hash,
                 source_urls = excluded.source_urls,
-                confidence = excluded.confidence,
                 last_refreshed_at = excluded.last_refreshed_at,
                 refresh_count = excluded.refresh_count,
                 contradiction_count = excluded.contradiction_count
             """,
             (canonical_key, pattern, predicate, verdict, evidence_json,
              stability_class, cached_at, expires_at, _now_iso(),
-             evidence_hash, source_urls_json, confidence,
+             evidence_hash, source_urls_json,
              last_refreshed_at, new_refresh, new_contradictions),
         )
         self.store._conn.commit()

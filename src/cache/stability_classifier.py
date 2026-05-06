@@ -57,7 +57,6 @@ STABILITY_TTL_SECONDS: dict[str, int | None] = {
 class StabilityDecision:
     stability_class: str  # one of STABILITY_CLASSES
     reason: str
-    confidence: float
     ttl_seconds: int | None = None  # None = no expiry; 0 = don't cache
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -65,7 +64,6 @@ class StabilityDecision:
         return {
             "stability_class": self.stability_class,
             "reason": self.reason,
-            "confidence": self.confidence,
             "ttl_seconds": self.ttl_seconds,
         }
 
@@ -108,34 +106,33 @@ TTL window. Wrong-and-confident is worse than slow-and-correct.
 # Worked examples
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'strawberry', property:'letter_r', value:3}, polarity=1
-→ stability_class: immutable, reason: "structural property of a fixed string; cannot change.", confidence: 0.99
+→ stability_class: immutable, reason: "structural property of a fixed string; cannot change."
 
 Claim: pattern=spatial_temporal, predicate=located_in, slots={entity:Tokyo, location:Japan}, polarity=1
-→ stability_class: decade_stable, reason: "geographic fact; stable on multi-decade timescale.", confidence: 0.95
+→ stability_class: decade_stable, reason: "geographic fact; stable on multi-decade timescale."
 
 Claim: pattern=quantitative, predicate=birth_year, slots={subject:'Marie Curie', property:'birth_year', value:1867}, polarity=1
-→ stability_class: immutable, reason: "biographical fact about a deceased historical figure; immutable.", confidence: 0.99
+→ stability_class: immutable, reason: "biographical fact about a deceased historical figure; immutable."
 
 Claim: pattern=role_assignment, predicate=holds_role, slots={agent:'Donald Trump', role:'47th President', org:'United States'}, polarity=1
-→ stability_class: years_stable, reason: "political office held until next presidential term; stable for ~4 years but changes.", confidence: 0.9
+→ stability_class: years_stable, reason: "political office held until next presidential term; stable for ~4 years but changes."
 
 Claim: pattern=quantitative, predicate=stock_price, slots={subject:'Apple', property:'closing_price', value:175.50, unit:'USD'}, polarity=1
-→ stability_class: volatile, reason: "stock prices change continuously; do not cache.", confidence: 0.99
+→ stability_class: volatile, reason: "stock prices change continuously; do not cache."
 
 Claim: pattern=quantitative, predicate=population_of, slots={subject:'Tokyo', property:'population', value:14000000}, polarity=1
-→ stability_class: decade_stable, reason: "city population changes slowly; rough figure stable across years.", confidence: 0.85
+→ stability_class: decade_stable, reason: "city population changes slowly; rough figure stable across years."
 
 Claim: pattern=quantitative, predicate=us_states_count, slots={subject:'United States', property:'state_count', value:50}, polarity=1
-→ stability_class: decade_stable, reason: "stable since 1959; could change but unlikely on multi-year horizon.", confidence: 0.95
+→ stability_class: decade_stable, reason: "stable since 1959; could change but unlikely on multi-year horizon."
 
 Claim: pattern=event, predicate=launched, slots={event_type:'iPhone 15', occurred_at:'2023-09'}, polarity=1
-→ stability_class: immutable, reason: "completed historical event with a fixed date.", confidence: 0.99
+→ stability_class: immutable, reason: "completed historical event with a fixed date."
 
 # Output
 
 Call the ``record_stability`` tool exactly once. Reason should explain
-WHY this TTL class fits. confidence in [0.0, 1.0]. Never reply with
-prose."""
+WHY this TTL class fits. Never reply with prose."""
 
 
 _STABILITY_TOOL = {
@@ -157,14 +154,8 @@ _STABILITY_TOOL = {
                 "type": "string",
                 "description": "One-sentence rationale.",
             },
-            "confidence": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": "0.0-1.0 confidence in the classification.",
-            },
         },
-        "required": ["stability_class", "reason", "confidence"],
+        "required": ["stability_class", "reason"],
     },
 }
 
@@ -201,7 +192,6 @@ def _historical_period_shortcut(claim: dict) -> StabilityDecision | None:
             f"closed historical period (valid_until={year}, in the past); "
             "the fact about that period cannot change."
         ),
-        confidence=0.99,
         ttl_seconds=None,
         raw={"shortcut": "historical_period"},
     )
@@ -238,7 +228,6 @@ def classify_stability(claim: dict, llm: LLMClient) -> StabilityDecision:
     return StabilityDecision(
         stability_class=cls,
         reason=str(raw.get("reason", "")),
-        confidence=float(raw.get("confidence", 0.0)),
         ttl_seconds=STABILITY_TTL_SECONDS.get(cls),
         raw=dict(raw),
     )

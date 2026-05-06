@@ -44,11 +44,10 @@ def test_returns_world_fact_when_llm_says_so():
     llm = _MockLLM(canned={
         "scope": "world_fact",
         "reason": "geographic fact",
-        "confidence": 0.95,
     })
     d = classify_scope(_claim(), llm)
     assert d.scope == "world_fact"
-    assert d.confidence == 0.95
+    assert d.reason == "geographic fact"
 
 
 def test_returns_user_specific_for_preference():
@@ -89,9 +88,9 @@ def test_invalid_scope_raises():
 
 
 def test_decision_to_dict_shape():
-    d = ScopingDecision(scope="world_fact", reason="r", confidence=0.9)
+    d = ScopingDecision(scope="world_fact", reason="r")
     assert d.to_dict() == {
-        "scope": "world_fact", "reason": "r", "confidence": 0.9,
+        "scope": "world_fact", "reason": "r",
     }
 
 
@@ -149,14 +148,14 @@ def test_pipeline_logs_scoping_decisions_in_observation_mode(tmp_path):
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
     router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
-        method="unverifiable", reason="x", confidence=0.9))
+        method="unverifiable", reason="x"))
 
     captured_claims: list[dict] = []
 
     def fake_classifier(claim):
         captured_claims.append(claim)
         return ScopingDecision(
-            scope="world_fact", reason="geo fact", confidence=0.95,
+            scope="world_fact", reason="geo fact",
         )
 
     p = Pipeline(store, registry, mock, extractor, router, Corrector(mock),
@@ -227,7 +226,7 @@ def test_pipeline_continues_when_classifier_raises(tmp_path):
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
     router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
-        method="unverifiable", reason="x", confidence=0.9))
+        method="unverifiable", reason="x"))
 
     def boom_classifier(claim):
         raise RuntimeError("classifier exploded")

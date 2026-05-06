@@ -38,21 +38,16 @@ from src.cache.verification_cache import (
 )
 
 
-# Verdict labels we care to write to the cache. Pulled from the
-# pipeline's prior inline gate so the contract is documented in one
-# place. Python verifications are cheap to redo (no API cost) and
-# user-authoritative is per-user; routing_anomaly is broken upstream.
+# Verdict labels we care to write to the cache. v0.13: dropped
+# ``retrieval_inconclusive`` — pre-v0.13 the cache also stored those
+# but a downstream confidence floor (< 0.5) skipped the actual write.
+# Now the status check IS the gate: only verdicts that produced a
+# definite SUPPORTED/CONTRADICTED judge call land in the cache.
+# Python verifications are cheap to redo; user-authoritative is per-
+# user; routing_anomaly is broken upstream.
 _RETRIEVAL_VERDICTS_TO_CACHE = frozenset({
-    "verified", "contradicted", "retrieval_inconclusive",
+    "verified", "contradicted",
 })
-
-# v0.7.12: don't cache low-conviction verdicts. Caching an entry the
-# verifier wasn't sure about pollutes future lookups with weak signal —
-# better to re-run retrieval next time. The router assigns confidence
-# per outcome (CONF_RETRIEVAL_INCONCLUSIVE = 0.4 by default), so this
-# floor naturally filters out inconclusive retrievals while keeping
-# high-conviction verified / contradicted verdicts.
-_MIN_CONFIDENCE_TO_CACHE = 0.5
 
 # v0.7.12: rough per-hit cost estimate. Each cache hit avoids one
 # retrieval-judge LLM call (the most expensive part of the retrieval
@@ -438,21 +433,9 @@ class CacheGate:
         # bookkeeping (every hit would look like a fresh confirmation).
         if getattr(decision, "served_from_cache", False):
             return
-        # v0.7.12: confidence floor. Don't write a verdict the verifier
-        # wasn't sure about — caching low-conviction answers pollutes
-        # future lookups; better to re-run on the next ask. The
-        # router's CONF_RETRIEVAL_INCONCLUSIVE = 0.4 < 0.5 floor, so
-        # this naturally filters retrieval_inconclusive verdicts out.
-        confidence = getattr(decision, "confidence", None)
-        if confidence is not None and confidence < _MIN_CONFIDENCE_TO_CACHE:
-            self._emit("cache_write", turn_id, {
-                "canonical_key": key,
-                "verdict": verdict,
-                "skipped": "below_confidence_floor",
-                "confidence": confidence,
-                "floor": _MIN_CONFIDENCE_TO_CACHE,
-            })
-            return
+        # v0.13: no confidence floor. The verdict-set filter above is
+        # the gate — only ``verified`` / ``contradicted`` reach this
+        # write path; inconclusive verdicts no longer cache at all.
         evidence = None
         retrieval_result = getattr(decision, "retrieval_result", None)
         if retrieval_result is not None:
@@ -473,7 +456,6 @@ class CacheGate:
                 stability_class=state.stability.stability_class,
                 ttl_seconds=state.stability.ttl_seconds,
                 evidence=evidence,
-                confidence=confidence,
             )
             self._emit("cache_write", turn_id, {
                 "canonical_key": key,

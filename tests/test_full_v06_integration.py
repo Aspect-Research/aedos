@@ -121,7 +121,7 @@ def test_full_v06_turn_with_all_features_active(tmp_path):
     router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="retrieval", reason="r", confidence=0.95,
+            method="retrieval", reason="r",
         ),
         retrieval_verifier=retrieval,
     )
@@ -130,11 +130,10 @@ def test_full_v06_turn_with_all_features_active(tmp_path):
     p = Pipeline(
         store, registry, mock, extractor, router, Corrector(mock),
         scoping_classifier=lambda claim: ScopingDecision(
-            scope="world_fact", reason="geo", confidence=0.95,
+            scope="world_fact", reason="geo",
         ),
         stability_classifier=lambda claim: StabilityDecision(
             stability_class="decade_stable", reason="geo",
-            confidence=0.95,
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         ),
         verification_cache=cache,

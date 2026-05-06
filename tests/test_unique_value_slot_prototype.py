@@ -50,7 +50,7 @@ def _build_router(tmp_path):
     return store, Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="user_authoritative", reason="x", confidence=0.9,
+            method="user_authoritative", reason="x",
         ),
     )
 
@@ -145,14 +145,14 @@ def test_different_user_does_not_trigger(tmp_path, monkeypatch):
     alice_router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="user_authoritative", reason="x", confidence=0.9,
+            method="user_authoritative", reason="x",
         ),
         user_id="alice",
     )
     bob_router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="user_authoritative", reason="x", confidence=0.9,
+            method="user_authoritative", reason="x",
         ),
         user_id="bob",
     )

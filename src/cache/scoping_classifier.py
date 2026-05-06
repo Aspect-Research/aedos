@@ -34,14 +34,12 @@ SCOPING_METHODS = ("user_specific", "session_specific", "world_fact")
 class ScopingDecision:
     scope: str  # one of SCOPING_METHODS
     reason: str
-    confidence: float
     raw: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "scope": self.scope,
             "reason": self.reason,
-            "confidence": self.confidence,
         }
 
 
@@ -69,39 +67,39 @@ is session_specific. Otherwise scope is world_fact.
 # Worked examples
 
 Claim: pattern=preference, predicate=likes, slots={agent:user, object:peanut butter}, polarity=1
-→ scope: user_specific, reason: "agent is the user; preference is by definition user-specific.", confidence: 0.99
+→ scope: user_specific, reason: "agent is the user; preference is by definition user-specific."
 
 Claim: pattern=spatial_temporal, predicate=lives_in, slots={entity:user, location:Williamstown}, polarity=1
-→ scope: user_specific, reason: "user's residence; varies per user.", confidence: 0.99
+→ scope: user_specific, reason: "user's residence; varies per user."
 
 Claim: pattern=propositional_attitude, predicate=believes, slots={agent:user, proposition:'the Fed will cut rates'}, polarity=1
-→ scope: user_specific, reason: "user's belief; only the user can confirm.", confidence: 0.99
+→ scope: user_specific, reason: "user's belief; only the user can confirm."
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'the quick brown fox', property:'words_with_o', value:2}, polarity=1
-→ scope: session_specific, reason: "subject is a literal sentence from this conversation; meaningful only in this turn.", confidence: 0.95
+→ scope: session_specific, reason: "subject is a literal sentence from this conversation; meaningful only in this turn."
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'strawberry', property:'letter_r', value:3}, polarity=1
-→ scope: world_fact, reason: "structural property of the literal word 'strawberry'; same answer for every user, every session.", confidence: 0.99
+→ scope: world_fact, reason: "structural property of the literal word 'strawberry'; same answer for every user, every session."
 
 Claim: pattern=spatial_temporal, predicate=located_in, slots={entity:Tokyo, location:Japan}, polarity=1
-→ scope: world_fact, reason: "geographic fact; stable across users and sessions.", confidence: 0.99
+→ scope: world_fact, reason: "geographic fact; stable across users and sessions."
 
 Claim: pattern=quantitative, predicate=born_in_year, slots={subject:'Marie Curie', property:'birth_year', value:1867}, polarity=1
-→ scope: world_fact, reason: "biographical fact about a historical figure; immutable.", confidence: 0.99
+→ scope: world_fact, reason: "biographical fact about a historical figure; immutable."
 
 Claim: pattern=role_assignment, predicate=holds_role, slots={agent:'Donald Trump', role:'47th President', org:'United States'}, polarity=1
-→ scope: world_fact, reason: "current world-state — everyone shares the same answer right now. Cache with short TTL.", confidence: 0.95
+→ scope: world_fact, reason: "current world-state — everyone shares the same answer right now. Cache with short TTL."
 
 Claim: pattern=event, predicate=will_happen, slots={event_type:'Fed rate cut', occurred_at:'2026-05'}, polarity=1
-→ scope: session_specific, reason: "future-event prediction; hasn't happened yet, can't be verified, definitely not cacheable.", confidence: 0.9
+→ scope: session_specific, reason: "future-event prediction; hasn't happened yet, can't be verified, definitely not cacheable."
 
 Claim: pattern=relational, predicate=opens_with, slots={subject:'Gettysburg Address', object:'Four score and seven years ago'}, polarity=1
-→ scope: world_fact, reason: "literal text of a fixed historical document; immutable.", confidence: 0.99
+→ scope: world_fact, reason: "literal text of a fixed historical document; immutable."
 
 # Output
 
 Call the ``record_scope`` tool exactly once. Provide a one-sentence
-reason. confidence in [0.0, 1.0]. Never reply with prose."""
+reason. Never reply with prose."""
 
 
 _SCOPING_TOOL = {
@@ -122,14 +120,8 @@ _SCOPING_TOOL = {
                 "type": "string",
                 "description": "One-sentence justification.",
             },
-            "confidence": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": "0.0-1.0 confidence in the classification.",
-            },
         },
-        "required": ["scope", "reason", "confidence"],
+        "required": ["scope", "reason"],
     },
 }
 
@@ -159,6 +151,5 @@ def classify_scope(claim: dict, llm: LLMClient) -> ScopingDecision:
     return ScopingDecision(
         scope=scope,
         reason=str(raw.get("reason", "")),
-        confidence=float(raw.get("confidence", 0.0)),
         raw=dict(raw),
     )

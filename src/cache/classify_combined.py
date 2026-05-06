@@ -12,10 +12,8 @@ classify stability. The response is one tool call:
     {
       "scope": "world_fact",
       "scope_reason": "...",
-      "scope_confidence": 0.99,
       "stability_class": "decade_stable",     # required when scope=world_fact
-      "stability_reason": "...",              # required when scope=world_fact
-      "stability_confidence": 0.95            # required when scope=world_fact
+      "stability_reason": "..."               # required when scope=world_fact
     }
 
 For non-world-fact claims, the stability fields are omitted (the tool
@@ -103,31 +101,29 @@ verdict for this claim should be trusted before re-verification:
 # Output
 
 Call the ``record_classification`` tool exactly once.
-- Always provide scope, scope_reason, scope_confidence.
-- If scope is world_fact: ALSO provide stability_class, stability_reason,
-  stability_confidence.
+- Always provide scope, scope_reason.
+- If scope is world_fact: ALSO provide stability_class, stability_reason.
 - If scope is user_specific or session_specific: OMIT the stability_*
   fields entirely.
 
-Reasons must be one sentence each. Confidences in [0.0, 1.0].
-Never reply with prose.
+Reasons must be one sentence each. Never reply with prose.
 
 # Examples
 
 Claim: {pattern: 'preference', predicate: 'likes', slots: {agent: 'user', object: 'tea'}}
-→ scope: user_specific, scope_reason: "agent is the user; preference is by definition user-specific.", scope_confidence: 0.99
+→ scope: user_specific, scope_reason: "agent is the user; preference is by definition user-specific."
   (no stability fields)
 
 Claim: {pattern: 'spatial_temporal', predicate: 'located_in', slots: {entity: 'Tokyo', location: 'Japan'}}
-→ scope: world_fact, scope_reason: "geographic fact; same for every user.", scope_confidence: 0.99
-  stability_class: decade_stable, stability_reason: "geographic fact; stable on multi-decade timescale.", stability_confidence: 0.95
+→ scope: world_fact, scope_reason: "geographic fact; same for every user."
+  stability_class: decade_stable, stability_reason: "geographic fact; stable on multi-decade timescale."
 
 Claim: {pattern: 'event', predicate: 'happened_in', slots: {event: 'Berlin Wall fell', year: 1989}}
-→ scope: world_fact, scope_reason: "historical event; same answer for every observer.", scope_confidence: 0.99
-  stability_class: immutable, stability_reason: "completed historical event with a fixed date.", stability_confidence: 0.99
+→ scope: world_fact, scope_reason: "historical event; same answer for every observer."
+  stability_class: immutable, stability_reason: "completed historical event with a fixed date."
 
 Claim: {pattern: 'quantitative', predicate: 'has_count', slots: {subject: 'this sentence', property: 'words', value: 5}}
-→ scope: session_specific, scope_reason: "subject is a literal sentence from this conversation; meaningful only in this turn.", scope_confidence: 0.95
+→ scope: session_specific, scope_reason: "subject is a literal sentence from this conversation; meaningful only in this turn."
   (no stability fields)
 """
 
@@ -150,12 +146,6 @@ _COMBINED_TOOL = {
                 "type": "string",
                 "description": "One-sentence justification for the scope choice.",
             },
-            "scope_confidence": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": "0.0-1.0 confidence in the scope classification.",
-            },
             "stability_class": {
                 "type": "string",
                 "enum": list(STABILITY_CLASSES),
@@ -169,17 +159,8 @@ _COMBINED_TOOL = {
                     "Required when scope=world_fact; one-sentence justification."
                 ),
             },
-            "stability_confidence": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": (
-                    "Required when scope=world_fact; 0.0-1.0 confidence in "
-                    "the stability classification."
-                ),
-            },
         },
-        "required": ["scope", "scope_reason", "scope_confidence"],
+        "required": ["scope", "scope_reason"],
     },
 }
 
@@ -207,7 +188,6 @@ def classify_for_cache(
             scoping=ScopingDecision(
                 scope="world_fact",
                 reason="historical period strictly in the past — world fact by construction",
-                confidence=0.99,
                 raw={"shortcut": "historical_period"},
             ),
             stability=short,
@@ -237,7 +217,6 @@ def classify_for_cache(
     scoping = ScopingDecision(
         scope=scope,
         reason=str(raw.get("scope_reason", "")),
-        confidence=float(raw.get("scope_confidence", 0.0)),
         raw=dict(raw),
     )
 
@@ -252,7 +231,6 @@ def classify_for_cache(
         stability = StabilityDecision(
             stability_class=cls,
             reason=str(raw.get("stability_reason", "")),
-            confidence=float(raw.get("stability_confidence", 0.0)),
             ttl_seconds=STABILITY_TTL_SECONDS.get(cls),
             raw=dict(raw),
         )

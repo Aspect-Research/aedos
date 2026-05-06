@@ -22,7 +22,7 @@ def _mk(
     predicate="likes",
     slots=None,
     polarity=1,
-    confidence=0.95,
+    confidence=0.5,  # Beta(1,1) prior at zero counts
     asserted_by="user",
     verification_status="user_asserted",
     source_turn_id=None,
@@ -130,10 +130,18 @@ def test_close_and_reopen_with_opposite_polarity(store):
     assert len(valid) == 1 and valid[0].id == fid2
 
 
-def test_boost_confidence_caps(store):
-    fid = store.insert_fact(_mk(confidence=0.98))
-    new = store.boost_confidence(fid, amount=0.5)
-    assert new == pytest.approx(0.99)
+def test_boost_confidence_recomputes_from_counts(store):
+    """v0.13: boost_confidence increments reinforcement_count and
+    recomputes confidence as confidence_from_counts(R, 0). The old
+    flat-step + cap behavior is gone."""
+    from src.router.constants import confidence_from_counts
+    fid = store.insert_fact(_mk(confidence=confidence_from_counts(0, 0)))
+    new = store.boost_confidence(fid)
+    # First boost: reinforcement_count becomes 1.
+    assert new == pytest.approx(confidence_from_counts(1, 0))
+    new2 = store.boost_confidence(fid)
+    assert new2 == pytest.approx(confidence_from_counts(2, 0))
+    assert new2 > new
 
 
 def test_query_facts_filters(store):
@@ -146,7 +154,6 @@ def test_query_facts_filters(store):
             slots={"entity": "Marie Curie", "category": "physicist"},
             asserted_by="model",
             verification_status="verified",
-            confidence=0.95,
         )
     )
     assert len(store.query_facts()) == 2
@@ -159,7 +166,7 @@ def test_query_facts_filters(store):
 def test_all_user_facts_only_returns_user_asserted_valid_rows(store):
     store.insert_fact(_mk())  # user_asserted, valid
     store.insert_fact(
-        _mk(asserted_by="model", verification_status="verified", confidence=0.95)
+        _mk(asserted_by="model", verification_status="verified")
     )
     user_facts = store.all_user_facts()
     assert len(user_facts) == 1
@@ -211,7 +218,7 @@ def test_insert_rejects_bad_confidence(store):
     ],
 )
 def test_all_v03_statuses_accepted(store, status):
-    store.insert_fact(_mk(verification_status=status, confidence=0.5))
+    store.insert_fact(_mk(verification_status=status))
 
 
 # ---------- new pipeline stages ----------

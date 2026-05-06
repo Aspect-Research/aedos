@@ -74,7 +74,7 @@ def _build(tmp_path, fact, *, prepopulate_cache: bool = False):
     router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="retrieval", reason="r", confidence=0.95,
+            method="retrieval", reason="r",
             retrieval_query_hint="x",
         ),
         retrieval_verifier=retrieval,
@@ -95,10 +95,10 @@ def _build(tmp_path, fact, *, prepopulate_cache: bool = False):
         store, registry, mock, ClaimExtractor(mock, registry),
         router, Corrector(mock),
         scoping_classifier=lambda claim: ScopingDecision(
-            scope="world_fact", reason="r", confidence=0.95,
+            scope="world_fact", reason="r",
         ),
         stability_classifier=lambda claim: StabilityDecision(
-            stability_class="decade_stable", reason="r", confidence=0.95,
+            stability_class="decade_stable", reason="r",
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         ),
         verification_cache=cache,
@@ -199,7 +199,7 @@ def test_two_consecutive_calls_first_writes_second_hits(tmp_path):
     router2 = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="retrieval", reason="r", confidence=0.95,
+            method="retrieval", reason="r",
             retrieval_query_hint="x",
         ),
         retrieval_verifier=retrieval,  # same counting verifier
@@ -208,10 +208,10 @@ def test_two_consecutive_calls_first_writes_second_hits(tmp_path):
         store, registry, mock2, ClaimExtractor(mock2, registry),
         router2, Corrector(mock2),
         scoping_classifier=lambda c: ScopingDecision(
-            scope="world_fact", reason="r", confidence=0.95,
+            scope="world_fact", reason="r",
         ),
         stability_classifier=lambda c: StabilityDecision(
-            stability_class="decade_stable", reason="r", confidence=0.95,
+            stability_class="decade_stable", reason="r",
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         ),
         verification_cache=cache,
@@ -252,7 +252,7 @@ def test_user_specific_claim_does_not_check_cache(tmp_path):
     router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="retrieval", reason="r", confidence=0.95,
+            method="retrieval", reason="r",
         ),
         retrieval_verifier=retrieval,
     )
@@ -267,7 +267,7 @@ def test_user_specific_claim_does_not_check_cache(tmp_path):
         store, registry, mock, ClaimExtractor(mock, registry),
         router, Corrector(mock),
         scoping_classifier=lambda c: ScopingDecision(
-            scope="user_specific", reason="user pref", confidence=0.99,
+            scope="user_specific", reason="user pref",
         ),
         # No stability — gated on world_fact.
         verification_cache=cache,

@@ -91,7 +91,7 @@ def _build_pipeline_with_cache(
     router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method=routing_method, reason="x", confidence=0.9,
+            method=routing_method, reason="x",
             retrieval_query_hint="x",
         ),
         retrieval_verifier=_StubRetrieval(),
@@ -118,10 +118,10 @@ def test_world_fact_with_decade_stable_writes_to_cache(tmp_path):
     p, store, cache = _build_pipeline_with_cache(
         tmp_path, facts=[fact],
         scoping_returns=ScopingDecision(
-            scope="world_fact", reason="geo", confidence=0.95,
+            scope="world_fact", reason="geo",
         ),
         stability_returns=StabilityDecision(
-            stability_class="decade_stable", reason="geo", confidence=0.95,
+            stability_class="decade_stable", reason="geo",
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         ),
         retrieval_outcome="verified",
@@ -149,7 +149,7 @@ def test_user_specific_does_not_write_to_cache(tmp_path):
     p, store, cache = _build_pipeline_with_cache(
         tmp_path, facts=[fact],
         scoping_returns=ScopingDecision(
-            scope="user_specific", reason="user pref", confidence=0.99,
+            scope="user_specific", reason="user pref",
         ),
         # Stability won't run (gated on world_fact); pass None.
         stability_returns=None,
@@ -173,10 +173,10 @@ def test_volatile_does_not_write_to_cache(tmp_path):
     p, store, cache = _build_pipeline_with_cache(
         tmp_path, facts=[fact],
         scoping_returns=ScopingDecision(
-            scope="world_fact", reason="market data", confidence=0.95,
+            scope="world_fact", reason="market data",
         ),
         stability_returns=StabilityDecision(
-            stability_class="volatile", reason="prices change", confidence=0.99,
+            stability_class="volatile", reason="prices change",
             ttl_seconds=0,  # the don't-cache marker
         ),
         retrieval_outcome="verified",
@@ -201,10 +201,10 @@ def test_immutable_writes_with_no_expiry(tmp_path):
     p, store, cache = _build_pipeline_with_cache(
         tmp_path, facts=[fact],
         scoping_returns=ScopingDecision(
-            scope="world_fact", reason="structural", confidence=0.99,
+            scope="world_fact", reason="structural",
         ),
         stability_returns=StabilityDecision(
-            stability_class="immutable", reason="fixed string", confidence=0.99,
+            stability_class="immutable", reason="fixed string",
             ttl_seconds=None,
         ),
         retrieval_outcome="verified",
@@ -228,10 +228,10 @@ def test_contradicted_verdict_also_caches(tmp_path):
     p, store, cache = _build_pipeline_with_cache(
         tmp_path, facts=[fact],
         scoping_returns=ScopingDecision(
-            scope="world_fact", reason="geo", confidence=0.95,
+            scope="world_fact", reason="geo",
         ),
         stability_returns=StabilityDecision(
-            stability_class="decade_stable", reason="geo", confidence=0.95,
+            stability_class="decade_stable", reason="geo",
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         ),
         retrieval_outcome="contradicted",
@@ -259,7 +259,7 @@ def test_python_verdict_does_not_cache_via_retrieval_path(tmp_path):
     class _StubCodeGen:
         def verify(self, claim, *, source_turn_id=None):
             return CodeGenVerificationResult(
-                status="verified", confidence=0.99, actual_value=3,
+                status="verified", actual_value=3,
                 explanation="stub",
             )
         def verify_with_cross_check(self, claim, *, source_turn_id=None):
@@ -283,7 +283,7 @@ def test_python_verdict_does_not_cache_via_retrieval_path(tmp_path):
     router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="python", reason="counting", confidence=0.99,
+            method="python", reason="counting",
             python_inputs_self_contained=True,
         ),
         code_gen_verifier=_StubCodeGen(),
@@ -293,10 +293,10 @@ def test_python_verdict_does_not_cache_via_retrieval_path(tmp_path):
         store, registry, mock, ClaimExtractor(mock, registry),
         router, Corrector(mock),
         scoping_classifier=lambda claim: ScopingDecision(
-            scope="world_fact", reason="r", confidence=0.95,
+            scope="world_fact", reason="r",
         ),
         stability_classifier=lambda claim: StabilityDecision(
-            stability_class="immutable", reason="r", confidence=0.99,
+            stability_class="immutable", reason="r",
             ttl_seconds=None,
         ),
         verification_cache=cache,
@@ -351,7 +351,7 @@ def test_cache_write_failure_does_not_break_pipeline(tmp_path):
     router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="retrieval", reason="r", confidence=0.95,
+            method="retrieval", reason="r",
             retrieval_query_hint="x",
         ),
         retrieval_verifier=_StubRetrieval(),
@@ -360,10 +360,10 @@ def test_cache_write_failure_does_not_break_pipeline(tmp_path):
         store, registry, mock, ClaimExtractor(mock, registry),
         router, Corrector(mock),
         scoping_classifier=lambda claim: ScopingDecision(
-            scope="world_fact", reason="r", confidence=0.95,
+            scope="world_fact", reason="r",
         ),
         stability_classifier=lambda claim: StabilityDecision(
-            stability_class="decade_stable", reason="r", confidence=0.95,
+            stability_class="decade_stable", reason="r",
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         ),
         verification_cache=_BoomCache(),

@@ -64,38 +64,35 @@ def _routing_fn_for(mock: MockLLM):
 
 # Convenience constructors — concise routing decisions.
 
-def _route_python(reason="pure computation", confidence=0.95):
+def _route_python(reason="pure computation"):
     return RoutingDecision(
-        method="python", reason=reason, confidence=confidence,
+        method="python", reason=reason,
         python_inputs_self_contained=True,
     )
 
 
-def _route_python_canonical(constants, reason="needs canonical reference",
-                             confidence=0.85):
+def _route_python_canonical(constants, reason="needs canonical reference"):
     return RoutingDecision(
         method="python_with_canonical_constants",
-        reason=reason, confidence=confidence,
+        reason=reason,
         python_inputs_self_contained=False,
         canonical_constants_needed=list(constants),
     )
 
 
-def _route_retrieval(query="x", reason="external data", confidence=0.9):
+def _route_retrieval(query="x", reason="external data"):
     return RoutingDecision(
-        method="retrieval", reason=reason, confidence=confidence,
+        method="retrieval", reason=reason,
         retrieval_query_hint=query,
     )
 
 
-def _route_user_auth(reason="claim about user", confidence=0.95):
-    return RoutingDecision(method="user_authoritative",
-                           reason=reason, confidence=confidence)
+def _route_user_auth(reason="claim about user"):
+    return RoutingDecision(method="user_authoritative", reason=reason)
 
 
-def _route_unverifiable(reason="no method applies", confidence=0.85):
-    return RoutingDecision(method="unverifiable",
-                           reason=reason, confidence=confidence)
+def _route_unverifiable(reason="no method applies"):
+    return RoutingDecision(method="unverifiable", reason=reason)
 
 
 @dataclass
@@ -183,7 +180,7 @@ def test_pattern_dispatch_each_pattern_routes_correctly(tmp_path):
     )
     code_gen_results = [
         CodeGenVerificationResult(
-            status="verified", confidence=0.99, actual_value=3,
+            status="verified", actual_value=3,
             explanation="claimed 3; computed 3",
         ),
     ]
@@ -1346,7 +1343,6 @@ def test_date_arithmetic_routes_to_python(tmp_path):
         ],
         routings=[_route_python(
             reason="date arithmetic on values stated in the claim's slots",
-            confidence=0.9,
         )],
     )
     p = _make_pipeline_with_code_gen(tmp_path, mock)

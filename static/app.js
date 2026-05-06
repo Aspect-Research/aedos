@@ -1391,14 +1391,14 @@ function renderClaimBlock(claim) {
 function renderRoutingBlock(rd) {
   const wrap = el("div", { className: "routing-block" });
   wrap.appendChild(el("div", { className: "routing-method",
-    textContent: `routed to ${rd.method} (conf=${(rd.confidence ?? 0).toFixed(2)})` }));
+    textContent: `routed to ${rd.method}` }));
   if (rd.reason) wrap.appendChild(el("div", { className: "routing-reason", textContent: rd.reason }));
   return wrap;
 }
 
 function renderCodeGenBlock(cg) {
   const wrap = el("details", { className: "code-gen-block" });
-  const summary = el("summary", { textContent: `code-gen: ${cg.status} (conf=${(cg.confidence ?? 0).toFixed(2)})` });
+  const summary = el("summary", { textContent: `code-gen: ${cg.status}` });
   wrap.appendChild(summary);
   const tr = cg.trace || {};
   if (tr.prompt) {
@@ -1519,7 +1519,7 @@ function renderCacheScopingAnnotation(wrap, d) {
   else {
     const dec = d.decision || {};
     wrap.appendChild(el("div", {
-      textContent: `scope=${dec.scope || "?"} (conf=${(dec.confidence ?? 0).toFixed(2)}) — ${dec.reason || ""}`,
+      textContent: `scope=${dec.scope || "?"} — ${dec.reason || ""}`,
     }));
   }
 }
@@ -1533,7 +1533,7 @@ function renderCacheStabilityAnnotation(wrap, d) {
       : dec.ttl_seconds === 0 ? "don't cache (volatile)"
       : `ttl=${dec.ttl_seconds}s`;
     wrap.appendChild(el("div", {
-      textContent: `${dec.stability_class || "?"} (conf=${(dec.confidence ?? 0).toFixed(2)}) · ${ttl} — ${dec.reason || ""}`,
+      textContent: `${dec.stability_class || "?"} · ${ttl} — ${dec.reason || ""}`,
     }));
   }
 }

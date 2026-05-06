@@ -49,20 +49,20 @@ def _decision(verification_status, *, confidence=0.5, claim=None, correction=Non
 
 def test_verified_no_intervention():
     c = Corrector(FakeLLM())
-    out = c.plan_interventions([_decision("verified", confidence=0.95)])
+    out = c.plan_interventions([_decision("verified")])
     assert out == []
 
 
 def test_user_asserted_no_intervention():
     c = Corrector(FakeLLM())
-    out = c.plan_interventions([_decision("user_asserted", confidence=0.95)])
+    out = c.plan_interventions([_decision("user_asserted")])
     assert out == []
 
 
 def test_routing_anomaly_no_intervention():
     c = Corrector(FakeLLM())
     out = c.plan_interventions(
-        [_decision("routing_anomaly", confidence=0.2,
+        [_decision("routing_anomaly",
                    outcome=RoutingOutcome.ROUTING_ANOMALY)]
     )
     assert out == []
@@ -72,7 +72,6 @@ def test_contradicted_yields_replace():
     c = Corrector(FakeLLM())
     d = _decision(
         "contradicted",
-        confidence=0.99,
         correction={"corrected_object": "right", "explanation": "verifier said so"},
         outcome=RoutingOutcome.CONTRADICTED,
     )
@@ -88,7 +87,7 @@ def test_contradicted_yields_replace():
 def test_retrieval_inconclusive_yields_hedge():
     """Verifier ran, judge said insufficient evidence — hedge the claim."""
     c = Corrector(FakeLLM())
-    out = c.plan_interventions([_decision("retrieval_inconclusive", confidence=0.4)])
+    out = c.plan_interventions([_decision("retrieval_inconclusive")])
     assert len(out) == 1
     assert out[0].intervention_type == INTERVENTION_HEDGE
 
@@ -97,7 +96,7 @@ def test_retrieval_failed_does_NOT_hedge():
     """The v0.2 bug: retrieval failure (no signal) was hedging true claims.
     v0.3: do NOT add hedge — there's no positive evidence of uncertainty."""
     c = Corrector(FakeLLM())
-    out = c.plan_interventions([_decision("retrieval_failed", confidence=0.4)])
+    out = c.plan_interventions([_decision("retrieval_failed")])
     assert out == [], (
         "verifier failure must not trigger a hedge — adding 'I think' to "
         "a possibly-true claim is worse than leaving it"
@@ -107,8 +106,8 @@ def test_retrieval_failed_does_NOT_hedge():
 def test_retrieval_inconclusive_vs_failed_diff():
     """Two decisions identical except for status produce different intervention sets."""
     c = Corrector(FakeLLM())
-    out_inc = c.plan_interventions([_decision("retrieval_inconclusive", confidence=0.4)])
-    out_fail = c.plan_interventions([_decision("retrieval_failed", confidence=0.4)])
+    out_inc = c.plan_interventions([_decision("retrieval_inconclusive")])
+    out_fail = c.plan_interventions([_decision("retrieval_failed")])
     assert len(out_inc) == 1
     assert len(out_fail) == 0
 
@@ -116,23 +115,28 @@ def test_retrieval_inconclusive_vs_failed_diff():
 def test_unverifiable_pending_low_confidence_hedges():
     c = Corrector(FakeLLM())
     out = c.plan_interventions([
-        _decision("unverifiable_pending_implementation", confidence=0.4)
+        _decision("unverifiable_pending_implementation")
     ])
     assert len(out) == 1
     assert out[0].intervention_type == INTERVENTION_HEDGE
 
 
-def test_unverifiable_pending_high_confidence_no_intervention():
+def test_unverifiable_pending_always_hedges_v013():
+    """v0.13: pending always hedges. Pre-v0.13 there was a confidence
+    floor (`< 0.5`) that decided whether to hedge or noop; with the
+    LLM-emitted confidence path gone, the status itself is the
+    signal."""
     c = Corrector(FakeLLM())
     out = c.plan_interventions([
-        _decision("unverifiable_pending_implementation", confidence=0.7)
+        _decision("unverifiable_pending_implementation")
     ])
-    assert out == []
+    assert len(out) == 1
+    assert out[0].intervention_type == INTERVENTION_HEDGE
 
 
 def test_unverifiable_in_principle_yields_soften():
     c = Corrector(FakeLLM())
-    out = c.plan_interventions([_decision("unverifiable_in_principle", confidence=0.3)])
+    out = c.plan_interventions([_decision("unverifiable_in_principle")])
     assert len(out) == 1
     assert out[0].intervention_type == INTERVENTION_SOFTEN
 
@@ -141,16 +145,15 @@ def test_mixed_decisions_yield_mixed_interventions():
     c = Corrector(FakeLLM())
     out = c.plan_interventions(
         [
-            _decision("verified", confidence=0.95),
+            _decision("verified"),
             _decision(
                 "contradicted",
-                confidence=0.99,
                 correction={"corrected_object": "fixed", "explanation": "x"},
             ),
-            _decision("retrieval_inconclusive", confidence=0.4),
-            _decision("retrieval_failed", confidence=0.4),  # NOT hedged
-            _decision("unverifiable_in_principle", confidence=0.3),
-            _decision("routing_anomaly", confidence=0.2,
+            _decision("retrieval_inconclusive"),
+            _decision("retrieval_failed"),  # NOT hedged
+            _decision("unverifiable_in_principle"),
+            _decision("routing_anomaly",
                       outcome=RoutingOutcome.ROUTING_ANOMALY),
         ]
     )
@@ -243,7 +246,6 @@ def test_ledger_surfaces_router_reason_for_unverifiable_in_principle():
         },
         outcome=RoutingOutcome.UNVERIFIABLE_IN_PRINCIPLE,
         verification_status="unverifiable_in_principle",
-        confidence=0.85,
         routing_decision={
             "method": "unverifiable",
             "reason": "Vacuous lexical tautology — extractor artifact",
@@ -297,7 +299,6 @@ def test_ledger_surfaces_judge_justification_for_inconclusive():
         },
         outcome=RoutingOutcome.UNVERIFIED,
         verification_status="retrieval_inconclusive",
-        confidence=0.5,
         retrieval_result=rr,
     )
     msg = _format_user_message(
@@ -330,7 +331,6 @@ def test_ledger_falls_back_to_generic_reason_when_verdict_missing():
                "polarity": 1, "source_text": "x is y"},
         outcome=RoutingOutcome.UNVERIFIED,
         verification_status="retrieval_inconclusive",
-        confidence=0.4,
         retrieval_result=RetrievalResult(
             outcome=VerificationOutcome.INCONCLUSIVE,
             verdict=None,  # no verdict object

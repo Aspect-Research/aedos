@@ -30,24 +30,19 @@ from src.llm_client import LLMClient
 from src.llm_router import ROUTING_METHODS, RoutingDecision, route_claim
 from src.pattern_registry import Pattern, PatternRegistry
 from src.router.constants import (
-    CONF_PENDING_IMPLEMENTATION,
-    CONF_PYTHON_CORRECTION,
-    CONF_PYTHON_VERIFIED,
-    CONF_RETRIEVAL_CORRECTION,
-    CONF_RETRIEVAL_FAILED,
-    CONF_RETRIEVAL_INCONCLUSIVE,
-    CONF_RETRIEVAL_VERIFIED,
-    CONF_ROUTING_ANOMALY,
-    CONF_STORE_VERIFIED,
-    CONF_UNVERIFIABLE_IN_PRINCIPLE,
-    CONF_USER_ASSERTED,
     KEY_SLOTS_BY_PATTERN,
     UNIQUE_VALUE_SLOTS,
     USER_SUBJECT_PATTERNS,
-    confidence_with_reinforcement,
+    confidence_from_counts,
     is_user,
     unique_value_slots_enabled,
 )
+
+# v0.13: confidence for outcomes that don't produce a stored fact
+# (no counts to derive from). Equivalent to ``confidence_from_counts(0, 0)``.
+# Inlined as a module constant for readability at Decision-construction
+# sites — the value is just the uniform-prior expectation.
+_NO_EVIDENCE_CONFIDENCE = 0.5
 from src.router.types import Decision, RoutingOutcome
 from src.verifiers.code_generation import (
     CodeGenerationVerifier,
@@ -165,7 +160,10 @@ class Router:
                 verification_status="user_asserted",
                 confidence=new_conf,
                 boosted_fact_id=fid,
-                notes=[f"user repeated an already-known fact (id={fid})"],
+                notes=[
+                    f"user repeated an already-known fact (id={fid}, "
+                    f"reinforcement_count={(existing[0].reinforcement_count or 0) + 1})"
+                ],
             )
 
         opposite = self.store.find_contradictions(
@@ -184,8 +182,10 @@ class Router:
                 pattern.name, claim["predicate"], slots, polarity,
             )
 
+        # Brand-new user-asserted fact: counts are (0, 0).
+        fresh_conf = confidence_from_counts(0, 0)
         new_id = self._store(claim, source_turn_id, asserted_by="user",
-                             confidence=CONF_USER_ASSERTED,
+                             confidence=fresh_conf,
                              verification_status="user_asserted")
 
         if prior_self_contradictions:
@@ -193,7 +193,7 @@ class Router:
                 claim=claim,
                 outcome=RoutingOutcome.USER_CONTRADICTED_SELF,
                 verification_status="user_asserted",
-                confidence=CONF_USER_ASSERTED,
+                confidence=fresh_conf,
                 stored_fact_id=new_id,
                 closed_fact_ids=closed,
                 notes=[
@@ -209,7 +209,7 @@ class Router:
                 claim=claim,
                 outcome=RoutingOutcome.USER_CONTRADICTED_PRIOR,
                 verification_status="user_asserted",
-                confidence=CONF_USER_ASSERTED,
+                confidence=fresh_conf,
                 stored_fact_id=new_id,
                 closed_fact_ids=closed,
                 notes=[f"user reversed prior assertion; closed {len(closed)} old fact(s)"],
@@ -218,7 +218,7 @@ class Router:
             claim=claim,
             outcome=RoutingOutcome.USER_STORED,
             verification_status="user_asserted",
-            confidence=CONF_USER_ASSERTED,
+            confidence=fresh_conf,
             stored_fact_id=new_id,
         )
 
@@ -334,14 +334,15 @@ class Router:
         *, use_canonical_constants: bool,
     ) -> Decision:
         if self.code_gen_verifier is None:
+            fresh_conf = confidence_from_counts(0, 0)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
                 verification_status="unverifiable_pending_implementation",
-                confidence=CONF_PENDING_IMPLEMENTATION,
+                confidence=fresh_conf,
                 stored_fact_id=self._store(
                     claim, source_turn_id, asserted_by=self._origin_for_storage,
-                    confidence=CONF_PENDING_IMPLEMENTATION,
+                    confidence=fresh_conf,
                     verification_status="unverifiable_pending_implementation",
                 ),
                 notes=["python method routed but no CodeGenerationVerifier configured"],
@@ -357,15 +358,15 @@ class Router:
             )
 
         if result.status == "verified":
+            fact_id, final_conf, _ = self._store_or_boost_model_fact(
+                claim, source_turn_id, verification_status="verified",
+            )
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.VERIFIED,
                 verification_status="verified",
-                confidence=CONF_PYTHON_VERIFIED,
-                stored_fact_id=self._store(
-                    claim, source_turn_id, asserted_by=self._origin_for_storage,
-                    confidence=CONF_PYTHON_VERIFIED, verification_status="verified",
-                ),
+                confidence=final_conf,
+                stored_fact_id=fact_id,
                 code_gen_result=result.to_dict(),
             )
 
@@ -382,19 +383,20 @@ class Router:
             if self._origin_for_storage == "user":
                 self._store(
                     claim, source_turn_id, asserted_by="user",
-                    confidence=CONF_USER_ASSERTED,
+                    confidence=confidence_from_counts(0, 0),
                     verification_status="contradicted",
                 )
+            corrected_conf = confidence_from_counts(0, 0)
             corrected_id = self._store(
                 corrected_claim, source_turn_id, asserted_by="python_verifier",
-                confidence=CONF_PYTHON_CORRECTION, verification_status="verified",
+                confidence=corrected_conf, verification_status="verified",
             )
             original_value = _extract_displayed_claim_value(claim)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
-                confidence=CONF_PYTHON_CORRECTION,
+                confidence=corrected_conf,
                 stored_fact_id=corrected_id,
                 code_gen_result=result.to_dict(),
                 correction={
@@ -409,14 +411,15 @@ class Router:
         notes = [
             f"code generation produced status {result.status!r}: {result.explanation}"
         ]
+        fresh_conf = confidence_from_counts(0, 0)
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
             verification_status="unverifiable_pending_implementation",
-            confidence=CONF_PENDING_IMPLEMENTATION,
+            confidence=fresh_conf,
             stored_fact_id=self._store(
                 claim, source_turn_id, asserted_by=self._origin_for_storage,
-                confidence=CONF_PENDING_IMPLEMENTATION,
+                confidence=fresh_conf,
                 verification_status="unverifiable_pending_implementation",
             ),
             code_gen_result=result.to_dict(),
@@ -444,11 +447,16 @@ class Router:
         if result.outcome is StoreLookupOutcome.CONTRADICTION:
             cf = result.contradicting_fact
             assert cf is not None
+            # The contradicting fact is a stored user-asserted prior;
+            # its existing reinforcement_count is the count signal.
+            cf_conf = confidence_from_counts(
+                cf.reinforcement_count or 0, 0,
+            )
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.CONTRADICTED,
                 verification_status="contradicted",
-                confidence=CONF_STORE_VERIFIED,
+                confidence=cf_conf,
                 contradicting_fact_id=cf.id,
                 correction={
                     "original_object": claim.get("slots"),
@@ -461,14 +469,15 @@ class Router:
                     "source_text": claim.get("source_text", ""),
                 },
             )
+        fresh_conf = confidence_from_counts(0, 0)
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIED,
             verification_status="unverifiable_pending_implementation",
-            confidence=CONF_PENDING_IMPLEMENTATION,
+            confidence=fresh_conf,
             stored_fact_id=self._store(
                 claim, source_turn_id, asserted_by=self._origin_for_storage,
-                confidence=CONF_PENDING_IMPLEMENTATION,
+                confidence=fresh_conf,
                 verification_status="unverifiable_pending_implementation",
             ),
             notes=[
@@ -516,22 +525,11 @@ class Router:
             cached.evidence, key, hit
         )
 
-        # v0.7.13: fold the cache entry's earned trust signals into
-        # the served Decision's confidence. The cache tracks how many
-        # times this verdict has been re-confirmed (refresh_count) and
-        # flipped (contradiction_count) — that's the user's original
-        # vision of "confidence = how many times reinforced". Read the
-        # cached judge confidence too, if present, so the path prior
-        # gets multiplied by the verifier's own conviction.
-        path_prior = (
-            CONF_RETRIEVAL_VERIFIED if cached.verdict == "verified"
-            else CONF_RETRIEVAL_CORRECTION if cached.verdict == "contradicted"
-            else CONF_RETRIEVAL_INCONCLUSIVE
-        )
-        verifier_conf = (cached.confidence
-                         if cached.confidence is not None else 1.0)
-        adjusted_conf = confidence_with_reinforcement(
-            base=path_prior * verifier_conf,
+        # v0.13: confidence is purely the cache entry's count history.
+        # No path priors, no LLM-emitted judge confidence — just the
+        # frequentist Beta(1,1) posterior from refresh_count and
+        # contradiction_count.
+        adjusted_conf = confidence_from_counts(
             refresh_count=cached.refresh_count or 0,
             contradiction_count=cached.contradiction_count or 0,
         )
@@ -546,7 +544,6 @@ class Router:
         )
         fact_id, _, reinforcement_count = self._store_or_boost_model_fact(
             claim, source_turn_id,
-            path_prior=path_prior, verifier_confidence=verifier_conf,
             verification_status=verification_status,
         )
         notes_extra = (
@@ -608,14 +605,15 @@ class Router:
         *, query_hint: str | None = None,
     ) -> Decision:
         if self.retrieval_verifier is None:
+            fresh_conf = confidence_from_counts(0, 0)
             return Decision(
                 claim=claim,
                 outcome=RoutingOutcome.UNVERIFIED,
                 verification_status="retrieval_failed",
-                confidence=CONF_RETRIEVAL_FAILED,
+                confidence=fresh_conf,
                 stored_fact_id=self._store(
                     claim, source_turn_id, asserted_by=self._origin_for_storage,
-                    confidence=CONF_RETRIEVAL_FAILED,
+                    confidence=fresh_conf,
                     verification_status="retrieval_failed",
                 ),
                 notes=["no RetrievalVerifier configured on Router"],
@@ -631,20 +629,9 @@ class Router:
 
         result = self.retrieval_verifier.verify(claim, source_turn_id=source_turn_id)
 
-        # v0.7.13: judge confidence (now in [0, 1] from the parser)
-        # multiplies the path prior so a hedged judge can't produce
-        # a full-confidence Decision. Defaults to 1.0 when the judge
-        # didn't emit a confidence line (legacy responses, mocks).
-        judge_conf = (
-            result.verdict.confidence if result.verdict is not None else 1.0
-        )
-
         if result.outcome is VerificationOutcome.VERIFIED:
             fact_id, final_conf, _ = self._store_or_boost_model_fact(
-                claim, source_turn_id,
-                path_prior=CONF_RETRIEVAL_VERIFIED,
-                verifier_confidence=judge_conf,
-                verification_status="verified",
+                claim, source_turn_id, verification_status="verified",
             )
             return Decision(
                 claim=claim,
@@ -656,10 +643,7 @@ class Router:
             )
         if result.outcome is VerificationOutcome.CONTRADICTED:
             fact_id, final_conf, _ = self._store_or_boost_model_fact(
-                claim, source_turn_id,
-                path_prior=CONF_RETRIEVAL_CORRECTION,
-                verifier_confidence=judge_conf,
-                verification_status="contradicted",
+                claim, source_turn_id, verification_status="contradicted",
             )
             return Decision(
                 claim=claim,
@@ -682,21 +666,15 @@ class Router:
                                   "judge_parse_error", "retrieval_not_configured"}
         )
         status = "retrieval_failed" if is_failed else "retrieval_inconclusive"
-        # Failed retrievals don't get a judge confidence (no judge
-        # ran, or the judge response was unparseable). Inconclusive
-        # ones do — multiply through.
-        path_prior = CONF_RETRIEVAL_FAILED if is_failed else CONF_RETRIEVAL_INCONCLUSIVE
         if is_failed:
-            confidence = path_prior
+            confidence = confidence_from_counts(0, 0)
             fact_id = self._store(
                 claim, source_turn_id, asserted_by=self._origin_for_storage,
                 confidence=confidence, verification_status=status,
             )
         else:
             fact_id, confidence, _ = self._store_or_boost_model_fact(
-                claim, source_turn_id,
-                path_prior=path_prior, verifier_confidence=judge_conf,
-                verification_status=status,
+                claim, source_turn_id, verification_status=status,
             )
 
         return Decision(
@@ -714,14 +692,15 @@ class Router:
         )
 
     def _route_unverifiable(self, claim: dict, source_turn_id: int) -> Decision:
+        fresh_conf = confidence_from_counts(0, 0)
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.UNVERIFIABLE_IN_PRINCIPLE,
             verification_status="unverifiable_in_principle",
-            confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
+            confidence=fresh_conf,
             stored_fact_id=self._store(
                 claim, source_turn_id, asserted_by=self._origin_for_storage,
-                confidence=CONF_UNVERIFIABLE_IN_PRINCIPLE,
+                confidence=fresh_conf,
                 verification_status="unverifiable_in_principle",
             ),
             notes=["LLM router determined no method applies"],
@@ -730,14 +709,15 @@ class Router:
     def _route_routing_anomaly(
         self, claim: dict, source_turn_id: int, anomaly: dict
     ) -> Decision:
+        fresh_conf = confidence_from_counts(0, 0)
         return Decision(
             claim=claim,
             outcome=RoutingOutcome.ROUTING_ANOMALY,
             verification_status="routing_anomaly",
-            confidence=CONF_ROUTING_ANOMALY,
+            confidence=fresh_conf,
             stored_fact_id=self._store(
                 claim, source_turn_id, asserted_by=self._origin_for_storage,
-                confidence=CONF_ROUTING_ANOMALY, verification_status="routing_anomaly",
+                confidence=fresh_conf, verification_status="routing_anomaly",
             ),
             anomaly_slot=anomaly,
             notes=[
@@ -833,20 +813,20 @@ class Router:
         claim: dict,
         source_turn_id: int,
         *,
-        path_prior: float,
-        verifier_confidence: float,
         verification_status: str,
     ) -> tuple[int, float, int]:
         """v0.7.13: find an existing matching model-asserted fact and
         boost it instead of inserting a duplicate. Mirror of the
         user-asserted find-or-boost pattern in _route_user.
 
-        Returns ``(fact_id, final_confidence, reinforcement_count)``.
+        Returns ``(fact_id, confidence, reinforcement_count)``.
 
-        Same-shape lookup is anchored on the pattern's identity slots
-        (same as the cache key + store-verifier identity-slot anchor).
-        Polarity must match — opposite polarity is a CONTRADICTION,
-        not a reinforcement, so we leave it to the existing code paths.
+        v0.13: confidence is purely a function of reinforcement_count.
+        No path_prior or verifier_confidence parameters — those were
+        the LLM-emitted/hardcoded inputs the frequentist refactor
+        deleted. Same-shape lookup is still anchored on the pattern's
+        identity slots; polarity match required (opposite polarity is
+        a CONTRADICTION, not a reinforcement).
         """
         slots = claim.get("slots") or {}
         polarity = int(claim["polarity"])
@@ -876,23 +856,15 @@ class Router:
         existing = [f for f in existing
                     if f.asserted_by == self._origin_for_storage]
 
-        base = max(0.0, min(1.0, path_prior * verifier_confidence))
         if existing:
             target = existing[-1]
             assert target.id is not None
-            new_conf = self.store.boost_confidence(
-                target.id, base_for_curve=base,
-            )
+            new_conf = self.store.boost_confidence(target.id)
             new_count = (target.reinforcement_count or 0) + 1
             return target.id, new_conf, new_count
 
-        # No matching fact yet — store fresh at the base. Use the
-        # reinforcement curve with count=0 so the formula is the
-        # single source of truth (returns base unchanged in that case).
-        from src.router.constants import confidence_with_reinforcement
-        fresh_conf = confidence_with_reinforcement(
-            base, refresh_count=0, contradiction_count=0,
-        )
+        # No matching fact yet — store fresh at the (0, 0) prior.
+        fresh_conf = confidence_from_counts(0, 0)
         fact_id = self._store(
             claim, source_turn_id, asserted_by=self._origin_for_storage,
             confidence=fresh_conf, verification_status=verification_status,

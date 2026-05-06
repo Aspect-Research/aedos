@@ -39,14 +39,14 @@ def client_with_seed_data(tmp_path, monkeypatch):
     store.insert_fact(Fact(
         pattern="preference", predicate="likes",
         slots={"agent": "user", "object": "tea"},
-        polarity=1, confidence=0.95,
+        polarity=1,
         asserted_by="user", verification_status="user_asserted",
         user_id="alice",
     ))
     store.insert_fact(Fact(
         pattern="preference", predicate="likes",
         slots={"agent": "user", "object": "coffee"},
-        polarity=1, confidence=0.95,
+        polarity=1,
         asserted_by="user", verification_status="user_asserted",
         user_id="bob",
     ))
