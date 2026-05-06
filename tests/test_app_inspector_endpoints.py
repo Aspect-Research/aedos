@@ -24,9 +24,6 @@ def client_with_seed_data(tmp_path, monkeypatch):
     """Build a TestClient with a seeded DB so inspector endpoints have
     something to return."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    # Suppress GLM dispatch path so /api/models reports it unavailable
-    # in this fixture (deterministic).
-    monkeypatch.delenv("MODAL_API_KEY", raising=False)
 
     db_path = tmp_path / "api.db"
     monkeypatch.setenv("AEDOS_DB_PATH", str(db_path))
@@ -300,7 +297,6 @@ def test_chat_stream_sse_emits_pipeline_events_then_done(tmp_path, monkeypatch):
     final ``done`` frame carrying the trace. The Flow View in the
     chat panel consumes these to draw the chart live."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("MODAL_API_KEY", raising=False)
     monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "stream.db"))
 
     from src.app import app
@@ -367,7 +363,6 @@ def test_chat_stream_emits_error_event_on_pipeline_failure(tmp_path, monkeypatch
     """If run_turn raises, the SSE stream emits an ``error`` frame
     with error_type + error_message instead of a ``done`` frame."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("MODAL_API_KEY", raising=False)
     monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "err.db"))
 
     from src.app import app
@@ -391,7 +386,6 @@ def test_chat_stream_emits_error_event_on_pipeline_failure(tmp_path, monkeypatch
 
 def test_chat_stream_rejects_empty_message(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("MODAL_API_KEY", raising=False)
     monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "e.db"))
     from src.app import app
     with TestClient(app) as c:

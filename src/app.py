@@ -231,20 +231,20 @@ def chat(req: ChatRequest) -> dict[str, Any]:
     except Exception as exc:
         # Return a structured error rather than letting FastAPI's
         # generic 500-with-no-body propagate. The chat backend
-        # raising (Modal down, Anthropic 429, etc.) is the most
-        # common failure here; surface the type so the UI can show
-        # something useful.
+        # raising (Anthropic 429, OpenAI 5xx, etc.) is the most common
+        # failure here; surface the type so the UI can show something
+        # useful.
         raise HTTPException(
             status_code=502,
             detail={
                 "error_type": type(exc).__name__,
                 "error_message": str(exc),
                 "hint": (
-                    "The pipeline raised. Common causes: chat backend "
-                    "down (Modal upstream / Anthropic rate limit), "
-                    "extractor LLM unreachable, or retrieval verifier "
-                    "network timeout. Check the most recent assistant "
-                    "turn's pipeline_events for details."
+                    "The pipeline raised. Common causes: provider rate "
+                    "limit (Anthropic / OpenAI), extractor LLM "
+                    "unreachable, or retrieval verifier network "
+                    "timeout. Check the most recent assistant turn's "
+                    "pipeline_events for details."
                 ),
             },
         ) from exc
@@ -316,8 +316,9 @@ def list_models() -> dict[str, Any]:
 
     The selected model drives every Anthropic call in a turn (chat,
     extraction, router, judge, corrector, scoping, stability, code-gen).
-    Post-v0.7.15 the list is Anthropic-only — the GLM-5.1 entry was
-    removed alongside the Modal backend.
+    Post-v0.8.0 the list mixes Anthropic + OpenAI. The selected model
+    drives the CHAT slot only — internal calls (extractor, router,
+    judge, etc.) follow DEFAULT_MODEL_BY_PURPOSE.
     """
     from src.llm_client import ALLOWED_MODELS
     import os
