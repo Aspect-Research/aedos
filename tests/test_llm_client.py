@@ -74,76 +74,13 @@ def test_rewrite_omits_temperature_when_none_on_opus(monkeypatch):
     assert "temperature" not in fake.last_kwargs
 
 
-# ---- single-model selection (with_active_model) ----
-
-
-def test_with_active_model_swaps_only_chat_model(monkeypatch):
-    """v0.8.0 narrowed contract: with_active_model only swaps the
-    CHAT model. Internal calls (extractor, corrector, judge, etc.)
-    flow through DEFAULT_MODEL_BY_PURPOSE so the operator picking
-    Opus 4.7 to test chat-side hallucination doesn't blow up
-    internal-call cost."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    c = LLMClient(
-        model="claude-opus-4-7",
-        extractor_model="claude-opus-4-7",
-        corrector_model="claude-opus-4-7",
-    )
-    with c.with_active_model("claude-sonnet-4-6"):
-        assert c.model == "claude-sonnet-4-6"
-        # extractor + corrector unchanged — internal calls follow
-        # the per-purpose routing, not the operator's chat selection.
-        assert c.extractor_model == "claude-opus-4-7"
-        assert c.corrector_model == "claude-opus-4-7"
-    # Restored after the block.
-    assert c.model == "claude-opus-4-7"
-
-
-def test_with_active_model_none_is_no_op(monkeypatch):
-    """Passing None preserves the current model state — used as the
-    default value of run_turn(model=...) so the existing pipeline
-    behaviour is unchanged."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    c = LLMClient(model="claude-opus-4-7", corrector_model="claude-opus-4-7")
-    with c.with_active_model(None):
-        assert c.model == "claude-opus-4-7"
-        assert c.corrector_model == "claude-opus-4-7"
-
-
-def test_with_active_model_rejects_unknown(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    c = LLMClient()
-    with pytest.raises(ValueError, match="unknown model"):
-        with c.with_active_model("claude-totally-fake"):
-            pass
-
-
-def test_with_active_model_restores_on_exception(monkeypatch):
-    """Even when the block raises, the model attrs are restored."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    c = LLMClient(model="claude-opus-4-7", corrector_model="claude-opus-4-7")
-    with pytest.raises(RuntimeError):
-        with c.with_active_model("claude-haiku-4-5"):
-            assert c.model == "claude-haiku-4-5"
-            raise RuntimeError("boom")
-    assert c.model == "claude-opus-4-7"
-    assert c.corrector_model == "claude-opus-4-7"
-
-
-def test_chat_uses_active_model(monkeypatch):
-    """End-to-end: with_active_model('claude-sonnet-4-6') makes the
-    next chat() call hit the API with that model id."""
-    c, fake = _client_with_fake(monkeypatch, "claude-opus-4-7")
-    with c.with_active_model("claude-sonnet-4-6"):
-        c.chat("sys", [])
-    assert fake.last_kwargs["model"] == "claude-sonnet-4-6"
+# ---- per-purpose model dispatch ----
 
 
 def test_extract_with_tool_follows_per_purpose_routing(monkeypatch):
     """v0.8.0: extract_with_tool resolves its model through
-    DEFAULT_MODEL_BY_PURPOSE (overridable via env), NOT through
-    with_active_model. The operator's chat selection doesn't
-    re-route extractor calls to that model."""
+    DEFAULT_MODEL_BY_PURPOSE (overridable via env). The chat model
+    setting on self.llm has no effect on internal-purpose calls."""
     # Force the extractor purpose to a known Anthropic model so the
     # test doesn't actually try to call OpenAI when an env var
     # isn't set. AEDOS_MODEL_extractor:user wins over the default.
@@ -157,13 +94,11 @@ def test_extract_with_tool_follows_per_purpose_routing(monkeypatch):
         stop_reason = "tool_use"
 
     fake.create = lambda **kw: setattr(fake, "last_kwargs", kw) or _ToolResp()
-    # Operator sets a different chat model — extractor should ignore it.
-    with c.with_active_model("claude-sonnet-4-6"):
-        c.extract_with_tool(
-            "sys", "msg",
-            {"name": "t", "input_schema": {"type": "object"}},
-            purpose="extractor:user",
-        )
+    c.extract_with_tool(
+        "sys", "msg",
+        {"name": "t", "input_schema": {"type": "object"}},
+        purpose="extractor:user",
+    )
     assert fake.last_kwargs["model"] == "claude-haiku-4-5"
 
 

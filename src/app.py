@@ -98,11 +98,6 @@ def _pipeline(app: FastAPI) -> Pipeline:
 
 class ChatRequest(BaseModel):
     message: str
-    # Operator's per-turn model selection from the chat UI dropdown.
-    # When set, drives every Anthropic call (chat, extraction, router,
-    # judge, corrector, scoping, stability, code-gen). ``None`` falls
-    # back to the pipeline's defaults (Opus 4.7).
-    model: str | None = None
 
 
 # ---- chat endpoint ---------------------------------------------------
@@ -162,9 +157,7 @@ async def chat_stream(req: ChatRequest):
 
     async def _run_pipeline() -> None:
         try:
-            trace = await asyncio.to_thread(
-                p.run_turn, req.message, model=req.model,
-            )
+            trace = await asyncio.to_thread(p.run_turn, req.message)
             await queue.put(("done", trace.to_dict()))
         except Exception as exc:
             await queue.put(("error", {
@@ -227,7 +220,7 @@ def chat(req: ChatRequest) -> dict[str, Any]:
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
     try:
-        trace = _pipeline(app).run_turn(req.message, model=req.model)
+        trace = _pipeline(app).run_turn(req.message)
     except Exception as exc:
         # Return a structured error rather than letting FastAPI's
         # generic 500-with-no-body propagate. The chat backend
@@ -308,43 +301,6 @@ def list_patterns() -> list[dict[str, Any]]:
         }
         for p in reg.all()
     ]
-
-
-@app.get("/api/models")
-def list_models() -> dict[str, Any]:
-    """Models the chat UI can offer in the per-turn selector.
-
-    The selected model drives every Anthropic call in a turn (chat,
-    extraction, router, judge, corrector, scoping, stability, code-gen).
-    Post-v0.8.0 the list mixes Anthropic + OpenAI. The selected model
-    drives the CHAT slot only — internal calls (extractor, router,
-    judge, etc.) follow DEFAULT_MODEL_BY_PURPOSE.
-    """
-    from src.llm_client import ALLOWED_MODELS
-    import os
-    p = _pipeline(app)
-    labels = {
-        "claude-opus-4-7":   "Claude Opus 4.7",
-        "claude-sonnet-4-6": "Claude Sonnet 4.6",
-        "claude-haiku-4-5":  "Claude Haiku 4.5",
-        "gpt-4.1":           "GPT-4.1",
-        "gpt-4.1-mini":      "GPT-4.1-mini",
-        "gpt-4o":            "GPT-4o",
-        "gpt-4o-mini":       "GPT-4o-mini",
-    }
-    openai_available = bool(os.getenv("OPENAI_API_KEY"))
-    default_model = getattr(p.llm, "model", "claude-opus-4-7")
-    return {
-        "default": default_model,
-        "models": [
-            {
-                "id": m,
-                "label": labels.get(m, m),
-                "available": (openai_available if m.startswith("gpt-") else True),
-            }
-            for m in ALLOWED_MODELS
-        ],
-    }
 
 
 @app.get("/api/health")

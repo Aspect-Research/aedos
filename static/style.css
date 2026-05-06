@@ -94,17 +94,6 @@ header h1 { font-size: 1.1rem; margin: 0; flex: 0 0 auto; }
   border-color: var(--accent);
   color: var(--ink);
 }
-.model-select select {
-  font-family: inherit;
-  font-size: 0.85rem;
-  padding: 0.35rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-elev);
-  color: var(--ink);
-  min-width: 18em;
-}
-
 /* ==== Main split: chat | flow ===================================== */
 
 main {
@@ -1548,13 +1537,6 @@ tr.contradicted td { background: var(--bad-soft); }
   }
   /* Inspector button hidden on mobile per spec; reset stays. */
   #inspector-btn { display: none; }
-  /* Model select compresses; the text inside elides naturally. */
-  .model-select select {
-    min-width: 0;
-    width: 8.5em;
-    font-size: 0.78rem;
-    padding: 0.3rem 0.4rem;
-  }
 
   /* --- Main split: column stack, flow ON TOP, chat ON BOTTOM ----
    * grid-auto-flow plus explicit row sizes pin both panes onscreen
