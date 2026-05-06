@@ -78,7 +78,7 @@ Anthropic Haiku for the chat slot:
 
 | Purpose | Default model |
 |---|---|
-| `chat` | `claude-haiku-4-5` (operator-overridable in the UI) |
+| `chat` | `claude-haiku-4-5` (locked; override only via `AEDOS_CHAT_MODEL`) |
 | `extractor:user` / `extractor:assistant` | `gpt-4.1-mini` |
 | `router` | `gpt-4.1-mini` |
 | `prompt_builder` / `code_writer` / `retrieval_judge` / `corrector` | `gpt-4.1-mini` |
@@ -125,7 +125,7 @@ Or click **Reset DB** in the UI header — it calls the same endpoint.
 | `ANTHROPIC_API_KEY` | (required) | Anthropic API key |
 | `OPENAI_API_KEY` | — | Required when any purpose routes to a `gpt-*` model (the default config does) |
 | `AEDOS_DB_PATH` | `aedos.db` | SQLite file location |
-| `AEDOS_CHAT_MODEL` | `claude-haiku-4-5` | Default chat-slot model (operator can switch in the UI) |
+| `AEDOS_CHAT_MODEL` | `claude-haiku-4-5` | Chat-slot model. The UI has no model dropdown; this env var is the only override |
 | `AEDOS_MODEL_<purpose>` | — | Override any per-purpose model — e.g. `AEDOS_MODEL_router=claude-haiku-4-5` |
 | `AEDOS_RETRIEVAL_CACHE_TTL_HOURS` | `24` | TTL for the per-query Wikipedia snippet cache. `0` disables |
 

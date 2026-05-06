@@ -65,11 +65,11 @@ final response (+ all events written to pipeline_events)
 | `cache` | `VerificationCache` (table I/O), `CacheGate` (single owner of scoping + stability + lookup + write), `canonicalize_claim_key` with stem normalization, `semantic_lookup` for shape-based fallback. |
 | `corrector` | One LLM call. Plans interventions (replace / hedge / soften / remove) per Decision and applies them all in one rewrite, demanding internal consistency with verified values. |
 | `pipeline` | Orchestrator. Six clearly-named stage methods inside `_run_turn_inner`. |
-| `llm_client` | Anthropic SDK wrapper + per-purpose dispatcher. `with_active_model(model)` swaps the CHAT model only (post-v0.8.0); internal calls follow `DEFAULT_MODEL_BY_PURPOSE` so picking Opus for the chat slot doesn't blow up internal cost. Drops `temperature` for opus-4-7. |
+| `llm_client` | Anthropic SDK wrapper + per-purpose dispatcher. Chat model is locked to `DEFAULT_MODEL_BY_PURPOSE['chat']` (Haiku 4.5) — operators override via `AEDOS_CHAT_MODEL`, not via the UI. Drops `temperature` for opus-4-7. |
 | `openai_client` | OpenAI SDK wrapper used when any purpose resolves to a `gpt-*` model. Cost lands on the same per-instance ledger. |
 | `llm_clients/` | Chat-slot backend (currently `AnthropicChatBackend` only — the Modal/GLM backend was removed in v0.7.15). |
 | `cost` | Per-million-token pricing constants + per-call recording + end-of-turn aggregation. Reads provider-specific cache-tier token counts (Anthropic `cache_creation_input_tokens` / `cache_read_input_tokens`, OpenAI `prompt_tokens_details.cached_tokens`) so per-turn cost reflects what each provider actually bills. |
-| `app` | FastAPI. `POST /api/chat`, `POST /api/chat/stream` (SSE), `/api/turns`, `/api/trace/{id}`, `/api/facts`, `/api/patterns`, `/api/cache`, `/api/models`, `/api/health`, `/api/reset`. Serves the static UI. |
+| `app` | FastAPI. `POST /api/chat`, `POST /api/chat/stream` (SSE), `/api/turns`, `/api/trace/{id}`, `/api/facts`, `/api/patterns`, `/api/cache`, `/api/health`, `/api/reset`. Serves the static UI. |
 
 ## Key design choices
 
@@ -149,14 +149,14 @@ table.
 
 ### Single model selection (per turn)
 
-The chat UI has one model dropdown. Post-v0.8.0 it threads the choice
-into `LLMClient.with_active_model(model)` for the **chat slot only** —
-the model under test for hallucination catching. Internal calls
+The chat model is **locked to Haiku 4.5** at construction time
+(`DEFAULT_MODEL_BY_PURPOSE['chat']`). The chat UI no longer offers a
+model dropdown — operators who need to swap the chat model do so via
+`AEDOS_CHAT_MODEL` in `.env`, not via the UI. Internal calls
 (extractor, router, code-writer, judge, corrector, scoping, stability,
-canonical-constants cross-check) follow `DEFAULT_MODEL_BY_PURPOSE` so
-the operator picking Opus 4.7 to test the chat side doesn't blow up
-internal-call cost. The default routing puts cheap mini-class GPTs on
-all internal work; override any entry per-process via
+canonical-constants cross-check) follow `DEFAULT_MODEL_BY_PURPOSE`
+independently — the default routing puts cheap mini-class GPTs on all
+internal work. Override any entry per-process via
 `AEDOS_MODEL_<purpose>=<model_id>`.
 
 ### Live progressive UI

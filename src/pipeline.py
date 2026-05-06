@@ -177,10 +177,6 @@ class Pipeline:
         # ``chat(system, messages, max_tokens=...)`` and is passed in as
         # the llm.
         self.chat_backend = chat_backend if chat_backend is not None else llm
-        # Active per-turn model override; set by run_turn when a model
-        # parameter is supplied. Used by _invoke_chat_backend to dispatch
-        # to the right chat backend without mutating self.chat_backend.
-        self._active_chat_model: str | None = None
         # v0.9.0: optional callback for live (non-persisted) events
         # like ``chat_draft_token``. Set by /api/chat/stream to push
         # streaming tokens to the SSE consumer; None disables streaming
@@ -188,34 +184,11 @@ class Pipeline:
         # None for the non-stream /api/chat path and for tests.
         self.live_emit: Any | None = None
 
-    def run_turn(
-        self, user_message: str, *, model: str | None = None,
-    ) -> TurnTrace:
-        """Run one user→assistant turn.
-
-        ``model`` (optional) makes EVERY LLM call (chat, extractor,
-        router, judge, corrector, scoping, stability, code-gen) use
-        the named model. ``None`` uses the pipeline's defaults (the
-        model attrs on ``self.llm`` and the chat backend supplied at
-        construction time)."""
-        # Tolerant of LLM clients that don't expose with_active_model
-        # (test MockLLMs don't). When the LLM doesn't have the method,
-        # the model selection is a no-op on the Anthropic side; the
-        # chat backend dispatch via _active_chat_model still works.
-        ctx = getattr(self.llm, "with_active_model", None)
-        if ctx is not None:
-            with ctx(model):
-                self._active_chat_model = model
-                try:
-                    return self._run_turn_inner(user_message)
-                finally:
-                    self._active_chat_model = None
-        else:
-            self._active_chat_model = model
-            try:
-                return self._run_turn_inner(user_message)
-            finally:
-                self._active_chat_model = None
+    def run_turn(self, user_message: str) -> TurnTrace:
+        """Run one user→assistant turn. The chat model is locked at
+        construction time via ``DEFAULT_MODEL_BY_PURPOSE['chat']`` /
+        ``AEDOS_CHAT_MODEL`` — there is no per-turn override."""
+        return self._run_turn_inner(user_message)
 
     def _run_turn_inner(self, user_message: str) -> TurnTrace:
         """Top-level orchestrator. Each stage is a clearly-named

@@ -118,7 +118,6 @@ const flowContainer = $("#flow-container");
 const flowStatus = $("#flow-status");
 const form = $("#chat-form");
 const input = $("#input");
-const modelSelect = $("#model-select");
 
 // Enter sends; Shift+Enter inserts a newline (standard chat-app
 // idiom). The textarea otherwise eats Enter as a literal newline,
@@ -508,7 +507,7 @@ form.addEventListener("submit", async (e) => {
 
   try {
     await streamChat(
-      { message: text, model: modelSelect.value || null },
+      { message: text },
       {
         onEvent: (ev) => {
           if (assistantTurnId === null) assistantTurnId = ev.turn_id;
@@ -2193,45 +2192,8 @@ async function refreshPipelineEvents() {
 $("#pipeline-refresh").addEventListener("click", refreshPipelineEvents);
 
 // =====================================================================
-// 7. model selector + reset
+// 7. reset
 // =====================================================================
-
-const MODEL_STORAGE_KEY = "aedos.selected_model";
-// UI's preferred first-load default. The backend's default model
-// remains Opus 4.7 (drives scripts/tests), but the chat dropdown
-// opens to Haiku 4.5 since it's cheap-by-default for ad-hoc dogfood.
-const PREFERRED_DEFAULT_MODEL = "claude-haiku-4-5";
-
-async function populateModelSelect() {
-  try {
-    const data = await api("GET", "/api/models");
-    modelSelect.innerHTML = "";
-    (data.models || []).forEach((m) => {
-      const opt = el("option", { textContent: m.label + (m.available ? "" : " — unavailable") });
-      opt.value = m.id;
-      if (!m.available) opt.disabled = true;
-      modelSelect.appendChild(opt);
-    });
-    const ids = (data.models || []).map((m) => m.id);
-    const preferred = (data.models || []).find(
-      (m) => m.id === PREFERRED_DEFAULT_MODEL && m.available
-    );
-    const effectiveDefault = preferred ? PREFERRED_DEFAULT_MODEL : data.default;
-    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
-    if (saved && ids.includes(saved)) {
-      const opt = data.models.find((m) => m.id === saved);
-      modelSelect.value = (opt && opt.available) ? saved : effectiveDefault;
-    } else {
-      modelSelect.value = effectiveDefault;
-    }
-  } catch (e) {
-    console.error("populateModelSelect failed:", e);
-  }
-}
-populateModelSelect();
-modelSelect.addEventListener("change", () => {
-  localStorage.setItem(MODEL_STORAGE_KEY, modelSelect.value);
-});
 
 $("#reset-btn").addEventListener("click", async () => {
   if (!confirm("Wipe every fact, turn, pipeline event, and cache entry. This is not reversible. Proceed?")) return;

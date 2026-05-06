@@ -7,17 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=0.11.0">
+<link rel="stylesheet" href="/static/style.css?v=0.12.1">
 </head>
 <body>
 <header>
   <h1>Aedos</h1>
   <div class="header-actions">
-    <label class="model-select" title="Drives every step (chat, extraction, routing, verification, correction)">
-      <select id="model-select">
-        <!-- populated from /api/models on load -->
-      </select>
-    </label>
     <button id="inspector-btn" title="Open Fact Store / Patterns / Cache inspector">Inspector</button>
     <button id="reset-btn" title="Wipe the database">Reset DB</button>
   </div>
@@ -143,6 +138,6 @@
 </aside>
 <div id="inspector-backdrop" class="inspector-backdrop"></div>
 
-<script src="/static/app.js?v=0.11.0"></script>
+<script src="/static/app.js?v=0.12.1"></script>
 </body>
 </html>

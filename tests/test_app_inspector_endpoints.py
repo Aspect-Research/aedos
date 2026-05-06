@@ -219,33 +219,11 @@ def test_chat_endpoint_returns_structured_error_on_pipeline_failure(
         assert "pipeline raised" in body["hint"].lower()
 
 
-def test_models_endpoint_returns_full_list(client_with_seed_data):
-    """/api/models drives the chat UI dropdown. v0.8.0: Anthropic +
-    OpenAI options for the chat slot. OpenAI entries are marked
-    unavailable when OPENAI_API_KEY is missing so the UI can grey
-    them out."""
-    r = client_with_seed_data.get("/api/models")
-    assert r.status_code == 200
-    body = r.json()
-    ids = [m["id"] for m in body["models"]]
-    assert ids == [
-        "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5",
-        "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini",
-    ]
-    for m in body["models"]:
-        assert isinstance(m["label"], str) and m["label"]
-        assert isinstance(m["available"], bool)
-    # Anthropic models always available.
-    for cid in ("claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"):
-        m = next(x for x in body["models"] if x["id"] == cid)
-        assert m["available"] is True
-    # Default is some real model.
-    assert body["default"] in ids
-
-
-def test_chat_endpoint_threads_model_into_run_turn(tmp_path, monkeypatch):
-    """The chat POST passes ``model`` into Pipeline.run_turn so the
-    operator's selection drives the turn."""
+def test_chat_endpoint_passes_message_only_no_model(tmp_path, monkeypatch):
+    """The chat POST takes only ``message`` — the model dropdown was
+    removed so there's no per-turn override. ChatRequest no longer has
+    a ``model`` field; pipeline.run_turn no longer accepts one. The
+    chat model is locked at construction time via AEDOS_CHAT_MODEL."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "m.db"))
 
@@ -260,35 +238,9 @@ def test_chat_endpoint_threads_model_into_run_turn(tmp_path, monkeypatch):
         c.app.state.pipeline.run_turn = (
             lambda msg, **kw: captured.update({"msg": msg, **kw}) or _StubTrace()
         )
-        r = c.post("/api/chat", json={
-            "message": "hi", "model": "claude-haiku-4-5",
-        })
-        assert r.status_code == 200
-        assert captured["model"] == "claude-haiku-4-5"
-        assert captured["msg"] == "hi"
-
-
-def test_chat_endpoint_omitted_model_passes_none(tmp_path, monkeypatch):
-    """When the UI omits ``model`` (older clients), the pipeline gets
-    None and runs with its default model — no 422, no required-field
-    error."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("AEDOS_DB_PATH", str(tmp_path / "n.db"))
-
-    from src.app import app
-    captured: dict = {}
-
-    class _StubTrace:
-        def to_dict(self):
-            return {}
-
-    with TestClient(app) as c:
-        c.app.state.pipeline.run_turn = (
-            lambda msg, **kw: captured.update({"msg": msg, **kw}) or _StubTrace()
-        )
         r = c.post("/api/chat", json={"message": "hi"})
         assert r.status_code == 200
-        assert captured["model"] is None
+        assert captured == {"msg": "hi"}
 
 
 def test_chat_stream_sse_emits_pipeline_events_then_done(tmp_path, monkeypatch):
@@ -317,7 +269,7 @@ def test_chat_stream_sse_emits_pipeline_events_then_done(tmp_path, monkeypatch):
                 "routing_anomalies": [],
             }
 
-    def _fake_run_turn(msg, *, model=None):
+    def _fake_run_turn(msg):
         # Emit a few pipeline events so the SSE stream has content.
         store = app.state.pipeline.store
         turn_id = store.insert_turn("assistant", "draft")

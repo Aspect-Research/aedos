@@ -33,9 +33,11 @@ import anthropic
 
 from src.cost import CallCost, cost_for_call
 
-# Per the Claude API skill, claude-opus-4-7 is the recommended default.
-# User spec listed claude-sonnet-4-5 or claude-opus-4-7 as options.
-DEFAULT_MODEL = "claude-opus-4-7"
+# Default model when no per-purpose entry matches and no env var is set.
+# Haiku 4.5 since the chat slot is locked to it (the UI no longer offers
+# a model dropdown — see DEFAULT_MODEL_BY_PURPOSE['chat']) and Haiku is
+# the right cost/quality tradeoff for the unknown-purpose fallback too.
+DEFAULT_MODEL = "claude-haiku-4-5"
 
 # Models that no longer accept the ``temperature`` parameter (Anthropic
 # deprecated it for the reasoning-heavy Opus 4.7 line). Calls that pass
@@ -44,23 +46,6 @@ DEFAULT_MODEL = "claude-opus-4-7"
 # case is the canonical-constants cross-check loses its temperature-
 # variation signal, which is documented in OBSERVATIONS.md.
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
-
-# Models the operator can pick from in the chat UI. The selected
-# model drives the CHAT purpose only — internal calls (extractor,
-# router, judge, etc.) follow DEFAULT_MODEL_BY_PURPOSE so the cheap
-# OpenAI-mini-class models run those even when the operator picks
-# Opus 4.7 for the chat-side hallucination test.
-ALLOWED_MODELS: tuple[str, ...] = (
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    # OpenAI options for the chat slot.
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4o",
-    "gpt-4o-mini",
-)
-
 
 # v0.8.0 — per-purpose model routing. EVERY internal LLM call carries
 # a ``purpose`` tag; the dispatcher resolves it through this map to a
@@ -168,29 +153,6 @@ class LLMClient:
         self._recorded_calls = []
         return out
 
-    @contextlib.contextmanager
-    def with_active_model(self, model: str | None):
-        """Temporarily set the CHAT model for the duration of the
-        block. v0.8.0 narrowing: extractor/corrector are NO LONGER
-        switched — those follow DEFAULT_MODEL_BY_PURPOSE so the
-        operator picking Opus 4.7 to test the chat side doesn't
-        also blow up internal-call cost. Restores on exit.
-
-        Single-threaded use only — restoration is not thread-safe."""
-        if model is None:
-            yield
-            return
-        if model not in ALLOWED_MODELS:
-            raise ValueError(
-                f"unknown model {model!r}; allowed: {ALLOWED_MODELS}"
-            )
-        saved = self.model
-        self.model = model
-        try:
-            yield
-        finally:
-            self.model = saved
-
     def _record_call(
         self, model: str, response: Any,
         purpose: str | None = None, duration_ms: float | None = None,
@@ -234,13 +196,11 @@ class LLMClient:
     ) -> str:
         """Single-shot chat. Returns the first text block of the response.
 
-        v0.8.0 dispatch: the chat purpose ALWAYS uses
-        ``self.model`` — operator selection (via with_active_model
-        in the per-turn pipeline) is the source of truth here. We
-        deliberately bypass DEFAULT_MODEL_BY_PURPOSE for "chat"
-        because the chat slot is the model under test for hallucination
-        and the operator is in charge of it. Other purposes still
-        flow through the per-purpose router."""
+        The chat purpose uses ``self.model`` — set at construction
+        time from ``AEDOS_CHAT_MODEL`` / ``DEFAULT_MODEL`` (Haiku 4.5
+        by default). The model dropdown was removed from the chat UI;
+        operators who need to swap the chat model do so via the env
+        var. Other purposes flow through DEFAULT_MODEL_BY_PURPOSE."""
         target_model = (
             self.model if purpose == "chat"
             else _resolve_purpose_model(purpose, self.model)
