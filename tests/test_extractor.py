@@ -527,7 +527,8 @@ def test_context_passed_in_user_message_when_provided():
 
 
 def test_no_context_when_omitted():
-    """Backward compatibility: extract(text, role) still works."""
+    """extract(text, role) without preceding-message context omits the
+    context block from the prompt."""
     extractor = _mk({"facts": []})
     extractor.extract("Hello.", role="user")
     msg = extractor.llm.calls[0]["user_message"]

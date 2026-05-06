@@ -507,20 +507,19 @@ class Router:
         self, claim: dict, hit, source_turn_id: int,
     ) -> Decision:
         """Build a Decision from a cache hit. Extracted so the
-        Pipeline-level tiered short-circuit (v0.7.14) can call it
-        directly with a hit obtained via maybe_hit(require_eligible=False).
-        Carries cache-as-evidence flow-through + earned-trust-curve
-        confidence."""
+        Pipeline-level tiered short-circuit can call it directly with
+        a hit obtained via maybe_hit(require_eligible=False).
+        Confidence is derived from the cache entry's refresh_count and
+        contradiction_count via confidence_from_counts."""
         cached = hit.verdict
         key = hit.matched_key or cached.canonical_key
 
-        # v0.7.10 cache-as-evidence: the cached `evidence` dict is the
-        # full RetrievalResult.to_dict() that the verifier stored
-        # originally — snippets, attempts, verdict, justification.
-        # Surface it on the Decision so the corrector hedges with the
-        # real justification (not "from cache") and the per-claim
-        # Decision-detail UI shows the actual snippets that backed
-        # this verdict, marked as cached.
+        # Cache-as-evidence: the cached `evidence` dict is the full
+        # RetrievalResult.to_dict() that the verifier stored originally
+        # — snippets, attempts, verdict, justification. Surface it on
+        # the Decision so the corrector sees the real justification
+        # (not "from cache") and the per-claim Decision-detail UI
+        # shows the actual snippets that backed this verdict.
         cached_retrieval_result = _cache_evidence_to_retrieval_result(
             cached.evidence, key, hit
         )
@@ -535,8 +534,7 @@ class Router:
         )
 
         # Find or boost the corresponding model-asserted fact instead
-        # of inserting a duplicate on every cache hit (was a real
-        # accumulation bug pre-v0.7.13).
+        # of inserting a duplicate on every cache hit.
         verification_status = (
             "verified" if cached.verdict == "verified"
             else "contradicted" if cached.verdict == "contradicted"
@@ -815,18 +813,16 @@ class Router:
         *,
         verification_status: str,
     ) -> tuple[int, float, int]:
-        """v0.7.13: find an existing matching model-asserted fact and
-        boost it instead of inserting a duplicate. Mirror of the
-        user-asserted find-or-boost pattern in _route_user.
+        """Find an existing matching model-asserted fact and boost it
+        instead of inserting a duplicate. Mirror of the user-asserted
+        find-or-boost pattern in _route_user.
 
         Returns ``(fact_id, confidence, reinforcement_count)``.
 
-        v0.13: confidence is purely a function of reinforcement_count.
-        No path_prior or verifier_confidence parameters — those were
-        the LLM-emitted/hardcoded inputs the frequentist refactor
-        deleted. Same-shape lookup is still anchored on the pattern's
-        identity slots; polarity match required (opposite polarity is
-        a CONTRADICTION, not a reinforcement).
+        Confidence is purely a function of reinforcement_count via
+        confidence_from_counts(R, 0). Same-shape lookup is anchored
+        on the pattern's identity slots; polarity match required
+        (opposite polarity is a CONTRADICTION, not a reinforcement).
         """
         slots = claim.get("slots") or {}
         polarity = int(claim["polarity"])

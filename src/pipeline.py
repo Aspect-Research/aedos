@@ -167,8 +167,9 @@ class Pipeline:
             combined_fn=combined_cache_classifier,
             store=store,
         )
-        # Backward-compat aliases for tests that read these fields
-        # directly. New code should reach for self._cache_gate.
+        # Public-shaped accessors for the inspector endpoints
+        # (/api/health) and tests; CacheGate (self._cache_gate) is the
+        # canonical owner of cache scoping + lookup + write.
         self._scoping_classifier = scoping_classifier
         self._stability_classifier = stability_classifier
         self._verification_cache = verification_cache
@@ -418,8 +419,9 @@ class Pipeline:
         """Tier 3: verification cache. Looks up regardless of whether
         scoping/stability classified this claim THIS turn — a hit means
         the claim was previously classified eligible. On hit, the
-        router builds the cache-hit Decision (with cache-as-evidence
-        flow-through + earned-trust-curve confidence).
+        router builds the cache-hit Decision (cache-as-evidence
+        flow-through; confidence derived from the entry's
+        refresh_count / contradiction_count).
         """
         from src.router.constants import KEY_SLOTS_BY_PATTERN
         identity_slots = KEY_SLOTS_BY_PATTERN.get(claim.get("pattern", ""), [])
@@ -428,8 +430,6 @@ class Pipeline:
         )
         if hit is None:
             return None
-        # Reuse the router's cache-hit Decision builder so the same
-        # earned-trust + evidence-flow-through logic runs.
         return self.router._build_cache_hit_decision(claim, hit, turn_id)
 
     def _find_matching_user_fact(

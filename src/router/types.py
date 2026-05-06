@@ -90,13 +90,13 @@ class Decision:
     # cached claims distinctly without having to grep notes for the
     # "served from cache" string.
     served_from_cache: bool = False
-    # v0.7.14: which precedence tier produced this Decision. One of:
+    # Which precedence tier produced this Decision. One of:
     #   * "microtheory"  — this conversation's session-scoped user fact
     #   * "user_store"   — cross-session user-asserted fact
     #   * "cache"        — verification cache hit (world fact)
     #   * "fresh"        — full router + verifier path ran
     # Surfaces in the per-claim Decision UI so the operator sees where
-    # each verdict came from. None = legacy code path that didn't tag.
+    # each verdict came from. None when the originating path didn't tag.
     served_from_tier: Optional[str] = None
     # v0.10.0: True when this Decision came from the user-stated
     # WORLD-CLAIM path (not a self-attribute) — meaning the user

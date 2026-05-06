@@ -1272,7 +1272,7 @@ function renderClaimDetailBody(container, claim, d) {
   if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
   if (meta.length) container.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
 
-  // v0.7.14: tier-provenance badge (microtheory / user_store / cache / fresh).
+  // Tier-provenance badge (microtheory / user_store / cache / fresh).
   if (d.served_from_tier && d.served_from_tier !== "fresh") {
     const tierRow = el("div", { className: "decision-trust" });
     const labels = {
@@ -1293,9 +1293,9 @@ function renderClaimDetailBody(container, claim, d) {
     container.appendChild(tierRow);
   }
 
-  // v0.7.13: surface earned-trust signals on cache hits so the
-  // "verified Nx" pattern is visible. Pulled from the cache_*
-  // fields the router attaches when serving from cache.
+  // Surface refresh / contradiction counts on cache hits so the
+  // "verified Nx" pattern is visible — these counts also drive the
+  // displayed confidence via confidence_from_counts.
   const rr = d.retrieval_result;
   if (rr && rr.served_from_cache) {
     const reinforcedRow = el("div", { className: "decision-trust" });
@@ -1689,10 +1689,9 @@ async function refreshPatterns() {
 
 // ---- Memory tab — four-scope view -------------------------------------
 //
-// Single home for everything fact-shaped. Mirrors the v0.7.14 tiered
+// Single home for everything fact-shaped. Mirrors the tiered
 // verifier (microtheory → user store → world cache) plus a Model
-// bucket for the assistant's own claims (which used to live in the
-// Facts tab).
+// bucket for the assistant's own claims.
 //
 //   * Conversation = user-asserted facts with session_id  (Tier 1)
 //   * User         = user-asserted facts, session_id NULL (Tier 2)

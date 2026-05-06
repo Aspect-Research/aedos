@@ -1,13 +1,9 @@
-"""Combined scoping + stability classifier (v0.7.16).
+"""Combined scoping + stability classifier.
 
-Pre-v0.7.16 the cache pipeline ran TWO LLM calls per claim during
-classification: scoping (user_specific / session_specific / world_fact)
-and, for world_fact claims, stability (immutable / decade_stable /
-years_stable / months_stable / days_stable / volatile).
-
-v0.7.16 merges both into a single forced-tool-use call. The model is
-asked to first decide scope, and IF scope is world_fact, to also
-classify stability. The response is one tool call:
+One LLM call per claim returns both scope (user_specific /
+session_specific / world_fact) and, for world_fact claims, stability
+(immutable / decade_stable / years_stable / months_stable / days_stable
+/ volatile). The response is one tool call:
 
     {
       "scope": "world_fact",
@@ -17,14 +13,10 @@ classify stability. The response is one tool call:
     }
 
 For non-world-fact claims, the stability fields are omitted (the tool
-schema marks them optional). This halves cache-classifier LLM calls
-on cache-eligible claims and cuts them by ⅓ on non-eligible ones
-(scope-only).
-
-The two old single-classifier modules (scoping_classifier,
-stability_classifier) stay around for backward compat with tests and
-for scenarios where you want to call one independently. CacheGate
-prefers the combined classifier when wired.
+schema marks them optional). The single-classifier modules
+(scoping_classifier, stability_classifier) hold the prompt + dataclass
++ enum definitions this module composes; calling either independently
+also works.
 """
 
 from __future__ import annotations
