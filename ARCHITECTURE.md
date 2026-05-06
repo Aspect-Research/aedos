@@ -27,7 +27,7 @@ extract user claims ──► route ──► fact_store (user-asserted)
 build chat context (history + user-asserted facts)
     │
     ▼
-chat backend (Anthropic / Modal/GLM) → assistant draft
+chat backend (Anthropic, operator-selectable model) → assistant draft
     │
     ▼
 extract assistant claims
@@ -60,14 +60,15 @@ final response (+ all events written to pipeline_events)
 | `llm_router` | One LLM call per assistant claim. Returns the verification method: `python` / `python_with_canonical_constants` / `retrieval` / `user_authoritative` / `unverifiable`. |
 | `router` | Dispatches each claim to the verifier the LLM router picked. Cache-eligible claims hit the cache before retrieval. Builds the `Decision`. |
 | `verifiers/code_generation` | prompt builder → code writer → sandbox → comparator. Cross-check at temp 0.0 / 0.3 for canonical-constants claims. |
-| `verifiers/retrieval_verifier` | Slots-aware multi-attempt search (Wikipedia → Tavily → SerpAPI → DDG) + tolerant LLM judge. |
+| `verifiers/retrieval_verifier` | Slots-aware Wikipedia search; walks the pattern's query strategy on INSUFFICIENT_EVIDENCE and runs one LLM-reformulated query as a fallback. Tolerant LLM judge. |
 | `verifiers/store_verifier` | Matches a model claim against user-asserted facts (per-user). |
 | `cache` | `VerificationCache` (table I/O), `CacheGate` (single owner of scoping + stability + lookup + write), `canonicalize_claim_key` with stem normalization, `semantic_lookup` for shape-based fallback. |
 | `corrector` | One LLM call. Plans interventions (replace / hedge / soften / remove) per Decision and applies them all in one rewrite, demanding internal consistency with verified values. |
 | `pipeline` | Orchestrator. Six clearly-named stage methods inside `_run_turn_inner`. |
-| `llm_client` | Anthropic SDK wrapper. `with_active_model(model)` swaps chat/extractor/corrector model atomically for one turn. Drops `temperature` for opus-4-7. |
-| `llm_clients/` | Pluggable chat backends — Anthropic + Modal/GLM. Selected per-turn via the chat UI's model dropdown. |
-| `cost` | Per-million-token pricing constants + per-call recording + end-of-turn aggregation. |
+| `llm_client` | Anthropic SDK wrapper + per-purpose dispatcher. `with_active_model(model)` swaps the CHAT model only (post-v0.8.0); internal calls follow `DEFAULT_MODEL_BY_PURPOSE` so picking Opus for the chat slot doesn't blow up internal cost. Drops `temperature` for opus-4-7. |
+| `openai_client` | OpenAI SDK wrapper used when any purpose resolves to a `gpt-*` model. Cost lands on the same per-instance ledger. |
+| `llm_clients/` | Chat-slot backend (currently `AnthropicChatBackend` only — the Modal/GLM backend was removed in v0.7.15). |
+| `cost` | Per-million-token pricing constants + per-call recording + end-of-turn aggregation. Reads provider-specific cache-tier token counts (Anthropic `cache_creation_input_tokens` / `cache_read_input_tokens`, OpenAI `prompt_tokens_details.cached_tokens`) so per-turn cost reflects what each provider actually bills. |
 | `app` | FastAPI. `POST /api/chat`, `POST /api/chat/stream` (SSE), `/api/turns`, `/api/trace/{id}`, `/api/facts`, `/api/patterns`, `/api/cache`, `/api/models`, `/api/health`, `/api/reset`. Serves the static UI. |
 
 ## Key design choices
@@ -148,15 +149,15 @@ table.
 
 ### Single model selection (per turn)
 
-The chat UI has one model dropdown. Selecting it threads the choice
-into `LLMClient.with_active_model(model)` for the whole turn, so chat,
-extraction, routing, judge, corrector, scoping classifier, stability
-classifier, and the canonical-constants cross-check all use the same
-model.
-
-GLM-5.1 (Modal-hosted) is the exception: when selected, the chat call
-routes to the Modal backend; everything else stays on the prior
-Anthropic model since GLM doesn't support tool use.
+The chat UI has one model dropdown. Post-v0.8.0 it threads the choice
+into `LLMClient.with_active_model(model)` for the **chat slot only** —
+the model under test for hallucination catching. Internal calls
+(extractor, router, code-writer, judge, corrector, scoping, stability,
+canonical-constants cross-check) follow `DEFAULT_MODEL_BY_PURPOSE` so
+the operator picking Opus 4.7 to test the chat side doesn't blow up
+internal-call cost. The default routing puts cheap mini-class GPTs on
+all internal work; override any entry per-process via
+`AEDOS_MODEL_<purpose>=<model_id>`.
 
 ### Live progressive UI
 

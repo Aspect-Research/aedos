@@ -332,7 +332,7 @@ def test_is_openai_model_classification():
     assert is_openai_model("gpt-4o")
     assert is_openai_model("o1-preview")
     assert not is_openai_model("claude-opus-4-7")
-    assert not is_openai_model("zai-org/GLM-5.1")
+    assert not is_openai_model("claude-haiku-4-5")
 
 
 def test_chat_purpose_bypasses_per_purpose_routing(monkeypatch):
