@@ -94,10 +94,17 @@ place routing decisions are made.
 
 ### Where to look in the trace UI
 
-Per model claim, the verification decision now leads with a routing
-block (method, reason, confidence). Confidence < 0.7 renders a yellow
-warning. For canonical-constants claims, both code generations show
-side-by-side. The triage section in the code-gen block is gone.
+Per model claim, the verification decision leads with a routing block
+(method + reason). For canonical-constants claims, both code
+generations show side-by-side. The triage section in the code-gen
+block is gone.
+
+> **Confidence note (v0.13):** the LLM router used to emit a
+> confidence value (and the trace flagged < 0.7 in yellow). That
+> field is gone — confidence is now a pure function of observed
+> reinforcement / contradiction counts on stored facts and cached
+> verdicts (see `confidence_from_counts` in `src/router/constants.py`).
+> Routing decisions don't carry a self-rating any more.
 
 ## v0.4 changes (read before touching anything)
 
@@ -321,7 +328,7 @@ period). The verifier picks the right prompt based on slot values.
     rather than the claim being unfalsifiable
   - `routing_anomaly` — model asserted a `user_authoritative` predicate
     about a non-user subject. Strong signal of upstream extractor error
-  - The full mapping (status → confidence → corrector action) lives in
+  - The full mapping (status → corrector action) lives in
     `ARCHITECTURE.md` under "Verification status semantics"
 - **Real retrieval verifier** (`src/verifiers/retrieval_verifier.py`).
   Uses Tavily / SerpAPI / DuckDuckGo (in that preference order) to

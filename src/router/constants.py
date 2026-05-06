@@ -139,8 +139,7 @@ def is_self_attribute(claim: dict) -> bool:
     """Whether this claim's primary subject IS the user.
 
     True → the user is authoritative; route to the sacrosanct
-    user-asserted path (no external verification, store at
-    CONF_USER_ASSERTED).
+    user-asserted path (no external verification).
 
     False → the claim is about the world, the user is just the one
     who said it; route through the same LLM router + verifier that

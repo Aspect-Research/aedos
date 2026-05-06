@@ -390,11 +390,11 @@ def parse_judge_response(text: str) -> JudgeVerdict | None:
     # Drop residual markdown markers and surrounding whitespace.
     rest = rest.strip().strip("*_#>`-").strip()
 
-    # v0.13: judges no longer emit Confidence lines. Defensively strip
-    # any leftover "Confidence: 0.X" tail from the justification (older
-    # mocks, models that ignore the prompt) so it doesn't pollute the
-    # displayed text. The parsed value is discarded — confidence is
-    # now a pure function of cache refresh / contradiction counts.
+    # Defensively strip any "Confidence: 0.X" tail a non-compliant
+    # model might emit (the prompt asks for two lines without one) so
+    # it doesn't pollute the displayed justification. Confidence is a
+    # function of cache refresh / contradiction counts; any value the
+    # judge writes here is discarded.
     rest = re.sub(
         r"\s*\b[Cc]onfidence\s*[:=]?\s*\**\s*[0-9]*\.?[0-9]+\s*\**\s*\.?\s*",
         " ", rest,

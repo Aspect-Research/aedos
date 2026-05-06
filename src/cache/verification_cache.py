@@ -53,10 +53,10 @@ class CachedVerdict:
     cached_at: str
     expires_at: str | None
     hit_count: int
-    # v0.7.10 provenance + bookkeeping. Default to None / 0 / [] so
-    # the dataclass works for both freshly-written entries (all
-    # populated) and old rows that haven't been refreshed yet
-    # (NULL/0 from the migration).
+    # Provenance + count bookkeeping. evidence_hash is NULL when the
+    # entry was written without an evidence dict; source_urls likewise.
+    # refresh_count + contradiction_count drive the entry's confidence
+    # via confidence_from_counts.
     evidence_hash: str | None = None
     source_urls: list[str] | None = None
     last_refreshed_at: str | None = None

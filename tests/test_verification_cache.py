@@ -653,60 +653,9 @@ def test_verification_cache_table_exists(tmp_path):
         "id", "canonical_key", "pattern", "predicate", "verdict",
         "evidence", "stability_class", "cached_at", "expires_at",
         "hit_count", "created_at",
-        # v0.7.10: provenance + bookkeeping
-        "evidence_hash", "source_urls", "confidence",
+        "evidence_hash", "source_urls",
         "last_refreshed_at", "refresh_count", "contradiction_count",
     }
-    store.close()
-
-
-def test_v0710_migration_backfills_columns_on_old_db(tmp_path):
-    """An older DB created without the v0.7.10 columns gets them
-    added on the next FactStore() open. Existing rows survive with
-    NULL/0 in the new fields; lookup() still works."""
-    db_path = tmp_path / "old.db"
-    # Build a minimal schema matching the pre-v0.7.10 shape.
-    import sqlite3
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE verification_cache (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            canonical_key TEXT NOT NULL UNIQUE,
-            pattern TEXT NOT NULL,
-            predicate TEXT NOT NULL,
-            verdict TEXT NOT NULL,
-            evidence TEXT,
-            stability_class TEXT NOT NULL,
-            cached_at TEXT NOT NULL,
-            expires_at TEXT,
-            hit_count INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL
-        )
-    """)
-    conn.execute(
-        "INSERT INTO verification_cache "
-        "(canonical_key, pattern, predicate, verdict, stability_class, "
-        " cached_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("k_old", "x", "y", "verified", "immutable",
-         "2024-01-01T00:00:00+00:00", "2024-01-01T00:00:00+00:00"),
-    )
-    conn.commit()
-    conn.close()
-
-    store = FactStore(db_path)  # triggers _migrate_cache_provenance
-    cols = {c["name"] for c in store._conn.execute(
-        "PRAGMA table_info(verification_cache)"
-    ).fetchall()}
-    for new in ("evidence_hash", "source_urls", "confidence",
-                "last_refreshed_at", "refresh_count",
-                "contradiction_count"):
-        assert new in cols
-    cache = VerificationCache(store)
-    hit = cache.lookup("k_old")
-    assert hit is not None
-    assert hit.refresh_count == 0
-    assert hit.contradiction_count == 0
     store.close()
 
 
@@ -781,43 +730,6 @@ def test_cache_pipeline_event_stages_registered(tmp_path):
     assert stages.issuperset({"cache_scoping_decision",
                               "cache_stability_decision",
                               "cache_lookup", "cache_write"})
-    store.close()
-
-
-def test_legacy_db_migration_adds_verification_cache(tmp_path):
-    """A pre-v0.6 DB without the table should pick it up on FactStore
-    open."""
-    import sqlite3
-    db = tmp_path / "old.db"
-    conn = sqlite3.connect(db)
-    conn.executescript("""
-        CREATE TABLE facts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pattern TEXT NOT NULL, predicate TEXT NOT NULL,
-            slots TEXT NOT NULL, polarity INTEGER NOT NULL,
-            confidence REAL NOT NULL, asserted_by TEXT NOT NULL,
-            verification_status TEXT NOT NULL,
-            valid_from TEXT, valid_until TEXT,
-            source_turn_id INTEGER, source_text TEXT,
-            created_at TEXT NOT NULL
-        );
-        CREATE TABLE turns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            role TEXT NOT NULL, content TEXT NOT NULL,
-            original_content TEXT, created_at TEXT NOT NULL
-        );
-        CREATE TABLE pipeline_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            turn_id INTEGER NOT NULL, stage TEXT NOT NULL,
-            data TEXT NOT NULL, created_at TEXT NOT NULL
-        );
-    """)
-    conn.commit()
-    conn.close()
-
-    store = FactStore(db)
-    cols = store._conn.execute("PRAGMA table_info(verification_cache)").fetchall()
-    assert len(cols) > 0
     store.close()
 
 

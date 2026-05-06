@@ -165,8 +165,8 @@ class CacheGate:
     @property
     def cache(self) -> Optional[VerificationCache]:
         """The underlying VerificationCache, or None when not wired.
-        Exposed only for legacy callers; new code goes through the
-        gate."""
+        Exposed for the inspector endpoints that need direct row
+        access; routine reads/writes go through the gate."""
         return self._cache
 
     @property

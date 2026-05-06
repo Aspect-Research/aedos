@@ -1714,7 +1714,7 @@ tr.contradicted td { background: var(--bad-soft); }
   font-size: 0.7rem;
 }
 
-/* v0.7.13 — earned-trust badges on per-claim Decision details. */
+/* Refresh / contradiction count badges on per-claim Decision details. */
 .decision-trust {
   display: flex;
   gap: 0.4rem;
@@ -1741,7 +1741,7 @@ tr.contradicted td { background: var(--bad-soft); }
   border-color: rgba(98, 182, 203, 0.35);
 }
 
-/* v0.7.14 — tier-provenance badges on per-claim Decision details. */
+/* Tier-provenance badges on per-claim Decision details. */
 .trust-badge.trust-tier-microtheory {
   background: rgba(249, 115, 28, 0.10);
   color: var(--accent);

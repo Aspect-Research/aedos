@@ -42,8 +42,8 @@ class _LockedConnection:
     The wrapper is transparent: every attribute not handled here
     delegates to the wrapped connection (so ``conn.row_factory`` etc.
     still work). RLock allows nested access on the same thread without
-    deadlock — useful because the schema migration calls executescript
-    while still holding the lock from __init__.
+    deadlock — useful when init holds the lock and the SCHEMA
+    executescript runs nested.
     """
 
     __slots__ = ("_conn", "_lock")
@@ -187,9 +187,9 @@ PIPELINE_STAGES = {
 
 # Confidence is computed from observed counts (reinforcement_count
 # on facts, refresh_count + contradiction_count on cache entries) via
-# src.router.constants.confidence_from_counts. No fixed boost / cap /
-# floor — those were the v0.7.13 reinforcement-curve tunables that
-# operated on top of LLM-emitted confidence values, deleted in v0.13.
+# src.router.constants.confidence_from_counts. The denormalized
+# `confidence` column on facts mirrors the count-derived value; on
+# cache entries confidence is a @property computed on read.
 
 
 def _now_iso() -> str:
@@ -210,14 +210,16 @@ CREATE TABLE IF NOT EXISTS facts (
     predicate TEXT NOT NULL,
     slots TEXT NOT NULL,                -- JSON object keyed by slot name
     polarity INTEGER NOT NULL,
+    -- Confidence is computed from observed counts via
+    -- src.router.constants.confidence_from_counts. Beta(1,1) Laplace-
+    -- smoothed posterior of P(true | evidence). Denormalized here so
+    -- the fact-store query path doesn't have to recompute on every read.
     confidence REAL NOT NULL,
-    -- v0.7.13: counts how many times this fact has been re-confirmed
-    -- (boost_confidence calls). Drives the "earned trust" curve in
-    -- router/constants.confidence_with_reinforcement so a fact
-    -- verified 8 times reads as more trustworthy than one verified
-    -- once at the same path-prior.
+    -- Number of times this fact has been re-confirmed by a verifier
+    -- (boost_confidence calls). The contradiction count for facts is
+    -- always 0 — a contradicted fact gets closed, not updated in place.
     reinforcement_count INTEGER NOT NULL DEFAULT 0,
-    -- v0.7.14: scopes the fact to a specific conversation session.
+    -- Scopes the fact to a specific conversation session.
     -- NULL = cross-session (default; the existing user-facts behavior).
     -- Non-NULL = microtheory entry that ONLY applies within the
     -- named session. Tiered verification consults microtheory rows
@@ -230,14 +232,15 @@ CREATE TABLE IF NOT EXISTS facts (
     source_turn_id INTEGER,
     source_text TEXT,
     created_at TEXT NOT NULL,
-    user_id TEXT NOT NULL DEFAULT 'default_user'  -- v0.5.x: cross-session scoping
+    user_id TEXT NOT NULL DEFAULT 'default_user'
 );
 
 CREATE INDEX IF NOT EXISTS idx_facts_pattern ON facts(pattern);
 CREATE INDEX IF NOT EXISTS idx_facts_predicate ON facts(predicate);
 CREATE INDEX IF NOT EXISTS idx_facts_valid_until ON facts(valid_until);
--- idx_facts_user_id is created in _migrate_user_id (after the column
--- exists on legacy DBs that didn't ship with it).
+CREATE INDEX IF NOT EXISTS idx_facts_user_id ON facts(user_id);
+CREATE INDEX IF NOT EXISTS idx_facts_session_id
+    ON facts(session_id) WHERE session_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS turns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -245,9 +248,9 @@ CREATE TABLE IF NOT EXISTS turns (
     content TEXT NOT NULL,
     original_content TEXT,
     created_at TEXT NOT NULL,
-    user_id TEXT NOT NULL DEFAULT 'default_user'  -- v0.5.x: cross-session scoping
+    user_id TEXT NOT NULL DEFAULT 'default_user'
 );
--- idx_turns_user_id is created in _migrate_user_id.
+CREATE INDEX IF NOT EXISTS idx_turns_user_id ON turns(user_id);
 
 CREATE TABLE IF NOT EXISTS pipeline_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -284,12 +287,13 @@ CREATE TABLE IF NOT EXISTS verification_cache (
     expires_at TEXT,                         -- NULL = immutable (never expires)
     hit_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
-    -- v0.7.10 provenance + bookkeeping (added via _migrate_cache_provenance
-    -- on existing DBs; declared here so fresh DBs ship with them).
+    -- Provenance + bookkeeping.
     evidence_hash TEXT,                      -- SHA-256 of evidence JSON; stable identity for "same answer"
     source_urls TEXT,                        -- JSON array of source URLs the judge consulted
-    confidence REAL,                         -- judge's reported confidence, NULL when not provided
     last_refreshed_at TEXT,                  -- bumped on every refresh; cached_at stays as first-cache
+    -- The (refresh_count, contradiction_count) pair drives confidence
+    -- via confidence_from_counts(R, C); refreshed +1 when the same
+    -- verdict re-fires, contradiction_count +1 when verdict flips.
     refresh_count INTEGER NOT NULL DEFAULT 0,
     contradiction_count INTEGER NOT NULL DEFAULT 0
 );
@@ -369,11 +373,12 @@ class Fact:
     source_text: str | None = None
     created_at: str = field(default_factory=_now_iso)
     id: int | None = None
-    user_id: str = DEFAULT_USER_ID  # v0.5.x: cross-session scoping
-    # v0.7.13: how many times this fact has been re-confirmed
-    # (boost_confidence calls). Drives the earned-trust curve.
+    user_id: str = DEFAULT_USER_ID  # cross-session scoping
+    # Number of times this fact has been re-confirmed by a verifier
+    # (boost_confidence calls). Confidence is recomputed from this
+    # count via confidence_from_counts(R, 0).
     reinforcement_count: int = 0
-    # v0.7.14: NULL = cross-session (the existing user-fact behavior).
+    # NULL = cross-session (the existing user-fact behavior).
     # Non-NULL = microtheory entry that ONLY applies within the named
     # session. Tier 1 lookup in _stage_verify checks session_id
     # matches before falling through to cross-session and cache.
@@ -406,8 +411,6 @@ class FactStore:
         self._db_lock = threading.RLock()
         self._conn = _LockedConnection(raw_conn, self._db_lock)
         self._conn.executescript(SCHEMA)
-        self._migrate_user_id()
-        self._migrate_cache_provenance()
         self._conn.commit()
         # v0.6: per-event subscribers (set by /api/chat/stream so the
         # SSE handler can push pipeline_events to the client as they
@@ -428,77 +431,6 @@ class FactStore:
             self._event_subscribers.remove(token)
         except ValueError:
             pass
-
-    def _migrate_cache_provenance(self) -> None:
-        """v0.7.10: backfill the new verification_cache columns
-        (evidence_hash, source_urls, confidence, last_refreshed_at,
-        refresh_count, contradiction_count) on databases created
-        before they existed. Each ALTER is wrapped in a column-
-        existence check so it's idempotent across boots. Existing rows
-        get NULL/0 defaults — write() backfills the provenance fields
-        the next time each entry is refreshed.
-
-        flagged_for_review was removed; old DBs may still have the
-        column — it's harmless dead weight since no read or write
-        references it any more.
-        """
-        cols = {r["name"] for r in self._conn.execute(
-            "PRAGMA table_info(verification_cache)"
-        ).fetchall()}
-        new_cols = [
-            ("evidence_hash",        "TEXT"),
-            ("source_urls",          "TEXT"),
-            ("confidence",           "REAL"),
-            ("last_refreshed_at",    "TEXT"),
-            ("refresh_count",        "INTEGER NOT NULL DEFAULT 0"),
-            ("contradiction_count",  "INTEGER NOT NULL DEFAULT 0"),
-        ]
-        for name, decl in new_cols:
-            if name not in cols:
-                self._conn.execute(
-                    f"ALTER TABLE verification_cache ADD COLUMN {name} {decl}"
-                )
-
-    def _migrate_user_id(self) -> None:
-        """v0.5.x: add user_id column to pre-existing facts/turns tables.
-
-        SQLite's CREATE TABLE IF NOT EXISTS doesn't backfill columns when
-        the table already exists with the older shape, so older databases
-        (v0.3 / v0.4 / pre-v0.5.x) need an explicit ALTER. The DEFAULT
-        clause on the column means existing rows get 'default_user'
-        automatically — solo dogfooding still works without further
-        migration. Indexes are created here regardless (idempotent on
-        new DBs that already have the column)."""
-        for table in ("facts", "turns"):
-            cols = {r["name"] for r in self._conn.execute(
-                f"PRAGMA table_info({table})"
-            ).fetchall()}
-            if "user_id" not in cols:
-                self._conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN user_id TEXT "
-                    f"NOT NULL DEFAULT '{DEFAULT_USER_ID}'"
-                )
-            self._conn.execute(
-                f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)"
-            )
-        # v0.7.13: reinforcement counter on facts.
-        fact_cols = {r["name"] for r in self._conn.execute(
-            "PRAGMA table_info(facts)"
-        ).fetchall()}
-        if "reinforcement_count" not in fact_cols:
-            self._conn.execute(
-                "ALTER TABLE facts ADD COLUMN reinforcement_count INTEGER "
-                "NOT NULL DEFAULT 0"
-            )
-        # v0.7.14: session_id column for microtheory-scoped rows.
-        if "session_id" not in fact_cols:
-            self._conn.execute(
-                "ALTER TABLE facts ADD COLUMN session_id TEXT"
-            )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_facts_session_id "
-            "ON facts(session_id) WHERE session_id IS NOT NULL"
-        )
 
     # ---- facts ------------------------------------------------------------
 
@@ -825,11 +757,6 @@ class FactStore:
             "DROP TABLE IF EXISTS cache_invalidation_log;"
         )
         self._conn.executescript(SCHEMA)
-        # Run the same idempotent migration init() does so the user_id
-        # indexes get re-created (SCHEMA only declares the columns;
-        # the indexes are created in _migrate_user_id since they need
-        # to wait for the column to exist on legacy DBs).
-        self._migrate_user_id()
         self._conn.commit()
 
 
@@ -876,19 +803,6 @@ def _row_to_fact(row: sqlite3.Row) -> Fact:
         source_text=row["source_text"],
         created_at=row["created_at"],
         user_id=row["user_id"],
-        # Tolerate rows from older DBs (pre-v0.7.13 migration didn't
-        # exist) that don't have the column. The schema migration
-        # backfills for new opens; this guard handles the rare race
-        # where row was loaded before the migration ran in tests.
-        reinforcement_count=(
-            int(row["reinforcement_count"])
-            if "reinforcement_count" in row.keys()
-               and row["reinforcement_count"] is not None
-            else 0
-        ),
-        session_id=(
-            row["session_id"]
-            if "session_id" in row.keys()
-            else None
-        ),
+        reinforcement_count=int(row["reinforcement_count"] or 0),
+        session_id=row["session_id"],
     )

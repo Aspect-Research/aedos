@@ -1,4 +1,4 @@
-"""Cache-eligibility scoping classifier (v0.6, observation mode).
+"""Cache-eligibility scoping classifier.
 
 Decides per claim:
 
@@ -8,14 +8,9 @@ Decides per claim:
   world_fact       — about the world; cache eligible
 
 The decision is one LLM call with a stable system prompt + worked
-examples. In OBSERVATION MODE (initial deployment), the classifier
-runs and writes a ``cache_scoping_decision`` pipeline event but DOES
-NOT gate caching — there's no cache lookup or write yet. After two
-sessions of observation we read the decisions, calibrate, and only
-then wire it to actual cache writes.
-
-The shape mirrors ``llm_router.RoutingDecision`` deliberately so
-testing patterns can transfer.
+examples. The combined classifier (classify_combined.py) bundles this
+with stability into a single call; this module also stands alone for
+the cases where only scope matters.
 """
 
 from __future__ import annotations

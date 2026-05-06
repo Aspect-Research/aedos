@@ -241,7 +241,7 @@ def test_comparative_claim_prepends_comparative_queries(store):
 
 def test_non_comparative_claim_uses_standard_queries(store):
     """No detection fires → only standard pattern queries run, in
-    their original order. Backwards compat."""
+    their original order."""
     sr = {
         "Donald Trump capital of United States": [
             Snippet("t1", "s1", "u1"), Snippet("t2", "s2", "u2"),

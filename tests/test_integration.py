@@ -454,8 +454,8 @@ def test_v100_user_world_claim_routed_through_verifier_not_sacrosanct(tmp_path):
 
 
 def test_v100_user_self_attribute_stays_sacrosanct(tmp_path):
-    """v0.10.0 — user preference about themselves still bypasses
-    verification, stores at CONF_USER_ASSERTED."""
+    """User preference about themselves bypasses verification and is
+    stored as a fresh user-asserted fact."""
     self_claim = {
         "pattern": "preference", "predicate": "likes",
         "slots": {"agent": "user", "object": "peanut butter"},

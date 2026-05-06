@@ -221,10 +221,8 @@ class Corrector:
 
         if status == "unverifiable_pending_implementation":
             # Catch-all for python verifier inconclusive / store-lookup
-            # miss / similar runtime failures. v0.13: always hedge.
-            # Pre-v0.13 this was gated on `confidence < 0.5`, but the
-            # path-prior constant for pending was 0.4 so the gate
-            # always tripped — the status itself is the signal.
+            # miss / similar runtime failures. The status itself is the
+            # signal that we couldn't verify; always hedge.
             return Intervention(
                 intervention_type=INTERVENTION_HEDGE,
                 claim=d.claim,
