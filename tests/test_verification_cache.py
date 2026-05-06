@@ -1055,8 +1055,11 @@ def test_health_metrics_aggregate_correctly(tmp_path):
 
 
 def test_write_populates_provenance_fields(tmp_path):
-    """v0.7.10: every successful write fills evidence_hash, source_urls,
-    confidence, last_refreshed_at."""
+    """v0.7.10/v0.13: every successful write fills evidence_hash,
+    source_urls, last_refreshed_at. Confidence is no longer stored
+    on the cache row — it's a derived property of refresh_count and
+    contradiction_count (see v0.13 frequentist refactor)."""
+    from src.router.constants import confidence_from_counts
     store = FactStore(tmp_path / "v.db")
     cache = VerificationCache(store)
     evidence = {
@@ -1067,60 +1070,27 @@ def test_write_populates_provenance_fields(tmp_path):
     cache.write(canonical_key="k1", pattern="x", predicate="y",
                 verdict="verified", stability_class="years_stable",
                 ttl_seconds=90 * 24 * 3600,
-                evidence=evidence, confidence=0.92)
+                evidence=evidence)
     hit = cache.lookup("k1")
     assert hit.evidence_hash is not None and len(hit.evidence_hash) == 64
     assert "https://en.wikipedia.org/wiki/X" in hit.source_urls
     assert "https://en.wikipedia.org/wiki/Y" in hit.source_urls
-    assert hit.confidence == pytest.approx(0.92)
+    # First write: refresh_count=0, contradiction_count=0 → 0.5.
+    assert hit.refresh_count == 0
+    assert hit.contradiction_count == 0
+    assert hit.confidence == pytest.approx(confidence_from_counts(0, 0))
     assert hit.last_refreshed_at is not None
-    assert hit.refresh_count == 0  # first write is not a refresh
     store.close()
 
 
-# ---- v0.7.12: confidence floor + cache-savings telemetry --------------
+
+# ---- v0.13: cacheable-verdict gate (replaces confidence floor) ---------
 
 
-def test_gate_skips_write_below_confidence_floor(tmp_path):
-    """A Decision with confidence < _MIN_CONFIDENCE_TO_CACHE (0.5)
-    should not be written. Default CONF_RETRIEVAL_INCONCLUSIVE = 0.4
-    naturally falls below this floor."""
-    from src.cache.gate import (
-        CacheGate, ClaimCacheState, _MIN_CONFIDENCE_TO_CACHE,
-    )
-    from src.cache.scoping_classifier import ScopingDecision
-    from src.cache.stability_classifier import StabilityDecision
-    from types import SimpleNamespace
-
-    store = FactStore(tmp_path / "v.db")
-    cache = VerificationCache(store)
-    gate = CacheGate(cache=cache, scoping_fn=None, stability_fn=None, store=store)
-
-    claim = {
-        "pattern": "spatial_temporal", "predicate": "located_in",
-        "slots": {"entity": "X", "location": "Y"}, "polarity": 1,
-    }
-    key = canonicalize_claim_key(claim)
-    gate._states[key] = ClaimCacheState(
-        canonical_key=key,
-        scope=SimpleNamespace(scope="world_fact"),
-        stability=StabilityDecision(
-            stability_class="years_stable", reason="r", confidence=0.9,
-            ttl_seconds=90 * 24 * 3600,
-        ),
-    )
-    low_conf = SimpleNamespace(
-        verification_status="retrieval_inconclusive",
-        code_gen_result=None, retrieval_result=None,
-        served_from_cache=False, confidence=0.4,
-    )
-    gate.maybe_write(low_conf, claim, turn_id=1)
-    assert cache.lookup(key) is None  # nothing written
-    store.close()
-
-
-def test_gate_writes_when_confidence_above_floor(tmp_path):
-    """High-confidence verdicts pass the floor and get cached."""
+def test_gate_does_not_cache_inconclusive_verdicts(tmp_path):
+    """v0.13: retrieval_inconclusive is no longer in the cacheable-
+    verdict set. Pre-v0.13 we wrote it then skipped via a confidence
+    floor; now the verdict-set gate handles it directly."""
     from src.cache.gate import CacheGate, ClaimCacheState
     from src.cache.stability_classifier import StabilityDecision
     from types import SimpleNamespace
@@ -1138,16 +1108,48 @@ def test_gate_writes_when_confidence_above_floor(tmp_path):
         canonical_key=key,
         scope=SimpleNamespace(scope="world_fact"),
         stability=StabilityDecision(
-            stability_class="years_stable", reason="r", confidence=0.9,
+            stability_class="years_stable", reason="r",
             ttl_seconds=90 * 24 * 3600,
         ),
     )
-    high_conf = SimpleNamespace(
+    inconclusive = SimpleNamespace(
+        verification_status="retrieval_inconclusive",
+        code_gen_result=None, retrieval_result=None,
+        served_from_cache=False,
+    )
+    gate.maybe_write(inconclusive, claim, turn_id=1)
+    assert cache.lookup(key) is None
+    store.close()
+
+
+def test_gate_caches_verified_verdicts(tmp_path):
+    from src.cache.gate import CacheGate, ClaimCacheState
+    from src.cache.stability_classifier import StabilityDecision
+    from types import SimpleNamespace
+
+    store = FactStore(tmp_path / "v.db")
+    cache = VerificationCache(store)
+    gate = CacheGate(cache=cache, scoping_fn=None, stability_fn=None, store=store)
+
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "slots": {"entity": "X", "location": "Y"}, "polarity": 1,
+    }
+    key = canonicalize_claim_key(claim)
+    gate._states[key] = ClaimCacheState(
+        canonical_key=key,
+        scope=SimpleNamespace(scope="world_fact"),
+        stability=StabilityDecision(
+            stability_class="years_stable", reason="r",
+            ttl_seconds=90 * 24 * 3600,
+        ),
+    )
+    verified = SimpleNamespace(
         verification_status="verified",
         code_gen_result=None, retrieval_result=None,
-        served_from_cache=False, confidence=0.95,
+        served_from_cache=False,
     )
-    gate.maybe_write(high_conf, claim, turn_id=1)
+    gate.maybe_write(verified, claim, turn_id=1)
     assert cache.lookup(key) is not None
     store.close()
 
@@ -1169,90 +1171,40 @@ def test_turn_savings_aggregates_hits(tmp_path):
     store.close()
 
 
-# ---- v0.7.13: confidence-with-reinforcement curve --------------------
+# ---- v0.13: pure-frequentist confidence_from_counts -------------------
 
 
-def test_confidence_with_reinforcement_no_history_returns_base():
-    from src.router.constants import confidence_with_reinforcement
-    assert confidence_with_reinforcement(0.95) == pytest.approx(0.95)
-    assert confidence_with_reinforcement(0.4) == pytest.approx(0.4)
+def test_confidence_from_counts_zero_evidence_is_uniform_prior():
+    from src.router.constants import confidence_from_counts
+    assert confidence_from_counts(0, 0) == pytest.approx(0.5)
 
 
-def test_confidence_with_reinforcement_grows_with_refreshes():
-    from src.router.constants import confidence_with_reinforcement
-    base = 0.85
-    conf_1 = confidence_with_reinforcement(base, refresh_count=1)
-    conf_5 = confidence_with_reinforcement(base, refresh_count=5)
-    conf_20 = confidence_with_reinforcement(base, refresh_count=20)
-    assert base < conf_1 < conf_5 < conf_20 < 1.0
-    # Saturation: 20 reinforcements should be very close to ceiling.
-    assert conf_20 > 0.99
+def test_confidence_from_counts_grows_with_refreshes():
+    from src.router.constants import confidence_from_counts
+    c0 = confidence_from_counts(0, 0)
+    c1 = confidence_from_counts(1, 0)
+    c5 = confidence_from_counts(5, 0)
+    c20 = confidence_from_counts(20, 0)
+    assert c0 < c1 < c5 < c20 < 1.0
+    # Asymptotic: large refresh count → close to 1.
+    assert c20 > 0.9
 
 
-def test_confidence_with_reinforcement_penalized_by_contradictions():
-    from src.router.constants import confidence_with_reinforcement
-    base = 0.95
-    no_flips = confidence_with_reinforcement(base)
-    one_flip = confidence_with_reinforcement(base, contradiction_count=1)
-    five_flips = confidence_with_reinforcement(base, contradiction_count=5)
+def test_confidence_from_counts_penalized_by_contradictions():
+    from src.router.constants import confidence_from_counts
+    no_flips = confidence_from_counts(5, 0)
+    one_flip = confidence_from_counts(5, 1)
+    five_flips = confidence_from_counts(5, 5)
     assert no_flips > one_flip > five_flips
-    # Penalty cap ≈ 0.4 — even with many flips, doesn't zero out
-    assert five_flips >= 0.55
 
 
-def test_confidence_with_reinforcement_floor_protects_observability():
-    from src.router.constants import confidence_with_reinforcement, CONF_FLOOR
-    # Even a low base + lots of contradictions stays above the floor.
-    conf = confidence_with_reinforcement(0.2, contradiction_count=20)
-    assert conf >= CONF_FLOOR
+def test_confidence_from_counts_clamps_negatives():
+    from src.router.constants import confidence_from_counts
+    # Negative counts treated as 0.
+    assert confidence_from_counts(-3, -2) == confidence_from_counts(0, 0)
 
 
-def test_confidence_with_reinforcement_clamps_invalid_base():
-    from src.router.constants import confidence_with_reinforcement
-    assert confidence_with_reinforcement(1.5) <= 1.0
-    assert confidence_with_reinforcement(-0.2) >= 0.0
-
-
-# ---- v0.7.13: judge confidence parsing -------------------------------
-
-
-def test_judge_response_with_confidence_line_parsed():
-    from src.verifiers.retrieval_verifier import parse_judge_response
-    text = "SUPPORTED\nJustification: snippets confirm directly\nConfidence: 0.92"
-    v = parse_judge_response(text)
-    assert v is not None
-    assert v.verdict == "SUPPORTED"
-    assert v.confidence == pytest.approx(0.92)
-
-
-def test_judge_response_without_confidence_defaults_to_one():
-    """Backwards compat: legacy responses (and most test mocks)
-    don't carry a confidence line — default to 1.0 so the path
-    prior is unchanged."""
-    from src.verifiers.retrieval_verifier import parse_judge_response
-    v = parse_judge_response("SUPPORTED\nJustification: ok")
-    assert v is not None
-    assert v.confidence == 1.0
-
-
-def test_judge_response_confidence_clamped_to_unit():
-    from src.verifiers.retrieval_verifier import parse_judge_response
-    over = parse_judge_response("SUPPORTED\nJ: x\nConfidence: 1.5")
-    under = parse_judge_response("SUPPORTED\nJ: x\nConfidence: -0.3")
-    assert 0.0 <= over.confidence <= 1.0
-    assert 0.0 <= under.confidence <= 1.0
-
-
-def test_judge_confidence_stripped_from_justification():
-    from src.verifiers.retrieval_verifier import parse_judge_response
-    v = parse_judge_response(
-        "SUPPORTED\nJustification: snippets directly state the claim\nConfidence: 0.95"
-    )
-    assert "Confidence" not in v.justification
-    assert "0.95" not in v.justification
-
-
-# ---- v0.7.13: facts gain reinforcement_count + boost uses curve ----
+# ---- v0.13: facts gain reinforcement_count + boost recomputes ----
 
 
 def test_facts_table_has_reinforcement_count(tmp_path):
@@ -1265,55 +1217,38 @@ def test_facts_table_has_reinforcement_count(tmp_path):
 
 
 def test_boost_confidence_increments_reinforcement_count(tmp_path):
+    """v0.13: boost_confidence increments reinforcement_count by 1
+    and recomputes confidence as confidence_from_counts(R, 0)."""
     from src.fact_store import Fact
+    from src.router.constants import confidence_from_counts
     store = FactStore(tmp_path / "v.db")
     fid = store.insert_fact(Fact(
         pattern="categorical", predicate="is_a",
         slots={"entity": "Tokyo", "category": "city"},
-        polarity=1, confidence=0.85,
+        polarity=1, confidence=confidence_from_counts(0, 0),
         asserted_by="model", verification_status="verified",
     ))
-    store.boost_confidence(fid)  # legacy flat-step caller
+    new_conf = store.boost_confidence(fid)
     rows = store._conn.execute(
         "SELECT confidence, reinforcement_count FROM facts WHERE id = ?",
         (fid,),
     ).fetchone()
     assert rows["reinforcement_count"] == 1
-    assert rows["confidence"] > 0.85
+    assert rows["confidence"] == pytest.approx(confidence_from_counts(1, 0))
+    assert new_conf == rows["confidence"]
     store.close()
 
 
-def test_boost_confidence_with_curve_uses_reinforcement_formula(tmp_path):
-    from src.fact_store import Fact
-    from src.router.constants import confidence_with_reinforcement
-    store = FactStore(tmp_path / "v.db")
-    fid = store.insert_fact(Fact(
-        pattern="categorical", predicate="is_a",
-        slots={"entity": "Tokyo", "category": "city"},
-        polarity=1, confidence=0.85,
-        asserted_by="model", verification_status="verified",
-    ))
-    new_conf = store.boost_confidence(fid, base_for_curve=0.85)
-    expected = confidence_with_reinforcement(0.85, refresh_count=1)
-    assert new_conf == pytest.approx(expected, abs=1e-9)
-    # And again — counter advances to 2
-    new_conf2 = store.boost_confidence(fid, base_for_curve=0.85)
-    expected2 = confidence_with_reinforcement(0.85, refresh_count=2)
-    assert new_conf2 == pytest.approx(expected2, abs=1e-9)
-    assert new_conf2 > new_conf
-    store.close()
-
-
-# ---- v0.7.13: model-asserted find-or-boost integration ---------------
+# ---- v0.13: model find-or-boost integration --------------------------
 
 
 def test_router_store_or_boost_reuses_existing_model_fact(tmp_path):
     """Re-verifying the same model claim boosts the existing fact
-    instead of inserting a duplicate. Mirror of the user-asserted
-    find-or-boost pattern."""
-    from src.fact_store import Fact
+    instead of inserting a duplicate. v0.13: confidence comes purely
+    from reinforcement_count."""
     from src.pattern_registry import PatternRegistry
     from src.router.router import Router
+    from src.router.constants import confidence_from_counts
 
     store = FactStore(tmp_path / "v.db")
     reg = PatternRegistry.from_yaml("patterns.yaml")
@@ -1324,59 +1259,19 @@ def test_router_store_or_boost_reuses_existing_model_fact(tmp_path):
         "slots": {"entity": "Tokyo", "category": "city"},
         "polarity": 1, "source_text": "Tokyo is a city",
     }
-    # First "verification" — store fresh.
     fact_id_1, conf_1, count_1 = router._store_or_boost_model_fact(
-        claim, source_turn_id=1,
-        path_prior=0.95, verifier_confidence=1.0,
-        verification_status="verified",
+        claim, source_turn_id=1, verification_status="verified",
     )
     assert count_1 == 0
+    assert conf_1 == pytest.approx(confidence_from_counts(0, 0))
 
-    # Second verification of an identical claim — should boost the same fact.
     fact_id_2, conf_2, count_2 = router._store_or_boost_model_fact(
-        claim, source_turn_id=2,
-        path_prior=0.95, verifier_confidence=1.0,
-        verification_status="verified",
+        claim, source_turn_id=2, verification_status="verified",
     )
-    assert fact_id_2 == fact_id_1  # same fact, not a duplicate
+    assert fact_id_2 == fact_id_1
     assert count_2 == 1
+    assert conf_2 == pytest.approx(confidence_from_counts(1, 0))
     assert conf_2 > conf_1
-    store.close()
-
-
-def test_router_judge_confidence_multiplies_path_prior(tmp_path):
-    """A hedged judge (confidence=0.6) produces a lower Decision
-    confidence than a certain judge (confidence=0.95), even though
-    both verdicts are SUPPORTED via the same path prior."""
-    from src.fact_store import Fact
-    from src.pattern_registry import PatternRegistry
-    from src.router.router import Router
-
-    store = FactStore(tmp_path / "v.db")
-    reg = PatternRegistry.from_yaml("patterns.yaml")
-    router = Router(store=store, registry=reg)
-
-    claim_a = {
-        "pattern": "categorical", "predicate": "is_a",
-        "slots": {"entity": "Tokyo", "category": "city"},
-        "polarity": 1, "source_text": "Tokyo is a city",
-    }
-    claim_b = {
-        "pattern": "categorical", "predicate": "is_a",
-        "slots": {"entity": "Osaka", "category": "city"},
-        "polarity": 1, "source_text": "Osaka is a city",
-    }
-    _, conf_certain, _ = router._store_or_boost_model_fact(
-        claim_a, source_turn_id=1,
-        path_prior=0.95, verifier_confidence=0.95,
-        verification_status="verified",
-    )
-    _, conf_hedged, _ = router._store_or_boost_model_fact(
-        claim_b, source_turn_id=2,
-        path_prior=0.95, verifier_confidence=0.6,
-        verification_status="verified",
-    )
-    assert conf_certain > conf_hedged
     store.close()
 
 
@@ -1418,13 +1313,13 @@ def test_find_currently_valid_filters_by_session_id(tmp_path):
     cross = Fact(
         pattern="categorical", predicate="is_a",
         slots={"entity": "X", "category": "thing"},
-        polarity=1, confidence=0.95,
+        polarity=1,
         asserted_by="user", verification_status="user_asserted",
     )
     scoped = Fact(
         pattern="categorical", predicate="is_a",
         slots={"entity": "X", "category": "thing"},
-        polarity=1, confidence=0.95,
+        polarity=1,
         asserted_by="user", verification_status="user_asserted",
         session_id="sess_a",
     )
@@ -1481,7 +1376,7 @@ def test_microtheory_takes_precedence_over_user_store_in_pipeline(tmp_path):
     store.insert_fact(Fact(
         pattern="categorical", predicate="is_a",
         slots={"entity": "Tokyo", "category": "city"},
-        polarity=1, confidence=0.95,
+        polarity=1,
         asserted_by="user", verification_status="user_asserted",
         session_id="sess_test",
     ))
@@ -1528,7 +1423,7 @@ def test_user_store_tier_returns_none_when_only_microtheory_match(tmp_path):
     store.insert_fact(Fact(
         pattern="categorical", predicate="is_a",
         slots={"entity": "Tokyo", "category": "city"},
-        polarity=1, confidence=0.95,
+        polarity=1,
         asserted_by="user", verification_status="user_asserted",
         session_id="sess_test",
     ))
@@ -1679,21 +1574,21 @@ def test_cache_gate_uses_combined_classifier_when_wired():
         nonlocal combined_calls
         combined_calls += 1
         return CombinedDecision(
-            scoping=ScopingDecision(scope="world_fact", reason="x", confidence=0.9),
+            scoping=ScopingDecision(scope="world_fact", reason="x"),
             stability=StabilityDecision(
-                stability_class="years_stable", reason="x", confidence=0.9,
+                stability_class="years_stable", reason="x",
                 ttl_seconds=STABILITY_TTL_SECONDS["years_stable"],
             ),
         )
     def fake_scope(claim):
         nonlocal legacy_scope_calls
         legacy_scope_calls += 1
-        return ScopingDecision(scope="world_fact", reason="x", confidence=0.9)
+        return ScopingDecision(scope="world_fact", reason="x")
     def fake_stab(claim):
         nonlocal legacy_stab_calls
         legacy_stab_calls += 1
         return StabilityDecision(
-            stability_class="years_stable", reason="x", confidence=0.9,
+            stability_class="years_stable", reason="x",
             ttl_seconds=STABILITY_TTL_SECONDS["years_stable"],
         )
 

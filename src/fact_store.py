@@ -185,10 +185,11 @@ PIPELINE_STAGES = {
     "extractor_substitution_warning",
 }
 
-# Confidence adjustments
-_CONFIDENCE_BOOST = 0.02
-_CONFIDENCE_CAP = 0.99
-_CONFIDENCE_FLOOR_ON_CLOSE = 0.4
+# Confidence is computed from observed counts (reinforcement_count
+# on facts, refresh_count + contradiction_count on cache entries) via
+# src.router.constants.confidence_from_counts. No fixed boost / cap /
+# floor — those were the v0.7.13 reinforcement-curve tunables that
+# operated on top of LLM-emitted confidence values, deleted in v0.13.
 
 
 def _now_iso() -> str:
@@ -357,9 +358,11 @@ class Fact:
     predicate: str
     slots: dict[str, Any]
     polarity: int
-    confidence: float
     asserted_by: str
     verification_status: str
+    # v0.13: Beta(1,1) prior at zero observed counts. Subsequent
+    # reinforcements / contradictions update via confidence_from_counts.
+    confidence: float = 0.5
     valid_from: str | None = None
     valid_until: str | None = None
     source_turn_id: int | None = None
@@ -597,39 +600,24 @@ class FactStore:
             polarity=opposite, user_id=user_id,
         )
 
-    def boost_confidence(
-        self, fact_id: int, amount: float = _CONFIDENCE_BOOST,
-        *, base_for_curve: float | None = None,
-    ) -> float:
-        """Reinforce a stored fact: increment its reinforcement_count
-        and recompute its confidence on the earned-trust curve.
+    def boost_confidence(self, fact_id: int) -> float:
+        """Reinforce a stored fact: increment ``reinforcement_count``
+        and recompute confidence from the new count.
 
-        Two modes (kept backward-compatible):
-          * ``base_for_curve=None`` (default, legacy callers) — apply
-            a flat ``+amount`` boost capped at _CONFIDENCE_CAP.
-            Preserves the v0.5–v0.7.12 behavior for callers that
-            haven't been upgraded.
-          * ``base_for_curve=<path_prior>`` (v0.7.13 callers) —
-            recompute confidence as
-            ``confidence_with_reinforcement(base, reinforcement_count, 0)``
-            so the saturating curve replaces the flat +0.02-step.
-
-        Either way: ``reinforcement_count`` is incremented by one.
-        """
+        v0.13: confidence is purely ``confidence_from_counts(R, 0)``
+        where R is the post-increment reinforcement_count. No path-
+        prior input, no LLM-emitted base. The flat +0.02-step and
+        the saturating-curve-with-base modes are gone — the only
+        thing that drives confidence is the count history."""
         row = self._conn.execute(
-            "SELECT confidence, reinforcement_count FROM facts WHERE id = ?",
+            "SELECT reinforcement_count FROM facts WHERE id = ?",
             (fact_id,),
         ).fetchone()
         if not row:
             raise LookupError(f"fact {fact_id} does not exist")
         new_count = int(row["reinforcement_count"] or 0) + 1
-        if base_for_curve is None:
-            new_conf = min(float(row["confidence"]) + amount, _CONFIDENCE_CAP)
-        else:
-            from src.router.constants import confidence_with_reinforcement
-            new_conf = confidence_with_reinforcement(
-                base_for_curve, refresh_count=new_count, contradiction_count=0,
-            )
+        from src.router.constants import confidence_from_counts
+        new_conf = confidence_from_counts(new_count, 0)
         self._conn.execute(
             "UPDATE facts SET confidence = ?, reinforcement_count = ? WHERE id = ?",
             (new_conf, new_count, fact_id),
@@ -641,19 +629,17 @@ class FactStore:
         self,
         fact_id: int,
         valid_until: str | None = None,
-        new_confidence: float | None = _CONFIDENCE_FLOOR_ON_CLOSE,
     ) -> None:
+        """Close a fact (set valid_until). v0.13: confidence on
+        closed facts is left as-is — confidence comes from counts,
+        not from a status-driven floor. Closing a fact removes it
+        from active queries; its historical confidence at close time
+        is informational."""
         valid_until = valid_until or _now_iso()
-        if new_confidence is None:
-            self._conn.execute(
-                "UPDATE facts SET valid_until = ? WHERE id = ?",
-                (valid_until, fact_id),
-            )
-        else:
-            self._conn.execute(
-                "UPDATE facts SET valid_until = ?, confidence = ? WHERE id = ?",
-                (valid_until, new_confidence, fact_id),
-            )
+        self._conn.execute(
+            "UPDATE facts SET valid_until = ? WHERE id = ?",
+            (valid_until, fact_id),
+        )
         self._conn.commit()
 
     def query_facts(

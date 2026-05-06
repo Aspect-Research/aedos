@@ -32,7 +32,6 @@ def _user_pref(user, obj, polarity=1):
         predicate="likes",
         slots={"agent": "user", "object": obj},
         polarity=polarity,
-        confidence=0.95,
         asserted_by="user",
         verification_status="user_asserted",
         user_id=user,
@@ -238,7 +237,7 @@ def test_router_uses_user_scope_for_store_lookup(tmp_path):
     alice_router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="user_authoritative", reason="user claim", confidence=0.9,
+            method="user_authoritative", reason="user claim",
         ),
         user_id="alice",
     )
@@ -264,7 +263,7 @@ def test_router_uses_user_scope_for_store_lookup(tmp_path):
     bob_router = Router(
         store, registry,
         routing_fn=lambda c: RoutingDecision(
-            method="user_authoritative", reason="user claim", confidence=0.9,
+            method="user_authoritative", reason="user claim",
         ),
         user_id="bob",
     )

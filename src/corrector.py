@@ -220,16 +220,17 @@ class Corrector:
             )
 
         if status == "unverifiable_pending_implementation":
-            # Catch-all for python verifier inconclusive / store-lookup miss /
-            # similar runtime failures. Confidence threshold gives us a knob.
-            if d.confidence < 0.5:
-                return Intervention(
-                    intervention_type=INTERVENTION_HEDGE,
-                    claim=d.claim,
-                    verification_status=status,
-                    reason="verifier returned no conclusive evidence",
-                )
-            return None
+            # Catch-all for python verifier inconclusive / store-lookup
+            # miss / similar runtime failures. v0.13: always hedge.
+            # Pre-v0.13 this was gated on `confidence < 0.5`, but the
+            # path-prior constant for pending was 0.4 so the gate
+            # always tripped — the status itself is the signal.
+            return Intervention(
+                intervention_type=INTERVENTION_HEDGE,
+                claim=d.claim,
+                verification_status=status,
+                reason="verifier returned no conclusive evidence",
+            )
 
         if status == "unverifiable_in_principle":
             return Intervention(

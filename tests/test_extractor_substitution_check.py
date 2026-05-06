@@ -239,7 +239,7 @@ def test_pipeline_emits_substitution_warning_event(tmp_path):
     from src.extractor import ClaimExtractor
     extractor = ClaimExtractor(mock, registry)
     router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
-        method="unverifiable", reason="x", confidence=0.9))
+        method="unverifiable", reason="x"))
     p = Pipeline(store, registry, mock, extractor, router, Corrector(mock))
     trace = p.run_turn("how many moons does Saturn have")
 
@@ -301,7 +301,7 @@ def test_pipeline_no_warning_when_source_text_matches(tmp_path):
     from src.extractor import ClaimExtractor
     extractor = ClaimExtractor(mock, registry)
     router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
-        method="unverifiable", reason="x", confidence=0.9))
+        method="unverifiable", reason="x"))
     p = Pipeline(store, registry, mock, extractor, router, Corrector(mock))
     trace = p.run_turn("test")
 

@@ -220,7 +220,7 @@ def test_turn_cost_event_emitted(tmp_path):
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
     router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
-        method="unverifiable", reason="x", confidence=0.9))
+        method="unverifiable", reason="x"))
     p = Pipeline(store, registry, mock, extractor, router, Corrector(mock))
     trace = p.run_turn("hi")
 
@@ -275,7 +275,7 @@ def test_turn_cost_event_skipped_when_no_calls(tmp_path):
         store, registry, mock,
         ClaimExtractor(mock, registry),
         Router(store, registry, routing_fn=lambda c: RoutingDecision(
-            method="unverifiable", reason="x", confidence=0.9)),
+            method="unverifiable", reason="x")),
         Corrector(mock),
     )
     trace = p.run_turn("hi")

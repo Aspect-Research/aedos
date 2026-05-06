@@ -41,7 +41,8 @@ def test_decision_dict_carries_every_field():
     payload = d.to_dict()
     assert payload["method"] == "python"
     assert payload["reason"] == "Pure computation."
-    assert payload["confidence"] == 0.95
+    # v0.13: no confidence field on RoutingDecision.
+    assert "confidence" not in payload
     assert payload["python_inputs_self_contained"] is True
     assert payload["retrieval_query_hint"] is None
     assert payload["canonical_constants_needed"] is None
@@ -63,11 +64,15 @@ def test_unknown_method_coerces_to_unverifiable():
     assert d.method == "unverifiable"
 
 
-def test_confidence_is_clamped_to_unit_interval():
-    for raw, expected in [(2.5, 1.0), (-1, 0.0), ("nope", 0.0), (None, 0.0)]:
-        llm = FakeLLM(response={"method": "python", "reason": "", "confidence": raw})
-        d = route_claim({"pattern": "x", "predicate": "x", "slots": {}, "polarity": 1}, llm)
-        assert d.confidence == expected, raw
+def test_extra_confidence_field_ignored_silently():
+    """v0.13: RoutingDecision no longer has a confidence field. If
+    the LLM still emits one (older prompts, drift), the parser
+    drops it without complaint — confidence is now derived from
+    counts, not LLM self-rating."""
+    llm = FakeLLM(response={"method": "python", "reason": "", "confidence": 0.95})
+    d = route_claim({"pattern": "x", "predicate": "x", "slots": {}, "polarity": 1}, llm)
+    assert d.method == "python"
+    assert not hasattr(d, "confidence") or "confidence" not in d.to_dict()
 
 
 def test_query_hint_only_returned_as_string_or_none():

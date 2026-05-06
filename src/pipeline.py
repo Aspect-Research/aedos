@@ -467,18 +467,11 @@ class Pipeline:
         self, claim: dict, fact: "Fact", *, tier: str, turn_id: int,
     ) -> Decision:
         """Build a Decision from a matched user-asserted fact (tier 1
-        or tier 2 hit). Boosts the matched fact's confidence so
-        repeated hits accumulate trust on the source row."""
-        from src.router.constants import (
-            CONF_STORE_VERIFIED, confidence_with_reinforcement,
-        )
-        # Reinforce the underlying fact and use the boosted value as
-        # the Decision's confidence — the user's reinforcement vision
-        # extended to the tiered path.
+        or tier 2 hit). Boosts the matched fact's reinforcement_count
+        so repeated hits accumulate trust on the source row;
+        confidence is computed from the new count."""
         try:
-            new_conf = self.store.boost_confidence(
-                fact.id, base_for_curve=CONF_STORE_VERIFIED,
-            )
+            new_conf = self.store.boost_confidence(fact.id)
         except Exception:
             new_conf = float(fact.confidence)
         # Telemetry.
@@ -759,7 +752,7 @@ class Pipeline:
         slot_str = ", ".join(f"{k}={v!r}" for k, v in f.slots.items())
         return (
             f"- [{f.pattern}] {f.predicate}({slot_str}) "
-            f"[polarity={pol}, confidence={f.confidence:.2f}]"
+            f"[polarity={pol}, confidence={f.confidence:.2f} (refresh_count={f.reinforcement_count or 0})]"
         )
 
     def _format_disputes(self, user_decisions) -> str:

@@ -91,28 +91,26 @@ def _f(pattern, predicate, slots, polarity=1, source_text="<src>"):
 
 
 def _python_decision():
-    return RoutingDecision(method="python", reason="pure", confidence=0.95,
+    return RoutingDecision(method="python", reason="pure",
                            python_inputs_self_contained=True)
 
 
 def _retrieval_decision(query="x"):
-    return RoutingDecision(method="retrieval", reason="external", confidence=0.9,
+    return RoutingDecision(method="retrieval", reason="external",
                            retrieval_query_hint=query)
 
 
 def _user_auth_decision():
-    return RoutingDecision(method="user_authoritative", reason="about user",
-                           confidence=0.95)
+    return RoutingDecision(method="user_authoritative", reason="about user")
 
 
 def _unverifiable_decision():
-    return RoutingDecision(method="unverifiable", reason="judgment",
-                           confidence=0.85)
+    return RoutingDecision(method="unverifiable", reason="judgment")
 
 
 def _ccc_decision():
     return RoutingDecision(method="python_with_canonical_constants",
-                           reason="needs canon", confidence=0.8,
+                           reason="needs canon",
                            python_inputs_self_contained=False,
                            canonical_constants_needed=["list of US states"])
 
@@ -153,7 +151,7 @@ def test_user_polarity_flip_closes_old_and_stores_new(store):
 
 def test_python_verified_routes_through_code_gen(store):
     cg_result = CodeGenVerificationResult(
-        status="verified", confidence=0.99, actual_value=3, trace={},
+        status="verified", actual_value=3, trace={},
     )
     router, routing_fn, cg = _router(
         store, decisions=[_python_decision()], code_results=[cg_result],
@@ -172,7 +170,7 @@ def test_python_verified_routes_through_code_gen(store):
 
 def test_python_contradicted_stores_correction(store):
     cg_result = CodeGenVerificationResult(
-        status="contradicted", confidence=0.99, actual_value=0, trace={},
+        status="contradicted", actual_value=0, trace={},
     )
     router, _, _ = _router(
         store, decisions=[_python_decision()], code_results=[cg_result],
@@ -220,7 +218,7 @@ def test_python_comparison_error_marks_pending(store):
 
 def test_canonical_constants_routes_through_cross_check(store):
     cg_result = CodeGenVerificationResult(
-        status="verified", confidence=0.99, actual_value=4, trace={},
+        status="verified", actual_value=4, trace={},
     )
     router, _, cg = _router(
         store, decisions=[_ccc_decision()],
@@ -401,7 +399,8 @@ def test_routing_decision_logged(store):
     payload = routing[0]["data"]
     assert payload["decision"]["method"] == "python"
     assert payload["decision"]["reason"]
-    assert payload["decision"]["confidence"] == 0.95
+    # v0.13: confidence is no longer a routing-decision field.
+    assert "confidence" not in payload["decision"]
 
 
 # ---------- guardrails ----------

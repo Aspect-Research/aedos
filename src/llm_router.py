@@ -20,7 +20,7 @@ The router LLM picks one of:
   - unverifiable                        — no available method applies.
 
 The decision is observable: every routing call writes a ``routing_decision``
-pipeline event with method / reason / confidence / hints.
+pipeline event with method / reason / hints.
 
 Why an LLM and not a rule engine: the v0.4 pattern + predicate_overrides
 approach didn't scale. Every new computable claim type needed a YAML edit;
@@ -52,7 +52,6 @@ ROUTING_METHODS = (
 class RoutingDecision:
     method: str  # one of ROUTING_METHODS
     reason: str
-    confidence: float
     python_inputs_self_contained: Optional[bool] = None
     retrieval_query_hint: Optional[str] = None
     canonical_constants_needed: Optional[list[str]] = None
@@ -62,7 +61,6 @@ class RoutingDecision:
         return {
             "method": self.method,
             "reason": self.reason,
-            "confidence": self.confidence,
             "python_inputs_self_contained": self.python_inputs_self_contained,
             "retrieval_query_hint": self.retrieval_query_hint,
             "canonical_constants_needed": self.canonical_constants_needed,
@@ -73,7 +71,7 @@ _ROUTING_TOOL = {
     "name": "record_routing_decision",
     "description": (
         "Record the verification method that should be used to check this "
-        "claim, with a short reason and a confidence score."
+        "claim, with a short reason."
     ),
     "input_schema": {
         "type": "object",
@@ -93,15 +91,6 @@ _ROUTING_TOOL = {
                 "description": (
                     "One short sentence explaining why this method was "
                     "chosen. Surfaces in the trace UI."
-                ),
-            },
-            "confidence": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": (
-                    "How sure you are that this is the right method, in "
-                    "[0, 1]. Below 0.7 the trace will flag the decision."
                 ),
             },
             "python_inputs_self_contained": {
@@ -131,7 +120,7 @@ _ROUTING_TOOL = {
                 ),
             },
         },
-        "required": ["method", "reason", "confidence"],
+        "required": ["method", "reason"],
     },
 }
 
@@ -220,7 +209,7 @@ Order of these examples is deliberate. Edge cases come first.
 ## Edge: arithmetic-around-retrieved-values
 
 Claim: pattern=quantitative, predicate=lifespan_years, slots={subject:'Marie Curie', property:'years_lived', value:67, birth_year:1867, death_year:1934}, polarity=1
-→ method: python, reason: "Arithmetic on stated dates (death_year - birth_year); take the dates as inputs the claim provides.", confidence: 0.9, python_inputs_self_contained: true.
+→ method: python, reason: "Arithmetic on stated dates (death_year - birth_year); take the dates as inputs the claim provides.", python_inputs_self_contained: true.
 
 ## Edge: arithmetic-around-retrieved-values, alternate slot names
 
@@ -237,116 +226,116 @@ The shape is: a numeric `value` claimed AS the result of an operation on OTHER n
 ## Edge: external-string-verification looks like python but isn't
 
 Claim: pattern=relational, predicate=opens_with, slots={subject:'Gettysburg Address', object:"Four score and seven years ago"}, polarity=1
-→ method: retrieval, reason: "Verifying that a literal string starts an external document requires fetching the document; no python operation on the claim's slots resolves this.", confidence: 0.9, retrieval_query_hint: "Gettysburg Address opening line".
+→ method: retrieval, reason: "Verifying that a literal string starts an external document requires fetching the document; no python operation on the claim's slots resolves this.", retrieval_query_hint: "Gettysburg Address opening line".
 
 ## python (pure)
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'strawberry', property:'letter_r', value:3}, polarity=1
-→ method: python, reason: "Counting letters in a literal word is pure computation.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "Counting letters in a literal word is pure computation.", python_inputs_self_contained: true.
 
 Claim: pattern=relational, predicate=reverse_of, slots={subject:'nairatilage', object:'egalitarian'}, polarity=1
-→ method: python, reason: "String reversal of a literal is deterministic.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "String reversal of a literal is deterministic.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=product_equals, slots={subject:'23 times 47', property:'product', value:1081}, polarity=1
-→ method: python, reason: "Arithmetic on literal numbers in the claim.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "Arithmetic on literal numbers in the claim.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=term_duration, slots={subject:'Trump first term', property:'years', value:4, valid_from:'2017', valid_until:'2021'}, polarity=1
-→ method: python, reason: "Date arithmetic on years stated in the claim's slots (valid_from to valid_until).", confidence: 0.9, python_inputs_self_contained: true.
+→ method: python, reason: "Date arithmetic on years stated in the claim's slots (valid_from to valid_until).", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=day_of_week, slots={subject:'2025-01-20', property:'weekday', value:'Monday'}, polarity=1
-→ method: python, reason: "Day of the week from a literal date is computable via datetime.", confidence: 0.95, python_inputs_self_contained: true.
+→ method: python, reason: "Day of the week from a literal date is computable via datetime.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=is_perfect_cube, slots={subject:'1729', property:'is_cube', value:false}, polarity=1
-→ method: python, reason: "Cube/root test on a literal integer is deterministic.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "Cube/root test on a literal integer is deterministic.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=is_prime, slots={subject:'73', property:'is_prime', value:true}, polarity=1
-→ method: python, reason: "Primality test on a literal integer; no external constants needed.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "Primality test on a literal integer; no external constants needed.", python_inputs_self_contained: true.
 
 Claim: pattern=relational, predicate=is_palindrome_of, slots={subject:'racecar', object:'racecar'}, polarity=1
-→ method: python, reason: "Palindrome check is pure computation on the literal string.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "Palindrome check is pure computation on the literal string.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=conditional_date, slots={subject:'three days after Wednesday', property:'weekday', value:'Saturday'}, polarity=1
-→ method: python, reason: "Date arithmetic given a stated premise; no external data.", confidence: 0.9, python_inputs_self_contained: true.
+→ method: python, reason: "Date arithmetic given a stated premise; no external data.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=current_time, slots={subject:'Cairo', property:'time', value:'9:56 am'}, polarity=1
-→ method: python, reason: "Current local time in a city derives from the system clock + Python stdlib's IANA timezone database (zoneinfo.ZoneInfo('Africa/Cairo')). The 'right now' aspect is fine — the verifier runs within seconds of the claim and the comparator can tolerate small drift.", confidence: 0.95, python_inputs_self_contained: true.
+→ method: python, reason: "Current local time in a city derives from the system clock + Python stdlib's IANA timezone database (zoneinfo.ZoneInfo('Africa/Cairo')). The 'right now' aspect is fine — the verifier runs within seconds of the claim and the comparator can tolerate small drift.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=time_difference, slots={subject:'Cairo', object:'New York', property:'hours_ahead', value:7}, polarity=1
-→ method: python, reason: "Hour offset between two cities = subtraction of their current UTC offsets (zoneinfo + datetime). DST nuance is the comparator's concern; routing is python.", confidence: 0.9, python_inputs_self_contained: true.
+→ method: python, reason: "Hour offset between two cities = subtraction of their current UTC offsets (zoneinfo + datetime). DST nuance is the comparator's concern; routing is python.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'New York', property:'time_zone_offset_from_Cairo_in_hours', value:-7}, polarity=1
-→ method: python, reason: "Predicate label 'has_count' is incidental — read the property and subject. The property describes a timezone offset between two cities, computable from zoneinfo + datetime. The same lesson applies to any claim where the predicate label is generic but the property names a stdlib-resolvable computation: read what's actually being asserted.", confidence: 0.9, python_inputs_self_contained: true.
+→ method: python, reason: "Predicate label 'has_count' is incidental — read the property and subject. The property describes a timezone offset between two cities, computable from zoneinfo + datetime. The same lesson applies to any claim where the predicate label is generic but the property names a stdlib-resolvable computation: read what's actually being asserted.", python_inputs_self_contained: true.
 
 Claim: pattern=quantitative, predicate=has_count, slots={subject:'apple', property:'vowel_count', value:2}, polarity=1
-→ method: python, reason: "Same predicate-label-is-incidental lesson — the property is a string operation on a literal value. Pure stdlib (string iteration over the vowel set). Python.", confidence: 0.99, python_inputs_self_contained: true.
+→ method: python, reason: "Same predicate-label-is-incidental lesson — the property is a string operation on a literal value. Pure stdlib (string iteration over the vowel set). Python.", python_inputs_self_contained: true.
 
 ## python_with_canonical_constants
 
 Claim: pattern=quantitative, predicate=us_states_starting_with_letter, slots={subject:'US states', property:'starting_with_A', value:4}, polarity=1
-→ method: python_with_canonical_constants, reason: "Counting US states whose names start with a letter requires the (stable) list of states.", confidence: 0.9, python_inputs_self_contained: false, canonical_constants_needed: ["list of US states"].
+→ method: python_with_canonical_constants, reason: "Counting US states whose names start with a letter requires the (stable) list of states.", python_inputs_self_contained: false, canonical_constants_needed: ["list of US states"].
 
 Claim: pattern=quantitative, predicate=days_in_week, slots={subject:'a week', property:'days', value:7}, polarity=1
-→ method: python_with_canonical_constants, reason: "7 days/week is a stable canonical constant; cross-checking guards against accidental alternate calendars.", confidence: 0.7, python_inputs_self_contained: false, canonical_constants_needed: ["days of the week"].
+→ method: python_with_canonical_constants, reason: "7 days/week is a stable canonical constant; cross-checking guards against accidental alternate calendars.", python_inputs_self_contained: false, canonical_constants_needed: ["days of the week"].
 
 ## retrieval
 
 Claim: pattern=role_assignment, predicate=holds_role, slots={agent:'Donald Trump', role:'47th President', org:'United States'}, polarity=1
-→ method: retrieval, reason: "Current world-state claim about a specific person's role.", confidence: 0.95, retrieval_query_hint: "Donald Trump 47th President".
+→ method: retrieval, reason: "Current world-state claim about a specific person's role.", retrieval_query_hint: "Donald Trump 47th President".
 
 Claim: pattern=event, predicate=won_prize, slots={participants:['Marie Curie'], event_type:'Nobel Prize', occurred_at:'1903'}, polarity=1
-→ method: retrieval, reason: "Specific historical event date — needs external source.", confidence: 0.95, retrieval_query_hint: "Marie Curie Nobel Prize 1903".
+→ method: retrieval, reason: "Specific historical event date — needs external source.", retrieval_query_hint: "Marie Curie Nobel Prize 1903".
 
 Claim: pattern=quantitative, predicate=population_of, slots={subject:'Tokyo', property:'population', value:14000000}, polarity=1
-→ method: retrieval, reason: "Population is external data, not computable.", confidence: 0.95, retrieval_query_hint: "Tokyo population".
+→ method: retrieval, reason: "Population is external data, not computable.", retrieval_query_hint: "Tokyo population".
 
 Claim: pattern=spatial_temporal, predicate=largest_ocean, slots={entity:'Pacific Ocean', location:'Earth', relation_kind:'largest'}, polarity=1
-→ method: retrieval, reason: "Geographic superlative; needs external reference.", confidence: 0.9, retrieval_query_hint: "largest ocean Earth".
+→ method: retrieval, reason: "Geographic superlative; needs external reference.", retrieval_query_hint: "largest ocean Earth".
 
 ## user_authoritative
 
 Claim: pattern=preference, predicate=likes, slots={agent:'user', object:'peanut butter'}, polarity=1
-→ method: user_authoritative, reason: "User preference; the user is ground truth.", confidence: 0.99.
+→ method: user_authoritative, reason: "User preference; the user is ground truth.".
 
 Claim: pattern=spatial_temporal, predicate=lives_in, slots={entity:'user', location:'San Francisco'}, polarity=1
-→ method: user_authoritative, reason: "User location; user is authoritative. If no prior is in the store, the dispatcher will mark this as unverified.", confidence: 0.95.
+→ method: user_authoritative, reason: "User location; user is authoritative. If no prior is in the store, the dispatcher will mark this as unverified.".
 
 ## retrieval (encyclopedic-but-fuzzy — NOT unverifiable)
 
 Claim: pattern=quantitative, predicate=can_drink, slots={subject:'typical human', property:'water_intake_per_minute', value:'0.5 to 1 gallon'}, polarity=1
-→ method: retrieval, reason: "Physiological capacity claim with a published range — medical literature can confirm or contradict.", confidence: 0.85, retrieval_query_hint: "human water intake rate per minute physiology".
+→ method: retrieval, reason: "Physiological capacity claim with a published range — medical literature can confirm or contradict.", retrieval_query_hint: "human water intake rate per minute physiology".
 
 Claim: pattern=quantitative, predicate=safe_rate_for_sustained_hydration, slots={subject:'safe hydration rate', property:'rate', value:'a few cups over several hours'}, polarity=1
-→ method: retrieval, reason: "Health guideline that authorities publish; not a future prediction or aesthetic judgment.", confidence: 0.8, retrieval_query_hint: "safe hydration rate guidelines per hour".
+→ method: retrieval, reason: "Health guideline that authorities publish; not a future prediction or aesthetic judgment.", retrieval_query_hint: "safe hydration rate guidelines per hour".
 
 Claim: pattern=categorical, predicate=is_a, slots={entity:'water intoxication', category:'hyponatremia'}, polarity=1
-→ method: retrieval, reason: "Medical equivalence claim — checkable in encyclopedic / medical sources.", confidence: 0.9, retrieval_query_hint: "water intoxication hyponatremia definition".
+→ method: retrieval, reason: "Medical equivalence claim — checkable in encyclopedic / medical sources.", retrieval_query_hint: "water intoxication hyponatremia definition".
 
 Claim: pattern=relational, predicate=can_cause, slots={subject:'excess water consumption', relation:'can_cause', object:'hyponatremia'}, polarity=1
-→ method: retrieval, reason: "Causal medical claim with established literature.", confidence: 0.9, retrieval_query_hint: "water intoxication causes hyponatremia".
+→ method: retrieval, reason: "Causal medical claim with established literature.", retrieval_query_hint: "water intoxication causes hyponatremia".
 
 ## unverifiable (genuinely no checkable answer)
 
 Claim: pattern=propositional_attitude, predicate=feels, slots={agent:'user', proposition:'the novel is elegant'}, polarity=1
-→ method: user_authoritative, reason: "User's own attitude is authoritative.", confidence: 0.9.
+→ method: user_authoritative, reason: "User's own attitude is authoritative.".
 (But:)
 Claim: pattern=propositional_attitude, predicate=feels, slots={agent:'a critic', proposition:'the novel is elegant'}, polarity=1
-→ method: unverifiable, reason: "Aesthetic judgment by a non-user agent — not measurable, not the user's own state.", confidence: 0.9.
+→ method: unverifiable, reason: "Aesthetic judgment by a non-user agent — not measurable, not the user's own state.".
 
 Claim: pattern=propositional_attitude, predicate=likely, slots={agent:'Sarah', proposition:'likes chocolate'}, polarity=1
-→ method: unverifiable, reason: "Probabilistic claim about a non-user's preference.", confidence: 0.9.
+→ method: unverifiable, reason: "Probabilistic claim about a non-user's preference.".
 
 Claim: pattern=event, predicate=will_happen, slots={event_type:'Fed rate cut', occurred_at:'2026-05'}, polarity=1
-→ method: unverifiable, reason: "Future event prediction.", confidence: 0.9.
+→ method: unverifiable, reason: "Future event prediction.".
 
 Claim: pattern=categorical, predicate=is_a, slots={entity:'sipping', category:'drinking method'}, polarity=1
-→ method: unverifiable, reason: "Vacuous lexical tautology — the category is a paraphrase of the entity. Likely an extractor artifact; nothing meaningful to check.", confidence: 0.85.
+→ method: unverifiable, reason: "Vacuous lexical tautology — the category is a paraphrase of the entity. Likely an extractor artifact; nothing meaningful to check.".
 
 Claim: pattern=categorical, predicate=is_a, slots={entity:"someone who's very thirsty", category:'very thirsty person'}, polarity=1
-→ method: unverifiable, reason: "Vacuous tautology — the category restates the entity description. Extractor artifact.", confidence: 0.85.
+→ method: unverifiable, reason: "Vacuous tautology — the category restates the entity description. Extractor artifact.".
 
 # Output
 
-Always call the `record_routing_decision` tool exactly once. Always include `reason` and `confidence`. Set `python_inputs_self_contained` only for python / python_with_canonical_constants. Set `retrieval_query_hint` only for retrieval. Set `canonical_constants_needed` only for python_with_canonical_constants."""
+Always call the `record_routing_decision` tool exactly once. Always include `reason`. Set `python_inputs_self_contained` only for python / python_with_canonical_constants. Set `retrieval_query_hint` only for retrieval. Set `canonical_constants_needed` only for python_with_canonical_constants."""
 
 
 def _build_user_message(claim: dict) -> str:
@@ -376,12 +365,6 @@ def route_claim(claim: dict, llm: LLMClient) -> RoutingDecision:
         # trace shows the bad value and the dispatcher can still proceed.
         method = "unverifiable"
     reason = str(raw.get("reason") or "").strip()
-    confidence_raw = raw.get("confidence", 0.0)
-    try:
-        confidence = float(confidence_raw)
-    except (TypeError, ValueError):
-        confidence = 0.0
-    confidence = max(0.0, min(1.0, confidence))
 
     self_contained = raw.get("python_inputs_self_contained")
     if not isinstance(self_contained, bool):
@@ -402,7 +385,6 @@ def route_claim(claim: dict, llm: LLMClient) -> RoutingDecision:
     return RoutingDecision(
         method=method,
         reason=reason,
-        confidence=confidence,
         python_inputs_self_contained=self_contained,
         retrieval_query_hint=query_hint,
         canonical_constants_needed=constants,

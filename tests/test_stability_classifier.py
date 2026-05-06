@@ -103,7 +103,6 @@ def test_historical_period_shortcut_forces_immutable():
     assert d.stability_class == "immutable"
     assert d.ttl_seconds is None
     assert "closed historical period" in d.reason
-    assert d.confidence == 0.99
     # Shortcut marker — useful for trace inspection.
     assert d.raw == {"shortcut": "historical_period"}
 
@@ -164,13 +163,12 @@ def test_invalid_stability_class_raises():
 
 def test_decision_to_dict_shape():
     d = StabilityDecision(
-        stability_class="years_stable", reason="r", confidence=0.9,
+        stability_class="years_stable", reason="r",
         ttl_seconds=STABILITY_TTL_SECONDS["years_stable"],
     )
     assert d.to_dict() == {
         "stability_class": "years_stable",
         "reason": "r",
-        "confidence": 0.9,
         # v0.7.8 — tightened from 1y → 90 days.
         "ttl_seconds": 90 * 24 * 3600,
     }
@@ -222,7 +220,7 @@ def _build_pipeline_with_classifiers(tmp_path, scoping_fn, stability_fn,
     registry = load_default_registry()
     extractor = ClaimExtractor(mock, registry)
     router = Router(store, registry, routing_fn=lambda c: RoutingDecision(
-        method="unverifiable", reason="x", confidence=0.9))
+        method="unverifiable", reason="x"))
     p = Pipeline(store, registry, mock, extractor, router, Corrector(mock),
                  scoping_classifier=scoping_fn,
                  stability_classifier=stability_fn)
@@ -246,8 +244,8 @@ def test_stability_runs_only_on_world_fact_claims(tmp_path):
 
     # Scoping returns user_specific for the first, world_fact for the second.
     scope_results = iter([
-        ScopingDecision(scope="user_specific", reason="user pref", confidence=0.99),
-        ScopingDecision(scope="world_fact", reason="geo", confidence=0.95),
+        ScopingDecision(scope="user_specific", reason="user pref"),
+        ScopingDecision(scope="world_fact", reason="geo"),
     ])
     scoping_fn = lambda claim: next(scope_results)
 
@@ -255,7 +253,7 @@ def test_stability_runs_only_on_world_fact_claims(tmp_path):
     def stability_fn(claim):
         stability_calls.append(claim)
         return StabilityDecision(
-            stability_class="decade_stable", reason="geo", confidence=0.95,
+            stability_class="decade_stable", reason="geo",
             ttl_seconds=STABILITY_TTL_SECONDS["decade_stable"],
         )
 
@@ -289,7 +287,7 @@ def test_stability_classifier_failure_does_not_break_pipeline(tmp_path):
     ]
 
     def scoping_fn(claim):
-        return ScopingDecision(scope="world_fact", reason="r", confidence=0.95)
+        return ScopingDecision(scope="world_fact", reason="r")
 
     def boom(claim):
         raise RuntimeError("stability blew up")
@@ -323,7 +321,7 @@ def test_stability_skipped_when_scoping_failed(tmp_path):
     def stability_fn(claim):
         stability_calls.append(claim)
         return StabilityDecision(
-            stability_class="immutable", reason="r", confidence=0.99,
+            stability_class="immutable", reason="r",
         )
 
     p, store = _build_pipeline_with_classifiers(
