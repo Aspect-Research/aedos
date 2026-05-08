@@ -1,184 +1,152 @@
 # Aedos
 
-A claim-verification and conversational-memory research prototype. Every
-factual claim the assistant makes is extracted, routed to a type-matched
-verifier, and either confirmed, rejected, or hedged before it reaches the
-user. User-stated facts are stored as ground truth for the conversation.
+A claim-verification and conversational-memory research prototype.
 
-The working hypothesis: hallucination is predominantly a failure of
-*verification*, not of knowledge. Claude already knows that strawberry has
-three Rs — what it lacks is a reflex to check before answering. Aedos adds
-that reflex as an explicit pipeline.
+The thesis: **correctness is a property of the system, not the model.** Aedos sits between a user and an LLM, extracts every factual claim the model makes into structured form, and routes that claim through a five-layer verification stack backed by a verified store that grows monotonically more correct over the course of a conversation. The system performs bounded inference — equivalence, subsumption, derivation — over its store, but does not attempt open-ended reasoning. Verification is the source of truth; memoization compounds verification's value over time.
 
-This is a research prototype — clarity, observability, and ease of
-modification matter more than performance. See `ARCHITECTURE.md` for the
-full design rationale and `CHANGELOG.md` for the version-by-version
-evolution.
-
-## How a turn flows
+## The five layers
 
 ```
-user message
-  ├─> extractor ────> store user-stated facts (treated as ground truth
-  │                   for self-attributes; verified for world claims)
-  └─> chat model ──> assistant draft
-        └─> extractor ──> per-claim:
-                            llm router  → python  / canonical-constants
-                                          retrieval / user-authoritative
-                                          unverifiable
-                            tier lookup → microtheory > user-store > cache
-                            verifier    → code-gen + sandbox / wikipedia
-                                          retrieval + judge / store match
-                            corrector   → holistic rewrite given the full
-                                          per-claim verification ledger
-                                          and the user's question
-                          → final reply
+Layer 1 — extraction       text → structured claims (pattern + slots)
+Layer 2 — routing          rule-based validator + LLM router (memoized)
+Layer 3 — substrate        four oracle classifiers, all memoized
+Layer 4 — lookup           Tier U → Tier W → derivation → fresh
+Layer 5 — decision         intervention planner + corrector
 ```
 
-Every stage emits a `pipeline_events` row. The trace UI reads from that
-table — there is no special-cased rendering for stages that don't log.
+**The four-oracle substrate** is the architectural commitment. Every semantic judgment is reduced to a small label set:
+
+| Oracle | Shape | Labels | Calibration |
+|---|---|---|---|
+| `predicate_equivalence`  | symmetric pair, pattern-keyed              | equivalent / contradictory / distinct                                            | 0.967 vs 0.90 floor |
+| `entity_equivalence`     | symmetric pair, case-sensitive             | same / different                                                                  | 0.978 vs 0.85 floor |
+| `entity_taxonomy`        | directional (child, parent, relation_type) | child_subsumed_by_parent / parent_subsumed_by_child / equivalent / neither       | 0.966 vs 0.85 floor |
+| `predicate_distribution` | singleton 4-tuple                          | distributes_up / distributes_down / both / neither                                | 0.977 vs 0.85 floor |
+
+Classifications are memoized at the SQL layer; warm-cache lookup cost is approximately zero LLM calls. Counts (`affirmed_count` / `contradicted_count`) increment only on independent external evidence — cache hits, oracle-mediated equivalence resolutions, and subsumption-derived matches do not increment.
+
+**Derivation** is bounded BFS over the substrate. The walker composes facts from Tier U (user microtheory) and Tier W (world cache) via equivalence and subsumption chains. Two canonical cases ship working:
+
+- *cheetahs-via-derivation*: stored `dislikes(user, animals)` + `cheetah is_a animal` (entity_taxonomy) + `dislikes distributes_down is_a` (predicate_distribution) ⇒ "user dislikes cheetahs" verified by walking three oracles.
+- *Williamstown-via-derivation*: stored `lives_in(user, Williamstown)` + `Williamstown part_of Massachusetts` + `lives_in distributes_up part_of` ⇒ "user lives in Massachusetts" verified by walking two oracles.
+
+Derived results are never persisted; every derivation is current with U + W state on every walk.
 
 ## Setup
 
 ```bash
-git clone https://github.com/asashepard/aedos && cd aedos
+git clone https://github.com/Aspect-Research/aedos && cd aedos
 uv sync                        # or: pip install -e ".[dev]"
-cp .env.example .env           # paste ANTHROPIC_API_KEY (and OPENAI_API_KEY
-                               # if you want the cheap-mini-class internal calls;
-                               # see "Per-purpose model routing" below)
+cp .env.example .env           # paste ANTHROPIC_API_KEY
+                               # (and OPENAI_API_KEY if you want gpt-* purposes)
 python -m src.app              # serves http://127.0.0.1:8000
 ```
 
-### What to try first
+The HTTP surface (`src/app.py`) exposes the v2 stack at `/`:
 
-1. **`I like peanut butter.`** — the extractor stores
-   `(user, likes, peanut butter)`; the trace shows the user-side claim
-   landing in the user store.
-2. **`Do I like peanut butter?`** — the assistant answers from the
-   stored fact; the trace shows the tier-1 microtheory hit short-
-   circuiting verification.
-3. **`How many p's are in strawberry?`** — the chat model will
-   probably say 3 (a famous confabulation). The router picks `python`,
-   the code generator writes `print('strawberry'.count('p'))`, the
-   sandbox runs it, the comparator says 2, and the corrector
-   rewrites the response.
-4. **`What time is it in Cairo right now?`** — the router picks
-   `python`, the code generator reaches for `zoneinfo`, and the
-   verifier confirms the hour against the system clock + IANA
-   timezone database.
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | trace-UI shell (vanilla JS, no build step) |
+| `POST /api/extract` | Layer 1 extractor over HTTP |
+| `POST /api/dispatch-one` | Layer 2 → walker → Layer 5 for one structured claim |
+| `GET /api/trace/{turn_id}` | pipeline events for a turn |
+| `GET /api/routing-memo[/{pattern}/{predicate}]` | Layer 2 memo inspector |
+| `GET /api/substrate/{oracle-slug}[/{key...}]` | per-oracle inspectors |
+| `POST /api/substrate/{oracle-slug}/{row_id}/{affirm,contradict}` | operator-driven count updates (the only paths that mutate substrate counts) |
+| `POST /api/reset` | wipe and recreate the v0.14 schema |
+
+`/api/chat` (full turn-level orchestration) is v0.15 work. v0.14 ships dispatch-one + the inspectors.
+
+## Eight verification states
+
+| Status | Meaning | Layer 5 intervention |
+|---|---|---|
+| `verified` | verifier confirmed | pass-through |
+| `contradicted` | verifier disconfirmed | replace |
+| `user_asserted` | user assertion (Tier U) | pass-through |
+| `unverifiable_in_principle` | routing decided no method applies | soften |
+| `retrieval_inconclusive` | verifier ran, evidence thin | hedge |
+| `retrieval_failed` | verifier broke; no evidence | noop |
+| `unverifiable_pending_implementation` | verifier-side error | hedge with flag |
+| `routing_anomaly` | Layer 2 validator rejected | noop, flag operator |
+
+The enum is not collapsible — each state encodes a distinct downstream behavior.
 
 ## Per-purpose model routing
 
-Every internal LLM call carries a `purpose` tag (`extractor:user`,
-`router`, `code_writer`, `retrieval_judge`, `corrector`,
-`cache_classify`, etc.). The dispatcher (`src/llm_client.py`) resolves
-each purpose to a concrete model via `DEFAULT_MODEL_BY_PURPOSE` — the
-default routes the cheap mini-class GPTs to internal work and reserves
-Anthropic Haiku for the chat slot:
+Every internal LLM call carries a `purpose` tag (`extractor:user`, `router`, `predicate_equivalence`, `corrector`, ...). The dispatcher (`src/llm_client.py`) resolves each purpose to a concrete model via `DEFAULT_MODEL_BY_PURPOSE`:
 
 | Purpose | Default model |
 |---|---|
-| `chat` | `claude-haiku-4-5` (locked; override only via `AEDOS_CHAT_MODEL`) |
+| `chat` | `claude-haiku-4-5` |
 | `extractor:user` / `extractor:assistant` | `gpt-4.1-mini` |
 | `router` | `gpt-4.1-mini` |
 | `prompt_builder` / `code_writer` / `retrieval_judge` / `corrector` | `gpt-4.1-mini` |
 | `cache_classify` / `cache_scoping` / `cache_stability` | `gpt-4.1-nano` |
 
-Override any entry per-process via `AEDOS_MODEL_<purpose>=<model_id>`.
-Anthropic prompt caching (`cache_control: ephemeral` on stable system
-prompts) and OpenAI automatic caching (gpt-4.1 / gpt-4o family on
-prompts ≥1024 tokens) are both on; the cost ledger reads
-provider-specific cache-tier token counts so per-turn cost reflects
-what each provider actually bills.
+Override per-process via `AEDOS_MODEL_<purpose>=<model_id>`. Anthropic prompt caching (`cache_control: ephemeral`) and OpenAI automatic caching (gpt-4.1 / gpt-4o family) are both on; the cost ledger reads provider-specific cache-tier token counts.
 
 ## Running tests
 
 ```bash
-pytest                         # ~600 fast tests, LLM calls mocked
-RUN_API_TESTS=1 pytest         # also runs the live calibration tests
-                               # (router / scoping / stability / wikipedia)
+pytest                         # ~1050 fast tests, LLM calls mocked
+RUN_API_TESTS=1 pytest         # also runs live calibration tests
+                               # (each oracle's gold corpus + scoping/stability)
 ```
 
-## Adding a new predicate
-
-You don't. Predicates are free-form within a pattern; the extractor
-emits whatever predicate label fits, and the LLM router classifies the
-claim's structure to pick a verification method. If the router
-misroutes a predicate, the fix is in the router prompt
-(`src/llm_router.py`) — add a worked example and a calibration case in
-`tests/test_routing_calibration.py`.
-
-For new patterns (rare and load-bearing), see `CLAUDE.md`.
+Calibration corpora live under `tests/calibration/`. The four oracle floors and the 25-scenario derivation corpus are gated behind `RUN_API_TESTS=1`.
 
 ## Resetting state
 
 ```bash
-python scripts/reset_db.py     # wipes the SQLite file and recreates schema
+python scripts/reset_db.py     # drops aedos.db and recreates the v0.14 schema
 ```
 
-Or click **Reset DB** in the UI header — it calls the same endpoint.
+Or click **Reset DB** in the UI header — same endpoint.
 
 ## Optional environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (required) | Anthropic API key |
-| `OPENAI_API_KEY` | — | Required when any purpose routes to a `gpt-*` model (the default config does) |
+| `OPENAI_API_KEY` | — | Required when any purpose routes to a `gpt-*` model |
 | `AEDOS_DB_PATH` | `aedos.db` | SQLite file location |
-| `AEDOS_CHAT_MODEL` | `claude-haiku-4-5` | Chat-slot model. The UI has no model dropdown; this env var is the only override |
-| `AEDOS_MODEL_<purpose>` | — | Override any per-purpose model — e.g. `AEDOS_MODEL_router=claude-haiku-4-5` |
-| `AEDOS_RETRIEVAL_CACHE_TTL_HOURS` | `24` | TTL for the per-query Wikipedia snippet cache. `0` disables |
+| `AEDOS_DECISION_THRESHOLD` | `0.5` | Layer 5 threshold T for hard vs soft verdicts |
+| `AEDOS_MODEL_<purpose>` | — | Override any per-purpose model |
 
 ## Layout
 
 ```
-patterns.yaml           — 8 structural patterns; predicates free-form within each
 src/
-  app.py                — FastAPI backend + static-file serving
-  pipeline.py           — orchestrates a full turn; emits every pipeline_event
-  fact_store.py         — SQLite wrapper; facts / turns / pipeline_events /
-                          retrieval_cache / verification_cache
-  pattern_registry.py   — loads patterns.yaml, formats the extractor prompt
-  extractor.py          — LLM claim extraction via forced tool use
-  llm_router.py         — per-claim verification routing (the LLM picks
-                          python / canonical-constants / retrieval /
-                          user-authoritative / unverifiable)
-  router/               — Decision dispatcher (4-file package)
-  llm_client.py         — Anthropic SDK wrapper + per-purpose dispatcher
-  openai_client.py      — OpenAI SDK wrapper (cost lands on the same ledger)
-  llm_clients/          — chat-slot backends (currently anthropic_chat only)
-  cost.py               — per-call cost accounting; reads Anthropic cache-tier
-                          + OpenAI cached_tokens for accurate cross-provider $
-  corrector.py          — holistic rewrite of the assistant draft given the
-                          full per-claim verification ledger
-  session_markers.py    — conversation-scoped microtheory markers
-  cache/                — Tier 2 verification cache
-    gate.py                     — single owner of scoping + lookup + write
-    classify_combined.py        — single-call scope+stability classifier
-    scoping_classifier.py       — user / session / world classifier (legacy)
-    stability_classifier.py     — TTL bin classifier (legacy)
-    verification_cache.py       — canonicalize + lookup + write
-  verifiers/
-    types.py                    — VerificationOutcome / VerificationResult
-    store_verifier.py           — match against user-asserted facts
-    retrieval_verifier.py       — slots-aware Wikipedia retrieval + judge,
-                                  with retry-on-INSUFFICIENT_EVIDENCE +
-                                  LLM query reformulation
-    comparative.py              — superlative-claim detector + query templates
-    code_generation/            — prompt → code → sandbox → compare
-    scrapers/                   — Wikipedia MediaWiki API client
-static/                — single-page UI (vanilla JS, vanilla CSS, no build step)
-tests/                 — one test file per component + integration scenarios
+  app.py                     — FastAPI root: extract / dispatch-one / inspectors
+  fact_store.py              — SQLite wrapper: facts + turns + pipeline_events +
+                               4 oracle tables + Tier W (verification_cache) +
+                               retrieval_cache + cache_invalidation_log
+  session_markers.py         — "let's say for this conversation" detector
+  llm_client.py              — multi-provider dispatcher (Anthropic + OpenAI)
+  openai_client.py           — OpenAI SDK wrapper, shared cost ledger
+  cost.py                    — per-call cost accounting
+  layer1_extraction/         — extractor + 9-pattern registry
+  layer2_routing/            — validator + LLM router + routing memo
+  layer3_substrate/          — four oracle classifiers + classifier_base
+  layer4_lookup/             — Tier U + Tier W + derivation + walker + fresh
+  layer5_decision/           — confidence + intervention planner + corrector
+  cache/                     — scoping + stability classifiers (fresh-tier
+                               write gates)
+  verifiers/                 — fresh-tier infrastructure
+    types.py                 — VerificationOutcome / VerificationResult
+    retrieval_verifier.py    — slot-aware Wikipedia retrieval + LLM judge
+    comparative.py           — superlative-claim detector + query templates
+    code_generation/         — neutral-prompt → code → sandbox → compare
+    scrapers/                — Wikipedia MediaWiki client
+static/                      — single-page UI (vanilla JS)
+tests/                       — one test file per module + integration scenarios
 scripts/
-  reset_db.py            — wipe + recreate schema
-  eval_harness.py        — raw vs aedos comparison across a corpus
-  analyze_cache.py       — cache hit rate + most-reused canonical keys
-  analyze_costs.py       — per-turn LLM cost breakdown by model + purpose
+  reset_db.py                — wipe + recreate schema
+patterns.yaml                — under src/layer1_extraction/; 9 structural patterns,
+                               free-form predicates within each
 ```
 
-## Pointers
+## License
 
-- `ARCHITECTURE.md` — design rationale + full data-flow diagram
-- `CLAUDE.md` — guidance for sessions working in this repo (load-bearing
-  invariants, how to add a predicate / pattern, how to debug a turn)
-- `CHANGELOG.md` — version-by-version evolution from v0.1 to v0.12
+MIT — see `LICENSE`.

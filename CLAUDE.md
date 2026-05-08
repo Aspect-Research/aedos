@@ -3,612 +3,278 @@
 ## What this is
 
 Aedos is a claim-verification and conversational-memory research prototype.
-The working hypothesis: hallucination is predominantly a failure of
-verification, not of knowledge. Every factual claim the assistant makes is
-extracted, routed to a type-matched verifier, and either confirmed,
-rejected, or flagged. User-stated facts are stored as ground truth.
-
-See `ARCHITECTURE.md` for the design rationale and a full data-flow diagram.
-
-## v0.14 Phase 8.6 — three extractor / storage-path bug fixes
-
-Three bugs surfaced by real-world testing of the Phase 8.5 trace UI, all fixed before Phase 9 cutover. The bugs share an architectural theme: the extractor's projection of source text diverges from what the source actually asserts, and downstream layers didn't catch the divergence.
-
-- **Bug 1 (strawberry):** "How many r's are in strawberry?" used to extract a confabulated `value=2`; the corrected fact then matched on subsequent turns and badged as "served from user_store". Two-layer fix: extractor prompts (v1 + v2) abstain on letter/word/character/digit-counting questions (live-API gated); v1's `store_lookup_verify` filters by `asserted_by="user"` so python_verifier-asserted facts don't masquerade as user-asserted at Tier 2. The dual-write storage path (user's wrong version + python_verifier corrected version) is preserved untouched — it's the audit trail, not a bug.
-- **Bug 2 (Williamsburg):** "Let's say for this conversation I live in Williamsburg" used to land cross-session because the extractor stripped the marker from `source_text`. Fixed: `Router.route()` accepts a `raw_text` parameter that cascades through every dispatch helper to `_store`, which uses `raw_text` (when provided) for the marker check. v2's `tier_u.store_user_fact()` got the same param. Pipeline passes `user_message` as `raw_text` on every user-side route call. Backwards-compatible defaults: `raw_text=None` falls back to `claim["source_text"]`.
-- **Bug 3 (waggle-dance):** "the waggle-dance communication system" extracted as a vacuous `is_a` tautology. Fixed: extractor prompts (v1 + v2) abstain on suffix-form tautologies; v2 validator gained invariant 5 (`categorical_tautology`) as a backstop against prompt drift. v1 has no equivalent validator (retiring in Phase 9; prompt fix sufficient for the remaining lifetime).
-
-**Live-API calibration discipline.** Extractor prompt changes are gated on live-LLM tests (`RUN_API_TESTS=1`). Mocked unit tests prove parsing; only live runs prove the LLM follows the new few-shots. 8.6c required one prompt iteration before passing the live gate.
-
-**Architectural conversation deferred to v0.15+:** A Layer 1.5 faithfulness validator that checks each extracted claim against its source for representational faithfulness — would close the loop on this whole class of bugs. See `aedos_implementation_plan.md` "Deferred to v0.15+" for the details.
-
-## v0.14 schema (post-cutover)
-
-### Database tables
-
-The v0.14 schema lives in `src/aedos_v2/fact_store.py` (post-9c rename: `src/fact_store.py`). Eleven tables plus one view; every table carries the architectural commitments documented in the per-table comments.
-
-| Table | Purpose | Key CHECK constraints |
-| --- | --- | --- |
-| `facts` | The verified store. Both Tier U (user microtheory, `is_session_local` flag) and verifier-output rows live here. | `is_session_local = 0 OR json_array_length(session_ids) <= 1` |
-| `turns` | Per-turn user/assistant content with `original_content` for the corrector audit trail. | role ∈ {user, assistant} |
-| `pipeline_events` | The single observability log. Every layer emits structured events; trace UI reads from this. FK to turns. | — |
-| `retrieval_cache` | Search snippets keyed by query, TTL'd. | — |
-| `verification_cache` | Tier W. World-fact verifier verdicts with `stability_class` TTL + canonical_key UNIQUE. | UNIQUE(canonical_key) |
-| `cache_invalidation_log` | Bookkeeping for cache disputes. **Cascade invalidation deferred to v0.15** — table is populated for direct invalidations only. | — |
-| `routing_memo` | Layer 2 classification cache, keyed by (pattern, predicate). | method ∈ {python, python_with_canonical_constants, retrieval, user_authoritative, unverifiable}; PK(pattern, predicate) |
-| `predicate_equivalence` | Symmetric-pair oracle (3 labels). Lex order enforced. | label ∈ {equivalent, contradictory, distinct}; CHECK(predicate_a < predicate_b) |
-| `entity_equivalence` | Symmetric-pair oracle (2 labels). Case-sensitive lex order. | label ∈ {same, different}; CHECK(entity_a < entity_b) |
-| `entity_taxonomy` | Directional triple oracle (4 labels). is_a + part_of unified by `relation_type`. | label ∈ {child_subsumed_by_parent, parent_subsumed_by_child, equivalent, neither}; relation_type ∈ {is_a, part_of}; CHECK(child != parent) |
-| `predicate_distribution` | Singleton 4-tuple oracle (4 labels). Pattern + polarity + relation_type keyed. | label ∈ {distributes_up, distributes_down, both, neither}; polarity ∈ {0, 1}; taxonomy_relation_type ∈ {is_a, part_of} |
-
-The `facts_flat` view projects pattern-aware (subject, object) for the inspector UI. `verification_status` enum is 8 states: `verified`, `contradicted`, `user_asserted`, `unverifiable_in_principle`, `retrieval_inconclusive`, `retrieval_failed`, `unverifiable_pending_implementation`, `routing_anomaly`. **Do not collapse this enum** — each state encodes a distinct Layer 5 intervention.
-
-### Default DB filename and the v0.13 working-copy rename
-
-The post-cutover default is `aedos.db` with the v0.14 schema. The v0.13 working-copy database (incompatible schema) should be renamed to `aedos_v1.db` if preserved — `.gitignore` covers both names, so the rename doesn't propagate. The legacy `src/legacy/` stack continues to read v0.13 databases unchanged through the v0.14.x minor-version line; v0.15 deletes both.
-
-Override the default by setting `AEDOS_DB_PATH` in the environment.
-
-### Reset script
-
-`scripts/reset_db.py` defaults to the v2 stack: drop and recreate against `aedos.db`. The `--legacy` flag (post-9d) operates on the v1 stack at `src/legacy/` against `aedos_v1.db`. Both forms are idempotent and reset only the named DB file; they do NOT touch the other.
-
-## v0.14 load-bearing surfaces — what's reproduced, what's deferred
-
-The audit harness at `tests/v2/test_phase9_parity_audit.py` enforces that v1's load-bearing surfaces are reproduced in v2 (criterion 7) and that all v1 PIPELINE_STAGES appear in v2's enum (criterion 5). The table below documents each one with file references; the regenerated `phase9_parity_report.md` is the empirical artifact alongside this static inventory.
-
-### Reproduced surfaces
-
-| Capability | v1 location | v2 status | v2 location |
-| --- | --- | --- | --- |
-| `PIPELINE_STAGES` enum | `src/fact_store.py` | superset (every v1 stage + v0.14 additions) | `src/aedos_v2/fact_store.py` |
-| `VERIFICATION_STATUSES` enum (8 states) | `src/fact_store.py` | reproduced verbatim | `src/aedos_v2/fact_store.py` |
-| Routing-anomaly detection | `Router._maybe_anomaly` | promoted to Layer 2 validator (5 invariants incl. categorical_tautology) | `src/aedos_v2/layer2_routing/validator.py` |
-| `USER_SUBJECT_PATTERNS` discriminator | `src/router/constants.py` | reproduced | `src/aedos_v2/layer2_routing/constants.py` |
-| `UNIQUE_VALUE_SLOTS` prototype | `src/router/constants.py` | reproduced | `src/aedos_v2/layer2_routing/constants.py` |
-| Per-purpose model routing | `src/llm_router.py` | reproduced + worked-example coverage | `src/aedos_v2/layer2_routing/llm_router.py` |
-| Microtheory session model | `session_id` column | rebuilt as `is_session_local` + `session_ids` (Phase 6) | `src/aedos_v2/fact_store.py`, `src/aedos_v2/layer4_lookup/tier_u.py` |
-| Inspector endpoints | `src/app.py` | reproduced + four substrate inspectors + dispatch-one + per-turn trace | `src/aedos_v2/app.py` |
-| Static UI files (chat + trace panels) | `static/index.html`, `app.js`, `style.css` | preserved + extended with `v2_trace.{js,css}` (Phase 8.5) | `static/` |
-| Corrector behavior + prompt | `src/corrector.py` (`CORRECTOR_SYSTEM`) | reproduced verbatim; vocabulary translation at ledger time | `src/aedos_v2/layer5_decision/corrector.py` |
-| Intervention types (5 actions) | `src/router/types.py` (RoutingOutcome) | reproduced as `InterventionType` enum (pass_through / replace / hedge / soften / noop) | `src/aedos_v2/layer5_decision/types.py` |
-| Code-generation pipeline | `src/verifiers/code_generation/` | shared infrastructure (top-level `src/verifiers/` post-9c rename) — reused by v2's `fresh.py` dispatcher | `src/verifiers/code_generation/` |
-| Retrieval verifier | `src/verifiers/retrieval_verifier.py` | shared infrastructure | same path |
-| Cache gate (scoping + stability + lookup + write) | `src/cache/` | shared infrastructure | same path |
-| Phase 8.6 fixes (strawberry abstain, Williamsburg raw_text cascade, waggle-dance tautology) | `src/extractor.py`, `src/router/router.py`, `src/verifiers/store_verifier.py` | reproduced in v2 + v2 validator backstop (invariant 5: categorical_tautology) | `src/aedos_v2/layer1_extraction/extractor.py`, `src/aedos_v2/layer2_routing/validator.py`, `src/aedos_v2/layer4_lookup/tier_u.py` |
-
-### What v0.15 will add
-
-These are the next coherent extensions of the v0.14 architecture, not gaps in v0.14:
-
-- **Cascade invalidation across semantically adjacent stored facts.** When a fact is contradicted, semantically adjacent facts (matched via the substrate) should propagate the contradiction. v0.14's substrate makes this tractable; v0.15 wires the cascade. The `cache_invalidation_log` table is in place for this.
-- **Cross-tier contradiction detection.** When U asserts X about the world and W later contradicts X, the system surfaces the disagreement to the operator without overriding either store. The walker partially supports the read side; full cross-tier intervention planning is v0.15.
-- **Layer 1.5 faithfulness validator.** The Phase 8.6 bug class (interrogative confabulation, marker stripping, tautological extraction) shared a structure: the extractor's projection diverged from the source's communicative content. A faithfulness validator between Layer 1 and Layer 2 would catch this class at the layer it belongs in. See `aedos_implementation_plan.md` "Deferred to v0.15+" for the architectural design conversation.
-- **`/v2/api/chat` with SSE streaming.** The v0.14 cutover ships `/api/dispatch-one` + the inspectors + the trace UI; the chat endpoint is v0.15 work. Until then, operators drive the v2 stack via `/api/dispatch-one` (structured-claim input) and the legacy `/api/chat` (legacy stack at `src/legacy/`).
-- **`src/legacy/` cleanup.** Hot rollback to v1 is supported through v0.14.x by re-mounting `src/legacy/app.py` at `/`. v0.15 removes the directory and finalizes the cutover.
-
-The audit harness's `_V0_15_DEFERRALS` registry (in `tests/v2/test_phase9_parity_audit.py`) keeps a structural copy of this list so test_criterion_7 fails-loud if the registry drifts from this documentation.
-
-## v0.5 changes (read before touching anything)
-
-> **The pattern-driven verification dispatch is gone.** Old `aedos.db`
-> files from v0.3/v0.4 are still compatible (the schema didn't change),
-> but `pattern.verification_method`, `predicate_overrides`,
-> `verification_rules`, and `flag_non_user_as_anomaly` no longer exist
-> on patterns. Routing is decided by an LLM call per claim.
-
-### The big shift: pattern-routed → LLM-routed verification
-
-v0.4's router walked `pattern.verification_method` rules plus a
-`predicate_overrides` map to pick a verifier. That didn't scale — every
-new computable claim type required editing YAML, and entire categories
-of python-verifiable claims (date arithmetic, internal consistency
-checks, structural string properties) defaulted to retrieval or
-unverifiable because they didn't match a pre-declared category.
-
-v0.5 replaces the rule walk with `src/llm_router.py`: a single LLM call
-per claim that picks one of:
-
-  - `python`                            — code resolves the claim from its inputs
-  - `python_with_canonical_constants`   — same plus a stable reference (list of US states, primes under 100, etc.); triggers a cross-check
-  - `retrieval`                         — search + judge
-  - `user_authoritative`                — claim is about the user
-  - `unverifiable`                      — no method applies
-
-The router LLM (Sonnet 4.6, via `extract_with_tool`) is prompted with
-worked examples for each method plus boundary cases — most importantly
-the multi-claim convention ("Marie Curie was born in 1867 and died in
-1934, so she lived 67 years" routes to python on the arithmetic, taking
-the dates as given) and the external-string boundary ("the Gettysburg
-Address opens with X" looks like a string operation but actually needs
-retrieval). When in doubt, the router prefers earlier methods —
-python > python_with_canonical_constants > retrieval > user_authoritative
-> unverifiable.
-
-### Triage is gone
-
-`src/verifiers/code_generation/triage.py` is deleted. The LLM router
-has already decided python-verifiability before code generation runs.
-False positives surface as `code_execution_failed` (sandbox
-non-zero / timeout) or `comparison_error` (comparator can't parse) —
-not as a fall-through to retrieval. If you find the router routes
-something to python that the code can't actually answer, the fix is in
-the router prompt or worked examples, not by reinstating triage.
-
-### Canonical-constants cross-check (§5)
-
-`python_with_canonical_constants` is for claims that need a small,
-stable, widely-known reference the code can emit literally — list of
-US states, days of the week, ASCII tables. The cross-check runs the
-code-generation pipeline twice at different temperatures (0.0 and 0.3)
-and compares the two outputs. Agreement → accept. Disagreement → log
-`canonical_constants_disagreement` and return that status (the
-dispatcher treats it as pending). This guards against the LLM emitting
-a subtly wrong canonical reference; pure-python claims don't need this
-because their inputs are all in the claim itself.
-
-### Routing anomaly is now hardcoded
-
-The pattern-level `flag_non_user_as_anomaly` flag is gone. The router's
-sanity check is now a hardcoded map (`_USER_SUBJECT_PATTERNS` in
-`src/router.py`) listing patterns whose subject must be the user
-(preference, propositional_attitude). A non-user agent on those
-patterns flags as `routing_anomaly` — the LLM router would route the
-claim to unverifiable anyway, but the anomaly banner alerts the
-operator that the extractor mis-bound the slot.
-
-### How to add a new computable claim type (no YAML edit)
-
-You don't add anything. Use the predicate label that fits the pattern;
-the router will recognize it as python-verifiable from content. If the
-router occasionally misroutes something you expected to be python:
-
-1. Look at the trace UI — the routing block shows the method and reason.
-2. If it's a calibration drift, add or adjust a worked example in
-   `_ROUTER_SYSTEM` (`src/llm_router.py`).
-3. Run the calibration test: `RUN_API_TESTS=1 pytest tests/test_routing_calibration.py`.
-
-Do NOT add fallback heuristics in `router.py`. The router is the only
-place routing decisions are made.
-
-### Where to look in the trace UI
-
-Per model claim, the verification decision leads with a routing block
-(method + reason). For canonical-constants claims, both code
-generations show side-by-side. The triage section in the code-gen
-block is gone.
-
-> **Confidence note (v0.13):** the LLM router used to emit a
-> confidence value (and the trace flagged < 0.7 in yellow). That
-> field is gone — confidence is now a pure function of observed
-> reinforcement / contradiction counts on stored facts and cached
-> verdicts (see `confidence_from_counts` in `src/router/constants.py`).
-> Routing decisions don't carry a self-rating any more.
-
-## v0.4 changes (read before touching anything)
-
-> **The hand-written python verifier registry is gone.** Old `aedos.db`
-> files from v0.3 are still compatible (the schema didn't change), but
-> any code referencing `src.verifiers.python_verifiers` will fail —
-> that module is deleted.
-
-### The big shift: hand-written verifiers → code-generated verification
-
-v0.3's python path called a per-predicate hand-written function:
-`verify_has_count`, `verify_is_anagram_of`, etc. That doesn't scale —
-every new property the model invents (prime counts, words containing
-specific letters, anything you didn't anticipate) silently returned
-wrong-but-conveniently-zero results because `has_count` only knew how
-to count single characters.
-
-v0.4 replaces that with a four-stage code-generation pipeline. When a
-claim is python-routed:
-
-1. **Triage** decides if the claim is python-resolvable from its slots
-   alone (no external data, no human judgment).
-2. **Prompt builder** articulates a NEUTRAL question about the claim
-   that does NOT reveal the asserted answer.
-3. **Code writer** receives ONLY the neutral prompt — never the claim,
-   never the asserted value — and writes a python script.
-4. **Sandbox** runs the script in a subprocess with strict limits.
-5. **Comparator** parses stdout and compares to the asserted value.
-
-The deliberate firewall (Stages 1, 2, 3 are separate LLM calls; Stage
-3 sees only the neutral prompt) exists to keep confirmation bias out
-of code generation. If the code writer saw "the model claimed 25,
-write code to check 25", it would be biased toward producing code
-that confirms 25. Stripping the asserted value before code generation
-forces code that answers the question, not validates a hypothesis.
-
-### Verification statuses (v0.4 additions)
-
-`unverifiable_pending_implementation` now covers:
-
-- `comparison_error` from the comparator (couldn't parse stdout, or
-  couldn't extract a claimed value for this pattern/predicate).
-- `code_execution_failed` from the sandbox (timeout, exit non-zero).
-
-When triage says **`not_python_verifiable`**, the router falls through
-to the pattern's first non-python rule. So `quantitative.born_in_year`
-(triage will say "external data") falls back to retrieval; predicates
-in `relational.predicate_overrides` whose pattern default is retrieval
-also get the same fallback path.
-
-### Patterns vs predicate_overrides
-
-`patterns.yaml` now supports `predicate_overrides: {predicate: method}`.
-This is how `relational.reverse_of` gets routed to python despite the
-relational pattern's retrieval default. Override values are checked
-BEFORE the verification_method rule list. Use this only for predicates
-where the override is structural — i.e. a computable string/number
-relation that fits the pattern but needs different verification.
-
-### How to add a new python-verifiable predicate (no code change)
-
-You don't write a verifier function — code generation handles it.
-
-- **In an existing pattern that already routes to python** (e.g.
-  `quantitative` with predicates like `has_count`, `prime_count`,
-  `sum_equals`): just use the predicate. Triage decides if it's
-  resolvable; if yes, the pipeline runs.
-- **Inside `relational` for a new computable predicate** (e.g.
-  `palindrome_of`): add it to `predicate_overrides` in `patterns.yaml`
-  with `python` as the value. Done.
-
-If triage occasionally rejects something you expected to be verifiable,
-look at the trace UI — the triage stage emits its `reason` so you can
-see why. Don't add fallback hand-written verifiers; that recreates the
-v0.3 maintenance problem we're solving.
-
-### Where to look in the trace UI
-
-Per python-routed claim, the decision shows a code-generation block
-with a collapsed-by-default details panel. Inside:
-
-- Triage verdict + reason
-- Generated neutral prompt (with all retry attempts; leakage flagged)
-- Generated code (with the model that wrote it)
-- Execution output (stdout, stderr, duration_ms, timed_out)
-- Comparison verdict with claimed_value vs. computed_value
-
-If `code_prompt_leakage_detected` was emitted, the block shows a
-warning. If execution was slow (>1s) or wrote stderr, the block flags
-that too. These warnings don't change the verdict — they're for the
-operator to investigate later.
-
-### Sandbox is for correctness, not security
-
-`src/verifiers/code_generation/sandbox.py` runs generated code in a
-subprocess with closed stdin, empty cwd, and a minimal env. It's not a
-security boundary — the code comes from our own LLM and runs locally.
-The limits keep accidental interactions out, not malicious ones.
-
-## v0.3 changes (read before touching anything)
-
-> **The schema and representation changed.** Old `aedos.db` files are
-> incompatible with v0.3 — run `python scripts/reset_db.py` before first
-> use. Old `predicates.yaml` is gone; `patterns.yaml` replaces it.
-
-### The big shift: closed vocabulary → patterns
-
-v0.1/v0.2 had a closed predicate vocabulary (~37 predicates) and
-verification methods declared per predicate. v0.3 replaces that with
-**8 patterns** (`patterns.yaml`) and **free-form predicates** within
-each pattern. Verification semantics come from the pattern. New
-predicates within an existing pattern require no code change — they're
-just used in extraction and inherit the pattern's routing.
-
-Why this scales where the predicate approach didn't: every conversation
-introduces relations that don't fit a curated list. Open vocabulary
-breaks canonicalization. Patterns let predicate labels grow organically
-while keeping verification predictable, because the verification method
-is determined by the structural type, not the surface label.
-
-### How to add a new predicate (common, no code change)
-
-You don't add anything. The extractor produces predicates as part of
-fact extraction; if it picks a label not yet seen in the codebase, that's
-fine. The router dispatches by pattern. The python verifier registry is
-keyed by predicate name, so if you want a *python* verifier for a new
-predicate, register it (see below); otherwise the pattern's default
-verification method handles it.
-
-### How to add a new python verifier within an existing pattern
-
-1. Write a `verify_<predicate>(claim) -> VerificationResult` function in
-   `src/verifiers/python_verifiers.py`. The claim has `slots`; read the
-   slots you need.
-2. Register in the `VERIFIERS` dict at the bottom of the file, keyed by
-   predicate name (NOT function name).
-3. Add tests.
-
-The pattern's verification rules use `python_when_predicate_supported`
-(see `quantitative` for the example) — the router checks `VERIFIERS` for
-a registered verifier and falls through to the next rule (typically
-retrieval) if none is registered.
-
-### How to add a new pattern (rare, requires discussion)
-
-This is an architectural decision, not a routine change. The pattern set
-is bounded for a reason: each pattern needs declared slots,
-discriminating examples in the prompt, key-slot identity for store
-lookups, and a query strategy if it uses retrieval. The corrector also
-needs to know how to interpret the verification status it produces.
-
-If you genuinely need a new pattern:
-
-1. Append the entry to `patterns.yaml` with all required fields:
-   `description`, `slots`, `verification_method`, `example_predicates`,
-   `example_extractions`, `disambiguation_notes`, `query_strategy` (if
-   retrieval), `flag_non_user_as_anomaly` (if user-authoritative branch).
-2. Add the pattern's key slots to `KEY_SLOTS_BY_PATTERN` in `src/router.py`.
-3. If the flat view in `src/fact_store.py` should project the pattern's
-   subject/object slots, update the COALESCE in the `facts_flat` view.
-4. Update extractor few-shot examples in `src/extractor.py` to teach
-   the pattern's discriminators.
-5. Tests at every layer.
-
-### Granular verification statuses
-
-Six values now (was five in v0.2):
-
-- `verified`, `contradicted`, `user_asserted` — same as before
-- `unverifiable_in_principle` — pattern's resolved method is `unverifiable`
-- `retrieval_inconclusive` — **NEW v0.3** — verifier ran, judge said
-  INSUFFICIENT_EVIDENCE. The corrector hedges these.
-- `retrieval_failed` — **NEW v0.3** — verifier got no useful signal
-  (network error / no_results / judge unparseable). The corrector does
-  **NOT** hedge — adding "I think" to a possibly-true claim is worse
-  than leaving it. The pipeline logs `verifier_failure` events instead.
-- `unverifiable_pending_implementation` — catch-all for python verifier
-  inconclusive / store-lookup miss
-- `routing_anomaly` — pattern with `flag_non_user_as_anomaly` got a
-  non-user agent. Corrector noops; pipeline logs the offending slot.
-
-The `retrieval_inconclusive` vs `retrieval_failed` split is the v0.3 fix
-for a v0.2 bug: hedging on verifier failure made the system *more*
-wrong. Hedge only when there's positive evidence of uncertainty.
-
-### Slots-aware retrieval queries
-
-Each retrieval pattern declares a `query_strategy` — an ordered list of
-templates with `{slot}` placeholders. The verifier tries them in order
-and uses the first attempt that returns ≥ 2 results. Each attempt logs
-to `pipeline_events` as `retrieval_query_attempt`.
-
-Critical: never prepend "current" to a query. Temporal scope comes from
-the slots' `valid_from` / `valid_until`, not from query string magic.
-The judge prompt has two variants — one for currently-held claims (no
-`valid_until` slot) and one for historical claims (with explicit
-period). The verifier picks the right prompt based on slot values.
-
-## v0.2 changes (read before touching anything)
-
-> **The schema enum widened.** Old `aedos.db` files are incompatible
-> with v0.2 — run `python scripts/reset_db.py` (or click "Reset DB" in
-> the UI) before first use.
-
-- **New role predicates** in `predicates.yaml`: `holds_role`, `is_a`,
-  `headed_by`, `member_of`, `succeeded_by`, `preceded_by`. All retrieval-
-  verifiable. They close the role-claim gap that previously caused the
-  extractor to misuse `believes` for sentences like "Donald Trump is
-  the US President".
-- **`retrieval_query_template`** is a new optional field on retrieval
-  predicates. The retrieval verifier formats it with `{subject}` and
-  `{object}` to build a search query. Without one, the verifier falls
-  back to `"{subject} {object}"`.
-- **`verification_status` enum** expanded:
-  - `verified`, `contradicted`, `user_asserted` — same as v0.1
-  - `unverifiable_in_principle` — predicate's `verification_method` is
-    `unverifiable` (`will_happen`, `might`, `believed_by_many`)
-  - `unverifiable_pending_implementation` — retrieval failed, judge said
-    insufficient evidence, python verifier inconclusive, or store lookup
-    missed for a user-authoritative predicate. Indicates the run failed
-    rather than the claim being unfalsifiable
-  - `routing_anomaly` — model asserted a `user_authoritative` predicate
-    about a non-user subject. Strong signal of upstream extractor error
-  - The full mapping (status → corrector action) lives in
-    `ARCHITECTURE.md` under "Verification status semantics"
-- **Real retrieval verifier** (`src/verifiers/retrieval_verifier.py`).
-  Uses Tavily / SerpAPI / DuckDuckGo (in that preference order) to
-  fetch snippets, then an LLM judge for SUPPORTED / CONTRADICTED /
-  INSUFFICIENT_EVIDENCE. Results cache in a new `retrieval_cache` table
-  with a default TTL of 24 hours (configurable via
-  `AEDOS_RETRIEVAL_CACHE_TTL_HOURS`). All failure modes
-  (`retrieval_error`, `no_results`, `judge_parse_error`, `judge_error`)
-  are explicit and surface in `pipeline_events` plus the trace UI.
-- **Aggressive corrector** (`src/corrector.py`). Now plans interventions
-  per claim:
-  - `verified` / `user_asserted` → noop
-  - `contradicted` → REPLACE with the verified value
-  - `unverifiable_pending_implementation` (conf < 0.5) → HEDGE
-  - `unverifiable_in_principle` → SOFTEN
-  - `routing_anomaly` → noop at content level; logged separately as a
-    `routing_anomaly_detected` pipeline event
-  Multiple interventions in one response are batched into a single LLM
-  rewrite call.
-- **Updated guidance for adding predicates**: now requires considering
-  `verification_method` (especially for new role-type or world-fact
-  predicates that should go to retrieval) and supplying a
-  `retrieval_query_template` if the verification method is `retrieval`.
-  See "How to add a new predicate" below for the step-by-step.
-
-## Priorities
-
-In this order:
+The thesis: correctness is a property of the system, not the model. Aedos
+sits between a user and an LLM, extracts each factual claim into structured
+form, and routes each claim through a five-layer verification stack backed
+by a verified store that grows monotonically more correct over the
+conversation. Bounded inference (equivalence, subsumption, derivation) is
+performed over the store; open-ended reasoning is delegated to the chat
+model.
+
+See `README.md` for the user-facing introduction.
+
+## Priorities (in order)
 
 1. **Clarity.** Every function readable in one sitting.
 2. **Observability.** Every pipeline stage writes a `pipeline_events` row.
    No silent failures.
-3. **Ease of modification.** Predicates live in YAML. Verifiers are
-   one-function-per-file-section. Tests are narrow.
+3. **Ease of modification.** Predicates are free-form within patterns.
+   Tests are narrow.
 
 Explicit non-goals: performance, scale, cross-conversation state, general
 commonsense reasoning, migration tooling.
 
+## The seven architectural principles
+
+These are load-bearing. Every design decision is downstream of them.
+
+1. **Verification is upstream of memoization.** Nothing enters the verified
+   store unless it cleared a verifier (Python execution, retrieval, or
+   user authority on user-authoritative claim classes). A wrong oracle
+   call cannot admit a falsehood into the store.
+2. **Bounded-domain classification, not open-ended reasoning.** Every LLM
+   semantic judgment is reduced to a small label set with a fixed schema.
+   Open-ended reasoning is the chat model's job.
+3. **Frequentist confidence from independent external evidence only.**
+   Every reusable artifact (stored facts, oracle rows) carries
+   `affirmed_count` + `contradicted_count`. Cache hits, oracle-mediated
+   resolutions, and subsumption-derived matches do NOT increment counts.
+   Reads are not writes.
+4. **Bounded inference over a verified store.** Three operations:
+   equivalence, subsumption, derivation. Memoized at the substrate level.
+   Derived results are never persisted — re-walked on demand.
+5. **Disciplined abstention.** Causal claims are stored as propositions
+   and verified; the system never derives effects from causes.
+   Aesthetic / evaluative claims are non-propositional and abstained at
+   extraction. Bare counterfactuals are abstained at extraction.
+6. **Auditability through a single event log.** Every layer emits
+   structured events to `pipeline_events`; the trace UI reads from that
+   table. New stages must log; the UI is not special-cased for stages
+   that don't emit.
+7. **Validate before classifying, route before reasoning.** Each LLM
+   layer is preceded by a rule-based validation step. Tier precedence
+   (U → W → derivation → fresh) ensures cheap rule-based work catches
+   structural problems before expensive LLM work.
+
 ## Layout
 
 ```
-patterns.yaml                — 8 structural patterns; free-form predicates within each
 src/
+  app.py                     — FastAPI root (extract / dispatch-one / inspectors)
   fact_store.py              — SQLite wrapper, all DB operations
-  pattern_registry.py        — loads patterns.yaml, validates, formats for prompt
-  extractor.py               — LLM → structured claims via forced tool use
-  llm_router.py              — v0.5 LLM-based per-claim verification routing
-  router.py                  — dispatches claims to verifiers; writes to store
-  verifiers/
-    types.py                 — shared VerificationOutcome / VerificationResult
-    store_verifier.py        — matches model claims against user-asserted facts
-    retrieval_verifier.py    — slots-aware multi-attempt retrieval + judge
-    code_generation/         — v0.4/v0.5: prompt → code → sandbox → compare
-      prompt_builder.py      — NEUTRAL prompt + leak detection
-      code_writer.py         — code generated from prompt only
-      sandbox.py             — subprocess execution with strict limits
-      comparator.py          — deterministic stdout vs claim comparison
-      pipeline.py            — orchestrator + CodeGenerationVerifier
-                               (with verify_with_cross_check for
-                               python_with_canonical_constants)
-  corrector.py               — rewrites assistant draft given corrections
-  pipeline.py                — orchestrator for a full turn
-  llm_client.py              — Anthropic SDK wrapper
-  app.py                     — FastAPI backend + static file serving
-static/                      — vanilla-JS UI (index.html + app.js + style.css)
-tests/                       — pytest, one file per component + integration
-scripts/reset_db.py          — wipe & recreate schema
+  session_markers.py         — "let's say for this conversation" detector
+  llm_client.py              — multi-provider dispatcher (Anthropic + OpenAI)
+  openai_client.py           — OpenAI SDK wrapper
+  cost.py                    — per-call cost accounting
+  layer1_extraction/         — extractor + pattern registry + patterns.yaml
+  layer2_routing/            — validator + LLM router + routing memo
+  layer3_substrate/          — four oracle classifiers + shared base
+  layer4_lookup/             — Tier U + Tier W + derivation + walker + fresh
+  layer5_decision/           — confidence + intervention + corrector
+  cache/                     — scoping + stability classifiers
+  verifiers/                 — fresh-tier infrastructure (retrieval +
+                               code generation + comparative + scrapers)
+static/                      — vanilla-JS trace UI
+tests/                       — one test file per module + integration scenarios
+scripts/reset_db.py          — wipe + recreate schema
 ```
 
-Run the app with `python -m src.app` (serves at `http://127.0.0.1:8000`).
-Run tests with `pytest` (real-API tests gated behind `RUN_API_TESTS=1`).
+Run with `python -m src.app` (serves `http://127.0.0.1:8000`). Tests with
+`pytest`; live API tests gated behind `RUN_API_TESTS=1`.
 
-## Do NOT change without discussion
+## Schema
+
+The DDL lives in `src/fact_store.py`. Eleven tables plus the `facts_flat`
+view; load-bearing CHECK constraints called out below.
+
+| Table | Purpose | Key CHECK constraints |
+|---|---|---|
+| `facts` | Verified store. Tier U (`is_session_local` flag) and verifier-output rows live together; `asserted_by` discriminates. | `is_session_local = 0 OR json_array_length(session_ids) <= 1` |
+| `turns` | Per-turn user/assistant content + `original_content` for the corrector audit trail. | role ∈ {user, assistant} |
+| `pipeline_events` | The single observability log. FK to turns. | — |
+| `retrieval_cache` | Search snippets keyed by query, TTL'd. | — |
+| `verification_cache` | Tier W. World-fact verifier verdicts with `stability_class` TTL + `canonical_key` UNIQUE. | UNIQUE(canonical_key) |
+| `cache_invalidation_log` | Bookkeeping for cache disputes. Cascade invalidation deferred to v0.15. | — |
+| `routing_memo` | Layer 2 cache, keyed by (pattern, predicate). | method ∈ {python, python_with_canonical_constants, retrieval, user_authoritative, unverifiable}; PK(pattern, predicate) |
+| `predicate_equivalence` | Symmetric-pair oracle (3 labels). | label ∈ {equivalent, contradictory, distinct}; CHECK(predicate_a < predicate_b) |
+| `entity_equivalence` | Symmetric-pair oracle (2 labels), case-sensitive. | label ∈ {same, different}; CHECK(entity_a < entity_b) |
+| `entity_taxonomy` | Directional triple (4 labels). is_a + part_of unified. | label ∈ {child_subsumed_by_parent, parent_subsumed_by_child, equivalent, neither}; relation_type ∈ {is_a, part_of}; CHECK(child != parent) |
+| `predicate_distribution` | Singleton 4-tuple (4 labels). | label ∈ {distributes_up, distributes_down, both, neither}; polarity ∈ {0, 1}; taxonomy_relation_type ∈ {is_a, part_of} |
+
+`verification_status` enum is 8 states: `verified`, `contradicted`,
+`user_asserted`, `unverifiable_in_principle`, `retrieval_inconclusive`,
+`retrieval_failed`, `unverifiable_pending_implementation`,
+`routing_anomaly`. **Do not collapse this enum** — each state encodes a
+distinct Layer 5 intervention.
+
+Default DB is `aedos.db`. Override via `AEDOS_DB_PATH`. Reset with
+`python scripts/reset_db.py`.
+
+## The nine patterns
+
+Each claim extracts into one of nine structural patterns. Predicates within
+a pattern are free-form; the extractor invents specific labels (e.g.
+`is_obsessed_with` under `preference`) when the example list doesn't
+capture the relation precisely. **The pattern set is closed; predicates
+are open.**
+
+| Pattern | Identity slots | Example predicates |
+|---|---|---|
+| `role_assignment` | agent, role, org | holds_role, served_as |
+| `preference` | agent, object | likes, dislikes, loves, hates |
+| `quantitative` | subject, property | has_count, weighs, born_in_year |
+| `spatial_temporal` | entity, location | lives_in, located_in, visited |
+| `categorical` | entity, category | is_a, instance_of |
+| `relational` | subject, object | married_to, founded_by, causes |
+| `event` | event_type, occurred_at | won_election, was_inaugurated |
+| `propositional_attitude` | agent, proposition | believes, knows, hopes |
+| `mereological` | part, whole | part_of, member_of, composed_of |
+
+`mereological` is distinct from subsumption: inferences that distribute
+down `is_a` chains do not in general distribute down `part_of` chains.
+Keeping them separate at the pattern level lets `predicate_distribution`
+learn distinct policies cleanly. The mereological scope is constitutive
+parthood only; locational containment ("Tokyo is in Japan") stays in
+`spatial_temporal`.
+
+`relational` is the home for causal predicates (`causes`, `caused_by`,
+`enables`, `prevents`). These are stored as propositions and routed to
+retrieval; the system never derives effects from causes.
+
+## Don't change without discussion
 
 These are load-bearing invariants:
 
-- **The core schema** (`facts`, `turns`, `pipeline_events`). Changes here
-  ripple through every component.
-- **The two-extractor pattern.** User messages and assistant drafts both
-  go through the extractor, with the same registry. Don't collapse them.
+- **The core schema** (`facts`, `turns`, `pipeline_events`, the four
+  oracle tables). Changes ripple through every component.
+- **The 8-state `verification_status` enum.** Each state encodes a
+  distinct Layer 5 behavior. Do not collapse.
+- **The 9-pattern set.** Open-vocabulary predicates within patterns are
+  fine; new patterns are architectural decisions, not routine changes.
 - **The "every stage observable" UI constraint.** Every pipeline stage
-  writes a `pipeline_events` row. The UI reads from that table. New stages
-  must log; the UI should not be special-cased for a stage that doesn't
-  emit events.
-- **Bounded predicate vocabulary.** The extractor is forbidden from
-  inventing predicates. If a claim doesn't fit the registry, it's dropped.
-  Never loosen this.
-- **One primary code path per flow.** No mode flags, no alternate routes.
-  If a new behavior is needed, add it to the existing path or ask first.
+  writes a `pipeline_events` row. The UI reads from that table.
+- **One primary code path per flow.** No mode flags, no alternate
+  routes. Add behavior to the existing path or ask first.
+- **Counts are independent-external-evidence only.** No incrementing on
+  cache hits, oracle-mediated resolutions, or derivation matches. Only
+  user reaffirmations + verifier fresh verdicts + operator-driven affirm
+  / contradict endpoints touch counts.
+- **No persisted derivations.** Derivation walks are query operations;
+  results are ephemeral.
+- **No lowercasing entity strings.** Case is semantic for entities
+  (apple ≠ Apple, mercury ≠ Mercury). Predicates are
+  `strip().lower()`-normalized; entities are `strip()`-only.
 
-## (v0.2) How to add a new predicate — superseded by v0.3
+## How to add a new predicate (common, no code change)
 
-In v0.3, predicates are free-form within a pattern. See
-"v0.3 changes" → "How to add a new predicate" above. The v0.2
-guidance below is preserved for context.
+You don't add anything. The extractor produces predicates as part of
+fact extraction; if it picks a label not yet seen in the codebase, that's
+fine. The router dispatches by pattern — new predicates inherit the
+pattern's routing through the LLM router.
 
-1. Append an entry to `predicates.yaml`:
+If the LLM router occasionally misroutes something you expected to land
+elsewhere, look at the trace UI's routing block, then adjust a worked
+example in `src/layer2_routing/llm_router.py`'s prompt and run the
+calibration: `RUN_API_TESTS=1 pytest tests/test_routing_memo_calibration.py`.
 
-   ```yaml
-   my_new_predicate:
-     object_type: int           # int | string | bool | entity | count
-     verification_method: python  # user_authoritative | python | store_lookup | retrieval | unverifiable
-     python_verifier: verify_my_new_predicate  # required iff verification_method == python
-     retrieval_query_template: "{subject} {object}"  # only when verification_method == retrieval; optional
-     description: One-sentence description for the extractor LLM.
-     example: "Natural language example → (subject, my_new_predicate, object)"
-   ```
+## How to add a new pattern (rare, architectural)
 
-2. If python-verifiable, add the function in
-   `src/verifiers/python_verifiers.py`:
+This is a load-bearing decision, not a routine change. The pattern set is
+bounded for a reason: each pattern needs declared slots, discriminating
+examples in the extractor prompt, key-slot identity for store lookups,
+substrate behaviors documented across the four oracles, and Layer 5
+interpretation of the verification status it produces.
 
-   ```python
-   def verify_my_new_predicate(claim):
-       # ... compute ground truth from claim["subject"] and claim["object"] ...
-       positive_is_true = ...
-       outcome = _apply_polarity(positive_is_true, int(claim["polarity"]))
-       return VerificationResult(outcome, actual_value=..., explanation="...")
-   ```
+If you genuinely need a new pattern:
 
-   Register it in the `VERIFIERS` dict at the bottom of the same file.
+1. Append the entry to `src/layer1_extraction/patterns.yaml` with all
+   required fields: `description`, `slots`, `example_predicates`,
+   `disambiguation_notes`.
+2. Add the pattern's key slots to `KEY_SLOTS_BY_PATTERN` in
+   `src/layer2_routing/constants.py`.
+3. If the pattern triggers routing-anomaly invariants
+   (USER_SUBJECT_PATTERNS, mereological self-parthood, event
+   participants, categorical tautology), update
+   `src/layer2_routing/validator.py`.
+4. Update `src/fact_store.py`'s `facts_flat` view if the flat
+   projection should pick up new subject/object slots.
+5. Update extractor few-shots in `src/layer1_extraction/extractor.py`.
+6. Tests at every layer.
 
-3. Add tests in `tests/test_verifiers.py` covering verified / contradicted
-   / inconclusive cases.
+## How to add a fresh-tier verifier
 
-4. Add an extractor test in `tests/test_extractor.py` with a mocked LLM
-   response using the new predicate — makes sure validation passes it.
-
-5. Restart the app. The registry is cached, so restart is required for
-   the new entry to appear in the extractor prompt.
-
-## How to add a new python verifier
-
-See step 2 above. A few conventions:
-
-- Return `VerificationResult(VerificationOutcome.INCONCLUSIVE, explanation=...)`
-  when the claim shape doesn't match — don't guess.
-- Use `_apply_polarity(positive_is_true, polarity)` to factor in negation.
-  Never forget polarity.
-- Keep the function narrow. If it's tempting to branch on subject type or
-  guess formats, split into multiple predicates instead.
-- `actual_value` should be the *corrected* value if the claim is
-  contradicted — the router uses this verbatim as the correction object.
+Fresh-tier verification dispatches python (code generation) and retrieval
+verdicts via the modules under `src/verifiers/`. Adding a new verifier
+kind means extending `src/layer4_lookup/fresh.py`'s dispatch + adding
+the verifier under `src/verifiers/`. The dispatch contract: input is a
+structured claim, output is a `WalkerDecision` with
+`served_from_tier="fresh"` and an 8-state `verification_status`.
 
 ## How to debug a turn
 
 1. Send the message through the UI.
 2. Watch the right panel (Pipeline Trace). Every stage is visible:
-   extraction → routing → verification → correction.
-3. If something's wrong, check the `pipeline_events` table directly:
+   extraction → routing → walker → decision.
+3. If something's wrong, query `pipeline_events` directly:
 
    ```python
    from src.fact_store import FactStore
    store = FactStore("aedos.db")
-   for e in store.get_pipeline_events(turn_id=3):
+   for e in store.get_pipeline_events(turn_id=N):
        print(e["stage"], e["data"])
    ```
 
-4. For LLM issues, check the `data` blob of the `user_extraction` /
-   `assistant_extraction` events — they include both `valid_claims` and
-   `rejected_claims` with rejection reasons.
+4. For LLM-side issues, read the routing_decision / extraction events.
+   Both record the LLM's decision payload.
+5. For walker issues, the `walker_decision` event carries
+   `served_from_tier`, `outcome`, `via` (oracle consultation chain),
+   and `derivation_path`.
 
 ## Testing conventions
 
 - One test file per source module (`test_<module>.py`).
-- LLM calls are mocked by default. A single integration test per scenario
-  exercises the full pipeline with a `MockLLM` that queues canned
-  responses.
-- Real-API tests are gated behind `RUN_API_TESTS=1` and live inside the
-  mocked tests with a `@pytest.mark.skipif` guard. Keep them cheap — one
-  request per test, max.
-- `_reset_registry` autouse fixture clears the registry cache between
-  tests. Add it to any test module that touches the registry.
-- Use `tmp_path` for the SQLite file in tests so runs are hermetic.
+- LLM calls mocked by default. Live-API tests gated behind
+  `RUN_API_TESTS=1` with `@pytest.mark.skipif`.
+- Use `tmp_path` for SQLite files in tests; runs are hermetic.
+- Calibration corpora live under `tests/calibration/`. Each oracle has
+  a gold corpus; floors are documented in the calibration test files.
+- Smoke corpus at `tests/smoke_corpus.jsonl`. The dispatcher
+  (`tests/smoke_dispatcher.py`) validates entry shapes; tests consume
+  corpus entries directly through the appropriate runner.
 
-## Running and debugging the chat interface
+## v0.15 trajectory
 
-```bash
-# One-time
-cp .env.example .env           # paste ANTHROPIC_API_KEY
-uv sync  # or: pip install -e ".[dev]"
+These are the next coherent extensions of the v0.14 architecture:
 
-# Dev loop
-python -m src.app              # starts at http://127.0.0.1:8000
-python scripts/reset_db.py     # wipe the DB between runs
-
-# Run a specific scenario
-pytest tests/test_integration.py::test_model_hallucinated_count_gets_corrected -v
-```
-
-The UI's **Reset DB** button calls `/api/reset`, which is the same
-operation as `scripts/reset_db.py` — use whichever is handy.
+- **Cascade invalidation across semantically adjacent stored facts.**
+  When a fact is contradicted, semantically adjacent facts (matched via
+  the substrate) propagate the contradiction. The
+  `cache_invalidation_log` table is in place; the cascade logic is the
+  v0.15 deliverable.
+- **Cross-tier contradiction detection.** When U asserts X about the
+  world and W later contradicts X, the system surfaces the disagreement
+  to the operator without overriding either store.
+- **Layer 1.5 faithfulness validator.** A validator between Layer 1 and
+  Layer 2 that compares the extracted claim against the source for
+  representational faithfulness.
+- **`/api/chat` with SSE streaming.** v0.14 ships `/api/dispatch-one`
+  and the inspectors; the chat endpoint is v0.15 work.
+- **v0.14-native verifier rewrite.** The `src/verifiers/` modules were
+  ported from prior infrastructure and retain pre-v0.14 internal shapes;
+  v0.15 refactors them to v0.14-native idioms.
 
 ## When you're stuck
 
-- The pipeline is a straight line. If behavior is wrong, walk the stages
-  in order: extraction → routing → verification → correction. One of
-  them has the bug.
-- The `source_text` field on every claim tells you what span of the
-  message was extracted. If extraction went wrong, start there.
-- If the LLM keeps returning malformed tool inputs, the fix is almost
-  always to tighten the tool's `input_schema` or the prompt in
-  `_build_system_prompt` — not to add parsing fallbacks in `_validate`.
-  Fail loudly.
+The pipeline is a straight line:
+**extraction → routing (validate + classify) → walker (Tier U / W /
+derivation / fresh) → decision (intervention + correction)**.
+
+If behavior is wrong, walk the stages in order. The `source_text` on
+every claim tells you what span was extracted. If extraction went wrong,
+start there. If routing classified surprisingly, look at the
+`routing_decision` event. If the walker resolved unexpectedly, look at
+the `walker_decision` event's `served_from_tier` + `via` chain.
+
+If the LLM keeps returning malformed tool inputs, the fix is almost
+always to tighten the tool's `input_schema` or the system prompt — not
+to add parsing fallbacks. Fail loudly.
