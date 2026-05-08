@@ -280,7 +280,7 @@ class TestPythonStatusMapping:
             "slots": {"subject": "test", "value": 7},
             "source_text": "test has 7",
         }
-        from src.legacy.verifiers.code_generation.pipeline import (
+        from src.verifiers.code_generation.pipeline import (
             CodeGenVerificationResult,
         )
         canned = CodeGenVerificationResult(
@@ -300,7 +300,7 @@ class TestPythonStatusMapping:
             pass
         # Simpler: patch the v1 module's function directly.
         with patch(
-            "src.legacy.verifiers.code_generation.pipeline.verify_via_code_generation",
+            "src.verifiers.code_generation.pipeline.verify_via_code_generation",
             return_value=canned,
         ):
             decision = fresh.dispatch(
@@ -328,7 +328,7 @@ class TestPythonStatusMapping:
             "slots": {"subject": "US states", "value": 50},
             "source_text": "there are 50 US states",
         }
-        from src.legacy.verifiers.code_generation.pipeline import (
+        from src.verifiers.code_generation.pipeline import (
             CodeGenVerificationResult,
         )
         canned = CodeGenVerificationResult(
@@ -338,7 +338,7 @@ class TestPythonStatusMapping:
             trace={"cross_check": True},
         )
         with patch(
-            "src.legacy.verifiers.code_generation.pipeline."
+            "src.verifiers.code_generation.pipeline."
             "CodeGenerationVerifier.verify_with_cross_check",
             return_value=canned,
         ) as mocked:
@@ -368,8 +368,8 @@ class TestRetrievalStatusMapping:
     def _canned_retrieval(
         self, *, outcome_value: str, error_flag=None,
     ):
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         v1_outcome = VerificationOutcome(outcome_value)
         return RetrievalResult(
             outcome=v1_outcome,
@@ -400,7 +400,7 @@ class TestRetrievalStatusMapping:
             outcome_value=v1_outcome, error_flag=error_flag,
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned,
         ):
             decision = fresh.dispatch(
@@ -431,8 +431,8 @@ class TestTierWWriteBoundary:
             "slots": {"entity": "Berlin", "location": "Germany"},
             "source_text": "Berlin is in Germany",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned = RetrievalResult(
             outcome=VerificationOutcome(outcome_value),
             error_flag=error_flag,
@@ -441,7 +441,7 @@ class TestTierWWriteBoundary:
         before = store._conn.execute(
             "SELECT COUNT(*) FROM verification_cache").fetchone()[0]
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned,
         ), patch(
             # Phase 8f: mock classify_for_cache so the test doesn't
@@ -560,7 +560,7 @@ class TestStabilityClassifier:
             "slots": {"subject": "alphabet", "value": 26},
             "source_text": "26 letters",
         }
-        from src.legacy.verifiers.code_generation.pipeline import (
+        from src.verifiers.code_generation.pipeline import (
             CodeGenVerificationResult,
         )
         canned = CodeGenVerificationResult(
@@ -568,7 +568,7 @@ class TestStabilityClassifier:
             explanation="ok", trace={},
         )
         with patch(
-            "src.legacy.verifiers.code_generation.pipeline.verify_via_code_generation",
+            "src.verifiers.code_generation.pipeline.verify_via_code_generation",
             return_value=canned,
         ):
             fresh.dispatch(
@@ -599,15 +599,15 @@ class TestStabilityClassifier:
             "slots": {"entity": "Tokyo", "location": "Japan"},
             "source_text": "Tokyo is in Japan",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         canned_class = _canned_world_fact_with_class(stability_class)
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",
@@ -637,14 +637,14 @@ class TestStabilityClassifier:
             "slots": {"entity": "Apple", "location": "stock_price"},
             "source_text": "AAPL closed at X today",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",
@@ -669,14 +669,14 @@ class TestStabilityClassifier:
             "slots": {"agent": "user", "object": "olives"},
             "source_text": "user loves olives",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",
@@ -700,14 +700,14 @@ class TestStabilityClassifier:
             "slots": {"subject": "this sentence", "value": 5},
             "source_text": "this sentence has 5 words",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",
@@ -735,14 +735,14 @@ class TestStabilityClassifier:
             "slots": {"entity": "Tokyo", "location": "Japan"},
             "source_text": "Tokyo is in Japan",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",
@@ -770,14 +770,14 @@ class TestStabilityClassifier:
             "slots": {"entity": "Tokyo", "location": "Japan"},
             "source_text": "Tokyo is in Japan",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",
@@ -803,14 +803,14 @@ class TestStabilityClassifier:
             "slots": {"agent": "user", "object": "olives"},
             "source_text": "user loves olives",
         }
-        from src.legacy.verifiers.retrieval_verifier import RetrievalResult
-        from src.legacy.verifiers.types import VerificationOutcome
+        from src.verifiers.retrieval_verifier import RetrievalResult
+        from src.verifiers.types import VerificationOutcome
         canned_retrieval = RetrievalResult(
             outcome=VerificationOutcome.VERIFIED,
             explanation="ok",
         )
         with patch(
-            "src.legacy.verifiers.retrieval_verifier.RetrievalVerifier.verify",
+            "src.verifiers.retrieval_verifier.RetrievalVerifier.verify",
             return_value=canned_retrieval,
         ), patch(
             "src.layer4_lookup.fresh.classify_for_cache",

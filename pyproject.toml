@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aedos"
-version = "0.1.0"
+version = "0.14.0"
 description = "Claim-verification and conversational-memory research prototype"
 readme = "README.md"
 requires-python = ">=3.10"

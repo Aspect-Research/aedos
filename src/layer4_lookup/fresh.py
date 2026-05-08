@@ -340,7 +340,7 @@ def _dispatch_python(
         )
 
     if cross_check:
-        from src.legacy.verifiers.code_generation.pipeline import (
+        from src.verifiers.code_generation.pipeline import (
             CodeGenerationVerifier,
         )
         verifier = CodeGenerationVerifier(store, llm)
@@ -348,7 +348,7 @@ def _dispatch_python(
             claim, source_turn_id=source_turn_id,
         )
     else:
-        from src.legacy.verifiers.code_generation.pipeline import (
+        from src.verifiers.code_generation.pipeline import (
             verify_via_code_generation,
         )
         result = verify_via_code_generation(
@@ -430,8 +430,8 @@ def _dispatch_retrieval(
             ],
         )
 
-    from src.legacy.verifiers.retrieval_verifier import RetrievalVerifier
-    from src.legacy.verifiers.types import VerificationOutcome
+    from src.verifiers.retrieval_verifier import RetrievalVerifier
+    from src.verifiers.types import VerificationOutcome
 
     # The v1 RetrievalVerifier was written against v1's PatternRegistry.
     # v2's PatternRegistry is duck-compatible: same .get(name) → Pattern
