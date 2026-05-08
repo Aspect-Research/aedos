@@ -39,7 +39,7 @@ def main(argv: list[str]) -> int:
                         help="Show top N most-expensive turns")
     args = parser.parse_args(argv[1:])
 
-    from src.fact_store import FactStore
+    from src.legacy.fact_store import FactStore
 
     db = Path(args.db_path)
     if not db.exists():

@@ -1,0 +1,811 @@
+"""Tests for src.extractor (v0.3 — pattern-based)."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from typing import Any
+
+import pytest
+
+from src.legacy.extractor import ClaimExtractor, ExtractionResult
+from src.legacy.pattern_registry import load_default_registry, reset_cache
+
+
+@pytest.fixture(autouse=True)
+def _reset_registry():
+    reset_cache()
+    yield
+    reset_cache()
+
+
+@dataclass
+class FakeLLM:
+    return_value: dict[str, Any]
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def extract_with_tool(self, system, user_message, tool, max_tokens=2048, **_kwargs):
+        self.calls.append(
+            {"system": system, "user_message": user_message, "tool": tool}
+        )
+        return self.return_value
+
+
+def _mk(return_value):
+    return ClaimExtractor(FakeLLM(return_value=return_value), load_default_registry())
+
+
+# ---------- abstention ----------
+
+
+def test_empty_facts_list_is_fine():
+    result = _mk({"facts": []}).extract("Hello!", role="user")
+    assert result.valid_facts == []
+    assert result.rejected_facts == []
+
+
+def test_photosynthesis_abstention():
+    """Spec scenario A: out-of-vocabulary, must abstain."""
+    result = _mk({"facts": []}).extract(
+        "Photosynthesis converts sunlight into chemical energy.", role="user"
+    )
+    assert result.valid_facts == []
+
+
+def test_aesthetic_judgment_abstention():
+    """The sunset was beautiful — no pattern fits."""
+    result = _mk({"facts": []}).extract("The sunset was beautiful.", role="user")
+    assert result.valid_facts == []
+
+
+# ---------- per-pattern happy paths ----------
+
+
+def test_categorical_extraction():
+    payload = {
+        "facts": [
+            {
+                "pattern": "categorical",
+                "predicate": "is_a",
+                "slots": {"entity": "Marie Curie", "category": "physicist"},
+                "polarity": 1,
+                "source_text": "Marie Curie was a physicist",
+            }
+        ]
+    }
+    result = _mk(payload).extract("Marie Curie was a physicist.", role="user")
+    assert len(result.valid_facts) == 1
+    f = result.valid_facts[0]
+    assert f["pattern"] == "categorical"
+    assert f["predicate"] == "is_a"
+    assert f["slots"]["category"] == "physicist"
+
+
+def test_role_assignment_with_temporal_scope():
+    """The Trump-trace fix: extractor must populate valid_from / valid_until."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "role_assignment",
+                "predicate": "served_as",
+                "slots": {
+                    "agent": "Donald Trump",
+                    "role": "45th President",
+                    "org": "United States",
+                    "valid_from": "2017-01-20",
+                    "valid_until": "2021-01-20",
+                },
+                "polarity": 1,
+                "source_text": "Trump served as the 45th president from 2017 to 2021",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "Trump served as the 45th president from 2017 to 2021.", role="user"
+    )
+    assert len(result.valid_facts) == 1
+    slots = result.valid_facts[0]["slots"]
+    assert slots["valid_from"] == "2017-01-20"
+    assert slots["valid_until"] == "2021-01-20"
+
+
+def test_role_assignment_currently_held_omits_valid_until():
+    payload = {
+        "facts": [
+            {
+                "pattern": "role_assignment",
+                "predicate": "holds_role",
+                "slots": {"agent": "Donald Trump", "role": "47th President"},
+                "polarity": 1,
+                "source_text": "Donald Trump is the 47th President",
+            }
+        ]
+    }
+    result = _mk(payload).extract("Donald Trump is the 47th President.", role="user")
+    assert len(result.valid_facts) == 1
+    assert "valid_until" not in result.valid_facts[0]["slots"]
+
+
+def test_relational_election_outcome_not_succession():
+    """Trump-defeated-Harris is relational, not succeeded_by."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "relational",
+                "predicate": "defeated_in_election",
+                "slots": {
+                    "subject": "Donald Trump",
+                    "relation": "defeated_in_election",
+                    "object": "Kamala Harris",
+                    "valid_from": "2024",
+                },
+                "polarity": 1,
+                "source_text": "Trump defeated Kamala Harris in the 2024 election",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "Trump defeated Kamala Harris in the 2024 election.", role="user"
+    )
+    f = result.valid_facts[0]
+    assert f["predicate"] == "defeated_in_election"
+    assert f["predicate"] != "succeeded_by"
+
+
+def test_propositional_attitude_user_belief():
+    payload = {
+        "facts": [
+            {
+                "pattern": "propositional_attitude",
+                "predicate": "believes",
+                "slots": {
+                    "agent": "user",
+                    "attitude": "thinks",
+                    "proposition": "Fed will cut rates",
+                },
+                "polarity": 1,
+                "source_text": "I think the Fed will cut rates",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I think the Fed will cut rates.", role="user")
+    f = result.valid_facts[0]
+    assert f["pattern"] == "propositional_attitude"
+    assert f["slots"]["agent"] == "user"
+
+
+def test_preference_user_love():
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "loves",
+                "slots": {"agent": "user", "object": "peanut butter"},
+                "polarity": 1,
+                "source_text": "I love peanut butter",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I love peanut butter.", role="user")
+    assert result.valid_facts[0]["pattern"] == "preference"
+    assert result.valid_facts[0]["predicate"] == "loves"
+
+
+def test_quantitative_count():
+    payload = {
+        "facts": [
+            {
+                "pattern": "quantitative",
+                "predicate": "has_count",
+                "slots": {"subject": "strawberry", "property": "letter_p", "value": 2},
+                "polarity": 1,
+                "source_text": "Strawberry has 2 p's",
+            }
+        ]
+    }
+    result = _mk(payload).extract("Strawberry has 2 p's.", role="user")
+    assert result.valid_facts[0]["pattern"] == "quantitative"
+
+
+def test_spatial_temporal_user():
+    payload = {
+        "facts": [
+            {
+                "pattern": "spatial_temporal",
+                "predicate": "lives_in",
+                "slots": {
+                    "entity": "user",
+                    "location": "Williamstown",
+                    "relation_kind": "residence",
+                },
+                "polarity": 1,
+                "source_text": "I live in Williamstown",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I live in Williamstown.", role="user")
+    assert result.valid_facts[0]["pattern"] == "spatial_temporal"
+    assert result.valid_facts[0]["slots"]["entity"] == "user"
+
+
+def test_event_pattern():
+    payload = {
+        "facts": [
+            {
+                "pattern": "event",
+                "predicate": "was_inaugurated",
+                "slots": {
+                    "event_type": "inauguration",
+                    "participants": ["Donald Trump"],
+                    "occurred_at": "2025-01-20",
+                },
+                "polarity": 1,
+                "source_text": "Trump was inaugurated on January 20, 2025",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "Trump was inaugurated on January 20, 2025.", role="user"
+    )
+    assert result.valid_facts[0]["pattern"] == "event"
+
+
+# ---------- multi-pattern from one sentence ----------
+
+
+def test_one_sentence_two_facts_two_patterns():
+    """Section 9 #3: 'Tokyo is a city in Japan' → categorical + spatial_temporal."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "categorical",
+                "predicate": "is_a",
+                "slots": {"entity": "Tokyo", "category": "city"},
+                "polarity": 1,
+                "source_text": "Tokyo is a city",
+            },
+            {
+                "pattern": "spatial_temporal",
+                "predicate": "located_in",
+                "slots": {
+                    "entity": "Tokyo",
+                    "location": "Japan",
+                    "relation_kind": "containment",
+                },
+                "polarity": 1,
+                "source_text": "Tokyo is a city in Japan",
+            },
+        ]
+    }
+    result = _mk(payload).extract("Tokyo is a city in Japan.", role="user")
+    assert len(result.valid_facts) == 2
+    patterns = sorted(f["pattern"] for f in result.valid_facts)
+    assert patterns == ["categorical", "spatial_temporal"]
+
+
+# ---------- free-form predicates within a pattern ----------
+
+
+def test_freeform_predicate_within_preference_accepted():
+    """is_obsessed_with isn't in example_predicates but is valid within preference."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "is_obsessed_with",
+                "slots": {"agent": "user", "object": "sourdough"},
+                "polarity": 1,
+                "source_text": "I'm obsessed with sourdough",
+            }
+        ]
+    }
+    result = _mk(payload).extract("I'm obsessed with sourdough.", role="user")
+    assert len(result.valid_facts) == 1
+    assert result.valid_facts[0]["predicate"] == "is_obsessed_with"
+
+
+# ---------- validation rejection paths ----------
+
+
+def test_unknown_pattern_rejected():
+    payload = {
+        "facts": [
+            {
+                "pattern": "telepathy",
+                "predicate": "x",
+                "slots": {},
+                "polarity": 1,
+                "source_text": "...",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "unknown pattern" in result.rejected_facts[0]["reason"]
+
+
+def test_missing_required_slot_rejected():
+    payload = {
+        "facts": [
+            {
+                "pattern": "categorical",
+                "predicate": "is_a",
+                "slots": {"entity": "Marie Curie"},  # missing 'category'
+                "polarity": 1,
+                "source_text": "...",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "missing required slots" in result.rejected_facts[0]["reason"]
+
+
+def test_missing_top_level_field_rejected():
+    payload = {
+        "facts": [
+            {"pattern": "preference", "predicate": "likes", "polarity": 1}
+            # missing slots, source_text
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "missing field" in result.rejected_facts[0]["reason"]
+
+
+def test_polarity_out_of_range_rejected():
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "likes",
+                "slots": {"agent": "user", "object": "x"},
+                "polarity": 2,
+                "source_text": "x",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "polarity must be 0 or 1" in result.rejected_facts[0]["reason"]
+
+
+def test_facts_not_a_list_returns_empty_result():
+    """If the LLM returns ``facts`` as something other than a list
+    (str, dict, missing entirely), validation returns an empty result
+    rather than crashing. Defensive — the tool schema enforces array
+    but a malformed response shouldn't take down the pipeline."""
+    for bad_facts in (None, "not-a-list", {"hi": 1}, 42):
+        payload = {"facts": bad_facts}
+        result = _mk(payload).extract("...", role="user")
+        assert result.valid_facts == []
+        assert result.rejected_facts == []
+
+
+def test_non_dict_fact_rejected():
+    """A fact entry that isn't a dict (e.g. a stray string) is rejected
+    with a type-named reason, not silently dropped."""
+    payload = {"facts": ["just a string", 42, None]}
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert len(result.rejected_facts) == 3
+    reasons = [r["reason"] for r in result.rejected_facts]
+    assert all("not a dict" in r for r in reasons)
+    # Reason names the actual type so debugging is fast.
+    assert "str" in reasons[0]
+    assert "int" in reasons[1]
+    assert "NoneType" in reasons[2]
+
+
+def test_slots_not_a_dict_rejected():
+    """slots must be a dict; a list (a common LLM mistake) is
+    rejected explicitly."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "likes",
+                "slots": ["agent", "user"],  # list, not dict
+                "polarity": 1,
+                "source_text": "x",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "slots must be a dict" in result.rejected_facts[0]["reason"]
+
+
+def test_polarity_non_numeric_rejected():
+    """polarity must be coercible to int. A pure string like 'positive'
+    fails the int() coercion and is rejected with the int-required
+    reason."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "likes",
+                "slots": {"agent": "user", "object": "x"},
+                "polarity": "positive",
+                "source_text": "x",
+            }
+        ]
+    }
+    result = _mk(payload).extract("...", role="user")
+    assert result.valid_facts == []
+    assert "polarity must be an int" in result.rejected_facts[0]["reason"]
+
+
+def test_predicate_must_be_non_empty_string():
+    """predicate is the verification-routing key; an empty or
+    whitespace-only one would silently break dispatch. Reject up
+    front."""
+    for bad_pred in ("", "   ", 42, None):
+        payload = {
+            "facts": [
+                {
+                    "pattern": "preference",
+                    "predicate": bad_pred,
+                    "slots": {"agent": "user", "object": "x"},
+                    "polarity": 1,
+                    "source_text": "x",
+                }
+            ]
+        }
+        result = _mk(payload).extract("...", role="user")
+        assert result.valid_facts == []
+        assert "predicate must be a non-empty string" \
+               in result.rejected_facts[0]["reason"]
+
+
+def test_role_validation():
+    extractor = _mk({"facts": []})
+    with pytest.raises(ValueError, match="role"):
+        extractor.extract("x", role="system")
+
+
+def test_tool_schema_lists_all_pattern_names():
+    from src.legacy.pattern_registry import load_default_registry as _load
+
+    reg = _load()
+    extractor = _mk({"facts": []})
+    enum = extractor._record_tool["input_schema"]["properties"]["facts"]["items"][
+        "properties"
+    ]["pattern"]["enum"]
+    assert set(enum) == set(reg.names())
+
+
+def test_system_prompt_includes_every_pattern():
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    for name in extractor.registry.names():
+        assert name in sys, f"pattern {name!r} missing from prompt"
+
+
+def test_system_prompt_includes_temporal_few_shot():
+    """The Trump-trace fix: prompt must show the example with valid_from/valid_until."""
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    assert "valid_from" in sys
+    assert "valid_until" in sys
+    assert "2017" in sys
+
+
+# ---------- context for self-reference resolution (v0.4 bugfix) ----------
+
+
+def test_context_passed_in_user_message_when_provided():
+    """When extracting from an assistant draft, the preceding user message
+    is bundled in as context so 'this sentence' can resolve to literal text.
+    """
+    payload = {
+        "facts": [
+            {
+                "pattern": "quantitative",
+                "predicate": "has_count",
+                "slots": {
+                    "subject": "How many words in 'the quick brown fox' contain 'o'?",
+                    "property": "words_containing_letter_o",
+                    "value": 2,
+                },
+                "polarity": 1,
+                "source_text": "Two words contain 'o'.",
+            }
+        ]
+    }
+    extractor = _mk(payload)
+    extractor.extract(
+        "Two words contain 'o'.",
+        role="assistant",
+        context="How many words in 'the quick brown fox' contain 'o'?",
+    )
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "Preceding speaker's message" in msg
+    assert "the quick brown fox" in msg
+    # The instruction to resolve self-references must be present.
+    assert "this sentence" in msg or "self-references" in msg
+
+
+def test_no_context_when_omitted():
+    """extract(text, role) without preceding-message context omits the
+    context block from the prompt."""
+    extractor = _mk({"facts": []})
+    extractor.extract("Hello.", role="user")
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "Preceding speaker's message" not in msg
+
+
+def test_self_referential_count_few_shot_in_prompt():
+    """The extractor's system prompt teaches resolving 'this sentence'."""
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    # A few-shot example with literal-sentence-as-subject must appear.
+    assert "this sentence" in sys
+    assert "words_containing_letter" in sys
+
+
+def test_hedged_count_few_shot_in_prompt():
+    """Prompt teaches extraction of conditional/hedged count claims.
+
+    Regression for: assistant says 'N if X, else M' and extractor returns []
+    instead of extracting the primary value N.
+    """
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    # The hedged example must appear so the LLM learns to handle it.
+    assert "PRIMARY" in sys or "primary" in sys
+    assert "If counting all instances" in sys or "interpretation" in sys
+    assert "three free trees" in sys
+
+
+def test_context_block_does_not_use_alarming_negation():
+    """The 'do NOT extract' phrasing was over-discouraging extraction in
+    edge cases. The new phrasing is positive: 'extract from speaker's text'.
+    """
+    extractor = _mk({"facts": []})
+    extractor.extract("Two words.", role="assistant", context="anything")
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "do NOT extract" not in msg
+    # Positive instruction is present.
+    assert "Extract every fact-stating clause" in msg
+
+
+def test_context_user_message_mentions_hedged_extraction_rule():
+    """The per-call instructions mention hedged-claim handling."""
+    extractor = _mk({"facts": []})
+    extractor.extract("Two.", role="assistant", context="ctx")
+    msg = extractor.llm.calls[0]["user_message"]
+    assert "hedged" in msg or "conditional" in msg
+    assert "PRIMARY" in msg or "primary" in msg
+
+
+# ---------- real API gated test ----------
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_roundtrip_user_likes():
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+    result = extractor.extract("I like peanut butter.", role="user")
+    assert any(
+        f["pattern"] == "preference" and "peanut butter" in str(f["slots"]).lower()
+        for f in result.valid_facts
+    ), result.to_dict()
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_extractor_does_not_substitute_values():
+    """**Critical regression test.** The hallucination corpus exposed
+    the extractor (Opus 4.7) silently substituting 'correct' values
+    for what the model actually said:
+
+      Saturn moons: model said 274, extractor wrote 146 (the operator's
+                    expected). source_text was rewritten to match.
+      Yellowknife population: model said 21,455, extractor wrote 20,340.
+
+    These false-positive 'catches' look like AEDOS doing its job but
+    are actually the extractor poisoning the verification pipeline
+    with its own world knowledge. Extractor = STRUCTURAL ONLY.
+
+    This test: extract from a sentence containing a deliberately
+    wrong-but-plausible number. Assert the extracted value matches
+    the LITERAL number in the source, not the actual correct number."""
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    # Saturn has 146 confirmed moons (deliberately a lower count than
+    # the actual 274). Extractor must extract 146, NOT 274 or any
+    # other "corrected" value.
+    result = extractor.extract(
+        "Saturn has 146 confirmed moons.",
+        role="assistant",
+    )
+    quant_facts = [f for f in result.valid_facts
+                   if f["pattern"] == "quantitative"]
+    assert quant_facts, f"no quantitative claim extracted: {result.valid_facts}"
+    f = quant_facts[0]
+    assert f["slots"].get("value") == 146, (
+        f"extractor substituted a value: expected 146 (literal), got "
+        f"{f['slots'].get('value')!r}. source_text={f.get('source_text')!r}"
+    )
+    # source_text MUST be the literal substring, not a rewrite.
+    assert "146" in (f.get("source_text") or ""), (
+        f"source_text was rewritten — must contain literal '146': "
+        f"{f.get('source_text')!r}"
+    )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_interrogative_meta_returns_no_facts():
+    """Validates the calibration shipped in commit 058f474. The
+    extractor MUST NOT extract a user assertion from these forms.
+    See OBSERVATIONS 2026-04-28 'THE BIG MISS' for context — turn 26
+    of the hallucination corpus exposed exactly this gap."""
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    # Each prompt is a question / meta-claim, NOT a first-person assertion.
+    cases = [
+        "I think I told you I was born in Williamsburg, Virginia. Is that right?",
+        "Did I tell you my favorite color is blue?",
+        "Is it true that I said I'm vegetarian?",
+        "Remember when I said I prefer black coffee?",
+    ]
+    for prompt in cases:
+        result = extractor.extract(prompt, role="user")
+        assert result.valid_facts == [], (
+            f"interrogative-meta extracted user facts (calibration "
+            f"regression):\n  prompt: {prompt!r}\n  facts: {result.valid_facts}"
+        )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_letter_count_question_returns_no_facts():
+    """**Phase 8.6a calibration gate.** A user asking "How many r's are
+    in strawberry?" produces NO extracted claim. The bug surfaced in
+    real testing: the extractor LLM confabulated value=2 (a common
+    wrong answer) into a quantitative.has_count slot, the python
+    verifier corrected it to 3, and the corrected fact got stored —
+    polluting the user microtheory with a fact the user never asserted.
+
+    Phase 8.6's first commit gate: this test must pass on a live API
+    run. If it doesn't, the prompt change isn't discriminating enough;
+    iterate the few-shot before merging."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    cases = [
+        # Canonical strawberry case — the exact text that surfaced the bug.
+        "How many r's are in 'strawberry'?",
+        "How many r's are in strawperry?",
+        # Generalizations: same shape, different counted things.
+        "How many letters are in 'antidisestablishmentarianism'?",
+        "How many vowels does 'communication' contain?",
+        "Count the words in 'the quick brown fox'.",
+        "What's the digit count for 1234567?",
+    ]
+    for prompt in cases:
+        result = extractor.extract(prompt, role="user")
+        assert result.valid_facts == [], (
+            f"letter/word/digit-count question extracted user facts "
+            f"(Phase 8.6a calibration regression):\n"
+            f"  prompt: {prompt!r}\n  facts: {result.valid_facts}"
+        )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_letter_count_assertion_does_extract():
+    """**Phase 8.6a contrast gate.** The flip side of the abstain rule:
+    a declarative WITH an explicit value MUST extract verbatim, even
+    when the value is wrong. Confirms the prompt didn't over-abstain
+    on the assertion form while learning to abstain on the question
+    form."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    # Deliberately wrong (strawberry has 3 r's, not 7). Extractor must
+    # extract 7; verifier's job to catch the discrepancy.
+    result = extractor.extract("Strawberry has 7 r's", role="user")
+    quant = [f for f in result.valid_facts if f["pattern"] == "quantitative"]
+    assert quant, (
+        f"declarative letter-count failed to extract: {result.valid_facts}"
+    )
+    f = quant[0]
+    assert f["slots"].get("value") == 7, (
+        f"extractor substituted: expected value=7 (verbatim), "
+        f"got {f['slots'].get('value')!r}"
+    )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_tautological_is_a_does_not_extract():
+    """**Phase 8.6c calibration gate (v1).** A noun phrase whose head
+    category appears as a suffix of itself ("the waggle-dance
+    communication system") must NOT yield an is_a claim. Pre-fix the
+    extractor emitted vacuous tautologies."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    cases = [
+        ("the whole waggle-dance communication system enables foragers "
+         "to share food locations.", "assistant"),
+        ("the European parliamentary system is a parliamentary system.",
+         "assistant"),
+    ]
+    for text, role in cases:
+        result = extractor.extract(text, role=role)
+        is_a = [
+            f for f in result.valid_facts
+            if f["pattern"] == "categorical" and f["predicate"] == "is_a"
+        ]
+        for f in is_a:
+            entity = (f["slots"].get("entity") or "").strip().lower()
+            category = (f["slots"].get("category") or "").strip().lower()
+            assert not entity.endswith(" " + category) and entity != category, (
+                f"tautological is_a extracted (Phase 8.6c regression):\n"
+                f"  text: {text!r}\n  fact: {f}"
+            )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_real_categorical_is_a_does_extract():
+    """**Phase 8.6c contrast gate (v1).** Real categorical claims still
+    extract."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    result = extractor.extract(
+        "The waggle dance is a form of communication.",
+        role="assistant",
+    )
+    is_a = [
+        f for f in result.valid_facts
+        if f["pattern"] == "categorical" and f["predicate"] == "is_a"
+    ]
+    assert is_a, (
+        f"real categorical claim did not extract is_a (Phase 8.6c "
+        f"over-abstain regression): {result.valid_facts}"
+    )

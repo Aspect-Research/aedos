@@ -1,4 +1,16 @@
-"""Tests for src.extractor (v0.3 — pattern-based)."""
+"""Tests for src.layer1_extraction.extractor (v0.14).
+
+Ports v1's test_extractor.py mocked-LLM tests. Pattern-by-pattern
+behaviour is identical for the eight legacy patterns (no member_of
+references in the v1 corpus, so no rewrites). The mereological pattern
+gets its own dedicated test file (test_extractor_mereological.py).
+
+The pipeline-integration tests at the bottom of v1's
+test_extractor_substitution_check.py are NOT ported here — they
+depend on Pipeline / Router / Corrector / LLMRouter, none of which
+exist in v2 yet. They'll come back when their dependencies port
+(Phase 2+).
+"""
 
 from __future__ import annotations
 
@@ -8,8 +20,14 @@ from typing import Any
 
 import pytest
 
-from src.extractor import ClaimExtractor, ExtractionResult
-from src.pattern_registry import load_default_registry, reset_cache
+from src.layer1_extraction.extractor import (
+    ClaimExtractor,
+    ExtractionResult,
+)
+from src.layer1_extraction.pattern_registry import (
+    load_default_registry,
+    reset_cache,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +63,6 @@ def test_empty_facts_list_is_fine():
 
 
 def test_photosynthesis_abstention():
-    """Spec scenario A: out-of-vocabulary, must abstain."""
     result = _mk({"facts": []}).extract(
         "Photosynthesis converts sunlight into chemical energy.", role="user"
     )
@@ -53,12 +70,11 @@ def test_photosynthesis_abstention():
 
 
 def test_aesthetic_judgment_abstention():
-    """The sunset was beautiful — no pattern fits."""
     result = _mk({"facts": []}).extract("The sunset was beautiful.", role="user")
     assert result.valid_facts == []
 
 
-# ---------- per-pattern happy paths ----------
+# ---------- per-pattern happy paths (8 legacy patterns) ----------
 
 
 def test_categorical_extraction():
@@ -82,7 +98,6 @@ def test_categorical_extraction():
 
 
 def test_role_assignment_with_temporal_scope():
-    """The Trump-trace fix: extractor must populate valid_from / valid_until."""
     payload = {
         "facts": [
             {
@@ -127,7 +142,6 @@ def test_role_assignment_currently_held_omits_valid_until():
 
 
 def test_relational_election_outcome_not_succession():
-    """Trump-defeated-Harris is relational, not succeeded_by."""
     payload = {
         "facts": [
             {
@@ -254,7 +268,12 @@ def test_event_pattern():
 
 
 def test_one_sentence_two_facts_two_patterns():
-    """Section 9 #3: 'Tokyo is a city in Japan' → categorical + spatial_temporal."""
+    """'Tokyo is a city in Japan' → categorical + spatial_temporal.
+
+    'in Japan' is locational containment (spatial_temporal), not
+    constitutive parthood — the mereological pattern is the wrong fit
+    for the surface form 'in'.
+    """
     payload = {
         "facts": [
             {
@@ -287,7 +306,6 @@ def test_one_sentence_two_facts_two_patterns():
 
 
 def test_freeform_predicate_within_preference_accepted():
-    """is_obsessed_with isn't in example_predicates but is valid within preference."""
     payload = {
         "facts": [
             {
@@ -330,7 +348,7 @@ def test_missing_required_slot_rejected():
             {
                 "pattern": "categorical",
                 "predicate": "is_a",
-                "slots": {"entity": "Marie Curie"},  # missing 'category'
+                "slots": {"entity": "Marie Curie"},
                 "polarity": 1,
                 "source_text": "...",
             }
@@ -345,7 +363,6 @@ def test_missing_top_level_field_rejected():
     payload = {
         "facts": [
             {"pattern": "preference", "predicate": "likes", "polarity": 1}
-            # missing slots, source_text
         ]
     }
     result = _mk(payload).extract("...", role="user")
@@ -371,10 +388,6 @@ def test_polarity_out_of_range_rejected():
 
 
 def test_facts_not_a_list_returns_empty_result():
-    """If the LLM returns ``facts`` as something other than a list
-    (str, dict, missing entirely), validation returns an empty result
-    rather than crashing. Defensive — the tool schema enforces array
-    but a malformed response shouldn't take down the pipeline."""
     for bad_facts in (None, "not-a-list", {"hi": 1}, 42):
         payload = {"facts": bad_facts}
         result = _mk(payload).extract("...", role="user")
@@ -383,29 +396,24 @@ def test_facts_not_a_list_returns_empty_result():
 
 
 def test_non_dict_fact_rejected():
-    """A fact entry that isn't a dict (e.g. a stray string) is rejected
-    with a type-named reason, not silently dropped."""
     payload = {"facts": ["just a string", 42, None]}
     result = _mk(payload).extract("...", role="user")
     assert result.valid_facts == []
     assert len(result.rejected_facts) == 3
     reasons = [r["reason"] for r in result.rejected_facts]
     assert all("not a dict" in r for r in reasons)
-    # Reason names the actual type so debugging is fast.
     assert "str" in reasons[0]
     assert "int" in reasons[1]
     assert "NoneType" in reasons[2]
 
 
 def test_slots_not_a_dict_rejected():
-    """slots must be a dict; a list (a common LLM mistake) is
-    rejected explicitly."""
     payload = {
         "facts": [
             {
                 "pattern": "preference",
                 "predicate": "likes",
-                "slots": ["agent", "user"],  # list, not dict
+                "slots": ["agent", "user"],
                 "polarity": 1,
                 "source_text": "x",
             }
@@ -417,9 +425,6 @@ def test_slots_not_a_dict_rejected():
 
 
 def test_polarity_non_numeric_rejected():
-    """polarity must be coercible to int. A pure string like 'positive'
-    fails the int() coercion and is rejected with the int-required
-    reason."""
     payload = {
         "facts": [
             {
@@ -437,9 +442,6 @@ def test_polarity_non_numeric_rejected():
 
 
 def test_predicate_must_be_non_empty_string():
-    """predicate is the verification-routing key; an empty or
-    whitespace-only one would silently break dispatch. Reject up
-    front."""
     for bad_pred in ("", "   ", 42, None):
         payload = {
             "facts": [
@@ -465,14 +467,15 @@ def test_role_validation():
 
 
 def test_tool_schema_lists_all_pattern_names():
-    from src.pattern_registry import load_default_registry as _load
-
-    reg = _load()
+    """Tool schema enum must include all 9 pattern names (8 legacy +
+    mereological)."""
+    reg = load_default_registry()
     extractor = _mk({"facts": []})
     enum = extractor._record_tool["input_schema"]["properties"]["facts"]["items"][
         "properties"
     ]["pattern"]["enum"]
     assert set(enum) == set(reg.names())
+    assert "mereological" in enum
 
 
 def test_system_prompt_includes_every_pattern():
@@ -483,7 +486,6 @@ def test_system_prompt_includes_every_pattern():
 
 
 def test_system_prompt_includes_temporal_few_shot():
-    """The Trump-trace fix: prompt must show the example with valid_from/valid_until."""
     extractor = _mk({"facts": []})
     sys = extractor._system_prompt
     assert "valid_from" in sys
@@ -491,13 +493,29 @@ def test_system_prompt_includes_temporal_few_shot():
     assert "2017" in sys
 
 
-# ---------- context for self-reference resolution (v0.4 bugfix) ----------
+def test_system_prompt_says_nine_patterns():
+    """The abstain rule and pattern enumeration must reflect 9 patterns,
+    not 8."""
+    extractor = _mk({"facts": []})
+    sys = extractor._system_prompt
+    assert "NINE patterns" in sys or "nine patterns" in sys
+    # The pattern list must enumerate all 9 names somewhere in the rules
+    # block (the describe_for_prompt block also names them, but the
+    # rules-section enumeration is what teaches the LLM that the set
+    # is closed at 9).
+    rules_block = sys.split("# Rules", 1)[1].split("# Slot rules", 1)[0]
+    for name in (
+        "role_assignment", "preference", "quantitative", "spatial_temporal",
+        "categorical", "relational", "event", "propositional_attitude",
+        "mereological",
+    ):
+        assert name in rules_block, f"{name!r} missing from rules-section enumeration"
+
+
+# ---------- context for self-reference resolution ----------
 
 
 def test_context_passed_in_user_message_when_provided():
-    """When extracting from an assistant draft, the preceding user message
-    is bundled in as context so 'this sentence' can resolve to literal text.
-    """
     payload = {
         "facts": [
             {
@@ -522,13 +540,10 @@ def test_context_passed_in_user_message_when_provided():
     msg = extractor.llm.calls[0]["user_message"]
     assert "Preceding speaker's message" in msg
     assert "the quick brown fox" in msg
-    # The instruction to resolve self-references must be present.
     assert "this sentence" in msg or "self-references" in msg
 
 
 def test_no_context_when_omitted():
-    """extract(text, role) without preceding-message context omits the
-    context block from the prompt."""
     extractor = _mk({"facts": []})
     extractor.extract("Hello.", role="user")
     msg = extractor.llm.calls[0]["user_message"]
@@ -536,47 +551,98 @@ def test_no_context_when_omitted():
 
 
 def test_self_referential_count_few_shot_in_prompt():
-    """The extractor's system prompt teaches resolving 'this sentence'."""
     extractor = _mk({"facts": []})
     sys = extractor._system_prompt
-    # A few-shot example with literal-sentence-as-subject must appear.
     assert "this sentence" in sys
     assert "words_containing_letter" in sys
 
 
 def test_hedged_count_few_shot_in_prompt():
-    """Prompt teaches extraction of conditional/hedged count claims.
-
-    Regression for: assistant says 'N if X, else M' and extractor returns []
-    instead of extracting the primary value N.
-    """
     extractor = _mk({"facts": []})
     sys = extractor._system_prompt
-    # The hedged example must appear so the LLM learns to handle it.
     assert "PRIMARY" in sys or "primary" in sys
     assert "If counting all instances" in sys or "interpretation" in sys
     assert "three free trees" in sys
 
 
 def test_context_block_does_not_use_alarming_negation():
-    """The 'do NOT extract' phrasing was over-discouraging extraction in
-    edge cases. The new phrasing is positive: 'extract from speaker's text'.
-    """
     extractor = _mk({"facts": []})
     extractor.extract("Two words.", role="assistant", context="anything")
     msg = extractor.llm.calls[0]["user_message"]
     assert "do NOT extract" not in msg
-    # Positive instruction is present.
     assert "Extract every fact-stating clause" in msg
 
 
 def test_context_user_message_mentions_hedged_extraction_rule():
-    """The per-call instructions mention hedged-claim handling."""
     extractor = _mk({"facts": []})
     extractor.extract("Two.", role="assistant", context="ctx")
     msg = extractor.llm.calls[0]["user_message"]
     assert "hedged" in msg or "conditional" in msg
     assert "PRIMARY" in msg or "primary" in msg
+
+
+# ---------- substitution-detection check (port from
+#            test_extractor_substitution_check.py — pure unit tests) ----------
+
+
+def _make_result(facts: list[dict]) -> ExtractionResult:
+    return ExtractionResult(valid_facts=list(facts))
+
+
+def test_substring_match_no_warning():
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"value": 3},
+        "source_text": "Saturn has 3 moons",
+    }])
+    ClaimExtractor._flag_substitutions(result, "I think Saturn has 3 moons total.")
+    assert result.warnings == []
+
+
+def test_substituted_number_flagged():
+    result = _make_result([{
+        "pattern": "quantitative", "predicate": "has_count",
+        "slots": {"value": 146},
+        "source_text": "Saturn has 146 confirmed moons",
+    }])
+    ClaimExtractor._flag_substitutions(
+        result, "Saturn has 274 confirmed moons.",
+    )
+    assert len(result.warnings) == 1
+    w = result.warnings[0]
+    assert w["fact_index"] == 0
+    assert w["kind"] == "source_text_not_in_input"
+    assert "146" in w["detail"]
+
+
+def test_punctuation_difference_no_warning():
+    result = _make_result([{
+        "pattern": "relational", "predicate": "involved_in",
+        "slots": {},
+        "source_text": 'reality TV show "The Apprentice"',
+    }])
+    ClaimExtractor._flag_substitutions(
+        result,
+        'He hosted the reality TV show "The Apprentice." on NBC.',
+    )
+    assert result.warnings == []
+
+
+def test_multiple_facts_warned_independently():
+    result = _make_result([
+        {"pattern": "x", "predicate": "y", "slots": {},
+         "source_text": "Saturn has 3 moons"},
+        {"pattern": "x", "predicate": "y", "slots": {},
+         "source_text": "Mars has 5 moons"},
+        {"pattern": "x", "predicate": "y", "slots": {},
+         "source_text": "Earth has 1 moon"},
+    ])
+    ClaimExtractor._flag_substitutions(
+        result,
+        "Saturn has 3 moons. Mars has 2 moons. Earth has 1 moon.",
+    )
+    assert len(result.warnings) == 1
+    assert result.warnings[0]["fact_index"] == 1
 
 
 # ---------- real API gated test ----------
@@ -602,46 +668,60 @@ def test_real_api_roundtrip_user_likes():
     os.getenv("RUN_API_TESTS") != "1",
     reason="real API test gated behind RUN_API_TESTS=1",
 )
-def test_real_api_extractor_does_not_substitute_values():
-    """**Critical regression test.** The hallucination corpus exposed
-    the extractor (Opus 4.7) silently substituting 'correct' values
-    for what the model actually said:
-
-      Saturn moons: model said 274, extractor wrote 146 (the operator's
-                    expected). source_text was rewritten to match.
-      Yellowknife population: model said 21,455, extractor wrote 20,340.
-
-    These false-positive 'catches' look like AEDOS doing its job but
-    are actually the extractor poisoning the verification pipeline
-    with its own world knowledge. Extractor = STRUCTURAL ONLY.
-
-    This test: extract from a sentence containing a deliberately
-    wrong-but-plausible number. Assert the extracted value matches
-    the LITERAL number in the source, not the actual correct number."""
+def test_real_api_letter_count_question_returns_no_facts():
+    """**Phase 8.6a calibration gate (v2).** Mirror of the v1 test. The
+    bug surfaced in real chat testing: the extractor LLM confabulated
+    a value into a has_count slot when the user asked a counting
+    question. Phase 8.6's first commit gate: this test must pass on
+    a live API run before 8.6a merges."""
+    from dotenv import load_dotenv
+    load_dotenv()
     from src.llm_client import LLMClient
 
     llm = LLMClient()
     extractor = ClaimExtractor(llm, load_default_registry())
 
-    # Saturn has 146 confirmed moons (deliberately a lower count than
-    # the actual 274). Extractor must extract 146, NOT 274 or any
-    # other "corrected" value.
-    result = extractor.extract(
-        "Saturn has 146 confirmed moons.",
-        role="assistant",
+    cases = [
+        "How many r's are in 'strawberry'?",
+        "How many r's are in strawperry?",
+        "How many letters are in 'antidisestablishmentarianism'?",
+        "How many vowels does 'communication' contain?",
+        "Count the words in 'the quick brown fox'.",
+        "What's the digit count for 1234567?",
+    ]
+    for prompt in cases:
+        result = extractor.extract(prompt, role="user")
+        assert result.valid_facts == [], (
+            f"letter/word/digit-count question extracted user facts "
+            f"(Phase 8.6a calibration regression):\n"
+            f"  prompt: {prompt!r}\n  facts: {result.valid_facts}"
+        )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_letter_count_assertion_does_extract():
+    """**Phase 8.6a contrast gate (v2).** Declarative letter-count
+    assertion DOES extract — confirms the prompt didn't over-abstain
+    on assertions while learning to abstain on questions."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    result = extractor.extract("Strawberry has 7 r's", role="user")
+    quant = [f for f in result.valid_facts if f["pattern"] == "quantitative"]
+    assert quant, (
+        f"declarative letter-count failed to extract: {result.valid_facts}"
     )
-    quant_facts = [f for f in result.valid_facts
-                   if f["pattern"] == "quantitative"]
-    assert quant_facts, f"no quantitative claim extracted: {result.valid_facts}"
-    f = quant_facts[0]
-    assert f["slots"].get("value") == 146, (
-        f"extractor substituted a value: expected 146 (literal), got "
-        f"{f['slots'].get('value')!r}. source_text={f.get('source_text')!r}"
-    )
-    # source_text MUST be the literal substring, not a rewrite.
-    assert "146" in (f.get("source_text") or ""), (
-        f"source_text was rewritten — must contain literal '146': "
-        f"{f.get('source_text')!r}"
+    f = quant[0]
+    assert f["slots"].get("value") == 7, (
+        f"extractor substituted: expected value=7 (verbatim), "
+        f"got {f['slots'].get('value')!r}"
     )
 
 
@@ -649,26 +729,63 @@ def test_real_api_extractor_does_not_substitute_values():
     os.getenv("RUN_API_TESTS") != "1",
     reason="real API test gated behind RUN_API_TESTS=1",
 )
-def test_real_api_interrogative_meta_returns_no_facts():
-    """Validates the calibration shipped in commit 058f474. The
-    extractor MUST NOT extract a user assertion from these forms.
-    See OBSERVATIONS 2026-04-28 'THE BIG MISS' for context — turn 26
-    of the hallucination corpus exposed exactly this gap."""
+def test_real_api_tautological_is_a_does_not_extract():
+    """**Phase 8.6c calibration gate (v2).** A noun phrase whose head
+    category appears as a suffix of itself ("the waggle-dance
+    communication system") must NOT yield an is_a claim. Pre-fix the
+    extractor emitted vacuous is_a(entity='waggle-dance communication
+    system', category='communication system') tautologies."""
+    from dotenv import load_dotenv
+    load_dotenv()
     from src.llm_client import LLMClient
 
     llm = LLMClient()
     extractor = ClaimExtractor(llm, load_default_registry())
 
-    # Each prompt is a question / meta-claim, NOT a first-person assertion.
     cases = [
-        "I think I told you I was born in Williamsburg, Virginia. Is that right?",
-        "Did I tell you my favorite color is blue?",
-        "Is it true that I said I'm vegetarian?",
-        "Remember when I said I prefer black coffee?",
+        ("the whole waggle-dance communication system enables foragers "
+         "to share food locations.", "assistant"),
+        ("the European parliamentary system is a parliamentary system.",
+         "assistant"),
     ]
-    for prompt in cases:
-        result = extractor.extract(prompt, role="user")
-        assert result.valid_facts == [], (
-            f"interrogative-meta extracted user facts (calibration "
-            f"regression):\n  prompt: {prompt!r}\n  facts: {result.valid_facts}"
-        )
+    for text, role in cases:
+        result = extractor.extract(text, role=role)
+        is_a = [
+            f for f in result.valid_facts
+            if f["pattern"] == "categorical" and f["predicate"] == "is_a"
+        ]
+        for f in is_a:
+            entity = (f["slots"].get("entity") or "").strip().lower()
+            category = (f["slots"].get("category") or "").strip().lower()
+            assert not entity.endswith(" " + category) and entity != category, (
+                f"tautological is_a extracted (Phase 8.6c regression):\n"
+                f"  text: {text!r}\n  fact: {f}"
+            )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_API_TESTS") != "1",
+    reason="real API test gated behind RUN_API_TESTS=1",
+)
+def test_real_api_real_categorical_is_a_does_extract():
+    """**Phase 8.6c contrast gate (v2).** Confirms the prompt did not
+    over-abstain on legitimate categorical claims."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from src.llm_client import LLMClient
+
+    llm = LLMClient()
+    extractor = ClaimExtractor(llm, load_default_registry())
+
+    result = extractor.extract(
+        "The waggle dance is a form of communication.",
+        role="assistant",
+    )
+    is_a = [
+        f for f in result.valid_facts
+        if f["pattern"] == "categorical" and f["predicate"] == "is_a"
+    ]
+    assert is_a, (
+        f"real categorical claim did not extract is_a (Phase 8.6c "
+        f"over-abstain regression): {result.valid_facts}"
+    )

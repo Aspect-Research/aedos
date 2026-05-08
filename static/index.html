@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/style.css?v=0.12.1">
+<link rel="stylesheet" href="/static/v2_trace.css?v=0.14-p8.5">
 </head>
 <body>
 <header>
@@ -53,6 +54,8 @@
       <button class="inspector-tab active" data-inspector-tab="memory">Memory</button>
       <button class="inspector-tab" data-inspector-tab="patterns">Patterns</button>
       <button class="inspector-tab" data-inspector-tab="pipeline">Pipeline events</button>
+      <button class="inspector-tab" data-inspector-tab="v2-substrate">v2 Substrate</button>
+      <button class="inspector-tab" data-inspector-tab="v2-walk">v2 Walk</button>
     </nav>
     <button id="inspector-close" title="Close inspector">✕</button>
   </div>
@@ -135,9 +138,60 @@
     </div>
     <div id="pipeline-events" class="pipeline-events"></div>
   </section>
+
+  <!-- v0.14 Phase 8.5: v2 trace UI panels.
+       Two new tabs (v2 Substrate, v2 Walk) live alongside the v1
+       inspector tabs. Substrate exposes the four oracles (sortable
+       lists + affirm/contradict). Walk drives the v2 stack via
+       /v2/api/dispatch-one and renders the WalkerDecision +
+       Intervention + DecisionConfidence panels per claim. -->
+  <section id="inspector-v2-substrate" class="inspector-panel">
+    <div class="toolbar v2-substrate-toolbar">
+      <div class="v2-oracle-tabs" role="tablist" aria-label="Oracle">
+        <button class="v2-oracle-tab active" data-v2-oracle="predicate-equivalence">Predicate equivalence</button>
+        <button class="v2-oracle-tab" data-v2-oracle="entity-equivalence">Entity equivalence</button>
+        <button class="v2-oracle-tab" data-v2-oracle="entity-taxonomy">Entity taxonomy</button>
+        <button class="v2-oracle-tab" data-v2-oracle="predicate-distribution">Predicate distribution</button>
+      </div>
+      <button id="v2-oracle-refresh">Refresh</button>
+    </div>
+    <div id="v2-oracle-content" class="v2-oracle-content"></div>
+  </section>
+
+  <section id="inspector-v2-walk" class="inspector-panel">
+    <div class="v2-walk-form-wrap">
+      <p class="hint">
+        Drive the v2 stack with a structured claim. Routes through
+        Layer 2 → walker (U / W / derivation / fresh) → Layer 5
+        (decision_confidence + intervention). The chat-model call is
+        bypassed; this is the operator surface until /v2/api/chat lands.
+      </p>
+      <form id="v2-walk-form" class="v2-walk-form">
+        <label>Pattern <input id="v2-walk-pattern" type="text" required placeholder="e.g. preference"></label>
+        <label>Predicate <input id="v2-walk-predicate" type="text" required placeholder="e.g. loves"></label>
+        <label>Polarity
+          <select id="v2-walk-polarity">
+            <option value="1" selected>1 (asserted)</option>
+            <option value="0">0 (negated)</option>
+          </select>
+        </label>
+        <label class="v2-walk-slots-label">Slots (JSON)
+          <textarea id="v2-walk-slots" rows="3" placeholder='{"agent": "user", "object": "sushi"}'></textarea>
+        </label>
+        <label>Source text <input id="v2-walk-source" type="text" placeholder="optional"></label>
+        <label class="v2-walk-fresh-label">
+          <input id="v2-walk-fresh" type="checkbox">
+          Run fresh verifier on miss (requires LLM API key)
+        </label>
+        <button type="submit">Dispatch</button>
+      </form>
+    </div>
+    <div id="v2-walk-result" class="v2-walk-result"></div>
+  </section>
 </aside>
 <div id="inspector-backdrop" class="inspector-backdrop"></div>
 
 <script src="/static/app.js?v=0.12.1"></script>
+<script src="/static/v2_trace.js?v=0.14-p8.5"></script>
 </body>
 </html>

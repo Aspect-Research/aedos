@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from src.fact_store import FactStore, _now_iso
+from src.legacy.fact_store import FactStore, _now_iso
 
 
 @dataclass
@@ -70,7 +70,7 @@ class CachedVerdict:
         Beta(1,1) Laplace-smoothed posterior estimate of P(true |
         evidence). No LLM-emitted self-rating, no per-outcome path
         prior — just refresh_count and contradiction_count."""
-        from src.router.constants import confidence_from_counts
+        from src.legacy.router.constants import confidence_from_counts
         return confidence_from_counts(
             self.refresh_count, self.contradiction_count,
         )

@@ -10,6 +10,86 @@ rejected, or flagged. User-stated facts are stored as ground truth.
 
 See `ARCHITECTURE.md` for the design rationale and a full data-flow diagram.
 
+## v0.14 Phase 8.6 — three extractor / storage-path bug fixes
+
+Three bugs surfaced by real-world testing of the Phase 8.5 trace UI, all fixed before Phase 9 cutover. The bugs share an architectural theme: the extractor's projection of source text diverges from what the source actually asserts, and downstream layers didn't catch the divergence.
+
+- **Bug 1 (strawberry):** "How many r's are in strawberry?" used to extract a confabulated `value=2`; the corrected fact then matched on subsequent turns and badged as "served from user_store". Two-layer fix: extractor prompts (v1 + v2) abstain on letter/word/character/digit-counting questions (live-API gated); v1's `store_lookup_verify` filters by `asserted_by="user"` so python_verifier-asserted facts don't masquerade as user-asserted at Tier 2. The dual-write storage path (user's wrong version + python_verifier corrected version) is preserved untouched — it's the audit trail, not a bug.
+- **Bug 2 (Williamsburg):** "Let's say for this conversation I live in Williamsburg" used to land cross-session because the extractor stripped the marker from `source_text`. Fixed: `Router.route()` accepts a `raw_text` parameter that cascades through every dispatch helper to `_store`, which uses `raw_text` (when provided) for the marker check. v2's `tier_u.store_user_fact()` got the same param. Pipeline passes `user_message` as `raw_text` on every user-side route call. Backwards-compatible defaults: `raw_text=None` falls back to `claim["source_text"]`.
+- **Bug 3 (waggle-dance):** "the waggle-dance communication system" extracted as a vacuous `is_a` tautology. Fixed: extractor prompts (v1 + v2) abstain on suffix-form tautologies; v2 validator gained invariant 5 (`categorical_tautology`) as a backstop against prompt drift. v1 has no equivalent validator (retiring in Phase 9; prompt fix sufficient for the remaining lifetime).
+
+**Live-API calibration discipline.** Extractor prompt changes are gated on live-LLM tests (`RUN_API_TESTS=1`). Mocked unit tests prove parsing; only live runs prove the LLM follows the new few-shots. 8.6c required one prompt iteration before passing the live gate.
+
+**Architectural conversation deferred to v0.15+:** A Layer 1.5 faithfulness validator that checks each extracted claim against its source for representational faithfulness — would close the loop on this whole class of bugs. See `aedos_implementation_plan.md` "Deferred to v0.15+" for the details.
+
+## v0.14 schema (post-cutover)
+
+### Database tables
+
+The v0.14 schema lives in `src/aedos_v2/fact_store.py` (post-9c rename: `src/fact_store.py`). Eleven tables plus one view; every table carries the architectural commitments documented in the per-table comments.
+
+| Table | Purpose | Key CHECK constraints |
+| --- | --- | --- |
+| `facts` | The verified store. Both Tier U (user microtheory, `is_session_local` flag) and verifier-output rows live here. | `is_session_local = 0 OR json_array_length(session_ids) <= 1` |
+| `turns` | Per-turn user/assistant content with `original_content` for the corrector audit trail. | role ∈ {user, assistant} |
+| `pipeline_events` | The single observability log. Every layer emits structured events; trace UI reads from this. FK to turns. | — |
+| `retrieval_cache` | Search snippets keyed by query, TTL'd. | — |
+| `verification_cache` | Tier W. World-fact verifier verdicts with `stability_class` TTL + canonical_key UNIQUE. | UNIQUE(canonical_key) |
+| `cache_invalidation_log` | Bookkeeping for cache disputes. **Cascade invalidation deferred to v0.15** — table is populated for direct invalidations only. | — |
+| `routing_memo` | Layer 2 classification cache, keyed by (pattern, predicate). | method ∈ {python, python_with_canonical_constants, retrieval, user_authoritative, unverifiable}; PK(pattern, predicate) |
+| `predicate_equivalence` | Symmetric-pair oracle (3 labels). Lex order enforced. | label ∈ {equivalent, contradictory, distinct}; CHECK(predicate_a < predicate_b) |
+| `entity_equivalence` | Symmetric-pair oracle (2 labels). Case-sensitive lex order. | label ∈ {same, different}; CHECK(entity_a < entity_b) |
+| `entity_taxonomy` | Directional triple oracle (4 labels). is_a + part_of unified by `relation_type`. | label ∈ {child_subsumed_by_parent, parent_subsumed_by_child, equivalent, neither}; relation_type ∈ {is_a, part_of}; CHECK(child != parent) |
+| `predicate_distribution` | Singleton 4-tuple oracle (4 labels). Pattern + polarity + relation_type keyed. | label ∈ {distributes_up, distributes_down, both, neither}; polarity ∈ {0, 1}; taxonomy_relation_type ∈ {is_a, part_of} |
+
+The `facts_flat` view projects pattern-aware (subject, object) for the inspector UI. `verification_status` enum is 8 states: `verified`, `contradicted`, `user_asserted`, `unverifiable_in_principle`, `retrieval_inconclusive`, `retrieval_failed`, `unverifiable_pending_implementation`, `routing_anomaly`. **Do not collapse this enum** — each state encodes a distinct Layer 5 intervention.
+
+### Default DB filename and the v0.13 working-copy rename
+
+The post-cutover default is `aedos.db` with the v0.14 schema. The v0.13 working-copy database (incompatible schema) should be renamed to `aedos_v1.db` if preserved — `.gitignore` covers both names, so the rename doesn't propagate. The legacy `src/legacy/` stack continues to read v0.13 databases unchanged through the v0.14.x minor-version line; v0.15 deletes both.
+
+Override the default by setting `AEDOS_DB_PATH` in the environment.
+
+### Reset script
+
+`scripts/reset_db.py` defaults to the v2 stack: drop and recreate against `aedos.db`. The `--legacy` flag (post-9d) operates on the v1 stack at `src/legacy/` against `aedos_v1.db`. Both forms are idempotent and reset only the named DB file; they do NOT touch the other.
+
+## v0.14 load-bearing surfaces — what's reproduced, what's deferred
+
+The audit harness at `tests/v2/test_phase9_parity_audit.py` enforces that v1's load-bearing surfaces are reproduced in v2 (criterion 7) and that all v1 PIPELINE_STAGES appear in v2's enum (criterion 5). The table below documents each one with file references; the regenerated `phase9_parity_report.md` is the empirical artifact alongside this static inventory.
+
+### Reproduced surfaces
+
+| Capability | v1 location | v2 status | v2 location |
+| --- | --- | --- | --- |
+| `PIPELINE_STAGES` enum | `src/fact_store.py` | superset (every v1 stage + v0.14 additions) | `src/aedos_v2/fact_store.py` |
+| `VERIFICATION_STATUSES` enum (8 states) | `src/fact_store.py` | reproduced verbatim | `src/aedos_v2/fact_store.py` |
+| Routing-anomaly detection | `Router._maybe_anomaly` | promoted to Layer 2 validator (5 invariants incl. categorical_tautology) | `src/aedos_v2/layer2_routing/validator.py` |
+| `USER_SUBJECT_PATTERNS` discriminator | `src/router/constants.py` | reproduced | `src/aedos_v2/layer2_routing/constants.py` |
+| `UNIQUE_VALUE_SLOTS` prototype | `src/router/constants.py` | reproduced | `src/aedos_v2/layer2_routing/constants.py` |
+| Per-purpose model routing | `src/llm_router.py` | reproduced + worked-example coverage | `src/aedos_v2/layer2_routing/llm_router.py` |
+| Microtheory session model | `session_id` column | rebuilt as `is_session_local` + `session_ids` (Phase 6) | `src/aedos_v2/fact_store.py`, `src/aedos_v2/layer4_lookup/tier_u.py` |
+| Inspector endpoints | `src/app.py` | reproduced + four substrate inspectors + dispatch-one + per-turn trace | `src/aedos_v2/app.py` |
+| Static UI files (chat + trace panels) | `static/index.html`, `app.js`, `style.css` | preserved + extended with `v2_trace.{js,css}` (Phase 8.5) | `static/` |
+| Corrector behavior + prompt | `src/corrector.py` (`CORRECTOR_SYSTEM`) | reproduced verbatim; vocabulary translation at ledger time | `src/aedos_v2/layer5_decision/corrector.py` |
+| Intervention types (5 actions) | `src/router/types.py` (RoutingOutcome) | reproduced as `InterventionType` enum (pass_through / replace / hedge / soften / noop) | `src/aedos_v2/layer5_decision/types.py` |
+| Code-generation pipeline | `src/verifiers/code_generation/` | shared infrastructure (top-level `src/verifiers/` post-9c rename) — reused by v2's `fresh.py` dispatcher | `src/verifiers/code_generation/` |
+| Retrieval verifier | `src/verifiers/retrieval_verifier.py` | shared infrastructure | same path |
+| Cache gate (scoping + stability + lookup + write) | `src/cache/` | shared infrastructure | same path |
+| Phase 8.6 fixes (strawberry abstain, Williamsburg raw_text cascade, waggle-dance tautology) | `src/extractor.py`, `src/router/router.py`, `src/verifiers/store_verifier.py` | reproduced in v2 + v2 validator backstop (invariant 5: categorical_tautology) | `src/aedos_v2/layer1_extraction/extractor.py`, `src/aedos_v2/layer2_routing/validator.py`, `src/aedos_v2/layer4_lookup/tier_u.py` |
+
+### What v0.15 will add
+
+These are the next coherent extensions of the v0.14 architecture, not gaps in v0.14:
+
+- **Cascade invalidation across semantically adjacent stored facts.** When a fact is contradicted, semantically adjacent facts (matched via the substrate) should propagate the contradiction. v0.14's substrate makes this tractable; v0.15 wires the cascade. The `cache_invalidation_log` table is in place for this.
+- **Cross-tier contradiction detection.** When U asserts X about the world and W later contradicts X, the system surfaces the disagreement to the operator without overriding either store. The walker partially supports the read side; full cross-tier intervention planning is v0.15.
+- **Layer 1.5 faithfulness validator.** The Phase 8.6 bug class (interrogative confabulation, marker stripping, tautological extraction) shared a structure: the extractor's projection diverged from the source's communicative content. A faithfulness validator between Layer 1 and Layer 2 would catch this class at the layer it belongs in. See `aedos_implementation_plan.md` "Deferred to v0.15+" for the architectural design conversation.
+- **`/v2/api/chat` with SSE streaming.** The v0.14 cutover ships `/api/dispatch-one` + the inspectors + the trace UI; the chat endpoint is v0.15 work. Until then, operators drive the v2 stack via `/api/dispatch-one` (structured-claim input) and the legacy `/api/chat` (legacy stack at `src/legacy/`).
+- **`src/legacy/` cleanup.** Hot rollback to v1 is supported through v0.14.x by re-mounting `src/legacy/app.py` at `/`. v0.15 removes the directory and finalizes the cutover.
+
+The audit harness's `_V0_15_DEFERRALS` registry (in `tests/v2/test_phase9_parity_audit.py`) keeps a structural copy of this list so test_criterion_7 fails-loud if the registry drifts from this documentation.
+
 ## v0.5 changes (read before touching anything)
 
 > **The pattern-driven verification dispatch is gone.** Old `aedos.db`
