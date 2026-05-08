@@ -1,0 +1,50 @@
+{"id": "ee-alias-001", "category": "alias_resolution", "entity_a": "NYC", "entity_b": "New York City", "expected_label": "same", "notes": "city alias canonical"}
+{"id": "ee-alias-002", "category": "alias_resolution", "entity_a": "LA", "entity_b": "Los Angeles", "expected_label": "same", "notes": "city alias"}
+{"id": "ee-alias-003", "category": "alias_resolution", "entity_a": "JFK", "entity_b": "John F. Kennedy", "expected_label": "same", "notes": "person initialism"}
+{"id": "ee-alias-004", "category": "alias_resolution", "entity_a": "MLK", "entity_b": "Martin Luther King Jr.", "expected_label": "same", "notes": "person initialism"}
+{"id": "ee-alias-005", "category": "alias_resolution", "entity_a": "PB", "entity_b": "peanut butter", "expected_label": "same", "notes": "food alias"}
+{"id": "ee-alias-006", "category": "alias_resolution", "entity_a": "COVID-19", "entity_b": "coronavirus disease 2019", "expected_label": "same", "notes": "disease alias"}
+{"id": "ee-alias-007", "category": "alias_resolution", "entity_a": "AI", "entity_b": "artificial intelligence", "expected_label": "same", "notes": "field alias"}
+{"id": "ee-alias-008", "category": "alias_resolution", "entity_a": "EU", "entity_b": "European Union", "expected_label": "same", "notes": "organization alias"}
+{"id": "ee-alias-009", "category": "alias_resolution", "entity_a": "DNA", "entity_b": "deoxyribonucleic acid", "expected_label": "same", "notes": "scientific alias"}
+{"id": "ee-alias-010", "category": "alias_resolution", "entity_a": "TKO", "entity_b": "technical knockout", "expected_label": "same", "notes": "sports alias"}
+{"id": "ee-alias-011", "category": "alias_resolution", "entity_a": "USSR", "entity_b": "Soviet Union", "expected_label": "same", "notes": "country alias"}
+{"id": "ee-alias-012", "category": "alias_resolution", "entity_a": "UK", "entity_b": "United Kingdom", "expected_label": "same", "notes": "country alias"}
+{"id": "ee-abbr-001", "category": "abbreviation", "entity_a": "UN", "entity_b": "United Nations", "expected_label": "same", "notes": "organization abbreviation"}
+{"id": "ee-abbr-002", "category": "abbreviation", "entity_a": "MIT", "entity_b": "Massachusetts Institute of Technology", "expected_label": "same", "notes": "university abbreviation"}
+{"id": "ee-abbr-003", "category": "abbreviation", "entity_a": "NASA", "entity_b": "National Aeronautics and Space Administration", "expected_label": "same", "notes": "agency abbreviation"}
+{"id": "ee-abbr-004", "category": "abbreviation", "entity_a": "USA", "entity_b": "United States of America", "expected_label": "same", "notes": "country abbreviation"}
+{"id": "ee-abbr-005", "category": "abbreviation", "entity_a": "FBI", "entity_b": "Federal Bureau of Investigation", "expected_label": "same", "notes": "agency abbreviation"}
+{"id": "ee-abbr-006", "category": "abbreviation", "entity_a": "WHO", "entity_b": "World Health Organization", "expected_label": "same", "notes": "organization abbreviation"}
+{"id": "ee-abbr-007", "category": "abbreviation", "entity_a": "FDA", "entity_b": "Food and Drug Administration", "expected_label": "same", "notes": "agency abbreviation"}
+{"id": "ee-abbr-008", "category": "abbreviation", "entity_a": "WWII", "entity_b": "World War II", "expected_label": "same", "notes": "event abbreviation"}
+{"id": "ee-spell-001", "category": "alternate_spelling", "entity_a": "Beyoncé", "entity_b": "Beyonce", "expected_label": "same", "notes": "diacritic variant"}
+{"id": "ee-spell-002", "category": "alternate_spelling", "entity_a": "color", "entity_b": "colour", "expected_label": "same", "notes": "American/British spelling"}
+{"id": "ee-spell-003", "category": "alternate_spelling", "entity_a": "Mumbai", "entity_b": "Bombay", "expected_label": "same", "notes": "translingual variant; Mumbai is contemporary"}
+{"id": "ee-spell-004", "category": "alternate_spelling", "entity_a": "gray", "entity_b": "grey", "expected_label": "same", "notes": "American/British spelling"}
+{"id": "ee-spell-005", "category": "alternate_spelling", "entity_a": "Beijing", "entity_b": "Peking", "expected_label": "same", "notes": "translingual variant"}
+{"id": "ee-spell-006", "category": "alternate_spelling", "entity_a": "Munich", "entity_b": "München", "expected_label": "same", "notes": "translingual variant; English/German"}
+{"id": "ee-spell-007", "category": "alternate_spelling", "entity_a": "Mexico City", "entity_b": "Ciudad de México", "expected_label": "same", "notes": "translingual variant; English/Spanish"}
+{"id": "ee-spell-008", "category": "alternate_spelling", "entity_a": "donut", "entity_b": "doughnut", "expected_label": "same", "notes": "spelling variant"}
+{"id": "ee-case-001", "category": "case_disambiguation", "entity_a": "apple", "entity_b": "Apple", "expected_label": "different", "notes": "fruit vs company; canonical case-disambig"}
+{"id": "ee-case-002", "category": "case_disambiguation", "entity_a": "turkey", "entity_b": "Turkey", "expected_label": "different", "notes": "bird vs country"}
+{"id": "ee-case-003", "category": "case_disambiguation", "entity_a": "bass", "entity_b": "Bass", "expected_label": "different", "notes": "fish vs beer brand"}
+{"id": "ee-case-004", "category": "case_disambiguation", "entity_a": "mercury", "entity_b": "Mercury", "expected_label": "different", "notes": "element vs planet (or god, or band)"}
+{"id": "ee-case-005", "category": "case_disambiguation", "entity_a": "polish", "entity_b": "Polish", "expected_label": "different", "notes": "shoe-cleaning verb vs nationality"}
+{"id": "ee-person-place-001", "category": "person_vs_place", "entity_a": "Paris", "entity_b": "Paris Hilton", "expected_label": "different", "notes": "city vs person"}
+{"id": "ee-person-place-002", "category": "person_vs_place", "entity_a": "Jordan", "entity_b": "Michael Jordan", "expected_label": "different", "notes": "country vs person"}
+{"id": "ee-person-place-003", "category": "person_vs_place", "entity_a": "Madison", "entity_b": "James Madison", "expected_label": "different", "notes": "city vs president"}
+{"id": "ee-person-place-004", "category": "person_vs_place", "entity_a": "Hudson", "entity_b": "Henry Hudson", "expected_label": "different", "notes": "river vs explorer"}
+{"id": "ee-person-place-005", "category": "person_vs_place", "entity_a": "Lincoln", "entity_b": "Abraham Lincoln", "expected_label": "different", "notes": "city/state-name root vs person"}
+{"id": "ee-overmerge-001", "category": "over_merge_tempting", "entity_a": "Tokyo", "entity_b": "Japan", "expected_label": "different", "notes": "containment is not equivalence; Phase 5/7 entity_taxonomy handles part-of", "future_match_via": "entity_taxonomy"}
+{"id": "ee-overmerge-002", "category": "over_merge_tempting", "entity_a": "Apple", "entity_b": "iPhone", "expected_label": "different", "notes": "company vs product"}
+{"id": "ee-overmerge-003", "category": "over_merge_tempting", "entity_a": "Microsoft", "entity_b": "Bing", "expected_label": "different", "notes": "parent vs subsidiary product"}
+{"id": "ee-overmerge-004", "category": "over_merge_tempting", "entity_a": "NSA", "entity_b": "NASA", "expected_label": "different", "notes": "initialism collision; National Security Agency vs National Aeronautics and Space Administration"}
+{"id": "ee-overmerge-005", "category": "over_merge_tempting", "entity_a": "Manhattan", "entity_b": "NYC", "expected_label": "different", "notes": "borough vs city; containment", "future_match_via": "entity_taxonomy"}
+{"id": "ee-overmerge-006", "category": "over_merge_tempting", "entity_a": "Alphabet", "entity_b": "Google", "expected_label": "different", "notes": "parent corp vs subsidiary"}
+{"id": "ee-overmerge-007", "category": "over_merge_tempting", "entity_a": "FDA", "entity_b": "FDIC", "expected_label": "different", "notes": "initialism collision; Food and Drug Administration vs Federal Deposit Insurance Corporation"}
+{"id": "ee-hard-001", "category": "hard_cases", "entity_a": "Twitter", "entity_b": "X", "expected_label": "same", "notes": "platform renamed in 2023; same entity, contested name. Gold debatable"}
+{"id": "ee-hard-002", "category": "hard_cases", "entity_a": "Facebook", "entity_b": "Meta", "expected_label": "same", "notes": "Meta is the renamed parent (Facebook the company) in 2021; sometimes still used to refer to the same entity. Gold debatable"}
+{"id": "ee-hard-003", "category": "hard_cases", "entity_a": "Burma", "entity_b": "Myanmar", "expected_label": "same", "notes": "politically contested name change in 1989; same country. Gold debatable"}
+{"id": "ee-hard-004", "category": "hard_cases", "entity_a": "Czechia", "entity_b": "Czech Republic", "expected_label": "same", "notes": "two acceptable names for the same country since 2016. Gold debatable"}
+{"id": "ee-hard-005", "category": "hard_cases", "entity_a": "the artist formerly known as Prince", "entity_b": "Prince", "expected_label": "same", "notes": "stage-name continuity; same musician. Gold debatable"}

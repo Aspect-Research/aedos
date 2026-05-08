@@ -1,8 +1,22 @@
-"""Tests for src.fact_store under the v0.3 pattern/slots schema."""
+"""Tests for src.fact_store under the v0.14 schema.
+
+Schema deltas vs. v0.13 covered here:
+
+  * ``reinforcement_count`` -> ``affirmed_count`` (rename)
+  * new ``contradicted_count``
+  * new ``is_session_local``
+  * ``session_id`` removed
+  * ``session_ids`` JSON array, with CHECK constraint enforcing
+    array length <= 1 when ``is_session_local = 1``
+
+Phase 0 ports the read/write surface; Phase 6 wires the session
+filter and the contradicted-count write path. Tests below cover the
+schema as shipped now.
+"""
 
 from __future__ import annotations
 
-import json
+import sqlite3
 import time
 
 import pytest
@@ -22,13 +36,18 @@ def _mk(
     predicate="likes",
     slots=None,
     polarity=1,
-    confidence=0.5,  # Beta(1,1) prior at zero counts
+    confidence=0.5,
     asserted_by="user",
     verification_status="user_asserted",
     source_turn_id=None,
     source_text=None,
+    affirmed_count=0,
+    contradicted_count=0,
+    is_session_local=0,
+    session_ids=None,
 ):
     slots = slots if slots is not None else {"agent": "user", "object": "pb"}
+    session_ids = list(session_ids) if session_ids is not None else []
     return Fact(
         pattern=pattern,
         predicate=predicate,
@@ -39,6 +58,10 @@ def _mk(
         verification_status=verification_status,
         source_turn_id=source_turn_id,
         source_text=source_text,
+        affirmed_count=affirmed_count,
+        contradicted_count=contradicted_count,
+        is_session_local=is_session_local,
+        session_ids=session_ids,
     )
 
 
@@ -55,6 +78,11 @@ def test_insert_and_get(store):
     assert f.slots == {"agent": "user", "object": "pb"}
     assert f.valid_from is not None
     assert f.valid_until is None
+    # v0.14 defaults round-trip cleanly.
+    assert f.affirmed_count == 0
+    assert f.contradicted_count == 0
+    assert f.is_session_local == 0
+    assert f.session_ids == []
 
 
 def test_insert_serializes_slots_as_json(store):
@@ -66,7 +94,7 @@ def test_insert_serializes_slots_as_json(store):
 
 
 def test_facts_flat_view_projects_subject_and_object(store):
-    """The flat view should pick the canonical subject/object slot for each pattern."""
+    """The flat view picks the canonical subject/object slot for each pattern."""
     store.insert_fact(_mk(slots={"agent": "user", "object": "peanut butter"}))
     store.insert_fact(
         _mk(
@@ -83,6 +111,25 @@ def test_facts_flat_view_projects_subject_and_object(store):
     assert rows[0]["object"] == "peanut butter"
     assert rows[1]["subject"] == "Marie Curie"
     assert rows[1]["object"] == "physicist"
+
+
+def test_facts_flat_view_projects_mereological_part_and_whole(store):
+    """v0.14 Phase 1: a mereological row's `part` slot projects as
+    subject and `whole` projects as object via facts_flat."""
+    fid = store.insert_fact(
+        _mk(
+            pattern="mereological",
+            predicate="part_of",
+            slots={"part": "Williamstown", "whole": "Massachusetts"},
+        )
+    )
+    row = store._conn.execute(
+        "SELECT subject, object, pattern FROM facts_flat WHERE id = ?",
+        (fid,),
+    ).fetchone()
+    assert row["pattern"] == "mereological"
+    assert row["subject"] == "Williamstown"
+    assert row["object"] == "Massachusetts"
 
 
 # ---------- find / contradictions ----------
@@ -111,8 +158,9 @@ def test_find_contradictions_polarity_flip(store):
 def test_close_fact_excludes_from_currently_valid(store):
     fid = store.insert_fact(_mk())
     store.close_fact(fid)
-    assert store.find_currently_valid("preference", "likes",
-                                      {"agent": "user", "object": "pb"}) == []
+    assert store.find_currently_valid(
+        "preference", "likes", {"agent": "user", "object": "pb"}
+    ) == []
 
 
 def test_close_and_reopen_with_opposite_polarity(store):
@@ -131,17 +179,39 @@ def test_close_and_reopen_with_opposite_polarity(store):
 
 
 def test_boost_confidence_recomputes_from_counts(store):
-    """v0.13: boost_confidence increments reinforcement_count and
-    recomputes confidence as confidence_from_counts(R, 0). The old
-    flat-step + cap behavior is gone."""
-    from src.router.constants import confidence_from_counts
+    """v0.14: boost_confidence increments affirmed_count and recomputes
+    confidence as confidence_from_counts(affirmed, contradicted)."""
+    from src.layer2_routing.constants import confidence_from_counts
     fid = store.insert_fact(_mk(confidence=confidence_from_counts(0, 0)))
     new = store.boost_confidence(fid)
-    # First boost: reinforcement_count becomes 1.
     assert new == pytest.approx(confidence_from_counts(1, 0))
     new2 = store.boost_confidence(fid)
     assert new2 == pytest.approx(confidence_from_counts(2, 0))
     assert new2 > new
+    # The post-boost row reflects the count.
+    row = store._conn.execute(
+        "SELECT affirmed_count, contradicted_count FROM facts WHERE id = ?",
+        (fid,),
+    ).fetchone()
+    assert row["affirmed_count"] == 2
+    assert row["contradicted_count"] == 0
+
+
+def test_boost_confidence_uses_existing_contradicted_count(store):
+    """If contradicted_count is non-zero (set out-of-band, since
+    Phase 0 has no public writer), boost_confidence reads it into the
+    formula. Phase 6 introduces the writer; the formula honors the
+    column today."""
+    fid = store.insert_fact(_mk())
+    # Direct UPDATE to simulate a contradicted_count write that Phase 6
+    # will introduce. Tests of the read path don't need the writer yet.
+    store._conn.execute(
+        "UPDATE facts SET contradicted_count = 2 WHERE id = ?", (fid,),
+    )
+    store._conn.commit()
+    from src.layer2_routing.constants import confidence_from_counts
+    new = store.boost_confidence(fid)
+    assert new == pytest.approx(confidence_from_counts(1, 2))
 
 
 def test_query_facts_filters(store):
@@ -164,10 +234,8 @@ def test_query_facts_filters(store):
 
 
 def test_all_user_facts_only_returns_user_asserted_valid_rows(store):
-    store.insert_fact(_mk())  # user_asserted, valid
-    store.insert_fact(
-        _mk(asserted_by="model", verification_status="verified")
-    )
+    store.insert_fact(_mk())
+    store.insert_fact(_mk(asserted_by="model", verification_status="verified"))
     user_facts = store.all_user_facts()
     assert len(user_facts) == 1
     assert user_facts[0].asserted_by == "user"
@@ -201,7 +269,27 @@ def test_insert_rejects_bad_confidence(store):
         store.insert_fact(_mk(confidence=1.5))
 
 
-# ---------- new statuses (Section 6 split) ----------
+def test_insert_rejects_bad_is_session_local(store):
+    with pytest.raises(ValueError, match="is_session_local"):
+        store.insert_fact(_mk(is_session_local=2))  # type: ignore[arg-type]
+
+
+def test_insert_rejects_non_list_session_ids(store):
+    # Build the Fact directly to bypass _mk's list() coercion of the
+    # session_ids kwarg — the assertion under test is that the
+    # validator rejects a non-list.
+    bad = Fact(
+        pattern="preference", predicate="likes",
+        slots={"agent": "user", "object": "pb"},
+        polarity=1, asserted_by="user",
+        verification_status="user_asserted",
+        session_ids="not a list",  # type: ignore[arg-type]
+    )
+    with pytest.raises(ValueError, match="session_ids"):
+        store.insert_fact(bad)
+
+
+# ---------- v0.14 statuses (unchanged from v0.3 enum) ----------
 
 
 @pytest.mark.parametrize(
@@ -217,14 +305,14 @@ def test_insert_rejects_bad_confidence(store):
         "routing_anomaly",
     ],
 )
-def test_all_v03_statuses_accepted(store, status):
+def test_all_statuses_accepted(store, status):
     store.insert_fact(_mk(verification_status=status))
 
 
-# ---------- new pipeline stages ----------
+# ---------- pipeline stages ----------
 
 
-def test_v03_pipeline_stages_accepted(store):
+def test_pipeline_stages_accepted(store):
     tid = store.insert_turn("user", "hi")
     for stage in (
         "user_extraction", "user_storage", "assistant_draft",
@@ -242,13 +330,10 @@ def test_pipeline_event_rejects_unknown_stage(store):
         store.insert_pipeline_event(tid, "unknown_stage", {})
 
 
-# ---------- subscriber registry (live SSE flow view) ----------
+# ---------- subscriber registry ----------
 
 
 def test_pipeline_event_subscriber_fires_on_insert(store):
-    """A registered subscriber receives every successful insert with
-    (turn_id, stage, data). This is what /api/chat/stream uses to
-    push events to the SSE consumer in real time."""
     tid = store.insert_turn("user", "hi")
     received: list[tuple] = []
     token = store.register_event_subscriber(
@@ -274,8 +359,6 @@ def test_pipeline_event_subscriber_unregister_stops_callbacks(store):
 
 
 def test_pipeline_event_subscriber_exception_does_not_break_insert(store):
-    """A buggy subscriber must not crash the turn — insert still
-    succeeds, the row is durable, other subscribers still fire."""
     tid = store.insert_turn("user", "hi")
     other_received: list = []
     store.register_event_subscriber(
@@ -284,17 +367,13 @@ def test_pipeline_event_subscriber_exception_does_not_break_insert(store):
     store.register_event_subscriber(
         lambda t, s, d: other_received.append(s)
     )
-    # Should not raise.
     store.insert_pipeline_event(tid, "user_extraction", {})
-    # Row is persisted.
     events = store.get_pipeline_events(tid)
     assert len(events) == 1
-    # Healthy subscriber still got the call.
     assert other_received == ["user_extraction"]
 
 
 def test_pipeline_event_unregister_unknown_token_is_safe(store):
-    # Idempotent — no error if the token isn't currently registered.
     store.unregister_event_subscriber(lambda: None)
 
 
@@ -350,3 +429,162 @@ def test_reset_clears_everything(store):
     assert store.list_turns() == []
     assert store.get_pipeline_events(tid) == []
     assert store.get_cached_retrieval("q", 3600) is None
+
+
+# ---------- v0.14 schema invariants ----------
+
+
+def _columns_of(store, table: str) -> set[str]:
+    rows = store._conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r["name"] for r in rows}
+
+
+def test_facts_has_v014_columns(store):
+    cols = _columns_of(store, "facts")
+    assert "affirmed_count" in cols
+    assert "contradicted_count" in cols
+    assert "is_session_local" in cols
+    assert "session_ids" in cols
+
+
+def test_facts_does_not_have_legacy_columns(store):
+    """v0.14 renames reinforcement_count and removes session_id."""
+    cols = _columns_of(store, "facts")
+    assert "reinforcement_count" not in cols
+    assert "session_id" not in cols
+
+
+def test_session_ids_default_is_empty_array(store):
+    """A fact inserted without explicit session_ids round-trips as []."""
+    fid = store.insert_fact(_mk())
+    f = store.get_fact(fid)
+    assert f.session_ids == []
+    # The raw row stores it as the JSON literal '[]'.
+    raw = store._conn.execute(
+        "SELECT session_ids FROM facts WHERE id = ?", (fid,)
+    ).fetchone()
+    assert raw["session_ids"] == "[]"
+
+
+def test_check_constraint_rejects_session_local_with_two_ids(store):
+    """is_session_local=1 + len(session_ids)=2 violates the CHECK
+    constraint at the SQL layer."""
+    # Bypass the Python-side validator by writing directly via the
+    # connection — the assertion under test is that the DB itself
+    # enforces the constraint.
+    with pytest.raises(sqlite3.IntegrityError):
+        store._conn.execute(
+            """
+            INSERT INTO facts (
+                pattern, predicate, slots, polarity, confidence,
+                affirmed_count, contradicted_count,
+                is_session_local, session_ids,
+                asserted_by, verification_status, valid_from, valid_until,
+                source_turn_id, source_text, created_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "preference", "likes",
+                '{"agent":"user","object":"pb"}',
+                1, 0.5, 0, 0,
+                1, '["a", "b"]',  # is_session_local=1 with len-2 array
+                "user", "user_asserted",
+                "2026-01-01T00:00:00+00:00", None,
+                None, None,
+                "2026-01-01T00:00:00+00:00", "default_user",
+            ),
+        )
+        store._conn.commit()
+
+
+def test_check_constraint_allows_session_local_with_one_id(store):
+    """is_session_local=1 + len(session_ids)=1 is the canonical
+    session-local fact shape."""
+    fid = store.insert_fact(
+        _mk(is_session_local=1, session_ids=["sess_a"])
+    )
+    f = store.get_fact(fid)
+    assert f.is_session_local == 1
+    assert f.session_ids == ["sess_a"]
+
+
+def test_check_constraint_allows_session_local_with_zero_ids(store):
+    """A session-local fact with an empty session_ids list is
+    permitted by the CHECK (0 <= 1). Production callers will always
+    populate it, but the constraint is upper-bound only."""
+    fid = store.insert_fact(_mk(is_session_local=1, session_ids=[]))
+    f = store.get_fact(fid)
+    assert f.is_session_local == 1
+    assert f.session_ids == []
+
+
+def test_check_constraint_allows_cross_session_with_many_ids(store):
+    """is_session_local=0 has no length constraint on session_ids:
+    cross-session facts accumulate the set of sessions that
+    reaffirmed them."""
+    fid = store.insert_fact(
+        _mk(is_session_local=0, session_ids=["s1", "s2", "s3", "s4"])
+    )
+    f = store.get_fact(fid)
+    assert f.is_session_local == 0
+    assert f.session_ids == ["s1", "s2", "s3", "s4"]
+
+
+def test_python_validator_rejects_session_local_with_two_ids(store):
+    """Belt-and-suspenders: the Python validator catches the same
+    condition before the SQL CHECK does, with a clearer error."""
+    with pytest.raises(ValueError, match="session_ids"):
+        store.insert_fact(
+            _mk(is_session_local=1, session_ids=["a", "b"])
+        )
+
+
+# ---------- Phase 2: routing_memo schema ----------
+
+
+def test_routing_memo_table_exists(store):
+    """Phase 2 adds the routing_memo table. Pin its column shape so
+    schema drift surfaces here before it breaks the RoutingMemo
+    wrapper."""
+    cols = _columns_of(store, "routing_memo")
+    assert cols == {
+        "pattern", "predicate", "method", "reason",
+        "affirmed_count", "contradicted_count",
+        "created_at", "last_consulted_at",
+    }
+
+
+def test_reset_drops_routing_memo(store):
+    """reset() must wipe the routing_memo table along with everything
+    else — otherwise the dev-loop reset button would leave stale memo
+    rows around."""
+    store._conn.execute(
+        "INSERT INTO routing_memo (pattern, predicate, method, reason, "
+        "created_at) VALUES (?, ?, ?, ?, ?)",
+        ("preference", "likes", "user_authoritative", "x", "2026-01-01"),
+    )
+    store._conn.commit()
+    before = store._conn.execute(
+        "SELECT COUNT(*) AS n FROM routing_memo"
+    ).fetchone()
+    assert before["n"] == 1
+    store.reset()
+    after = store._conn.execute(
+        "SELECT COUNT(*) AS n FROM routing_memo"
+    ).fetchone()
+    assert after["n"] == 0
+
+
+def test_routing_memo_pipeline_stages_accepted(store):
+    """The three Phase 2 events must be on the accepted-stages list."""
+    tid = store.insert_turn("user", "test")
+    store.insert_pipeline_event(tid, "routing_validation_failed", {})
+    store.insert_pipeline_event(tid, "routing_memo_hit", {})
+    store.insert_pipeline_event(tid, "routing_memo_write", {})
+    events = store.get_pipeline_events(tid)
+    stages = {e["stage"] for e in events}
+    assert {
+        "routing_validation_failed",
+        "routing_memo_hit",
+        "routing_memo_write",
+    } <= stages

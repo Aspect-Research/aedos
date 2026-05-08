@@ -12,7 +12,7 @@ import time
 from typing import TYPE_CHECKING, Any, Iterable
 
 if TYPE_CHECKING:  # pragma: no cover
-    from src.fact_store import FactStore
+    from src.legacy.fact_store import FactStore
     from src.llm_client import ChatMessage, LLMClient
 
 

@@ -1,0 +1,409 @@
+"""Layer 2 step 2 — LLM-based per-claim verification routing.
+
+Decides per-claim how to verify it. Identical contract to v1's
+``src/llm_router.py``: the LLM picks one of five methods (python,
+python_with_canonical_constants, retrieval, user_authoritative,
+unverifiable) and returns a short reason. The router does NOT carry
+state — it's a pure ``claim -> RoutingDecision`` function. Memoization
+is the orchestrator's concern (see ``router.py`` and
+``routing_memo.py``).
+
+The system prompt is ported from v1 with one Phase-2 addition: a
+worked example for mereological claims. Mereological's Phase 1 yaml
+comment named ``retrieval`` as the default route (constitutive
+parthood is a world fact; Wikipedia / gazetteers can confirm). The
+worked example pins this calibration in the prompt so the LLM
+doesn't drift to "categorical" or "spatial_temporal" routing
+instincts when it sees a mereological claim.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from src.llm_client import LLMClient
+
+
+# The five routing methods. Mirrors ``routing_memo.ROUTING_METHODS``
+# and the routing_memo table's CHECK constraint.
+ROUTING_METHODS = (
+    "python",
+    "python_with_canonical_constants",
+    "retrieval",
+    "user_authoritative",
+    "unverifiable",
+)
+
+
+@dataclass
+class RoutingDecision:
+    """One LLM-router classification.
+
+    Same shape as v1's RoutingDecision so the migration is mechanical.
+    The ``raw`` dict carries the full tool-call payload for diagnostic
+    surfacing in the trace UI.
+    """
+
+    method: str  # one of ROUTING_METHODS
+    reason: str
+    python_inputs_self_contained: Optional[bool] = None
+    retrieval_query_hint: Optional[str] = None
+    canonical_constants_needed: Optional[list[str]] = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "reason": self.reason,
+            "python_inputs_self_contained": self.python_inputs_self_contained,
+            "retrieval_query_hint": self.retrieval_query_hint,
+            "canonical_constants_needed": self.canonical_constants_needed,
+        }
+
+
+_ROUTING_TOOL = {
+    "name": "record_routing_decision",
+    "description": (
+        "Record the verification method that should be used to check this "
+        "claim, with a short reason."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "method": {
+                "type": "string",
+                "enum": list(ROUTING_METHODS),
+                "description": (
+                    "The verification method to use. Prefer python > "
+                    "python_with_canonical_constants > retrieval > "
+                    "user_authoritative > unverifiable when several "
+                    "methods could apply."
+                ),
+            },
+            "reason": {
+                "type": "string",
+                "description": (
+                    "One short sentence explaining why this method was "
+                    "chosen. Surfaces in the trace UI."
+                ),
+            },
+            "python_inputs_self_contained": {
+                "type": "boolean",
+                "description": (
+                    "Only set when method is python or "
+                    "python_with_canonical_constants. True iff the inputs "
+                    "needed for the computation are present (or directly "
+                    "derivable) in the claim's slots — no external data."
+                ),
+            },
+            "retrieval_query_hint": {
+                "type": "string",
+                "description": (
+                    "Only set when method is retrieval. A short suggestion "
+                    "of what to search for. Not the actual query."
+                ),
+            },
+            "canonical_constants_needed": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Only set when method is python_with_canonical_"
+                    "constants. Short labels for each canonical reference "
+                    "the code may need (e.g. 'list of US states', "
+                    "'months of the year', 'primes under 100')."
+                ),
+            },
+        },
+        "required": ["method", "reason"],
+    },
+}
+
+
+_ROUTER_SYSTEM = """You are deciding how to verify a factual claim made by another AI.
+
+You have FIVE verification methods available. Pick one.
+
+# Methods
+
+**python** — generate code that resolves the claim from its own inputs alone. Use this when the claim's truth value can be determined by computation without referencing any external data source. Examples: counting letters in a literal word, arithmetic on numbers stated in the claim, string transformations, primality / palindrome / anagram checks, comparing values stated in the claim, set operations on lists in the claim, day-of-week from a date in the claim, duration between two dates in the claim, internal consistency checks across stated values.
+
+**python_with_canonical_constants** — same as python, except the code may reference small, stable, widely-known canonical data the code-writing LLM can emit literally. Lists of US states, months of the year, primes under 100, ASCII tables, days of the week — things that don't change and are unambiguous. Use this only when the claim is computable given (claim slots) + (one or more such canonical references). Flag what's needed in `canonical_constants_needed`. The system applies an extra cross-check (two independent code generations) to these.
+
+**retrieval** — search the web and judge from snippets. Use this when the claim requires external information that isn't computable from the claim's inputs and isn't a stable canonical reference: specific people, places, events, historical dates, current world state, populations, geographic facts, who-did-what, **constitutive part-whole relations between named entities** (e.g. "Williamstown is part of Massachusetts" — territorial parthood is a world fact authoritative sources can confirm).
+
+**user_authoritative** — the claim is about the user (preferences, beliefs, location, plans, etc.) and the user is ground truth. Use this when the claim's subject is the user and the predicate concerns user state. Common slots that signal this: agent='user', entity='user'.
+
+**unverifiable** — no method above applies. Reserve this for the small set of claims that genuinely have no checkable answer:
+  - **Future predictions** — "Mars will be colonized by 2050", "the Fed will cut rates next quarter".
+  - **Internal mental states of non-users** — "Sarah believes X", "the critic thought Y was elegant".
+  - **Aesthetic / normative judgments** — "the poem is beautiful", "the law is unfair".
+  - **Vacuous tautologies / framing artifacts** — "sipping is a drinking method", "someone who's very thirsty is a thirsty person". These usually come from the extractor over-extracting; route them to unverifiable so the corrector can drop them.
+  - **Model-self-knowledge claims** — "GPT-4 was trained on X", "this model can't browse the web".
+
+Crucially, **encyclopedic-but-fuzzy claims are NOT unverifiable** — they're retrieval. If a claim is the kind of thing Wikipedia, a medical reference, or any reasonable encyclopedia would have an answer to, route it to retrieval even when the assertion is approximate or expressed as a range. Examples that look unverifiable but are actually retrieval:
+
+  - "A typical human can drink roughly 0.5 to 1 gallon of water per minute." → retrieval. Physiological capacity has published ranges; a judge can compare.
+  - "The safe rate for sustained hydration is a few cups over several hours." → retrieval. Hydration guidelines are published by health authorities.
+  - "Some people have faster swallowing reflexes." → retrieval. Variability in pharyngeal reflex is documented in medical literature.
+  - "Water intoxication is hyponatremia." → retrieval. The relationship is medically defined.
+  - "Drinking too much water can cause hyponatremia." → retrieval. Causal medical claim with published evidence.
+
+The test for retrieval-vs-unverifiable: **could a competent human answer this by reading sources?** If yes, retrieval. Unverifiable is reserved for things where no source could settle the question — predictions, tastes, internal states of others.
+
+# Preference order
+
+When multiple methods could apply, prefer earlier over later: python > python_with_canonical_constants > retrieval > user_authoritative > unverifiable. Earlier methods are stronger — more deterministic, less subject to LLM judgment errors.
+
+# Crucial: do not assume external data when it isn't needed
+
+A common failure is routing to retrieval out of habit when the claim is actually computable from its own inputs. Read the claim carefully:
+
+  - "Trump's first term lasted 4 years (2017-2021)." → python. The duration is computable as 2021 - 2017 from values stated in the claim itself. The dates aren't being verified; the arithmetic is.
+  - "Trump's first term started in 2017." → retrieval. Now the date itself is being asserted, and python can't check that without external data.
+
+Notice the difference: when the claim asserts a relation BETWEEN values that are in the claim, route to python. When the claim asserts the values themselves, route to retrieval.
+
+# What python can actually do — full Python stdlib is available
+
+The python verifier runs the generated code in a sandbox with the FULL Python standard library. Many things that look like "external data" or "real-time information" are actually local computation. Capabilities that commonly trip up routing decisions:
+
+  - **System clock + IANA timezone database**: `datetime.now(...)`, `zoneinfo.ZoneInfo(...)`. Wall-clock times, current local times in any city, UTC offsets, DST resolution — all derive from the OS clock plus the IANA tz database that ships with Python.
+  - **Math + statistics + exact arithmetic**: `math`, `statistics`, `fractions`, `decimal`, `random` (seedable). Means, medians, stdev, factorials, primality, exact decimals.
+  - **String / regex / unicode**: `re`, `unicodedata`, encoding tables. Word and character counts, pattern matches, normalization.
+  - **Hashing / encoding**: `hashlib`, `base64`, `binascii`, `urllib.parse`. SHA hashes, URL-encoding, parsing.
+  - **Calendar math**: `calendar`, `datetime` arithmetic. Days in month, weekday from date, Easter dates.
+  - **Subprocess + a real Python interpreter**: arbitrary algorithmic computation that can be expressed in stdlib code.
+
+None of these are "external data." A claim that needs ONLY these (plus values stated in the claim) is **python**.
+
+# The general test
+
+For each claim, ask: *can the answer be produced from (claim slots) + (Python stdlib + system clock) ALONE, with no lookup against an external corpus?*
+
+  - **Yes → python.** Even when the claim looks like real-time data ("what time is it in Cairo"), aesthetic computation ("how many vowels in 'apple'"), or stable canonical math ("first 100 primes sum to ...").
+  - **No → retrieval.** When the answer requires a specific fact about a person, place, event, or current world state that isn't derivable from stdlib ("Tokyo's population", "Marie Curie's birth year", "the cause of the 1992 Cairo earthquake").
+
+Edge boundary — same pattern, different routing depending on what's being asked:
+
+  - "It is 9:56 am in Cairo right now" → **python** (system clock + zoneinfo).
+  - "Sunrise in Cairo today is at 5:42 AM" → **retrieval** (astronomical ephemeris, not stdlib).
+  - "How many vowels in 'apple'" → **python** (string operation).
+  - "How many books has Stephen King published" → **retrieval** (external author bibliography).
+  - "Current year is 2026" → **python** (`datetime.now().year`).
+  - "Year of the most recent US presidential election" → **retrieval** (event lookup).
+
+# Multi-claim convention (important)
+
+A single claim may package an arithmetic check around values that themselves require retrieval. Example: "Marie Curie was born in 1867 and died in 1934, so she lived 67 years." The years require retrieval; the arithmetic 1934-1867=67 is python. For v0.5, route this case to **python** — the arithmetic is what's being asserted; the dates are inputs the claim takes as given. The router should not try to split the claim. If the dates themselves are wrong, that's a separate retrieval-class claim that the extractor would emit separately.
+
+# Worked examples
+
+Order of these examples is deliberate. Edge cases come first.
+
+## Edge: arithmetic-around-retrieved-values
+
+Claim: pattern=quantitative, predicate=lifespan_years, slots={subject:'Marie Curie', property:'years_lived', value:67, birth_year:1867, death_year:1934}, polarity=1
+→ method: python, reason: "Arithmetic on stated dates (death_year - birth_year); take the dates as inputs the claim provides.", python_inputs_self_contained: true.
+
+## Edge: arithmetic-around-retrieved-values, alternate slot names
+
+The extractor may use different slot names depending on the duration kind. Treat ANY slot whose value is a number-like input the python code can use as evidence of self-containment. Examples that should ALL route to python:
+
+  - lifespan_years with birth_year + death_year slots
+  - age_years with birth_date + reference_date slots
+  - term_duration with valid_from + valid_until slots
+  - elapsed_days with start_date + end_date slots
+  - distance_km with origin_coords + destination_coords slots
+
+The shape is: a numeric `value` claimed AS the result of an operation on OTHER numeric/date slots present in the same claim. That's python territory regardless of the predicate label.
+
+## Edge: external-string-verification looks like python but isn't
+
+Claim: pattern=relational, predicate=opens_with, slots={subject:'Gettysburg Address', object:"Four score and seven years ago"}, polarity=1
+→ method: retrieval, reason: "Verifying that a literal string starts an external document requires fetching the document; no python operation on the claim's slots resolves this.", retrieval_query_hint: "Gettysburg Address opening line".
+
+## python (pure)
+
+Claim: pattern=quantitative, predicate=has_count, slots={subject:'strawberry', property:'letter_r', value:3}, polarity=1
+→ method: python, reason: "Counting letters in a literal word is pure computation.", python_inputs_self_contained: true.
+
+Claim: pattern=relational, predicate=reverse_of, slots={subject:'nairatilage', object:'egalitarian'}, polarity=1
+→ method: python, reason: "String reversal of a literal is deterministic.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=product_equals, slots={subject:'23 times 47', property:'product', value:1081}, polarity=1
+→ method: python, reason: "Arithmetic on literal numbers in the claim.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=term_duration, slots={subject:'Trump first term', property:'years', value:4, valid_from:'2017', valid_until:'2021'}, polarity=1
+→ method: python, reason: "Date arithmetic on years stated in the claim's slots (valid_from to valid_until).", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=day_of_week, slots={subject:'2025-01-20', property:'weekday', value:'Monday'}, polarity=1
+→ method: python, reason: "Day of the week from a literal date is computable via datetime.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=is_perfect_cube, slots={subject:'1729', property:'is_cube', value:false}, polarity=1
+→ method: python, reason: "Cube/root test on a literal integer is deterministic.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=is_prime, slots={subject:'73', property:'is_prime', value:true}, polarity=1
+→ method: python, reason: "Primality test on a literal integer; no external constants needed.", python_inputs_self_contained: true.
+
+Claim: pattern=relational, predicate=is_palindrome_of, slots={subject:'racecar', object:'racecar'}, polarity=1
+→ method: python, reason: "Palindrome check is pure computation on the literal string.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=conditional_date, slots={subject:'three days after Wednesday', property:'weekday', value:'Saturday'}, polarity=1
+→ method: python, reason: "Date arithmetic given a stated premise; no external data.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=current_time, slots={subject:'Cairo', property:'time', value:'9:56 am'}, polarity=1
+→ method: python, reason: "Current local time in a city derives from the system clock + Python stdlib's IANA timezone database (zoneinfo.ZoneInfo('Africa/Cairo')). The 'right now' aspect is fine — the verifier runs within seconds of the claim and the comparator can tolerate small drift.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=time_difference, slots={subject:'Cairo', object:'New York', property:'hours_ahead', value:7}, polarity=1
+→ method: python, reason: "Hour offset between two cities = subtraction of their current UTC offsets (zoneinfo + datetime). DST nuance is the comparator's concern; routing is python.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=has_count, slots={subject:'New York', property:'time_zone_offset_from_Cairo_in_hours', value:-7}, polarity=1
+→ method: python, reason: "Predicate label 'has_count' is incidental — read the property and subject. The property describes a timezone offset between two cities, computable from zoneinfo + datetime. The same lesson applies to any claim where the predicate label is generic but the property names a stdlib-resolvable computation: read what's actually being asserted.", python_inputs_self_contained: true.
+
+Claim: pattern=quantitative, predicate=has_count, slots={subject:'apple', property:'vowel_count', value:2}, polarity=1
+→ method: python, reason: "Same predicate-label-is-incidental lesson — the property is a string operation on a literal value. Pure stdlib (string iteration over the vowel set). Python.", python_inputs_self_contained: true.
+
+## python_with_canonical_constants
+
+Claim: pattern=quantitative, predicate=us_states_starting_with_letter, slots={subject:'US states', property:'starting_with_A', value:4}, polarity=1
+→ method: python_with_canonical_constants, reason: "Counting US states whose names start with a letter requires the (stable) list of states.", python_inputs_self_contained: false, canonical_constants_needed: ["list of US states"].
+
+Claim: pattern=quantitative, predicate=days_in_week, slots={subject:'a week', property:'days', value:7}, polarity=1
+→ method: python_with_canonical_constants, reason: "7 days/week is a stable canonical constant; cross-checking guards against accidental alternate calendars.", python_inputs_self_contained: false, canonical_constants_needed: ["days of the week"].
+
+## retrieval
+
+Claim: pattern=role_assignment, predicate=holds_role, slots={agent:'Donald Trump', role:'47th President', org:'United States'}, polarity=1
+→ method: retrieval, reason: "Current world-state claim about a specific person's role.", retrieval_query_hint: "Donald Trump 47th President".
+
+Claim: pattern=event, predicate=won_prize, slots={participants:['Marie Curie'], event_type:'Nobel Prize', occurred_at:'1903'}, polarity=1
+→ method: retrieval, reason: "Specific historical event date — needs external source.", retrieval_query_hint: "Marie Curie Nobel Prize 1903".
+
+Claim: pattern=quantitative, predicate=population_of, slots={subject:'Tokyo', property:'population', value:14000000}, polarity=1
+→ method: retrieval, reason: "Population is external data, not computable.", retrieval_query_hint: "Tokyo population".
+
+Claim: pattern=spatial_temporal, predicate=largest_ocean, slots={entity:'Pacific Ocean', location:'Earth', relation_kind:'largest'}, polarity=1
+→ method: retrieval, reason: "Geographic superlative; needs external reference.", retrieval_query_hint: "largest ocean Earth".
+
+## retrieval (mereological — constitutive parthood)
+
+Mereological claims state that one named entity is a constitutive part / member / component of another named, specific entity (NOT a kind). Whether Williamstown is part of Massachusetts is a world fact that gazetteers, encyclopedias, and government sources confirm. Default route: retrieval. The "what's the test?" check — could a competent human answer this by reading sources? — clearly applies.
+
+Claim: pattern=mereological, predicate=part_of, slots={part:'Williamstown', whole:'Massachusetts'}, polarity=1
+→ method: retrieval, reason: "Constitutive part-whole relation between named entities; gazetteer or encyclopedia can confirm territorial parthood.", retrieval_query_hint: "Williamstown Massachusetts town".
+
+Claim: pattern=mereological, predicate=member_of, slots={part:'Massachusetts', whole:'New England'}, polarity=1
+→ method: retrieval, reason: "Membership in a named geographic group; encyclopedic.", retrieval_query_hint: "Massachusetts New England states".
+
+Claim: pattern=mereological, predicate=composed_of, slots={part:'hydrogen and oxygen', whole:'water'}, polarity=1
+→ method: retrieval, reason: "Compositional chemistry fact; published in any chemistry reference.", retrieval_query_hint: "water composition hydrogen oxygen".
+
+## user_authoritative
+
+Claim: pattern=preference, predicate=likes, slots={agent:'user', object:'peanut butter'}, polarity=1
+→ method: user_authoritative, reason: "User preference; the user is ground truth.".
+
+Claim: pattern=spatial_temporal, predicate=lives_in, slots={entity:'user', location:'San Francisco'}, polarity=1
+→ method: user_authoritative, reason: "User location; user is authoritative. If no prior is in the store, the dispatcher will mark this as unverified.".
+
+## retrieval (encyclopedic-but-fuzzy — NOT unverifiable)
+
+Claim: pattern=quantitative, predicate=can_drink, slots={subject:'typical human', property:'water_intake_per_minute', value:'0.5 to 1 gallon'}, polarity=1
+→ method: retrieval, reason: "Physiological capacity claim with a published range — medical literature can confirm or contradict.", retrieval_query_hint: "human water intake rate per minute physiology".
+
+Claim: pattern=quantitative, predicate=safe_rate_for_sustained_hydration, slots={subject:'safe hydration rate', property:'rate', value:'a few cups over several hours'}, polarity=1
+→ method: retrieval, reason: "Health guideline that authorities publish; not a future prediction or aesthetic judgment.", retrieval_query_hint: "safe hydration rate guidelines per hour".
+
+Claim: pattern=categorical, predicate=is_a, slots={entity:'water intoxication', category:'hyponatremia'}, polarity=1
+→ method: retrieval, reason: "Medical equivalence claim — checkable in encyclopedic / medical sources.", retrieval_query_hint: "water intoxication hyponatremia definition".
+
+Claim: pattern=relational, predicate=can_cause, slots={subject:'excess water consumption', relation:'can_cause', object:'hyponatremia'}, polarity=1
+→ method: retrieval, reason: "Causal medical claim with established literature.", retrieval_query_hint: "water intoxication causes hyponatremia".
+
+## unverifiable (genuinely no checkable answer)
+
+Claim: pattern=propositional_attitude, predicate=feels, slots={agent:'user', proposition:'the novel is elegant'}, polarity=1
+→ method: user_authoritative, reason: "User's own attitude is authoritative.".
+(But:)
+Claim: pattern=propositional_attitude, predicate=feels, slots={agent:'a critic', proposition:'the novel is elegant'}, polarity=1
+→ method: unverifiable, reason: "Aesthetic judgment by a non-user agent — not measurable, not the user's own state.".
+
+Claim: pattern=propositional_attitude, predicate=likely, slots={agent:'Sarah', proposition:'likes chocolate'}, polarity=1
+→ method: unverifiable, reason: "Probabilistic claim about a non-user's preference.".
+
+Claim: pattern=event, predicate=will_happen, slots={event_type:'Fed rate cut', occurred_at:'2026-05'}, polarity=1
+→ method: unverifiable, reason: "Future event prediction.".
+
+Claim: pattern=categorical, predicate=is_a, slots={entity:'sipping', category:'drinking method'}, polarity=1
+→ method: unverifiable, reason: "Vacuous lexical tautology — the category is a paraphrase of the entity. Likely an extractor artifact; nothing meaningful to check.".
+
+Claim: pattern=categorical, predicate=is_a, slots={entity:"someone who's very thirsty", category:'very thirsty person'}, polarity=1
+→ method: unverifiable, reason: "Vacuous tautology — the category restates the entity description. Extractor artifact.".
+
+# Output
+
+Always call the `record_routing_decision` tool exactly once. Always include `reason`. Set `python_inputs_self_contained` only for python / python_with_canonical_constants. Set `retrieval_query_hint` only for retrieval. Set `canonical_constants_needed` only for python_with_canonical_constants."""
+
+
+def _build_user_message(claim: dict) -> str:
+    return (
+        "Claim:\n"
+        f"  pattern: {claim.get('pattern')!r}\n"
+        f"  predicate: {claim.get('predicate')!r}\n"
+        f"  slots: {json.dumps(claim.get('slots') or {}, default=str)}\n"
+        f"  polarity: {claim.get('polarity')!r}\n"
+        f"  source_text: {claim.get('source_text', '')!r}\n\n"
+        "Decide which verification method applies and call "
+        "record_routing_decision."
+    )
+
+
+def route_claim(claim: dict, llm: LLMClient) -> RoutingDecision:
+    """Ask the router LLM how to verify ``claim``.
+
+    Same purpose tag as v1 (``"router"``) so the per-purpose model
+    routing in ``llm_client.py`` resolves to the same model. v2's
+    parallel build deliberately reuses LLMClient unchanged — the
+    purpose strings are a calibration knob, not part of the routing
+    architecture.
+    """
+    raw = llm.extract_with_tool(
+        system=_ROUTER_SYSTEM,
+        user_message=_build_user_message(claim),
+        tool=_ROUTING_TOOL,
+        purpose="router",
+    )
+    method = str(raw.get("method") or "").strip()
+    if method not in ROUTING_METHODS:
+        # Coerce unknown methods to unverifiable rather than crashing
+        # — the trace shows the bad value and the orchestrator can
+        # still proceed to write a memo row with the coerced value.
+        method = "unverifiable"
+    reason = str(raw.get("reason") or "").strip()
+
+    self_contained = raw.get("python_inputs_self_contained")
+    if not isinstance(self_contained, bool):
+        self_contained = None
+
+    query_hint = raw.get("retrieval_query_hint")
+    if not isinstance(query_hint, str) or not query_hint.strip():
+        query_hint = None
+
+    constants = raw.get("canonical_constants_needed")
+    if not isinstance(constants, list):
+        constants = None
+    else:
+        constants = [str(c) for c in constants if isinstance(c, (str, int, float))]
+        if not constants:
+            constants = None
+
+    return RoutingDecision(
+        method=method,
+        reason=reason,
+        python_inputs_self_contained=self_contained,
+        retrieval_query_hint=query_hint,
+        canonical_constants_needed=constants,
+        raw=dict(raw),
+    )

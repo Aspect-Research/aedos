@@ -192,7 +192,7 @@ def main(argv: list[str]) -> int:
     from src.llm_client import ChatMessage
     from src.llm_clients import build_chat_backend
     from src.llm_client import LLMClient
-    from src.pipeline import build_pipeline
+    from src.legacy.pipeline import build_pipeline
 
     llm = LLMClient()
     chat_backend = build_chat_backend(llm=llm)
