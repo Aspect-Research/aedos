@@ -1408,7 +1408,15 @@ function renderEventStepNode(step, event, ctx) {
 // just the action type), and an inline word-level diff if the
 // rewrite actually changed the draft.
 function renderCorrectionInline(container, data) {
-  const interventions = data.interventions || [];
+  // v0.14.3 — only show interventions the corrector actually acts
+  // on (replace / hedge / soften). pass_through and noop are no-ops
+  // by definition; listing them all turns the Correction box into a
+  // wall of "nothing happened" rows. Skipped/triaged claims live
+  // behind the Claims card's drop-down already.
+  const interventions = (data.interventions || []).filter((iv) =>
+    iv.intervention_type !== "pass_through"
+    && iv.intervention_type !== "noop"
+  );
   if (interventions.length > 0) {
     const ivWrap = el("div", { className: "interventions-inline" });
     interventions.forEach((iv) => {
@@ -1575,20 +1583,96 @@ function renderClaimsNode(state, stageMap, ctx) {
     node.appendChild(el("div", { className: "flow-step-meta",
       textContent: "no claims extracted from the draft" }));
   } else {
-    const list = el("ul", { className: "claim-list claim-list-detailed" });
+    // v0.14.3 — partition claims into visible (verified / contradicted
+    // / inconclusive / anomaly / in-flight / pending) and skipped
+    // (triage gate suppressed verification AND walker missed all
+    // tiers). Skipped claims clutter the chat-side view; hide them
+    // behind a drop-down at the bottom.
+    const visibleClaims = [];
+    const skippedClaims = [];
     valid.forEach((claim) => {
       const decision = decisionByKey[claimKey(claim)] || null;
       let rowState;
       if (decision) rowState = "done";
       else if (routedKeys.has(claimKey(claim))) rowState = "in_flight";
       else rowState = "pending";
-      list.appendChild(renderClaimItem(claim, rowState, decision));
+      const isSkipped = (
+        rowState === "done"
+        && decision
+        && _isTriageSkipped(decision)
+      );
+      (isSkipped ? skippedClaims : visibleClaims).push({
+        claim, rowState, decision,
+      });
     });
-    node.appendChild(list);
+
+    if (visibleClaims.length) {
+      const list = el("ul", { className: "claim-list claim-list-detailed" });
+      visibleClaims.forEach(({ claim, rowState, decision }) => {
+        list.appendChild(renderClaimItem(claim, rowState, decision));
+      });
+      node.appendChild(list);
+    } else if (skippedClaims.length) {
+      // All claims skipped — show a hint so the operator knows the
+      // claims came in but were triaged out.
+      node.appendChild(el("div", { className: "flow-step-meta",
+        textContent: "all extracted claims were triaged out (none had a "
+                   + "falsifiable surface area worth verifying)" }));
+    }
+
+    if (skippedClaims.length) {
+      node.appendChild(_renderSkippedClaimsDropdown(skippedClaims));
+    }
   }
 
   wrapper.appendChild(node);
   return wrapper;
+}
+
+// v0.14.3 — A claim is "triage-skipped" iff the triage gate emitted
+// PASS_THROUGH AND the walker landed on the no-information statuses
+// (unverifiable_pending_implementation / retrieval_failed) — i.e.,
+// fresh dispatch was suppressed and U/W/derivation also missed. The
+// new pass_through intervention with the triage reason is the
+// canonical signal.
+function _isTriageSkipped(decision) {
+  const triage = decision && decision.triage;
+  if (!triage || triage.decision !== "pass_through") return false;
+  const walker = decision.walker || {};
+  const status = walker.verification_status;
+  return walker.served_from_tier === "fresh"
+    && (status === "unverifiable_pending_implementation"
+        || status === "retrieval_failed");
+}
+
+// Drop-down at the bottom of the Claims card listing the triage-
+// skipped claims. Collapsed by default; expanded reveals each
+// skipped claim with a muted style. Click on the header toggles.
+function _renderSkippedClaimsDropdown(skippedClaims) {
+  const wrap = el("div", { className: "claims-skipped-dropdown" });
+  const header = el("button", {
+    className: "claims-skipped-toggle",
+    textContent: `▸ ${skippedClaims.length} claim${skippedClaims.length === 1 ? "" : "s"} skipped (verifiability triage)`,
+    title: "Triage gate decided these claims weren't worth verifying. "
+         + "No text change applied; model's wording stands.",
+  });
+  const body = el("ul", {
+    className: "claim-list claim-list-detailed claims-skipped-list",
+  });
+  skippedClaims.forEach(({ claim, rowState, decision }) => {
+    body.appendChild(renderClaimItem(claim, rowState, decision));
+  });
+  let open = false;
+  header.addEventListener("click", () => {
+    open = !open;
+    header.textContent =
+      `${open ? "▾" : "▸"} ${skippedClaims.length} claim${skippedClaims.length === 1 ? "" : "s"} skipped (verifiability triage)`;
+    body.style.display = open ? "" : "none";
+  });
+  body.style.display = "none";
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  return wrap;
 }
 
 // One claim row inside the Claims card. The COLLAPSED row shows:

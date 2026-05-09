@@ -81,6 +81,23 @@ role_assignment:
     role_assignment vs relational: relational is a relation between two
     entities (defeated_in_election, married_to). role_assignment binds an
     entity to a role/office.
+  default_routing_method: retrieval
+  boundary_examples:
+    - input: "Marie Curie was a physicist"
+      this_pattern: false
+      correct_pattern: categorical
+      reason: |
+        "physicist" is a profession (an intrinsic kind), not an office
+        someone holds. Conferred-and-relinquishable roles (President,
+        CEO) are role_assignment; intrinsic professions (physicist,
+        baker, novelist) are categorical.
+    - input: "Trump defeated Harris in the 2024 election"
+      this_pattern: false
+      correct_pattern: relational
+      reason: |
+        Election outcomes are relations between two entities, not role
+        bindings. The role-assignment claim from the same election is
+        "Trump is the 47th President" — that's a separate fact.
 
 # =====================================================================
 preference:
@@ -126,6 +143,33 @@ preference:
     thing or person liked/disliked); propositional_attitude takes a
     PROPOSITION (a sentence-like thing — "I believe Fed will cut rates").
     "I think peanut butter is the best" is a preference, not a belief.
+    preference is RESERVED FOR HUMAN/USER-STATED AFFINITIES. Animal
+    behavior, organizational tendencies, and any "X does Y to/with Z"
+    pattern about a non-human subject is RELATIONAL, not preference.
+  agent_constraint: must_be_user
+  subject_slot_for_constraint: agent
+  default_routing_method: user_authoritative
+  boundary_examples:
+    - input: "baboons forage for natural foods"
+      this_pattern: false
+      correct_pattern: relational
+      reason: |
+        Animal behavior — what a species does — is a relation between
+        entities, not a preference. preference is reserved for human-
+        stated affinities; using it for non-human agents violates the
+        pattern's USER_SUBJECT invariant and the validator will reject.
+    - input: "Anthropic prefers safety research"
+      this_pattern: false
+      correct_pattern: relational
+      reason: |
+        Organizational tendencies are relations, not preferences.
+        "Anthropic does X with Y" is relational regardless of how
+        affinity-shaped the verb sounds.
+    - input: "I dislike olives"
+      this_pattern: true
+      reason: |
+        First-person human affinity; agent="user" — the canonical
+        preference shape.
 
 # =====================================================================
 quantitative:
@@ -179,6 +223,28 @@ quantitative:
     `event` pattern. "Anthropic was founded in 2021" is quantitative.
     "Anthropic was founded by Dario Amodei" is relational (subject:
     Anthropic, relation: founded_by, object: Dario Amodei).
+  default_routing_method: python_with_canonical_constants
+  triage_verify_predicates:
+    # Counting / string operations the python verifier settles
+    # against the source text.
+    - has_count
+    - letter_count
+    - word_count
+    - character_count
+    - vowel_count
+    # Time / clock operations the python verifier settles via zoneinfo.
+    - current_time
+    - current_date
+    - current_day_of_week
+    - current_year
+    - time_difference_hours
+    - time_difference_days
+  boundary_examples:
+    - input: "How many r's are in 'strawberry'?"
+      this_pattern: false
+      reason: |
+        Question, not assertion. Counting questions yield no claim;
+        only counting DECLARATIVES extract.
 
 # =====================================================================
 spatial_temporal:
@@ -247,6 +313,28 @@ spatial_temporal:
         surface form).
     Both can be true of the same pair — extract per the surface form
     the speaker used, not by inference.
+  default_routing_method: retrieval
+  triage_verify_predicates:
+    # Locational predicates the retrieval verifier can settle against
+    # Wikipedia geography / timezone / political-boundary articles.
+    - located_in
+    - capital_of
+    - borders
+    - in_continent
+    - in_timezone
+  boundary_examples:
+    - input: "Cairo is in Egypt Standard Time (UTC+2)"
+      this_pattern: true
+      reason: |
+        Timezone is a locational containment claim — `located_in`
+        with location naming the timezone region. Retrieval verifier
+        can confirm via Wikipedia's geography or timezone articles.
+    - input: "Williamstown is part of Massachusetts"
+      this_pattern: false
+      correct_pattern: mereological
+      reason: |
+        "is part of" — constitutive parthood, not locational
+        containment. Speaker's surface form is the tiebreaker.
 
 # =====================================================================
 categorical:
@@ -303,6 +391,18 @@ categorical:
     (Massachusetts member_of New England), NOT categorical, because
     "the New England states" names a specific group of six states,
     not a kind.
+  default_routing_method: retrieval
+  boundary_examples:
+    - input: "Donald Trump is the 47th President"
+      this_pattern: false
+      correct_pattern: role_assignment
+      reason: |
+        "47th President" is a held office, not an intrinsic kind.
+        Conferred-and-relinquishable.
+    - input: "Tokyo is a city"
+      this_pattern: true
+      reason: |
+        "city" is a kind / type. Intrinsic to Tokyo, not conferred.
 
 # =====================================================================
 relational:
@@ -367,6 +467,36 @@ relational:
     47th President" is role_assignment (binds person to office).
     Election outcomes are NOT succession — Trump defeated Harris in the
     2024 election is `defeated_in_election`, not `succeeded_by`.
+    relational vs preference: animal behavior (forages_for, hunts,
+    migrates_to) and organizational tendencies (favors, focuses_on)
+    are relational, NOT preference. preference is reserved for
+    human/user-stated affinities (agent="user").
+  default_routing_method: retrieval
+  triage_verify_predicates:
+    # String operations the python verifier handles deterministically.
+    - contains_substring
+    - is_anagram_of
+    - reverse_of
+    - starts_with
+    - ends_with
+    # Lookup-friendly relations the retrieval verifier settles cleanly.
+    - capital_of
+    - founded_by
+    - married_to
+    - defeated_in_election
+    - authored_by
+  boundary_examples:
+    - input: "baboons forage for natural foods like grasses and roots"
+      this_pattern: true
+      reason: |
+        Animal behavior (a relation between baboon and food-types) —
+        belongs here, NOT in preference. preference is for human-
+        stated affinities only.
+    - input: "I love peanut butter"
+      this_pattern: false
+      correct_pattern: preference
+      reason: |
+        First-person human affinity. Preference, not relational.
 
 # =====================================================================
 event:
@@ -417,6 +547,14 @@ event:
     OR event (event_type: company_founding, participants: [Dario,
     Anthropic], occurred_at: 2021). Both are valid; extract relational
     when the time isn't named, event when it is.
+  default_routing_method: retrieval
+  boundary_examples:
+    - input: "Trump was inaugurated as the 47th president"
+      this_pattern: true
+      reason: |
+        Inauguration is a discrete event with a named participant.
+        The role_assignment claim ("Trump holds the role 47th
+        President") is a separate fact; both can be extracted.
 
 # =====================================================================
 propositional_attitude:
@@ -465,6 +603,17 @@ propositional_attitude:
     food" → proposition: "peanut butter is the best food"). The test
     is: can the object be replaced by a complete sentence? If yes,
     propositional_attitude.
+  agent_constraint: must_be_user
+  subject_slot_for_constraint: agent
+  default_routing_method: user_authoritative
+  boundary_examples:
+    - input: "the model believes the Fed will cut rates"
+      this_pattern: false
+      reason: |
+        Third-party mental attitudes are unverifiable (we can't
+        inspect another agent's head). Either drop the claim or
+        re-frame as a quote. Validator will reject this pattern with
+        a non-user agent.
 
 # =====================================================================
 mereological:
@@ -565,6 +714,20 @@ mereological:
     Self-parthood is invalid. The part and the whole must be distinct
     entities. Phase 2's validator enforces this; Phase 1 simply
     requires that example_extractions never violate it.
+  default_routing_method: retrieval
+  distinct_slots: [part, whole]
+  boundary_examples:
+    - input: "Tokyo is in Japan"
+      this_pattern: false
+      correct_pattern: spatial_temporal
+      reason: |
+        "in" is locational containment, not constitutive parthood.
+        The speaker chose the locational surface form.
+    - input: "Tokyo is part of Japan"
+      this_pattern: true
+      reason: |
+        "is part of" — constitutive parthood. Same pair as the
+        spatial_temporal example, different surface form.
 
 # =====================================================================
 # Out of scope (intentionally)

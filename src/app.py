@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
             store.close()
 
 
-app = FastAPI(title="Aedos", version="0.14.2", lifespan=lifespan)
+app = FastAPI(title="Aedos", version="0.14.5", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -175,7 +175,7 @@ def health() -> dict[str, Any]:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     return {
         "ok": True,
-        "version": "0.14.2",
+        "version": "0.14.5",
         "db_path": _get_store().db_path,
         "turns_in_db": int(n_turns),
     }

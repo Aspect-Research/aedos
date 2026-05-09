@@ -468,14 +468,23 @@ def test_role_validation():
 
 def test_tool_schema_lists_all_pattern_names():
     """Tool schema enum must include all 9 pattern names (8 legacy +
-    mereological)."""
+    mereological). v0.14.3: per-role tools — assistant requires
+    expected_verifier, user does not. Both must list all patterns."""
     reg = load_default_registry()
     extractor = _mk({"facts": []})
-    enum = extractor._record_tool["input_schema"]["properties"]["facts"]["items"][
-        "properties"
-    ]["pattern"]["enum"]
-    assert set(enum) == set(reg.names())
-    assert "mereological" in enum
+    for tool in (extractor._record_tool_assistant, extractor._record_tool_user):
+        enum = tool["input_schema"]["properties"]["facts"]["items"][
+            "properties"
+        ]["pattern"]["enum"]
+        assert set(enum) == set(reg.names())
+        assert "mereological" in enum
+    # Per-role required-fields contract.
+    asst_required = extractor._record_tool_assistant["input_schema"][
+        "properties"]["facts"]["items"]["required"]
+    user_required = extractor._record_tool_user["input_schema"][
+        "properties"]["facts"]["items"]["required"]
+    assert "expected_verifier" in asst_required
+    assert "expected_verifier" not in user_required
 
 
 def test_system_prompt_includes_every_pattern():

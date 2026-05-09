@@ -340,6 +340,58 @@ def test_unverifiable_pending_implementation_is_hedge_with_impl_flag(store):
     assert "implementation" in iv.reason.lower()
 
 
+def test_triage_skipped_unverifiable_is_pass_through_not_hedge(store):
+    """v0.14.3: when the triage gate explicitly suppressed fresh
+    dispatch and the cheap walker tiers also missed, the right
+    intervention is pass_through (no text change), NOT hedge.
+    Hedging implies "verifier tried and was uncertain"; triage-
+    skipped means "we chose not to verify, no information."
+    """
+    dec = _wd(
+        served_from_tier="fresh",
+        outcome=LookupOutcome.MISS,
+        verification_status="unverifiable_pending_implementation",
+        routing_method="retrieval",
+    )
+    iv = plan_intervention(
+        dec, _conf(0.0), store=store, triage_skipped=True,
+    )
+    assert iv.intervention_type is InterventionType.PASS_THROUGH
+    assert "triage" in iv.reason.lower()
+
+
+def test_triage_skipped_retrieval_failed_is_pass_through(store):
+    """Same rule for retrieval_failed status when triage skipped."""
+    dec = _wd(
+        served_from_tier="fresh",
+        outcome=LookupOutcome.MISS,
+        verification_status="retrieval_failed",
+        routing_method="retrieval",
+    )
+    iv = plan_intervention(
+        dec, _conf(0.0), store=store, triage_skipped=True,
+    )
+    assert iv.intervention_type is InterventionType.PASS_THROUGH
+
+
+def test_triage_skipped_does_not_override_other_statuses(store):
+    """triage_skipped only short-circuits the no-information cases.
+    A triage-skipped claim that somehow lands on verified or
+    contradicted (cheap-tier match) goes through the normal matrix."""
+    dec = _wd(
+        served_from_tier="u",
+        outcome=LookupOutcome.MATCH,
+        verification_status="user_asserted",
+        routing_method="user_authoritative",
+    )
+    iv = plan_intervention(
+        dec, _conf(0.99), store=store, triage_skipped=True,
+    )
+    assert iv.intervention_type is InterventionType.PASS_THROUGH
+    # Reason should be the user-asserted-match reason, NOT the triage one.
+    assert "user" in iv.reason.lower() or "ground" in iv.reason.lower()
+
+
 # ============================================================================
 # routing_anomaly
 # ============================================================================

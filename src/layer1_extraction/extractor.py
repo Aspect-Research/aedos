@@ -57,7 +57,21 @@ class ExtractionResult:
         }
 
 
-def _build_record_tool(registry: PatternRegistry) -> dict[str, Any]:
+def _build_record_tool(
+    registry: PatternRegistry, *, role: str = "assistant",
+) -> dict[str, Any]:
+    """Build the record_facts tool schema.
+
+    ``role`` controls whether ``expected_verifier`` is REQUIRED on
+    each fact. v0.14.3 design: assistant-side claims must
+    self-attest a verifier expectation (high signal-value for
+    downstream cross-checks); user-side claims may omit it (most user
+    claims route to user_authoritative regardless of the extractor's
+    expectation, so the field is lower-value there).
+    """
+    base_required = ["pattern", "predicate", "slots", "polarity", "source_text"]
+    if role == "assistant":
+        base_required = base_required + ["expected_verifier"]
     return {
         "name": "record_facts",
         "description": (
@@ -122,10 +136,42 @@ def _build_record_tool(registry: PatternRegistry) -> dict[str, Any]:
                                     "of the claim's identity."
                                 ),
                             },
+                            "expected_verifier": {
+                                "type": "string",
+                                "enum": [
+                                    "python",
+                                    "python_with_canonical_constants",
+                                    "retrieval",
+                                    "user_authoritative",
+                                    "unverifiable",
+                                ],
+                                "description": (
+                                    "Which verification method you expect this claim to "
+                                    "land on. python = sandbox computation (counts, "
+                                    "string ops, time/zoneinfo, arithmetic). "
+                                    "python_with_canonical_constants = sandbox + "
+                                    "stable lookup tables (population, distances). "
+                                    "retrieval = Wikipedia search (world facts about "
+                                    "specific entities). user_authoritative = the user "
+                                    "is the source of truth (preferences, attitudes). "
+                                    "unverifiable = no method applies (predictions, "
+                                    "others' internal states, aesthetic judgments). "
+                                    "REQUIRED for assistant claims; downstream layers "
+                                    "cross-check this against their own decisions."
+                                ),
+                            },
+                            "pattern_confidence": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                                "description": (
+                                    "Your self-assessed confidence that the pattern you "
+                                    "chose is the correct one. low = the boundary case "
+                                    "could plausibly belong to a different pattern. "
+                                    "Optional — omit when confident."
+                                ),
+                            },
                         },
-                        "required": [
-                            "pattern", "predicate", "slots", "polarity", "source_text",
-                        ],
+                        "required": base_required,
                     },
                 }
             },
@@ -247,6 +293,92 @@ ACCEPT — relation between named entities:
   ("baboons hunt cooperatively" is checkable against ethology
   references), central to the response.
 
+## List-of-examples sentences — extract ONE relational claim, NOT N categorical claims
+
+Sentences of the shapes:
+  * "X includes A, B, C"
+  * "examples of X are A, B, C"
+  * "X such as A, B, C"
+  * "common X include A, B, C"
+  * "common examples of X include A, B, C"
+
+extract as a SINGLE relational claim whose object is the list (joined
+or as a list-typed slot value), NOT as N separate
+``categorical.is_a`` claims for each item. The relational form is
+strictly better: one retrieval call instead of N, no risk of
+triggering the suffix-tautology validator on items whose names
+contain X (e.g. "monitor lizard" containing "lizard"), and the same
+underlying information.
+
+ACCEPT — list-of-examples as one relational claim:
+  Input: "Old World monkeys include baboons, macaques, and mandrills."
+  Output: facts=[{{"pattern":"relational","predicate":"includes","slots":{{"subject":"Old World monkeys","object":"baboons, macaques, and mandrills"}},"polarity":1,"source_text":"Old World monkeys include baboons, macaques, and mandrills"}}]
+  Reasoning: the sentence asserts a containment relation between a
+  taxonomic group and its members. One claim captures the full
+  assertion. Splitting into "baboon is an Old World monkey" + "macaque
+  is an Old World monkey" + "mandrill is an Old World monkey" pays 3x
+  the verifier cost AND produces "Old World monkey is a monkey" as a
+  side-extraction (which the validator rejects as a suffix tautology).
+
+REJECT (anti-pattern — do not do this):
+  Input: "Common examples of lizards include iguanas, geckos, skinks, and monitor lizards."
+  WRONG output: facts=[
+    {{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"iguana","category":"lizard"}},"polarity":1,"source_text":"iguanas"}},
+    {{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"gecko","category":"lizard"}},"polarity":1,"source_text":"geckos"}},
+    {{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"skink","category":"lizard"}},"polarity":1,"source_text":"skinks"}},
+    {{"pattern":"categorical","predicate":"is_a","slots":{{"entity":"monitor lizard","category":"lizard"}},"polarity":1,"source_text":"monitor lizards"}}
+  ]
+  RIGHT output: facts=[
+    {{"pattern":"relational","predicate":"includes","slots":{{"subject":"lizards","object":"iguanas, geckos, skinks, and monitor lizards"}},"polarity":1,"source_text":"Common examples of lizards include iguanas, geckos, skinks, and monitor lizards"}}
+  ]
+  Reasoning: the relational form is one claim. The categorical-split
+  also produces "monitor lizard is a lizard" which the validator
+  rejects as a suffix tautology — the entity name contains the
+  category. This kind of side-rejection is a tell that the
+  categorical-split shape was the wrong choice.
+
+## Generic-noun objects on relational claims — abstain
+
+A relational claim whose `object` slot is a GENERIC NOUN with no
+specific complement isn't falsifiable by retrieval. The verifier
+can't confirm or contradict "lizard role as predator ecosystem"
+because "ecosystem" doesn't name a specific thing — every species
+plays some role in some ecosystem, the claim is true by
+construction. Same for `environment`, `system`, `world`,
+`structure`, `nature`, `wildlife` when used as a bare object.
+
+REJECT — generic-noun object:
+  Input: "Lizards play important roles in their ecosystems as both predators and prey."
+  Output: facts=[]
+  Reasoning: "ecosystem" / "predator" / "prey" are categories, not
+  specific contexts. There's no Wikipedia page that says
+  "lizards play role X in ecosystem Y" — the claim isn't structured
+  to map onto a verifier query. Skip; the model's wording stands.
+
+ACCEPT — same shape but with a specific complement:
+  Input: "Lizards prey on insects, small mammals, and other reptiles."
+  Output: facts=[{{"pattern":"relational","predicate":"preys_on","slots":{{"subject":"lizards","object":"insects, small mammals, and other reptiles"}},"polarity":1,"source_text":"Lizards prey on insects, small mammals, and other reptiles"}}]
+  Reasoning: the object names SPECIFIC prey types — verifier can
+  check this against Wikipedia's lizard or feeding-behavior
+  articles.
+
+## "X can be A, B, or C" — range / variation sentences extract as ONE claim
+
+Sentences asserting that a property has a RANGE OF VALUES — "X can be
+A, B, or C", "X varies among A, B, and C", "X ranges from A to C" —
+extract as a single claim whose object/value captures the variation,
+NOT as N separate claims (one per value).
+
+ACCEPT — variation as one claim:
+  Input: "A lizard's diet can be carnivorous, omnivorous, or herbivorous."
+  Output: facts=[{{"pattern":"relational","predicate":"diet_varies_among","slots":{{"subject":"lizard","object":"carnivorous, omnivorous, herbivorous"}},"polarity":1,"source_text":"A lizard's diet can be carnivorous, omnivorous, or herbivorous"}}]
+  Reasoning: the sentence asserts that the diet is variable across
+  these categories — one claim. Splitting into "lizard diet can be
+  carnivorous" + "lizard diet can be omnivorous" + "lizard diet can
+  be herbivorous" pays 3x the verifier cost for the same fact, and
+  each individual claim is awkwardly worded ("can be" hedges the
+  assertion in a way that doesn't map cleanly to retrieval).
+
 # Slot rules
 
 - **CRITICAL: extract VERBATIM what the source text says. Never
@@ -321,6 +453,57 @@ September 2023."
 Output: facts=[{{"pattern":"event","predicate":"released","slots":{{"event_type":"release","participants":["iPhone 15"],"occurred_at":"2023-09"}},"polarity":1,"source_text":"It was released in September 2023","anchor_entity":"iPhone 15"}}]
 Reasoning: pronoun subject ("It") loses its referent out of context.
 Anchor preserves the topic.
+
+# Self-attesting fields — expected_verifier and pattern_confidence
+
+Two metadata fields you set on EACH assistant claim (optional on user
+claims) so downstream layers can cross-check your decisions.
+
+## expected_verifier (REQUIRED on assistant claims)
+
+Which verification method you expect the system to use on this claim.
+Pick one:
+
+  python — sandbox computation. Counts ("strawberry has 3 r's"),
+    string operations ("'tacos' is an anagram of 'costa'"), time
+    operations using zoneinfo ("it's 2:56 pm in Cairo"), arithmetic
+    ("1 + 1 = 2"), date math ("January 20 2025 was a Monday").
+
+  python_with_canonical_constants — sandbox + stable lookup tables.
+    Population numbers, distances, weights — anything where the answer
+    is a stable measurement that the python verifier can produce.
+
+  retrieval — Wikipedia search. World facts about specific named
+    entities ("Marie Curie was born in 1867"; "Cairo is in Egypt
+    Standard Time"; "baboons hunt cooperatively for meat"). The
+    verifier searches Wikipedia and asks an LLM judge whether the
+    snippets support the claim.
+
+  user_authoritative — the user is the source of truth. Their
+    preferences (preference pattern), their attitudes
+    (propositional_attitude), their personal history. Routes to the
+    user microtheory, not external verification.
+
+  unverifiable — no method applies. Predictions about the future,
+    claims about other people's internal states, aesthetic judgments
+    that slip past the abstain rules, policy positions. The system
+    will mark these as unverifiable_in_principle and the corrector
+    will soften them.
+
+When the choice is genuinely ambiguous, prefer retrieval (the
+verifier has the best dynamic range there).
+
+## pattern_confidence (optional on assistant claims)
+
+high — you're sure this is the right pattern.
+medium — boundary case; could plausibly fit another pattern.
+low — boundary case AND your second-choice pattern is also plausible.
+
+Set to "low" when the claim could read as preference vs relational
+("baboons forage for X" — relational by the rule, but reads like
+preference) or any other tight boundary. Validator-rejected claims
+are flagged for re-extraction; pattern_confidence=low is the
+upstream signal that re-extraction might be needed.
 
 # Polarity
 
@@ -565,7 +748,12 @@ class ClaimExtractor:
     def __init__(self, llm: LLMClient, registry: PatternRegistry):
         self.llm = llm
         self.registry = registry
-        self._record_tool = _build_record_tool(registry)
+        # v0.14.3 — per-role tools so expected_verifier can be REQUIRED
+        # for assistant-side extraction (high signal value for
+        # downstream cross-checks) and OPTIONAL for user-side
+        # (most user claims route to user_authoritative anyway).
+        self._record_tool_assistant = _build_record_tool(registry, role="assistant")
+        self._record_tool_user = _build_record_tool(registry, role="user")
         self._system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             patterns=registry.describe_for_prompt(),
         )
@@ -602,14 +790,77 @@ class ClaimExtractor:
                 f"Text:\n{text}\n\n"
                 "Extract all facts via the record_facts tool. Return [] if none fit."
             )
+        tool = (self._record_tool_assistant if role == "assistant"
+                else self._record_tool_user)
         raw = self.llm.extract_with_tool(
             system=self._system_prompt,
             user_message=user_message,
-            tool=self._record_tool,
+            tool=tool,
             purpose=f"extractor:{role}",
         )
         result = self._validate(raw)
         self._flag_substitutions(result, text)
+        return result
+
+    def re_extract_after_rejection(
+        self, original_claim: dict, source_text: str,
+        rejection_reason: str, role: str = "assistant",
+    ) -> ExtractionResult:
+        """Re-extract a single claim that the validator rejected.
+
+        v0.14.3 — feedback loop. When the validator marks a claim
+        ``routing_anomaly``, this method calls the extractor a second
+        time with a hint about why the first attempt was rejected.
+        Bounded to one retry per claim by the caller (pipeline.py);
+        this method just runs the re-classification call.
+
+        The hint includes the original (rejected) classification, the
+        validator's invariant + reason, the source text, and an
+        instruction to re-classify into a different pattern OR confirm
+        the rejection. The extractor returns its best second attempt
+        as a normal ExtractionResult — caller applies the same
+        validator to the result; if the re-classified claim ALSO
+        fails validation, the caller accepts the rejection.
+        """
+        original_pattern = original_claim.get("pattern", "?")
+        original_predicate = original_claim.get("predicate", "?")
+        original_slots = original_claim.get("slots") or {}
+        slot_lines = ", ".join(f"{k}={v!r}" for k, v in original_slots.items())
+        user_message = (
+            f"Role of speaker: {role}\n"
+            f"Source text: {source_text!r}\n\n"
+            "PREVIOUS EXTRACTION ATTEMPT (REJECTED):\n"
+            f"  pattern: {original_pattern}\n"
+            f"  predicate: {original_predicate}\n"
+            f"  slots: {{{slot_lines}}}\n\n"
+            "REJECTION REASON:\n"
+            f"  {rejection_reason}\n\n"
+            "Re-extract the source text into a DIFFERENT pattern that "
+            "fits, OR confirm by returning [] if the claim genuinely "
+            "doesn't fit any pattern. Common re-classifications:\n"
+            "  * preference rejected for non-user agent → try relational\n"
+            "    (animal behavior, organizational tendencies)\n"
+            "  * propositional_attitude rejected for non-user agent → drop\n"
+            "    (third-party mental states are unverifiable)\n"
+            "  * mereological rejected for self-parthood → check whether the\n"
+            "    claim is actually a categorical (X is_a Y where Y describes X)\n"
+            "    or just an extraction error to drop\n"
+            "  * categorical rejected for tautology → check for an actual\n"
+            "    relational claim hiding in the source text\n\n"
+            "If the source text contains MULTIPLE clauses, extract the one "
+            "the previous attempt mis-classified; ignore others. "
+            "Return [] only if no pattern fits the actual claim being made."
+        )
+        tool = (self._record_tool_assistant if role == "assistant"
+                else self._record_tool_user)
+        raw = self.llm.extract_with_tool(
+            system=self._system_prompt,
+            user_message=user_message,
+            tool=tool,
+            purpose=f"extractor:{role}:re_extract",
+        )
+        result = self._validate(raw)
+        self._flag_substitutions(result, source_text)
         return result
 
     @staticmethod
@@ -695,4 +946,14 @@ class ClaimExtractor:
         anchor = f.get("anchor_entity")
         if isinstance(anchor, str) and anchor.strip():
             out["anchor_entity"] = anchor.strip()
+        # v0.14.3 — self-attesting fields. expected_verifier carries
+        # the extractor's own routing expectation (cross-checked
+        # downstream by triage + router); pattern_confidence flags
+        # boundary cases for re-extraction consideration.
+        ev = f.get("expected_verifier")
+        if isinstance(ev, str) and ev.strip():
+            out["expected_verifier"] = ev.strip()
+        pc = f.get("pattern_confidence")
+        if isinstance(pc, str) and pc.strip():
+            out["pattern_confidence"] = pc.strip()
         return out

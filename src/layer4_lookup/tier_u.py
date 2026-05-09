@@ -126,6 +126,10 @@ from src.layer3_substrate.predicate_equivalence import (
     PredicateEquivalence,
     PredicateEquivalenceVerdict,
 )
+from src.layer4_lookup.relevance import (
+    candidate_tokens as _candidate_tokens,
+    is_candidate_relevant as _is_candidate_relevant,
+)
 from src.session_markers import find_session_marker
 from src.llm_client import LLMClient
 
@@ -283,6 +287,7 @@ def lookup(
     llm: Optional[LLMClient] = None,
     source_turn_id: Optional[int] = None,
     entity_oracle: Optional[EntityEquivalence] = None,
+    active_context_tokens: Optional[frozenset] = None,
 ) -> TierUResult:
     """Look for a matching or contradicting prior user-asserted fact.
 
@@ -401,6 +406,7 @@ def lookup(
             store, pattern, key_slots, key_slot_names, user_id,
             current_session,
             entity_oracle, llm, source_turn_id,
+            active_context_tokens=active_context_tokens,
         )
         for candidate, entity_row_ids in alias_candidates:
             # First try literal-predicate match against the alias
@@ -575,6 +581,8 @@ def _gather_alias_identity_candidates(
     entity_oracle: EntityEquivalence,
     llm: Optional[LLMClient],
     source_turn_id: Optional[int],
+    *,
+    active_context_tokens: Optional[frozenset] = None,
 ) -> list[tuple[Fact, list[int]]]:
     """Gather user-asserted facts under (pattern) whose identity
     slots are alias-equivalent to the claim's. Returns a list of
@@ -618,6 +626,21 @@ def _gather_alias_identity_candidates(
 
     for candidate in all_candidates:
         candidate_slots = candidate.slots or {}
+
+        # v0.14.4 — relevance gate. Skip the candidate entirely (no
+        # entity_equivalence consultation, no row write, no warm-cache
+        # accumulation) when its slot values + source_text share no
+        # tokens with the active verification context. Fires only when
+        # active_context_tokens is non-empty (back-compat: callers
+        # without context get unchanged behavior).
+        if active_context_tokens:
+            cand_tokens = _candidate_tokens(
+                list(candidate_slots.values()),
+                source_text=candidate.source_text,
+            )
+            if not _is_candidate_relevant(active_context_tokens, cand_tokens):
+                continue
+
         entity_row_ids: list[int] = []
         all_qualify = True
         any_via_oracle = False

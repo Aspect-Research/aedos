@@ -72,11 +72,16 @@ def test_year_in_value_triggers_verify():
 
 
 def test_two_named_entities_triggers_verify():
+    """When no registry is passed, the per-pattern verify-predicates
+    fall back to the flat _COMPUTABLE_PREDICATES constant. With a
+    registry, ``founded_by`` is in relational's allow-list and Rule 6
+    fires first — so we use a predicate NOT in the allow-list to
+    isolate the multi-named-entity rule."""
     claim = {
-        "pattern": "relational", "predicate": "founded_by",
+        "pattern": "relational", "predicate": "co_authored_paper_with",
         "polarity": 1,
-        "slots": {"subject": "Anthropic", "object": "Dario Amodei"},
-        "source_text": "Anthropic was founded by Dario Amodei",
+        "slots": {"subject": "Marie Curie", "object": "Pierre Curie"},
+        "source_text": "Marie Curie co-authored a paper with Pierre Curie",
     }
     r = triage_claim(claim)
     assert r.decision is TriageDecision.VERIFY
@@ -173,44 +178,84 @@ def test_preference_claim_with_named_object_triggers_verify():
 def test_current_time_predicate_triggers_verify():
     """Regression: the Cairo / New York current_time claim used to
     fall through to PASS_THROUGH because '2:56 am' doesn't parse as a
-    number and the slots have only one named entity. v0.14.1 Rule 6
-    catches it via the predicate name — current_time is computable
-    against the system clock by zoneinfo."""
+    number and the slots have only one named entity. Rule 6 catches
+    it via the predicate name — current_time is in
+    quantitative.triage_verify_predicates in patterns.yaml."""
+    from src.layer1_extraction.pattern_registry import (
+        load_default_registry, reset_cache,
+    )
+    reset_cache()
+    registry = load_default_registry()
     claim = {
         "pattern": "quantitative", "predicate": "current_time",
         "polarity": 1,
         "slots": {"subject": "Cairo", "property": "time", "value": "9:56 am"},
         "source_text": "it would be 9:56 am in Cairo",
     }
-    r = triage_claim(claim)
+    r = triage_claim(claim, registry=registry)
     assert r.decision is TriageDecision.VERIFY
-    assert r.rule == "computable_predicate"
+    assert r.rule == "verify_predicate"
 
 
 def test_letter_count_predicate_triggers_verify():
+    from src.layer1_extraction.pattern_registry import (
+        load_default_registry, reset_cache,
+    )
+    reset_cache()
+    registry = load_default_registry()
     claim = {
         "pattern": "quantitative", "predicate": "letter_count",
         "polarity": 1,
         "slots": {"subject": "strawberry", "property": "letter_r", "value": 3},
         "source_text": "Strawberry has 3 r's",
     }
-    r = triage_claim(claim)
+    r = triage_claim(claim, registry=registry)
     assert r.decision is TriageDecision.VERIFY
     # numeric_slot would also match here (value=3); rule order says
-    # computable_predicate fires first when both apply.
-    assert r.rule == "computable_predicate"
+    # verify_predicate fires first when both apply.
+    assert r.rule == "verify_predicate"
+
+
+def test_located_in_predicate_triggers_verify_via_schema():
+    """v0.14.3 regression: the Cairo timezone case — schema declares
+    spatial_temporal.triage_verify_predicates includes located_in,
+    so a claim like 'Cairo is in Egypt Standard Time (UTC+2)' lands
+    on VERIFY through the schema's per-pattern allow-list."""
+    from src.layer1_extraction.pattern_registry import (
+        load_default_registry, reset_cache,
+    )
+    reset_cache()
+    registry = load_default_registry()
+    claim = {
+        "pattern": "spatial_temporal", "predicate": "located_in",
+        "polarity": 1,
+        "slots": {
+            "entity": "Cairo",
+            "location": "Egypt Standard Time (UTC+2)",
+            "relation_kind": "timezone",
+        },
+        "source_text": "Cairo is in Egypt Standard Time (UTC+2)",
+    }
+    r = triage_claim(claim, registry=registry)
+    assert r.decision is TriageDecision.VERIFY
+    assert r.rule == "verify_predicate"
 
 
 def test_unknown_predicate_does_not_trigger_rule_6():
-    """A predicate not in the allow-list doesn't get the free pass —
-    the other rules have to settle it."""
+    """A predicate not in the per-pattern allow-list doesn't get the
+    free pass — the other rules have to settle it."""
+    from src.layer1_extraction.pattern_registry import (
+        load_default_registry, reset_cache,
+    )
+    reset_cache()
+    registry = load_default_registry()
     claim = {
         "pattern": "relational", "predicate": "knows_about",
         "polarity": 1,
         "slots": {"subject": "behavior", "object": "topic"},
         "source_text": "behavior knows about topic",
     }
-    r = triage_claim(claim)
+    r = triage_claim(claim, registry=registry)
     assert r.decision is TriageDecision.PASS_THROUGH
     assert r.rule == "no_falsifiability_signal"
 

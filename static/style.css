@@ -544,6 +544,37 @@ main {
 .claim-row.claim-skipped       { background: rgba(120, 120, 120, 0.05); opacity: 0.85; }
 .claim-row.claim-skipped .claim-dot { background: var(--muted); }
 
+/* v0.14.3 — triage-skipped claims hidden behind a drop-down so the
+ * Claims card only foregrounds the verified / contradicted /
+ * inconclusive verdicts. The drop-down sits at the bottom; click to
+ * reveal. */
+.claims-skipped-dropdown {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--border);
+}
+.claims-skipped-toggle {
+  background: transparent;
+  border: 1px solid var(--border-soft, var(--border));
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.claims-skipped-toggle:hover {
+  background: var(--panel-hover);
+  color: var(--ink-soft);
+}
+.claims-skipped-list {
+  margin-top: 0.4rem;
+  opacity: 0.85;
+}
+
 /* Top-right corner notch: replaces the old left bar. A small slanted
  * tab made via a CSS triangle, in the status color. Subtle, present
  * only when the row carries a status. */
