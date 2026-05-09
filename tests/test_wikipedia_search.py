@@ -17,11 +17,15 @@ import pytest
 
 from src.verifiers.retrieval_verifier import Snippet
 from src.verifiers.scrapers.wikipedia import (
-    EXTRACT_CHAR_CAP,
+    EXTRACT_CHAR_CAP_LEAD,
+    EXTRACT_CHAR_CAP_FULL,
     USER_AGENT,
     WIKIPEDIA_API,
     search_wikipedia,
 )
+# v0.14.1 — split into lead/full caps; the legacy alias keeps the old
+# test names readable.
+EXTRACT_CHAR_CAP = EXTRACT_CHAR_CAP_LEAD
 
 
 @dataclass

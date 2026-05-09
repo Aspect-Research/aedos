@@ -242,6 +242,23 @@ structured claim, output is a `WalkerDecision` with
   (`tests/smoke_dispatcher.py`) validates entry shapes; tests consume
   corpus entries directly through the appropriate runner.
 
+## Memory layout (Inspector → Memory tab)
+
+The four scopes the inspector surfaces map to v0.14's actual storage:
+
+| Scope | Filter | Source |
+|---|---|---|
+| Conversation | `is_session_local=1`, current session in `session_ids` | Tier U session-local |
+| User | `asserted_by="user"`, `is_session_local=0` | Tier U cross-session |
+| Model | `asserted_by ∈ {"model", "python_verifier"}` | Dual-write audit trail |
+| World | `verification_cache` rows | Tier W |
+
+The pipeline writes to all four during a turn: user assertions land
+in Tier U via `tier_u.store_user_fact()`; assistant claims that get
+contradicted result in a Model row (the model's claim) plus a Tier W
+write (the verifier-corrected value). Tier W rows the walker
+short-circuited via `served_from_tier="w"` are visible under World.
+
 ## v0.15 trajectory
 
 These are the next coherent extensions of the v0.14 architecture:
@@ -257,8 +274,9 @@ These are the next coherent extensions of the v0.14 architecture:
 - **Layer 1.5 faithfulness validator.** A validator between Layer 1 and
   Layer 2 that compares the extracted claim against the source for
   representational faithfulness.
-- **`/api/chat` with SSE streaming.** v0.14 ships `/api/dispatch-one`
-  and the inspectors; the chat endpoint is v0.15 work.
+- **Multi-conversation routing.** v0.14.x runs one `current_session`
+  per process (env-driven). v0.15 routes per-conversation so the
+  session model can hold multiple conversations concurrently.
 - **v0.14-native verifier rewrite.** The `src/verifiers/` modules were
   ported from prior infrastructure and retain pre-v0.14 internal shapes;
   v0.15 refactors them to v0.14-native idioms.

@@ -209,6 +209,20 @@ TIER_W_VERIFICATION_STATUSES: tuple[str, ...] = (
     "unverifiable_pending_implementation",
 )
 
+# v0.14.1 — Tier W's storage policy is now strictly informational. Only
+# verdicts that carry actionable knowledge get persisted. The other
+# statuses go through ``write_verifier_result`` (so the audit trail
+# still records them via a ``skipped_no_information`` event) but do
+# not insert into ``verification_cache``. Rationale: a cache hit on
+# ``retrieval_inconclusive`` carries no information AND suppresses
+# the retry that might land a real verdict next time. See architecture
+# principle 3 (frequentist confidence from independent external
+# evidence) — non-evidence shouldn't accrete in the cache.
+_CACHEABLE_VERIFICATION_STATUSES: frozenset[str] = frozenset({
+    "verified",
+    "contradicted",
+})
+
 
 # ============================================================================
 # Canonical-key construction (pattern-registry-driven)
@@ -1150,6 +1164,36 @@ def write_verifier_result(
         )
 
     canonical_key = canonicalize_claim_key(claim, registry)
+
+    # v0.14.1 — only verified/contradicted carry information worth
+    # caching. The other four statuses (retrieval_inconclusive,
+    # retrieval_failed, unverifiable_pending_implementation,
+    # unverifiable_in_principle) are "we don't know" verdicts; caching
+    # them poisons the cache with non-knowledge AND suppresses retry
+    # — the next attempt at the same canonical key short-circuits
+    # to the inconclusive cache hit instead of trying again with
+    # potentially-better query reformulation or a Wikipedia article
+    # that's been edited since. Skip the write; emit an audit event.
+    if verification_status not in _CACHEABLE_VERIFICATION_STATUSES:
+        _safe_emit_event(
+            store, source_turn_id, "tier_w_write",
+            {
+                "action": "skipped_no_information",
+                "canonical_key": canonical_key,
+                "verdict": verification_status,
+                "stability_class": stability_class,
+                "reason": (
+                    "non-actionable verdict — re-attempt instead of "
+                    "caching the uncertainty"
+                ),
+            },
+        )
+        return TierWWriteOutcome(
+            action="skipped_no_information",
+            canonical_key=canonical_key,
+            prior_verdict=None,
+            row_id=None,
+        )
 
     if ttl_seconds == 0:
         # Volatile — caller's verifier emits time-sensitive output

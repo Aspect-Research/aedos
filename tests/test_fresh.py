@@ -474,17 +474,19 @@ class TestTierWWriteBoundary:
         assert decision.verification_status == "contradicted"
         assert delta == 1
 
-    def test_retrieval_inconclusive_writes_to_tier_w(
+    def test_retrieval_inconclusive_does_not_write_to_tier_w(
         self, store, registry,
     ):
-        """retrieval_inconclusive carries useful information ('we
-        tried, evidence is thin'); cache it so we don't re-try
-        every time."""
+        """v0.14.1: only verified/contradicted carry actionable
+        knowledge worth caching. ``retrieval_inconclusive`` is a
+        non-verdict — caching it suppresses retry without contributing
+        information. The dispatch still returns the inconclusive
+        decision; the cache table just doesn't grow."""
         decision, delta = self._retrieval_with(
             store, registry, outcome_value="inconclusive",
         )
         assert decision.verification_status == "retrieval_inconclusive"
-        assert delta == 1
+        assert delta == 0
 
     def test_retrieval_failed_does_not_write_to_tier_w(
         self, store, registry,

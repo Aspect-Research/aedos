@@ -72,6 +72,7 @@ Rules:
   - If the judge said "snippets describe X and Y separately without explicitly stating the relationship", search for the relationship itself ("X is a type of Y", "X causes Y").
   - If the judge said "the snippets are about a different time period", add the relevant year or era to the query.
   - If the judge said "no comparison context across other entities", search for a list/ranking page ("list of X by Y", "comparison of X").
+  - **Topic-pivot rule (v0.14.1):** if the claim is about behavior / communication / cognition / cooperation / hunting / social structure for an animal or species, AND the snippets you saw were about the species' taxonomy, diet, or habitat instead, re-search the TOPIC ("primate communication", "cooperative hunting in mammals", "animal social hierarchy") rather than the species name. The species page often hits taxonomy first; the topic page has the behavior treatment you need.
 
 Reply with the new query and nothing else."""
 
@@ -210,6 +211,19 @@ def default_search(query: str) -> list[Snippet]:
     try:
         from src.verifiers.scrapers import search_wikipedia
         return search_wikipedia(query) or []
+    except Exception:
+        return []
+
+
+def default_search_deep(query: str) -> list["Snippet"]:
+    """v0.14.1 deep variant: fetches the full Wikipedia article extract
+    (not just the lead) for retry-after-inconclusive paths. Used when
+    the lead-section snippets weren't enough but the search hit may
+    still be the right article.
+    """
+    try:
+        from src.verifiers.scrapers import search_wikipedia
+        return search_wikipedia(query, include_full_extract=True) or []
     except Exception:
         return []
 
@@ -416,6 +430,7 @@ def _format_judge_user_message(claim: dict, snippets: list[Snippet], historical:
     slots = claim.get("slots") or {}
     polarity_word = "asserts" if int(claim.get("polarity", 1)) == 1 else "denies"
     source_text = (claim.get("source_text") or "").strip()
+    anchor_entity = (claim.get("anchor_entity") or "").strip()
     snippets_block = "\n\n".join(
         f"[{i + 1}] {s.title}\n{s.snippet}\nSource: {s.url}"
         for i, s in enumerate(snippets)
@@ -423,6 +438,18 @@ def _format_judge_user_message(claim: dict, snippets: list[Snippet], historical:
 
     slot_lines = "\n".join(f"  {k}: {v!r}" for k, v in slots.items())
     framing_parts: list[str] = []
+    if anchor_entity:
+        # v0.14.1 — surface the topical referent so the judge can
+        # reject snippets that are about a different topic. When the
+        # claim's slots alone read as context-free, the anchor tells
+        # the judge what the response was about (e.g. "social rank
+        # passes generations" — anchor = "baboon" — rejects snippets
+        # about Generation Z or cycles of poverty up front).
+        framing_parts.append(
+            f"Topic context: this claim is about \"{anchor_entity}\". "
+            "Snippets unrelated to this topic are NOT evidence; treat "
+            "them as INSUFFICIENT_EVIDENCE."
+        )
     if source_text:
         # The source text is the speaker's literal phrasing — the only
         # place tense survives. The judge prompt instructs the model to
@@ -492,15 +519,26 @@ def _enrich_slots(slots: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def build_queries(pattern: Pattern, slots: dict[str, Any]) -> list[str]:
+def build_queries(
+    pattern: Pattern, slots: dict[str, Any],
+    *, anchor_entity: str | None = None,
+) -> list[str]:
     """Return the ordered list of query attempts for these slots.
 
     Templates that reference missing slots are skipped silently; we'd
     rather skip an over-specified template than emit a query with empty
     placeholders.
+
+    ``anchor_entity`` (v0.14.1): when present and not already a
+    substring of the formatted query, prepend it. Preserves the
+    topical referent that the slots may have lost (e.g. "social rank
+    generations" → "baboon social rank generations" so Wikipedia
+    ranks species/biology pages instead of "Cycle of poverty").
     """
     enriched = _enrich_slots(slots)
     queries: list[str] = []
+    anchor = (anchor_entity or "").strip()
+    anchor_lower = anchor.lower()
     for template in pattern.query_strategy:
         refs = _slot_refs(template)
         if not all(refs and r in enriched and str(enriched[r]).strip() for r in refs):
@@ -513,7 +551,14 @@ def build_queries(pattern: Pattern, slots: dict[str, Any]) -> list[str]:
         )
         formatted = template.format_map(enriched).strip()
         formatted = " ".join(formatted.split())  # collapse whitespace
-        if formatted and formatted not in queries:
+        if not formatted:
+            continue
+        # Anchor-prepend: only when the anchor adds information (not
+        # already a substring case-insensitive). Avoids "baboon baboon
+        # social hierarchy" when slots already mention the anchor.
+        if anchor and anchor_lower not in formatted.lower():
+            formatted = f"{anchor} {formatted}"
+        if formatted not in queries:
             queries.append(formatted)
     return queries
 
@@ -528,12 +573,16 @@ class RetrievalVerifier:
         llm: LLMClient,
         registry: PatternRegistry,
         search_fn: Callable[[str], list[Snippet]] | None = None,
+        search_deep_fn: Callable[[str], list[Snippet]] | None = None,
         ttl_hours: int | None = None,
     ):
         self.store = store
         self.llm = llm
         self.registry = registry
         self._search = search_fn or default_search
+        # v0.14.1 — full-extract variant for the deep-retry path. Tests
+        # can inject a stub for hermetic runs.
+        self._search_deep = search_deep_fn or default_search_deep
         if ttl_hours is None:
             ttl_hours = int(
                 os.getenv("AEDOS_RETRIEVAL_CACHE_TTL_HOURS", str(_DEFAULT_TTL_HOURS))
@@ -570,7 +619,8 @@ class RetrievalVerifier:
             except Exception:
                 pass
 
-        std_queries = build_queries(pattern, slots)
+        anchor_entity = claim.get("anchor_entity")
+        std_queries = build_queries(pattern, slots, anchor_entity=anchor_entity)
         if comparative is not None:
             queries = comparative_queries(comparative) + [
                 q for q in std_queries if q not in set(comparative_queries(comparative))
@@ -592,6 +642,7 @@ class RetrievalVerifier:
         attempts: list[QueryAttempt] = []
         last_inconclusive: RetrievalResult | None = None
         judge_calls = 0
+        deep_retry_used = False
 
         # Single lazy loop: walk queries in order, run the judge each
         # time a viable attempt lands, stop on a conclusive verdict.
@@ -612,6 +663,35 @@ class RetrievalVerifier:
             result = self._judge_one(claim, attempt, sn, attempts, historical)
             if result.outcome != VerificationOutcome.INCONCLUSIVE:
                 return result
+
+            # v0.14.1 — deep-extract retry. The judge said the lead
+            # section's snippets weren't enough, but the search hit may
+            # still be the right article (the fact lives in a later
+            # section — animal behavior on a species page, etc.).
+            # Retry the SAME query with the full article extract once.
+            # Bounded to ONE deep retry per claim so the cost stays
+            # capped at +1 judge call.
+            if (not deep_retry_used
+                and result.error_flag is None
+                and judge_calls < _MAX_JUDGE_RETRIES):
+                deep_retry_used = True
+                deep_attempt, deep_sn = self._run_query(
+                    q, source_turn_id, include_full_extract=True,
+                )
+                attempts.append(deep_attempt)
+                if deep_attempt.result_count >= _MIN_RESULTS_TO_USE:
+                    deep_attempt.used = True
+                    judge_calls += 1
+                    deep_result = self._judge_one(
+                        claim, deep_attempt, deep_sn, attempts, historical,
+                    )
+                    if deep_result.outcome != VerificationOutcome.INCONCLUSIVE:
+                        return deep_result
+                    # Deep retry also inconclusive — fall through to
+                    # the normal next-query / reformulation path.
+                    if (last_inconclusive is None
+                        or (last_inconclusive.error_flag and not deep_result.error_flag)):
+                        last_inconclusive = deep_result
             # Prefer a "clean" inconclusive (judge ran, returned
             # INSUFFICIENT_EVIDENCE) over an error result (judge_error
             # / judge_parse_error). The downstream dispatcher maps
@@ -701,25 +781,34 @@ class RetrievalVerifier:
 
     def _run_query(
         self, q: str, source_turn_id: int | None,
+        *, include_full_extract: bool = False,
     ) -> tuple[QueryAttempt, list[Snippet]]:
         """Run a single query through the cache + search path. Returns
         the attempt record and the snippets. Logs the attempt.
 
         Used by both the static strategy loop and the Phase 2b
-        reformulation hop so they share retrieval semantics."""
-        cached = self.store.get_cached_retrieval(q, self.ttl_seconds)
+        reformulation hop so they share retrieval semantics.
+
+        ``include_full_extract`` (v0.14.1): when True, fetches the full
+        article extract instead of the lead. Cached separately
+        (different key) so the lead-extract cache isn't poisoned by
+        full-extract entries and vice versa.
+        """
+        cache_key = q if not include_full_extract else f"{q}|deep"
+        cached = self.store.get_cached_retrieval(cache_key, self.ttl_seconds)
         if cached is not None:
             sn = [Snippet(**s) for s in cached]
             attempt = QueryAttempt(
                 query=q, result_count=len(sn), used=False, from_cache=True,
             )
         else:
+            search_fn = self._search_deep if include_full_extract else self._search
             try:
-                sn = list(self._search(q))
+                sn = list(search_fn(q))
                 attempt = QueryAttempt(
                     query=q, result_count=len(sn), used=False, from_cache=False,
                 )
-                self.store.cache_retrieval(q, [s.to_dict() for s in sn])
+                self.store.cache_retrieval(cache_key, [s.to_dict() for s in sn])
             except (httpx.HTTPError, httpx.TimeoutException) as e:
                 attempt = QueryAttempt(
                     query=q, result_count=0, used=False, from_cache=False,

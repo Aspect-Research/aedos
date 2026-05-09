@@ -817,6 +817,11 @@ class TestTierWPositiveWitnessOnly:
     def test_tier_w_inconclusive_row_does_not_match(
         self, store, registry, all_oracles,
     ):
+        # v0.14.1 — write_verifier_result no longer persists
+        # retrieval_inconclusive rows (architectural change). Seed
+        # directly via SQL so the walker's verdict-filter is still
+        # exercised against an in-cache inconclusive row (the legacy /
+        # defense-in-depth scenario where one somehow exists).
         cached_claim = {
             "pattern": "spatial_temporal",
             "predicate": "lives_in",
@@ -824,11 +829,18 @@ class TestTierWPositiveWitnessOnly:
             "slots": {"entity": "user", "location": "Massachusetts"},
             "source_text": "user lives in Massachusetts",
         }
-        tier_w.write_verifier_result(
-            cached_claim, store,
-            verification_status="retrieval_inconclusive",
-            registry=registry,
+        canonical_key = tier_w.canonicalize_claim_key(cached_claim, registry)
+        store._conn.execute(
+            "INSERT INTO verification_cache (canonical_key, pattern, predicate, "
+            "verdict, evidence, stability_class, cached_at, created_at, "
+            "expires_at, hit_count, refresh_count, contradiction_count) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (canonical_key, "spatial_temporal", "lives_in",
+             "retrieval_inconclusive", "{}", "decade_stable",
+             "2025-01-01T00:00:00+00:00", "2025-01-01T00:00:00+00:00",
+             None, 0, 0, 0),
         )
+        store._conn.commit()
         all_oracles["taxonomy_oracle"].record(
             "Williamstown", "Massachusetts", "part_of",
             label="child_subsumed_by_parent",

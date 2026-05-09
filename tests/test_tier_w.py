@@ -595,17 +595,13 @@ class TestWriteVerifierResult:
     """Tier W writes the full 8-state verification_status to the
     ``verdict`` column (Ambiguity #2 of the Phase 7 plan)."""
 
-    @pytest.mark.parametrize("status", [
-        "verified",
-        "contradicted",
-        "unverifiable_in_principle",
-        "retrieval_inconclusive",
-        "retrieval_failed",
-        "unverifiable_pending_implementation",
-    ])
-    def test_in_domain_statuses_round_trip(
+    @pytest.mark.parametrize("status", ["verified", "contradicted"])
+    def test_actionable_statuses_round_trip(
         self, store, registry, predicate_oracle, status,
     ):
+        """v0.14.1: Tier W only persists actionable verdicts —
+        verified + contradicted. Both round-trip cleanly via the
+        canonical key."""
         claim = _spatial_temporal_claim("user", "Boston")
         outcome = tier_w.write_verifier_result(
             claim, store,
@@ -621,6 +617,39 @@ class TestWriteVerifierResult:
         )
         assert result.outcome is LookupOutcome.MATCH
         assert result.verification_status == status
+
+    @pytest.mark.parametrize("status", [
+        "unverifiable_in_principle",
+        "retrieval_inconclusive",
+        "retrieval_failed",
+        "unverifiable_pending_implementation",
+    ])
+    def test_non_actionable_statuses_skipped(
+        self, store, registry, predicate_oracle, status,
+    ):
+        """v0.14.1: the four 'we don't know' statuses are out-of-policy
+        for cache writes (architectural change — they used to be
+        permitted). The call still returns cleanly; the cache table
+        just doesn't grow."""
+        claim = _spatial_temporal_claim("user", "Boston")
+        before = store._conn.execute(
+            "SELECT COUNT(*) AS n FROM verification_cache").fetchone()["n"]
+        outcome = tier_w.write_verifier_result(
+            claim, store,
+            verification_status=status,
+            registry=registry,
+        )
+        assert outcome.action == "skipped_no_information"
+        after = store._conn.execute(
+            "SELECT COUNT(*) AS n FROM verification_cache").fetchone()["n"]
+        assert after == before
+        # Lookup should miss — nothing landed in the cache.
+        result = tier_w.lookup(
+            claim, store, predicate_oracle,
+            key_slot_names=["entity", "location"],
+            registry=registry,
+        )
+        assert result.outcome is LookupOutcome.MISS
 
     @pytest.mark.parametrize("bad_status", [
         "user_asserted",       # Tier U's domain

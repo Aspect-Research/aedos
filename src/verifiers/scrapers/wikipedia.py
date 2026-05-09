@@ -35,14 +35,28 @@ USER_AGENT = (
     "httpx"
 )
 REQUEST_TIMEOUT = 10.0
-EXTRACT_CHAR_CAP = 600
+
+# v0.14.1 — two-tier extract caps. Lead-section calls stay tight (the
+# judge usually only needs the first paragraph for biographical /
+# definitional claims). Full-article calls get a generous cap so the
+# fall-through retry can land facts that live in section 4 of the
+# article (animal-behavior facts on the species page, etc.).
+EXTRACT_CHAR_CAP_LEAD = 600
+EXTRACT_CHAR_CAP_FULL = 3000
+
+# v0.14.1 — bumped from 3 to 5. Two more candidate pages per query,
+# negligible cost (snippets are ~100 bytes each); the judge already
+# filters for relevance. Helps when a niche topic spreads across
+# multiple articles.
+DEFAULT_TOP_N = 5
 
 
 def search_wikipedia(
     query: str,
     *,
-    top_n: int = 3,
+    top_n: int = DEFAULT_TOP_N,
     client: Any | None = None,
+    include_full_extract: bool = False,
 ) -> list[Any]:
     """Search Wikipedia for ``query`` and return up to ``top_n``
     Snippets. Returns an empty list when no results match (callers
@@ -52,6 +66,15 @@ def search_wikipedia(
 
     ``client`` lets tests inject a fake ``httpx.Client``-shaped object;
     when None we construct one with the required User-Agent header.
+
+    ``include_full_extract`` (v0.14.1): when False (default), fetches
+    only the lead section, capped at ``EXTRACT_CHAR_CAP_LEAD``. When
+    True, drops the ``exintro`` flag and fetches the full article
+    plaintext, capped at ``EXTRACT_CHAR_CAP_FULL``. The retrieval
+    verifier uses the lead extract first (cheap, often sufficient for
+    biographical / definitional claims) and falls through to the full
+    extract only when the judge says the lead was insufficient. Avoids
+    paying for full-article fetches on the common case.
     """
     # Lazy import to keep the dependency graph one-way: retrieval_verifier
     # imports scrapers, scrapers don't import back.
@@ -65,13 +88,16 @@ def search_wikipedia(
         )
 
     try:
-        # Phase 1 — search for matching pages.
+        # Phase 1 — search for matching pages. ``srprop=snippet|sectiontitle``
+        # lets the judge see WHICH section matched in the search hit
+        # (important when the fact lives outside the lead).
         search_resp = client.get(WIKIPEDIA_API, params={
             "action": "query",
             "format": "json",
             "list": "search",
             "srsearch": query,
             "srlimit": top_n,
+            "srprop": "snippet|sectiontitle",
         })
         search_resp.raise_for_status()
         search_data = search_resp.json()
@@ -82,17 +108,22 @@ def search_wikipedia(
         if not titles:
             return []
 
-        # Phase 2 — fetch lead-section extracts.
-        extract_resp = client.get(WIKIPEDIA_API, params={
+        # Phase 2 — fetch extracts. Lead-only by default; full article
+        # when the caller requested deeper retrieval.
+        extract_params = {
             "action": "query",
             "format": "json",
             "prop": "extracts|info",
-            "exintro": "1",
             "explaintext": "1",
             "inprop": "url",
             # "|" delimiter is the MediaWiki convention.
             "titles": "|".join(titles),
-        })
+        }
+        if not include_full_extract:
+            extract_params["exintro"] = "1"
+        char_cap = (EXTRACT_CHAR_CAP_FULL if include_full_extract
+                   else EXTRACT_CHAR_CAP_LEAD)
+        extract_resp = client.get(WIKIPEDIA_API, params=extract_params)
         extract_resp.raise_for_status()
         extract_data = extract_resp.json()
         pages = (extract_data.get("query") or {}).get("pages") or {}
@@ -113,7 +144,7 @@ def search_wikipedia(
                 f"https://en.wikipedia.org/wiki/"
                 f"{title.replace(' ', '_')}"
             )
-            snippet = extract[:EXTRACT_CHAR_CAP]
+            snippet = extract[:char_cap]
             snippets.append(Snippet(title=title, snippet=snippet, url=url))
         return snippets
     finally:

@@ -153,6 +153,91 @@ def test_historical_period_shortcut_ignores_unparseable_year():
     assert d.stability_class == "decade_stable"
 
 
+# ---- v0.14.1 fast paths: completed events + biographical dates ----
+
+
+def test_completed_event_shortcut_forces_immutable():
+    """An event-pattern claim with occurred_at in a past year skips the
+    LLM and lands on immutable. The Berlin Wall fell in 1989; that's
+    permanent — caching it forever saves an LLM call AND prevents
+    misclassification as decade_stable."""
+    llm = _MockLLM(canned={
+        "stability_class": "decade_stable",  # wrong on purpose — shortcut wins
+        "reason": "wrong",
+        "confidence": 0.5,
+    })
+    claim = _claim(
+        pattern="event",
+        predicate="fell",
+        slots={"event_type": "Berlin Wall", "occurred_at": "1989-11"},
+    )
+    d = classify_stability(claim, llm)
+    assert d.stability_class == "immutable"
+    assert d.ttl_seconds is None
+    assert d.raw == {"shortcut": "completed_event"}
+
+
+def test_completed_event_shortcut_skipped_for_future_or_current_year():
+    """Events occurring in the current year or later don't qualify —
+    they might still be unfolding. LLM gets consulted normally."""
+    from datetime import datetime
+    llm = _MockLLM(canned={
+        "stability_class": "days_stable",
+        "reason": "current event",
+        "confidence": 0.8,
+    })
+    current = datetime.utcnow().year
+    claim = _claim(
+        pattern="event",
+        predicate="will_happen",
+        slots={"event_type": "election", "occurred_at": str(current)},
+    )
+    d = classify_stability(claim, llm)
+    assert d.stability_class == "days_stable"
+
+
+def test_biographical_date_shortcut_forces_immutable():
+    """Quantitative claims about birth_year / death_year etc. lock to
+    immutable — these dates can't change once they exist. Marie
+    Curie's birth year is 1867 forever."""
+    llm = _MockLLM(canned={
+        "stability_class": "decade_stable",  # wrong on purpose
+        "reason": "wrong",
+        "confidence": 0.5,
+    })
+    claim = _claim(
+        pattern="quantitative",
+        predicate="birth_year",
+        slots={"subject": "Marie Curie",
+               "property": "birth_year", "value": 1867},
+    )
+    d = classify_stability(claim, llm)
+    assert d.stability_class == "immutable"
+    assert d.ttl_seconds is None
+    assert d.raw == {"shortcut": "biographical_date"}
+
+
+def test_biographical_date_shortcut_only_on_named_properties():
+    """A quantitative claim with property='population' is NOT a
+    biographical date — fall through to the LLM normally."""
+    llm = _MockLLM(canned={
+        "stability_class": "decade_stable",
+        "reason": "city demographic",
+        "confidence": 0.9,
+    })
+    claim = _claim(
+        pattern="quantitative",
+        predicate="population_of",
+        slots={"subject": "Tokyo",
+               "property": "population", "value": 14000000},
+    )
+    d = classify_stability(claim, llm)
+    assert d.stability_class == "decade_stable"
+    # Confirm shortcut did NOT fire (raw should be the LLM raw payload,
+    # not a shortcut marker).
+    assert "shortcut" not in d.raw
+
+
 def test_invalid_stability_class_raises():
     llm = _MockLLM(canned={
         "stability_class": "made_up", "reason": "junk", "confidence": 0.5,

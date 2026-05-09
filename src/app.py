@@ -1,21 +1,27 @@
-"""FastAPI application for the v0.14 stack (post-cutover root).
+"""FastAPI application for the v0.14 stack.
 
-Phase 9d cutover: this is the v0.14 root app, mounted at ``/``. The
-v2 health, extract, dispatch-one, trace, facts, routing-memo, and
-the four substrate inspectors all live here. ``/static`` serves the
-trace UI assets; ``/`` serves ``static/index.html``.
+The v0.14 root app, mounted at ``/``. Endpoint groups:
 
-Default DB path is ``aedos.db`` (override via ``AEDOS_DB_PATH``).
-v0.13 working-copy databases (incompatible v0.13 schema) should be
-renamed to ``aedos_v1.db`` if preserved — see CLAUDE.md.
+  * ``POST /api/chat`` + ``POST /api/chat/stream`` — full-turn pipeline
+    orchestration (Layer 1 → 5). The chat slot.
+  * ``POST /api/extract`` — Layer 1 only.
+  * ``POST /api/dispatch-one`` — Layer 2 → walker → Layer 5 for one
+    structured claim. Operator surface for testing without going
+    through the chat model.
+  * Inspector reads: ``GET /api/turns``, ``GET /api/trace/{turn_id}``,
+    ``GET /api/facts``, ``GET /api/patterns``, ``GET /api/cache``,
+    ``GET /api/routing-memo[/{p}/{p}]``, ``GET /api/substrate/{slug}[/{...}]``.
+  * Operator writes: ``POST /api/substrate/{slug}/{row_id}/{affirm,contradict}``,
+    ``POST /api/reset``.
 
-The v0.15 trajectory adds ``/api/chat`` + SSE streaming. v0.14
-operators drive the v2 stack via ``/api/dispatch-one`` (structured
-claim) and the inspector endpoints.
+Default DB path is ``aedos.db`` (override via ``AEDOS_DB_PATH``). The
+trace UI shell is served from ``/`` with assets under ``/static``.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,7 +29,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.responses import Response
@@ -47,7 +53,7 @@ async def lifespan(app: FastAPI):
             store.close()
 
 
-app = FastAPI(title="Aedos", version="0.14.0", lifespan=lifespan)
+app = FastAPI(title="Aedos", version="0.14.2", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -141,34 +147,93 @@ def _get_predicate_distribution():
 
 def _set_store(store: Any) -> None:
     """Test hook: inject a tmp_path-backed FactStore so endpoint tests
-    don't touch the real ``aedos_v2.db``. Production code never calls
+    don't touch the real ``aedos.db``. Production code never calls
     this. Dependent singletons are reset alongside so subsequent
     calls rebuild against the injected store."""
     global _store_singleton, _routing_memo_singleton
     global _predicate_equivalence_singleton, _entity_equivalence_singleton
     global _entity_taxonomy_singleton, _predicate_distribution_singleton
+    global _pipeline_singleton
     _store_singleton = store
     _routing_memo_singleton = None
     _predicate_equivalence_singleton = None
     _entity_equivalence_singleton = None
     _entity_taxonomy_singleton = None
     _predicate_distribution_singleton = None
+    _pipeline_singleton = None
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    """Phase 0 scaffold marker. Returns the stack version + status so
-    a smoke test can confirm the v2 mount is wired correctly."""
-    return {"version": "0.14-dev", "status": "scaffold"}
+    """Lightweight liveness check. Confirms the app is running and
+    the store is reachable; useful for monitoring + readiness probes."""
+    try:
+        n_turns = _get_store()._conn.execute(
+            "SELECT COUNT(*) AS n FROM turns"
+        ).fetchone()["n"]
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "ok": True,
+        "version": "0.14.2",
+        "db_path": _get_store().db_path,
+        "turns_in_db": int(n_turns),
+    }
 
 
-# ---- Phase 1: extraction endpoint ----------------------------------------
+# ---- Pipeline singleton --------------------------------------------------
 #
-# Lazy-instantiated singletons. The first call to /api/extract pays the
-# import + LLM-client construction cost; subsequent calls reuse the
-# extractor. Module-level instantiation would force the LLM client
-# (and thus the API key) at app import time, which is wrong for tests
-# and for environments that import the app for inspection.
+# The chat endpoints (and any other full-turn surface) share one
+# Pipeline instance. Built lazily on first /api/chat hit so app import
+# and routing-only requests don't pay the LLMClient construction cost.
+
+_pipeline_singleton: Any = None
+
+
+def _get_pipeline() -> Any:
+    """Build the chat Pipeline on first use, cache it. Reuses the same
+    FactStore as the inspector singletons so writes through one path
+    are visible through the others."""
+    global _pipeline_singleton
+    if _pipeline_singleton is None:
+        from src.layer1_extraction.extractor import ClaimExtractor
+        from src.layer1_extraction.pattern_registry import (
+            load_default_registry,
+        )
+        from src.layer2_routing.router import Router
+        from src.layer5_decision.corrector import Corrector
+        from src.llm_client import LLMClient
+        from src.pipeline import Pipeline
+
+        store = _get_store()
+        registry = load_default_registry()
+        llm = LLMClient()
+        extractor = ClaimExtractor(llm, registry)
+        router = Router(store, registry, llm=llm, memo=_get_routing_memo())
+        corrector = Corrector(llm)
+        _pipeline_singleton = Pipeline(
+            store=store, registry=registry, llm=llm,
+            extractor=extractor, router=router, corrector=corrector,
+            predicate_oracle=_get_predicate_equivalence(),
+            entity_oracle=_get_entity_equivalence(),
+            taxonomy_oracle=_get_entity_taxonomy(),
+            distribution_oracle=_get_predicate_distribution(),
+            session_id=os.getenv("AEDOS_SESSION_ID", "default_session"),
+        )
+    return _pipeline_singleton
+
+
+def _set_pipeline(pipeline: Any) -> None:
+    """Test hook: inject a constructed pipeline."""
+    global _pipeline_singleton
+    _pipeline_singleton = pipeline
+
+
+# ---- Layer 1: extraction endpoint ----------------------------------------
+#
+# Lazy-instantiated extractor for the standalone /api/extract endpoint.
+# The chat pipeline maintains its own extractor instance internally;
+# this singleton is only for /api/extract, which exposes Layer 1 alone.
 
 _extractor_singleton: Any = None
 
@@ -223,13 +288,12 @@ class ExtractRequest(BaseModel):
 def extract(req: ExtractRequest) -> dict[str, Any]:
     """Extract structured facts from a single piece of text.
 
-    Returns the v0.14 extractor's full result dict — valid_facts,
-    rejected_facts, and any substitution warnings — so smoke-corpus
-    consumers can assert on the structure.
+    Returns the extractor's full result dict — valid_facts,
+    rejected_facts, and any substitution warnings.
 
-    This is a thin HTTP wrapper around ClaimExtractor.extract. It
-    does NOT route, verify, store, or correct. Phase 2+ wires the
-    full pipeline behind /api/chat.
+    Thin HTTP wrapper around ClaimExtractor.extract. Does NOT route,
+    verify, store, or correct. The full pipeline lives behind
+    /api/chat.
     """
     if req.role not in ("user", "assistant"):
         raise HTTPException(
@@ -241,11 +305,146 @@ def extract(req: ExtractRequest) -> dict[str, Any]:
     return result.to_dict()
 
 
+# ---- Chat endpoints ------------------------------------------------------
+#
+# Full-turn pipeline orchestration. ``/api/chat`` runs synchronously and
+# returns the TurnTrace dict. ``/api/chat/stream`` registers an event
+# subscriber on the FactStore, runs the turn in a worker thread, and
+# streams pipeline_events as SSE frames followed by a ``done`` frame
+# carrying the trace. Both endpoints share the same Pipeline singleton.
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., description="User-side text for this turn.")
+
+
+@app.post("/api/chat")
+def chat(req: ChatRequest) -> dict[str, Any]:
+    """Synchronous chat turn. Returns ``TurnTrace.to_dict()``.
+
+    Useful for tests + programmatic callers. The UI uses
+    ``/api/chat/stream`` so the operator sees pipeline events land
+    live in the flow pane.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="message must not be empty")
+    pipeline = _get_pipeline()
+    try:
+        trace = pipeline.run_turn(req.message)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "hint": (
+                    "The pipeline raised. Common causes: provider rate "
+                    "limit (Anthropic / OpenAI), extractor LLM error, "
+                    "retrieval verifier network timeout. Check the latest "
+                    "turn's pipeline_events for details."
+                ),
+            },
+        ) from exc
+    return trace.to_dict()
+
+
+def _sse_event(event: str, data: Any) -> str:
+    """Format an SSE frame. JSON-encodes ``data`` so the client can
+    ``JSON.parse`` uniformly."""
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """Streaming chat turn. SSE channel:
+
+      * ``event: pipeline_event`` — fired for every pipeline_events
+        row as the pipeline runs. ``data`` is
+        ``{turn_id, stage, data, created_at}``.
+      * ``event: done`` — fired once when the turn completes. ``data``
+        is the full ``TurnTrace.to_dict()``.
+      * ``event: error`` — fired if the pipeline raises. ``data`` is
+        ``{error_type, error_message}``.
+
+    The subscriber pattern: register a callback on FactStore that
+    fires after every ``insert_pipeline_event``. The pipeline runs
+    in ``asyncio.to_thread`` so the synchronous run_turn doesn't
+    block the event loop. Cross-thread queue handoff uses
+    ``loop.call_soon_threadsafe``.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="message must not be empty")
+
+    pipeline = _get_pipeline()
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def subscriber(turn_id: int, stage: str, data: Any) -> None:
+        # Fires from the worker thread that runs run_turn. Cross to
+        # the asyncio loop with a thread-safe call.
+        loop.call_soon_threadsafe(
+            queue.put_nowait,
+            ("pipeline_event", {
+                "turn_id": turn_id, "stage": stage, "data": data,
+            }),
+        )
+
+    token = pipeline.store.register_event_subscriber(subscriber)
+
+    async def _run_pipeline() -> None:
+        try:
+            trace = await asyncio.to_thread(pipeline.run_turn, req.message)
+            await queue.put(("done", trace.to_dict()))
+        except Exception as exc:
+            await queue.put(("error", {
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }))
+        finally:
+            await queue.put(("close", None))
+
+    async def event_stream():
+        # Padded comment as the very first frame so browsers don't
+        # buffer the initial bytes of a chunked response.
+        yield ": " + (" " * 2048) + "\n\n"
+        yield _sse_event("started", {})
+
+        runner = asyncio.create_task(_run_pipeline())
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "close":
+                    break
+                yield _sse_event(kind, payload)
+                if kind in ("done", "error"):
+                    # Drain to the close sentinel so the runner finishes
+                    # cleanly before we tear down.
+                    while True:
+                        k2, _ = await queue.get()
+                        if k2 == "close":
+                            break
+                    break
+        finally:
+            pipeline.store.unregister_event_subscriber(token)
+            try:
+                await runner
+            except Exception:
+                pass
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",  # disable proxy buffering
+    }
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=headers,
+    )
+
+
 # ---- Phase 2: routing memo inspector --------------------------------------
 #
 # Read-only endpoints over the routing_memo table. The trace UI lists
-# rows on /v2/api/routing-memo and inspects single (pattern, predicate)
-# pairs on /v2/api/routing-memo/{pattern}/{predicate}. No write
+# rows on /api/routing-memo and inspects single (pattern, predicate)
+# pairs on /api/routing-memo/{pattern}/{predicate}. No write
 # endpoints in Phase 2 — counts only ever change via operator-action
 # endpoints which arrive in Phase 8 with the substrate inspectors.
 
@@ -285,9 +484,9 @@ def get_routing_memo_entry(pattern: str, predicate: str) -> dict[str, Any]:
 # ---- Phase 3: predicate_equivalence inspector -----------------------------
 #
 # Read-only endpoints over the predicate_equivalence table. The trace
-# UI lists rows on /v2/api/substrate/predicate-equivalence (with an
+# UI lists rows on /api/substrate/predicate-equivalence (with an
 # optional ?pattern= filter) and inspects single triples on
-# /v2/api/substrate/predicate-equivalence/{pattern}/{a}/{b}.
+# /api/substrate/predicate-equivalence/{pattern}/{a}/{b}.
 #
 # No write endpoints in Phase 3. Phase 8's operator-action inspector
 # adds re-judgment endpoints that increment the counts; reads still
@@ -340,8 +539,8 @@ def get_predicate_equivalence_entry(
 # ---- Phase 4: entity_equivalence inspector ---------------------------------
 #
 # Read-only endpoints over the entity_equivalence table. The trace UI
-# lists rows on /v2/api/substrate/entity-equivalence and inspects
-# single pairs on /v2/api/substrate/entity-equivalence/{a}/{b}. The
+# lists rows on /api/substrate/entity-equivalence and inspects
+# single pairs on /api/substrate/entity-equivalence/{a}/{b}. The
 # entity oracle is pattern-independent so there's no pattern filter
 # (unlike the predicate-equivalence list endpoint).
 
@@ -384,9 +583,9 @@ def get_entity_equivalence_entry(
 # ---- Phase 5: entity_taxonomy inspector -----------------------------------
 #
 # Read-only endpoints over the entity_taxonomy table. The trace UI
-# lists rows on /v2/api/substrate/entity-taxonomy (with optional
+# lists rows on /api/substrate/entity-taxonomy (with optional
 # ?relation_type= filter) and inspects single triples on
-# /v2/api/substrate/entity-taxonomy/{child}/{parent}/{relation_type}.
+# /api/substrate/entity-taxonomy/{child}/{parent}/{relation_type}.
 # DIRECTIONAL — calling with (child, parent) and (parent, child) of
 # the same pair returns DIFFERENT rows (or 404s on the missing
 # direction); there is no canonical-pair swap.
@@ -506,7 +705,7 @@ def get_predicate_distribution_entry(
 # The operator UI debounces duplicate submissions. Programmatic callers
 # should read the returned counts to confirm their increment landed.
 #
-# URL shape: /v2/api/substrate/{oracle-slug}/{row_id}/{action}.
+# URL shape: /api/substrate/{oracle-slug}/{row_id}/{action}.
 # Slug uses dashes for URL aesthetics; the helper canonicalizes back to
 # the table name (predicate-equivalence -> predicate_equivalence).
 #
@@ -616,13 +815,13 @@ def contradict_oracle_row_endpoint(
 # Drives Layer 2 routing → walker (U → W → derivation → fresh) → Layer 5
 # (decision_confidence + intervention) for a single structured claim. The
 # trace UI uses this to surface the WalkerDecision and Intervention while
-# /v2/api/chat is still a Phase 9 deliverable. Skips Layer 1 (extraction)
+# /api/chat is still a Phase 9 deliverable. Skips Layer 1 (extraction)
 # and the chat-model call: the caller hands us a structured claim dict
 # directly.
 #
 # Each request creates one synthetic turn so pipeline events have a
 # turn_id to attach to. The response includes the turn_id so the trace
-# UI can re-fetch events via /v2/api/trace/{turn_id} once Phase 9 wires
+# UI can re-fetch events via /api/trace/{turn_id} once Phase 9 wires
 # that endpoint; for now the dispatch response inlines the events list.
 #
 # fresh dispatch is opt-in via run_fresh=true (default false): without
@@ -669,7 +868,7 @@ def dispatch_one(req: DispatchOneRequest) -> dict[str, Any]:
 
     Layer 1 (extraction) is bypassed — the caller hands us a structured
     claim. The response inlines the pipeline events so the trace UI
-    works without a /v2/api/trace endpoint (Phase 9 territory).
+    works without a /api/trace endpoint (Phase 9 territory).
     """
     from src.layer1_extraction.pattern_registry import (
         load_default_registry,
@@ -764,12 +963,176 @@ def dispatch_one(req: DispatchOneRequest) -> dict[str, Any]:
 
 
 @app.get("/api/trace/{turn_id}")
-def get_trace(turn_id: int) -> dict[str, Any]:
+def get_trace(turn_id: int) -> list[dict[str, Any]]:
     """Return the pipeline events for a single turn, in arrival order."""
     store = _get_store()
+    return store.get_pipeline_events(turn_id)
+
+
+@app.get("/api/turns")
+def list_turns() -> list[dict[str, Any]]:
+    """List every turn in the store, oldest first.
+
+    The trace UI's Pipeline Events tab walks this list and fetches
+    ``/api/trace/{id}`` per turn to render the per-turn event tree.
+    Inspector view: returns every turn regardless of user_id.
+    """
+    return _get_store().list_turns(user_id=None)
+
+
+# ---- Memory inspector ----------------------------------------------------
+#
+# Three read endpoints powering the inspector's Memory + Patterns +
+# World Cache panels:
+#
+#   GET /api/facts        — query facts with filters
+#   GET /api/patterns     — the 9 patterns from the registry
+#   GET /api/cache        — Tier W (verification_cache) contents +
+#                           aggregate hit-rate stats from pipeline_events
+
+
+@app.get("/api/facts")
+def list_facts(
+    pattern: str | None = None,
+    predicate: str | None = None,
+    asserted_by: str | None = None,
+    verification_status: str | None = None,
+    is_session_local: int | None = None,
+    current_session: str | None = None,
+    only_valid: bool = False,
+) -> list[dict[str, Any]]:
+    """Query facts with optional filters.
+
+    The Memory tab maps its four scopes to combinations of these
+    filters:
+
+      * Conversation: ``is_session_local=1`` + current_session in
+        ``session_ids`` (filtered post-query — the SQL filter for
+        json_each membership lives in find_currently_valid)
+      * User: ``asserted_by="user"`` + ``is_session_local=0``
+      * Model: ``asserted_by`` ∈ {"model", "python_verifier"}
+      * World: served from ``/api/cache`` instead
+
+    Returns a flat list (UI-facing inspector view; ignores user_id
+    scoping so operators see everything)."""
+    store = _get_store()
+    facts = store.query_facts(
+        pattern=pattern,
+        predicate=predicate,
+        asserted_by=asserted_by,
+        verification_status=verification_status,
+        only_valid=only_valid,
+        user_id=None,
+    )
+    out: list[dict[str, Any]] = []
+    for f in facts:
+        if is_session_local is not None and int(f.is_session_local) != int(is_session_local):
+            continue
+        if current_session is not None and int(f.is_session_local) == 1:
+            if current_session not in (f.session_ids or []):
+                continue
+        out.append(f.to_dict())
+    return out
+
+
+@app.get("/api/patterns")
+def list_patterns() -> list[dict[str, Any]]:
+    """Return the 9 patterns the extractor uses, with slot schemas
+    and example predicates. Powers the Patterns inspector panel."""
+    from src.layer1_extraction.pattern_registry import load_default_registry
+    reg = load_default_registry()
+    out = []
+    for p in reg.all():
+        out.append({
+            "name": p.name,
+            "description": p.description,
+            "slots": [
+                {"name": s.name, "type": s.type, "required": s.required}
+                for s in p.slots
+            ],
+            "example_predicates": list(p.example_predicates),
+            "disambiguation_notes": p.disambiguation_notes,
+        })
+    return out
+
+
+@app.get("/api/cache")
+def list_cache_entries(limit: int = 200) -> dict[str, Any]:
+    """Tier W (verification_cache) contents + aggregate stats.
+
+    Returns ``{stats, entries}``. ``stats`` summarizes total entries +
+    immutable count + total per-entry hits + lookup hit rate
+    aggregated from ``cache_lookup`` pipeline events. ``entries`` is
+    the most-recently-cached rows with a server-side ``is_expired``
+    flag so the UI doesn't have to parse timestamps in JS.
+    """
+    from datetime import datetime, timezone
+    store = _get_store()
+    rows = store._conn.execute(
+        "SELECT * FROM verification_cache ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    now = datetime.now(timezone.utc)
+    entries: list[dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        expires_at = d.get("expires_at")
+        is_expired = False
+        if expires_at:
+            try:
+                if datetime.fromisoformat(expires_at) < now:
+                    is_expired = True
+            except ValueError:
+                is_expired = True
+        d["is_expired"] = is_expired
+        entries.append(d)
+
+    stats_row = store._conn.execute(
+        "SELECT COUNT(*) AS total, "
+        "       COUNT(CASE WHEN expires_at IS NULL THEN 1 END) AS immutable, "
+        "       SUM(hit_count) AS total_hits "
+        "FROM verification_cache"
+    ).fetchone()
+
+    # Live hit-rate stats from pipeline_events.cache_lookup rows.
+    hits = misses = errors = 0
+    by_stability: dict[str, int] = {}
+    lookup_rows = store._conn.execute(
+        "SELECT data FROM pipeline_events WHERE stage = 'cache_lookup'"
+    ).fetchall()
+    import json as _json
+    for r in lookup_rows:
+        try:
+            data = _json.loads(r["data"])
+        except (TypeError, ValueError):
+            continue
+        if data.get("error"):
+            errors += 1
+            continue
+        result = data.get("result")
+        if result == "hit":
+            hits += 1
+            stab = data.get("stability_class") or "unknown"
+            by_stability[stab] = by_stability.get(stab, 0) + 1
+        elif result == "miss":
+            misses += 1
+
+    total_lookups = hits + misses
+    hit_rate = (hits / total_lookups) if total_lookups else None
+
     return {
-        "turn_id": turn_id,
-        "events": store.get_pipeline_events(turn_id),
+        "stats": {
+            "total_entries": int(stats_row["total"] or 0),
+            "immutable_entries": int(stats_row["immutable"] or 0),
+            "total_hits": int(stats_row["total_hits"] or 0),
+            "lookups": total_lookups,
+            "lookup_hits": hits,
+            "lookup_misses": misses,
+            "lookup_errors": errors,
+            "hit_rate": hit_rate,
+            "hits_by_stability": by_stability,
+        },
+        "entries": entries,
     }
 
 

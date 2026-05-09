@@ -61,12 +61,27 @@ _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
 # default for the chat slot (operator-overridable in the UI).
 DEFAULT_MODEL_BY_PURPOSE: dict[str, str] = {
     "chat":                "claude-haiku-4-5",
+    # v0.14.1 — assistant-side extractor bumped to gpt-4.1 (full).
+    # The assistant draft can carry 20+ claims per turn; pattern
+    # misclassifications cascade into wrong routing → wrong verifier
+    # → poisoned cache. The cost amplifier on this call is high
+    # enough that the per-call delta vs mini is justified. Calibration
+    # corpus at tests/calibration/extraction_corpus.jsonl pins the
+    # accuracy floor. User-side extractor stays on mini (lower
+    # volume + lower downstream-cost amplification).
     "extractor:user":      "gpt-4.1-mini",
-    "extractor:assistant": "gpt-4.1-mini",
+    "extractor:assistant": "gpt-4.1",
     "router":              "gpt-4.1-mini",
     "cache_classify":      "gpt-4.1-nano",
     "cache_scoping":       "gpt-4.1-nano",   # legacy two-call path
-    "cache_stability":     "gpt-4.1-nano",   # legacy two-call path
+    # v0.14.1 — bumped from nano → mini. The classifier picks one of 6
+    # TTL bins for verdicts that will be cached for hours-to-immutable;
+    # nano produced too many decade_stable picks on facts that should
+    # have been months/days_stable, and the bias-toward-shorter-TTL
+    # rule needs better instruction-following than nano provides. Cost
+    # delta is small — the call only fires on never-before-cached
+    # claims (canonical-key cache misses).
+    "cache_stability":     "gpt-4.1-mini",
     "prompt_builder":      "gpt-4.1-mini",
     "code_writer":         "gpt-4.1-mini",
     "retrieval_judge":     "gpt-4.1-mini",
