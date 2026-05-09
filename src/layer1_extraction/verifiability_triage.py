@@ -91,31 +91,50 @@ _VAGUE_PREDICATES: frozenset[str] = frozenset({
     "is_a_kind_of",  # without a specific category, this is empty
 })
 
-# v0.14.1 — predicates that name an operation the python verifier can
-# settle deterministically against the system clock / sandbox. These
-# always trigger VERIFY regardless of slot shape: the falsifiability
-# lives in the predicate's *meaning* (zoneinfo, datetime, statistics,
-# re), not in the slot's *shape* (which the other rules check).
-#
-# Conservative scope per the v0.14.1 approval — time/clock + counting
-# only. Predicates the system has actually seen in real traces. Add
-# arithmetic / calendar / string predicates here as we encounter them
-# and confirm the python verifier can dispatch them cleanly.
+# DEPRECATED v0.14.3 — the source of truth for "predicates that always
+# trigger triage VERIFY" is now the per-pattern
+# ``triage_verify_predicates`` field in ``patterns.yaml``. Each
+# pattern declares which of its predicates are
+# computable / lookup-friendly. The triage gate looks the predicate
+# up in the registry on each call. This constant remains as a flat
+# back-compat fallback for callers that don't pass a registry; its
+# contents are kept in sync with the schema by hand.
 _COMPUTABLE_PREDICATES: frozenset[str] = frozenset({
-    # Time / clock
-    "current_time",
-    "current_date",
-    "current_day_of_week",
-    "current_year",
-    "time_difference_hours",
-    "time_difference_days",
-    # Counting
-    "has_count",
-    "letter_count",
-    "word_count",
-    "character_count",
-    "vowel_count",
+    # Time / clock (quantitative)
+    "current_time", "current_date", "current_day_of_week",
+    "current_year", "time_difference_hours", "time_difference_days",
+    # Counting (quantitative)
+    "has_count", "letter_count", "word_count",
+    "character_count", "vowel_count",
+    # Locational (spatial_temporal)
+    "located_in", "capital_of", "borders",
+    "in_continent", "in_timezone",
+    # String operations (relational)
+    "contains_substring", "is_anagram_of", "reverse_of",
+    "starts_with", "ends_with",
+    # Lookup-friendly relations (relational)
+    "founded_by", "married_to",
+    "defeated_in_election", "authored_by",
 })
+
+
+def _registry_verify_predicates(
+    registry: Any | None, pattern_name: str,
+) -> frozenset[str]:
+    """Read the per-pattern ``triage_verify_predicates`` allow-list
+    from the registry. Falls back to the flat ``_COMPUTABLE_PREDICATES``
+    constant when no registry is passed (back-compat for callers
+    that haven't been updated)."""
+    if registry is None or not pattern_name:
+        return _COMPUTABLE_PREDICATES
+    try:
+        if not registry.has(pattern_name):
+            return _COMPUTABLE_PREDICATES
+        pattern = registry.get(pattern_name)
+        return frozenset(pattern.triage_verify_predicates)
+    except Exception:
+        # Defensive: a malformed registry shouldn't break triage.
+        return _COMPUTABLE_PREDICATES
 
 # Slot names whose presence signals temporal scope.
 _DATE_SLOT_NAMES: frozenset[str] = frozenset({
@@ -134,22 +153,67 @@ class TriageResult:
     decision: TriageDecision
     reason: str
     rule: str  # which rule fired ("numeric", "date", "named_entities", ...)
+    # v0.14.3 — cross-check signal. Set when the extractor's
+    # ``expected_verifier`` field disagrees with the triage decision.
+    # PASS_THROUGH + extractor expected python/retrieval = mismatch
+    # (extractor thought this was verifiable; triage didn't see the
+    # signal). Trace UI can flag for operator review.
+    expected_verifier: str | None = None
+    extractor_triage_mismatch: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "decision": self.decision.value,
             "reason": self.reason,
             "rule": self.rule,
+            "expected_verifier": self.expected_verifier,
+            "extractor_triage_mismatch": self.extractor_triage_mismatch,
         }
 
 
-def triage_claim(claim: dict) -> TriageResult:
+def triage_claim(claim: dict, registry: Any | None = None) -> TriageResult:
     """Decide verifiability for one extracted claim.
 
     Pure function. No store access, no LLM call. The decision is
     deterministic from the claim's shape alone; same claim → same
     decision every time.
+
+    ``registry`` (optional) — when supplied, the predicate allow-list
+    for Rule 6 comes from the matched pattern's
+    ``triage_verify_predicates`` field. When omitted, the flat
+    ``_COMPUTABLE_PREDICATES`` constant is used as a back-compat
+    fallback (with the union of all patterns' allow-lists).
     """
+    result = _triage_decide(claim, registry)
+    # v0.14.3 cross-check: stamp the extractor's expected_verifier and
+    # flag mismatch with the triage decision. PASS_THROUGH while the
+    # extractor expected python/retrieval is the canonical mismatch
+    # — the extractor saw a verifiable claim that the rules didn't
+    # recognize. Recorded for trace-UI surfacing; doesn't override
+    # the decision (the gate stays conservative).
+    expected = claim.get("expected_verifier")
+    expected = expected.strip() if isinstance(expected, str) else None
+    mismatch = False
+    if expected:
+        verifier_expected_paths = {"python", "python_with_canonical_constants",
+                                   "retrieval"}
+        if (result.decision is TriageDecision.PASS_THROUGH
+            and expected in verifier_expected_paths):
+            mismatch = True
+    return TriageResult(
+        decision=result.decision,
+        reason=result.reason,
+        rule=result.rule,
+        expected_verifier=expected,
+        extractor_triage_mismatch=mismatch,
+    )
+
+
+def _triage_decide(claim: dict, registry: Any | None) -> TriageResult:
+    """Inner decision logic. Returns a TriageResult without the
+    cross-check fields populated. Wrapped by triage_claim which adds
+    the cross-check stamp."""
+    pattern_name = claim.get("pattern", "")
     predicate = (claim.get("predicate") or "").strip().lower()
     slots = claim.get("slots") or {}
     anchor = (claim.get("anchor_entity") or "").strip()
@@ -173,23 +237,25 @@ def triage_claim(claim: dict) -> TriageResult:
                 rule="year_in_value",
             )
 
-    # Rule 6: computable-predicate allow-list. Predicates the python
-    # verifier can settle deterministically against the system clock
-    # or sandbox (zoneinfo, datetime, re, statistics). The
-    # falsifiability lives in the predicate's meaning, not the slot's
-    # shape — so a claim like "current_time(subject=Cairo, value='9:56
-    # am')" hits VERIFY here even though "9:56 am" doesn't parse as a
+    # Rule 6: per-pattern verify-predicate allow-list. Each pattern in
+    # patterns.yaml declares which of its predicates the system knows
+    # how to verify (computable by the python verifier OR
+    # lookup-friendly for the retrieval verifier). The falsifiability
+    # lives in the predicate's *meaning*, not the slot's *shape* — so
+    # a claim like ``current_time(subject=Cairo, value='9:56 am')``
+    # hits VERIFY here even though "9:56 am" doesn't parse as a
     # number and Cairo alone isn't enough for the multi-named-entity
     # rule.
-    if predicate in _COMPUTABLE_PREDICATES:
+    pattern_predicates = _registry_verify_predicates(registry, pattern_name)
+    if predicate in pattern_predicates:
         return TriageResult(
             decision=TriageDecision.VERIFY,
             reason=(
-                f"predicate {predicate!r} names a python-verifier "
-                "operation (zoneinfo / datetime / re / statistics) → "
-                "computable against the system clock or sandbox"
+                f"predicate {predicate!r} is a verify-predicate "
+                f"declared by pattern {pattern_name!r} → known "
+                "verifier path"
             ),
-            rule="computable_predicate",
+            rule="verify_predicate",
         )
 
     # Rule 1: numeric value present in any slot.

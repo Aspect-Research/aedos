@@ -61,6 +61,7 @@ def plan_intervention(
     *,
     store: Optional[FactStore] = None,
     threshold: Optional[float] = None,
+    triage_skipped: bool = False,
 ) -> Intervention:
     """Plan exactly one intervention for a model claim.
 
@@ -70,6 +71,17 @@ def plan_intervention(
     evidence the walker already attached.
 
     ``threshold`` defaults to ``get_threshold()`` (env-driven).
+
+    ``triage_skipped`` (v0.14.3): True iff the verifiability triage
+    gate decided PASS_THROUGH for this claim (fresh dispatch was
+    suppressed). When True, an ``unverifiable_pending_implementation``
+    or ``retrieval_failed`` walker outcome is the EXPECTED no-op
+    consequence of triage — the planner returns ``pass_through``
+    instead of ``hedge`` because hedging implies "we tried and were
+    uncertain", whereas triage-skipped means "we didn't try by
+    design, no information either way." The trace UI hides skipped
+    claims behind a drop-down so they don't clutter the chat-side
+    view.
     """
     if threshold is None:
         threshold = get_threshold()
@@ -83,6 +95,23 @@ def plan_intervention(
             InterventionType.NOOP, walker_decision, decision_confidence,
             reason="Layer 2 validator rejected the claim; flagged for operator",
             flag_operator=True,
+        )
+
+    # v0.14.3 — triage-skipped short-circuit. When the triage gate
+    # explicitly suppressed fresh dispatch and the cheap walker tiers
+    # also missed, this is "we chose not to verify, no information"
+    # not "we tried and failed". Pass through unchanged; no hedge.
+    if (triage_skipped
+        and status in ("unverifiable_pending_implementation",
+                       "retrieval_failed")):
+        return _build(
+            InterventionType.PASS_THROUGH, walker_decision, decision_confidence,
+            reason=(
+                "verifiability triage skipped this claim (no falsifiability "
+                "signal); leaving the model's text unchanged — no hedge, "
+                "no rewrite. The triage gate already decided this isn't "
+                "worth verifying."
+            ),
         )
 
     # User-asserted: outcome decides. Confidence isn't gating

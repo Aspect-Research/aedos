@@ -119,6 +119,10 @@ from src.layer3_substrate.predicate_equivalence import (
     PredicateEquivalence,
     PredicateEquivalenceVerdict,
 )
+from src.layer4_lookup.relevance import (
+    candidate_tokens as _candidate_tokens,
+    is_candidate_relevant as _is_candidate_relevant,
+)
 from src.layer4_lookup.types import (
     LookupOutcome,
     TierWResult,
@@ -540,6 +544,7 @@ def lookup(
     llm: Optional[LLMClient] = None,
     source_turn_id: Optional[int] = None,
     entity_oracle: Optional[EntityEquivalence] = None,
+    active_context_tokens: Optional[frozenset] = None,
 ) -> TierWResult:
     """Look for a matching or contradicting cached verifier verdict.
 
@@ -692,6 +697,7 @@ def lookup(
         alias_results = _gather_alias_identity_candidates(
             store, pattern, key_slots, key_slot_names, claim, registry,
             entity_oracle, llm, source_turn_id,
+            active_context_tokens=active_context_tokens,
         )
         for row, parsed, entity_row_ids in alias_results:
             # Literal-predicate path against the alias candidate.
@@ -984,6 +990,8 @@ def _gather_alias_identity_candidates(
     entity_oracle: EntityEquivalence,
     llm: Optional[LLMClient],
     source_turn_id: Optional[int],
+    *,
+    active_context_tokens: Optional[frozenset] = None,
 ) -> list[tuple[TierWRow, _ParsedKey, list[int]]]:
     """Cache rows under (pattern) whose identity slots are alias-
     equivalent to the claim's per the entity_equivalence oracle.
@@ -1011,6 +1019,17 @@ def _gather_alias_identity_candidates(
             continue
         if parsed.tense != claim_tense_value:
             continue
+
+        # v0.14.4 — relevance gate. Skip the candidate when its
+        # parsed slot values share no tokens with the active context.
+        # Tier W rows don't carry source_text in the parsed-key form;
+        # we only have the slot values to tokenize.
+        if active_context_tokens:
+            cand_tokens = _candidate_tokens(
+                list(parsed.slots.values()), source_text=None,
+            )
+            if not _is_candidate_relevant(active_context_tokens, cand_tokens):
+                continue
 
         entity_row_ids: list[int] = []
         all_qualify = True

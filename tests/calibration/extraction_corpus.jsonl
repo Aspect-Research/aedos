@@ -54,3 +54,14 @@
 {"id": "ext-edge-002", "text": "the sunset was beautiful", "expected_pattern": null, "notes": "aesthetic; abstain"}
 {"id": "ext-edge-003", "text": "what time is it?", "expected_pattern": null, "notes": "question, no claim"}
 {"id": "ext-edge-004", "text": "let's say I live in Boston for this conversation", "expected_pattern": "spatial_temporal", "notes": "session marker present but the claim itself is still extractable"}
+
+{"id": "ext-list-001", "text": "Old World monkeys include baboons, macaques, and mandrills.", "expected_pattern": "relational", "notes": "list-of-examples → ONE relational includes claim, NOT 3 separate categorical is_a claims. The categorical-split would also produce 'baboon is an Old World monkey' which contains the suffix tautology trap."}
+{"id": "ext-list-002", "text": "Common examples of lizards include iguanas, geckos, skinks, and monitor lizards.", "expected_pattern": "relational", "notes": "list-of-examples — relational includes form preferred. categorical-split would generate 'monitor lizard is a lizard' which the validator rejects as a suffix tautology."}
+{"id": "ext-list-003", "text": "The squamates include lizards, snakes, and amphisbaenians.", "expected_pattern": "relational", "notes": "list-of-examples"}
+
+{"id": "ext-range-001", "text": "A lizard's diet can be carnivorous, omnivorous, or herbivorous.", "expected_pattern": "relational", "notes": "range/variation — ONE claim about diet variation, NOT 3 separate 'lizard diet can be X' claims. predicate=diet_varies_among or similar."}
+{"id": "ext-range-002", "text": "Lizard sizes range from a few centimeters to over 3 meters.", "expected_pattern": "quantitative", "notes": "range/variation — ONE quantitative claim with a range value, NOT separate min/max claims."}
+
+{"id": "ext-vague-001", "text": "Lizards play important roles in their ecosystems as both predators and prey.", "expected_pattern": null, "notes": "generic-noun object (ecosystem); abstain. No specific role context to verify."}
+{"id": "ext-vague-002", "text": "Monkeys exhibit complex social behavior in their environment.", "expected_pattern": null, "notes": "vague qualitative + generic noun (environment); abstain."}
+{"id": "ext-vague-specific-counterpart-001", "text": "Lizards prey on insects, small mammals, and other reptiles.", "expected_pattern": "relational", "notes": "same shape as ext-vague-001 BUT object is specific (insects, small mammals, reptiles). Verifier can check this; accept."}

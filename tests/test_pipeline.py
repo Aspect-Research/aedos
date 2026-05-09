@@ -498,6 +498,120 @@ def test_correction_event_always_emitted_with_full_interventions(tmp_path):
     assert final_data["rewrote"] is False
 
 
+# ============================================================================
+# 11. Re-extraction loop on validator rejection (v0.14.3)
+# ============================================================================
+
+
+def test_re_extraction_replaces_validator_rejected_claim(tmp_path):
+    """v0.14.3: when the validator rejects an assistant claim
+    (here: preference with non-user agent — the baboon foraging
+    case), the pipeline calls the extractor a second time with a
+    rejection-reason hint. The re-classified claim (relational)
+    passes the validator and proceeds to verification.
+
+    Verifies the audit trail event + the replaced claim flowing
+    through the rest of the pipeline.
+    """
+    rejected = {
+        "pattern": "preference",
+        "predicate": "forages_for",
+        "polarity": 1,
+        "slots": {"agent": "baboon", "object": "natural foods"},
+        "source_text": "baboons forage for natural foods",
+    }
+    re_classified = {
+        "pattern": "relational",
+        "predicate": "forages_for",
+        "polarity": 1,
+        "slots": {"subject": "baboon", "object": "natural foods"},
+        "source_text": "baboons forage for natural foods",
+        "expected_verifier": "retrieval",
+    }
+    llm = StubLLM(
+        extracts=[
+            {"facts": []},                 # user-side
+            {"facts": [rejected]},         # assistant first pass — rejected by validator
+            {"facts": [re_classified]},    # re-extraction — relational, accepted
+        ],
+        chats=["Baboons forage for natural foods like grasses and seeds."],
+        # Fresh dispatch falls through to retrieval; the verifier
+        # crashes for lack of search/judge stubs in this test,
+        # producing a hedge intervention. The corrector's rewrite
+        # call lands here.
+        rewrites=["Baboons forage for natural foods (per general references)."],
+        routes=[
+            # First classify: ROUTING_ANOMALY happens BEFORE the LLM
+            # router runs (validator rejects). No LLM router call.
+            # Second classify (re-classified relational): the LLM
+            # router runs; route to retrieval.
+            RoutingDecision(method="retrieval", reason="behavioral world fact",
+                            python_inputs_self_contained=None,
+                            retrieval_query_hint=None,
+                            canonical_constants_needed=None),
+        ],
+    )
+    p = _build_pipeline(tmp_path, llm)
+
+    trace = p.run_turn("tell me about baboon foraging")
+
+    # The re-extraction event fired with outcome=replaced.
+    asst_events = p.store.get_pipeline_events(trace.assistant_turn_id)
+    re_events = [e for e in asst_events if e["stage"] == "re_extraction"]
+    assert len(re_events) == 1
+    re_data = re_events[0]["data"]
+    assert re_data["outcome"] == "replaced"
+    assert re_data["original_claim"]["pattern"] == "preference"
+    assert re_data["re_classified_claim"]["pattern"] == "relational"
+
+    # The verification decision used the re-classified claim.
+    assert len(trace.verification_decisions) == 1
+    vd = trace.verification_decisions[0]
+    assert vd["claim"]["pattern"] == "relational"
+
+
+def test_re_extraction_dropped_when_re_extractor_returns_no_facts(tmp_path):
+    """When the re-extractor returns [] (the source text genuinely
+    doesn't fit any pattern), the pipeline accepts the original
+    rejection with outcome=dropped."""
+    rejected = {
+        "pattern": "propositional_attitude",
+        "predicate": "believes",
+        "polarity": 1,
+        "slots": {"agent": "the model", "attitude": "thinks",
+                  "proposition": "rates will fall"},
+        "source_text": "the model thinks rates will fall",
+    }
+    llm = StubLLM(
+        extracts=[
+            {"facts": []},                 # user-side
+            {"facts": [rejected]},         # assistant — rejected
+            {"facts": []},                 # re-extraction — dropped
+        ],
+        chats=["The model thinks rates will fall."],
+    )
+    p = _build_pipeline(tmp_path, llm)
+
+    trace = p.run_turn("what do you think?")
+
+    asst_events = p.store.get_pipeline_events(trace.assistant_turn_id)
+    re_events = [e for e in asst_events if e["stage"] == "re_extraction"]
+    assert len(re_events) == 1
+    assert re_events[0]["data"]["outcome"] == "dropped"
+
+    # Verification decision still produced for the (still-rejected)
+    # claim; intervention is noop because the walker hits routing
+    # anomaly tier.
+    assert len(trace.verification_decisions) == 1
+    vd = trace.verification_decisions[0]
+    # Walker either remained at routing_anomaly tier (if validator
+    # rejected again on the second router.classify call) or whatever
+    # the original anomaly produced; intervention is noop / hedge.
+    assert vd["intervention"]["intervention_type"] in {
+        "noop", "hedge", "soften", "pass_through",
+    }
+
+
 def test_assistant_claim_contradicts_tier_u_corrector_rewrites(tmp_path):
     """Pre-stored 'user likes olives'. Assistant draft says 'you don't
     like olives' (polarity=0). Walker returns CONTRADICTION via Tier U.

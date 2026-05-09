@@ -918,6 +918,7 @@ def walk(
     max_depth: int = MAX_DEPTH,
     min_chain_reliability: float = MIN_CHAIN_RELIABILITY,
     active_classification_budget: int = DEFAULT_ACTIVE_CLASSIFICATION_BUDGET,
+    active_context_tokens: Optional[frozenset] = None,
 ) -> DerivationResult:
     """Walk the substrate looking for a chain that supports ``claim``.
 

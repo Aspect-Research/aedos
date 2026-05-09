@@ -229,6 +229,17 @@ PIPELINE_STAGES = {
     # verified store unless it cleared a verifier") is preserved
     # because PASS_THROUGH claims don't enter the store.
     "verifiability_triage",
+    # v0.14.3 — re-extraction feedback loop. Fired once per claim
+    # the validator marked routing_anomaly. Payload carries the
+    # original claim, the rejection reason, and the re-classified
+    # output (or None if the second pass also rejected). Bounded:
+    # one retry maximum.
+    "re_extraction",
+    # v0.14.3 — routing reconciler (Layer 2.5). Fired once per claim
+    # whose Layer-2 routing pick was overridden by the reconciler
+    # (verifier shape vs pattern shape mismatch). Payload carries
+    # the original method, the override method, and the reason.
+    "routing_reconciled",
 }
 
 

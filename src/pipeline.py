@@ -61,6 +61,7 @@ from src.layer2_routing.constants import (
     KEY_SLOTS_BY_PATTERN,
     is_self_attribute,
 )
+from src.layer2_routing.reconciler import reconcile_routing
 from src.layer2_routing.router import Router
 from src.layer2_routing.types import Decision as Layer2Decision
 from src.layer2_routing.types import RoutingOutcome
@@ -71,6 +72,7 @@ from src.layer3_substrate.predicate_equivalence import PredicateEquivalence
 from src.layer4_lookup import fresh as _fresh
 from src.layer4_lookup import tier_u as _tier_u
 from src.layer4_lookup import tier_w as _tier_w
+from src.layer4_lookup.relevance import compute_active_context
 from src.layer4_lookup.types import LookupOutcome, WalkerDecision
 from src.layer4_lookup.walker import walk_claim
 from src.layer5_decision.confidence import (
@@ -320,6 +322,14 @@ class Pipeline:
         """Run one full user → assistant turn end-to-end."""
         if not user_message or not user_message.strip():
             raise ValueError("user_message must be a non-empty string")
+
+        # v0.14.4 — make the user message visible to the parallel
+        # claim-verification workers via an instance attribute. The
+        # walker uses this to compute per-claim relevance gates so
+        # alias-broadening doesn't pay LLM cost on
+        # obviously-unrelated stored facts (Cairo↔lizard). Read-only
+        # for the duration of the turn; cleared in the finally block.
+        self._active_user_message = user_message
 
         # Stage 1: insert user turn FIRST so all user-side events have
         # a turn_id to attach to.
@@ -643,6 +653,83 @@ class Pipeline:
             [iv for iv in interventions if iv is not None],
         )
 
+    def _attempt_re_extraction(
+        self, original_fact: dict, original_layer2: Layer2Decision,
+        turn_id: int,
+    ) -> tuple[Optional[dict], Optional[Layer2Decision]]:
+        """v0.14.3 — re-extraction feedback loop. Try once to
+        re-classify a validator-rejected claim into a different
+        pattern. Returns (new_fact, new_layer2) on success;
+        (None, None) on failure (re-extraction returned no facts, or
+        the re-classified claim also failed the validator).
+
+        The re-extraction event captures the full audit trail:
+        original claim, validator's invariant + reason, re-classified
+        output (or None), final outcome (replaced / dropped /
+        re_rejected).
+        """
+        validation = original_layer2.validation
+        rejection_reason = (
+            f"invariant {validation.invariant!r} failed on slot "
+            f"{validation.slot!r} (expected {validation.expected!r}, "
+            f"got {validation.actual!r})"
+            if validation else "validator anomaly (no validation payload)"
+        )
+        source_text = original_fact.get("source_text") or ""
+        try:
+            re_result = self.extractor.re_extract_after_rejection(
+                original_fact,
+                source_text=source_text,
+                rejection_reason=rejection_reason,
+                role="assistant",
+            )
+        except Exception as exc:
+            self._emit(turn_id, "re_extraction", {
+                "original_claim": dict(original_fact),
+                "rejection_reason": rejection_reason,
+                "outcome": "extractor_error",
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+            return None, None
+
+        if not re_result.valid_facts:
+            self._emit(turn_id, "re_extraction", {
+                "original_claim": dict(original_fact),
+                "rejection_reason": rejection_reason,
+                "outcome": "dropped",
+                "reason": "re-extractor returned no facts; accepting rejection",
+            })
+            return None, None
+
+        # Take the first re-classified fact (re-extractor's job is
+        # one-claim-out for the rejected source text). Validate it
+        # by routing.
+        new_fact = re_result.valid_facts[0]
+        new_layer2 = self.router.classify(new_fact, source_turn_id=turn_id)
+        if new_layer2.outcome is RoutingOutcome.ROUTING_ANOMALY:
+            self._emit(turn_id, "re_extraction", {
+                "original_claim": dict(original_fact),
+                "rejection_reason": rejection_reason,
+                "re_classified_claim": dict(new_fact),
+                "outcome": "re_rejected",
+                "reason": "re-classified claim also failed validator; "
+                          "accepting original rejection",
+            })
+            return None, None
+
+        self._emit(turn_id, "re_extraction", {
+            "original_claim": dict(original_fact),
+            "rejection_reason": rejection_reason,
+            "re_classified_claim": dict(new_fact),
+            "outcome": "replaced",
+            "reason": (
+                f"re-classified from {original_fact.get('pattern')!r} "
+                f"to {new_fact.get('pattern')!r}; new claim passes the "
+                "validator"
+            ),
+        })
+        return new_fact, new_layer2
+
     def _verify_assistant_claim(
         self, fact: dict, turn_id: int,
     ) -> tuple[VerificationDecision, Intervention]:
@@ -654,7 +741,7 @@ class Pipeline:
         # load-bearing — the user's stored preferences must still
         # contradict the assistant when it gets them wrong, and that
         # contradiction lives in Tier U.
-        triage = triage_claim(fact)
+        triage = triage_claim(fact, registry=self.registry)
         self._emit(turn_id, "verifiability_triage", {
             "claim": dict(fact),
             **triage.to_dict(),
@@ -662,12 +749,62 @@ class Pipeline:
 
         layer2 = self.router.classify(fact, source_turn_id=turn_id)
 
+        # v0.14.3 — re-extraction feedback loop. If the validator
+        # rejected this claim (routing_anomaly), give the extractor
+        # ONE chance to re-classify the source text into a different
+        # pattern with a hint about why the original was rejected.
+        # If the re-classified claim passes the validator, replace
+        # `fact` + `layer2` and proceed normally; otherwise accept
+        # the rejection and produce noop.
+        if layer2.outcome is RoutingOutcome.ROUTING_ANOMALY:
+            re_fact, re_layer2 = self._attempt_re_extraction(
+                fact, layer2, turn_id,
+            )
+            if re_fact is not None and re_layer2 is not None:
+                fact = re_fact
+                layer2 = re_layer2
+                # Re-run triage on the re-classified claim — the new
+                # pattern may have a different verifier-allow-list
+                # signal; record the updated triage event.
+                triage = triage_claim(fact, registry=self.registry)
+                self._emit(turn_id, "verifiability_triage", {
+                    "claim": dict(fact),
+                    **triage.to_dict(),
+                    "after_re_extraction": True,
+                })
+
+        # v0.14.3 — Layer 2.5 routing reconciler. Cross-checks the
+        # picked verifier method against the pattern's slot shape.
+        # When the router picks python on a pattern with no value
+        # slot (the Cairo timezone case — spatial_temporal.located_in
+        # routed to python), the reconciler overrides to the
+        # pattern's default_routing_method. Pure rule-based; no LLM.
+        layer2, reconcile_result = reconcile_routing(
+            fact, layer2, self.registry,
+        )
+        if reconcile_result.reconciled:
+            self._emit(turn_id, "routing_reconciled", {
+                "claim": dict(fact),
+                **reconcile_result.to_dict(),
+            })
+
         # PASS_THROUGH suppresses fresh dispatch only. If U/W/derivation
         # all miss, the walker returns served_from_tier="fresh" with
         # status="unverifiable_pending_implementation" (the standard
         # walker behavior when fresh_dispatch=None and lookups miss).
         fresh_dispatch_fn = (
             _fresh.dispatch if triage.decision is TriageDecision.VERIFY else None
+        )
+        # v0.14.4 — compute the active-context token set for this
+        # claim. Walker passes it through to alias-broadening call
+        # sites in tier_u / tier_w / derivation, which gate
+        # entity_equivalence consultations on token-overlap with
+        # candidate stored facts. Prevents wasted LLM calls on
+        # obviously-unrelated pairs (Cairo↔lizard) without breaking
+        # cross-turn alias matching (NYC↔New York City).
+        active_tokens = compute_active_context(
+            fact,
+            current_user_message=getattr(self, "_active_user_message", None),
         )
         walker = walk_claim(
             fact, layer2, self.store,
@@ -681,9 +818,17 @@ class Pipeline:
             user_id=self.user_id,
             current_session=self.session_id,
             fresh_dispatch=fresh_dispatch_fn,
+            active_context_tokens=active_tokens,
         )
         confidence = compute_decision_confidence(walker, store=self.store)
-        intervention = plan_intervention(walker, confidence, store=self.store)
+        # v0.14.3 — pass triage decision into intervention planner so
+        # claims explicitly skipped by triage produce pass_through
+        # (no hedge) when U/W/derivation also miss.
+        triage_skipped = (triage.decision is TriageDecision.PASS_THROUGH)
+        intervention = plan_intervention(
+            walker, confidence, store=self.store,
+            triage_skipped=triage_skipped,
+        )
 
         # Bundle the Layer 5 verdict for the live trace UI: chain +
         # three-factor decision confidence + intervention pill all

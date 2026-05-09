@@ -149,6 +149,7 @@ def walk_claim(
     user_id: str = DEFAULT_USER_ID,
     current_session: Optional[str] = None,
     fresh_dispatch: Optional[FreshDispatch] = None,
+    active_context_tokens: Optional[frozenset] = None,
 ) -> WalkerDecision:
     """Resolve a claim through the tier stack.
 
@@ -190,6 +191,7 @@ def walk_claim(
         user_id=user_id, current_session=current_session,
         llm=llm, source_turn_id=source_turn_id,
         entity_oracle=entity_oracle,
+        active_context_tokens=active_context_tokens,
     )
     if tier_u_result.outcome is _tier_u.TierUOutcome.MATCH:
         decision = WalkerDecision(
@@ -234,6 +236,7 @@ def walk_claim(
         registry=registry,
         llm=llm, source_turn_id=source_turn_id,
         entity_oracle=entity_oracle,
+        active_context_tokens=active_context_tokens,
     )
 
     if tier_w_result.outcome is LookupOutcome.MATCH:
@@ -301,6 +304,7 @@ def walk_claim(
         source_turn_id=source_turn_id,
         user_id=user_id,
         current_session=current_session,
+        active_context_tokens=active_context_tokens,
     )
     if derivation_result.outcome is LookupOutcome.MATCH:
         # Derivation produces a "verified" status — the chain

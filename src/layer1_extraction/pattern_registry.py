@@ -55,6 +55,39 @@ class Pattern:
     disambiguation_notes: str = ""
     query_strategy: tuple[str, ...] = field(default_factory=tuple)
 
+    # v0.14.3 schema fields — each pattern self-declares the disciplines
+    # downstream layers enforce. Single source of truth: validator,
+    # triage, router, and extractor all read from the schema rather
+    # than hard-coding their own copy.
+    #
+    # agent_constraint: when set to "must_be_user", the validator
+    #   enforces that the slot named in subject_slot_for_constraint
+    #   names the user (in {user, me, i}). Drives USER_SUBJECT_PATTERNS.
+    # subject_slot_for_constraint: which slot the agent_constraint
+    #   applies to (typically 'agent'). Defaults to 'agent' when
+    #   agent_constraint is set.
+    # distinct_slots: pair of slot names that must hold distinct
+    #   values (case-insensitive on strings). Drives mereological's
+    #   part != whole invariant. Format: [slot_a, slot_b].
+    # default_routing_method: the dominant routing-method this
+    #   pattern's claims should land on (python /
+    #   python_with_canonical_constants / retrieval / user_authoritative
+    #   / unverifiable). Used by the LLM router as a prior + by the
+    #   triage cross-check.
+    # triage_verify_predicates: predicates within this pattern that
+    #   ALWAYS trigger triage VERIFY regardless of slot shape. Drives
+    #   the per-pattern slice of _COMPUTABLE_PREDICATES.
+    # boundary_examples: mis-classification examples — claims that
+    #   look like this pattern but belong to another. Assembled into
+    #   the extractor's prompt so the extractor sees the boundary
+    #   explicitly.
+    agent_constraint: str | None = None
+    subject_slot_for_constraint: str | None = None
+    distinct_slots: tuple[str, str] | None = None
+    default_routing_method: str | None = None
+    triage_verify_predicates: tuple[str, ...] = field(default_factory=tuple)
+    boundary_examples: tuple[dict, ...] = field(default_factory=tuple)
+
     def slot(self, name: str) -> Slot | None:
         for s in self.slots:
             if s.name == name:
@@ -127,6 +160,31 @@ class PatternRegistry:
                         f"  - {src!r}\n    → pattern={out.get('pattern')}, "
                         f"predicate={out.get('predicate')}, slots={out.get('slots')}"
                     )
+            # v0.14.3 — boundary_examples surface the cases that
+            # commonly mis-classify INTO this pattern (so the
+            # extractor sees what's NOT this pattern alongside what
+            # IS). This is the schema-driven version of "tell the
+            # extractor about adversarial inputs"; previously it
+            # lived only in disambiguation_notes prose.
+            if p.boundary_examples:
+                lines.append("")
+                lines.append("Boundary cases (mis-classification examples):")
+                for ex in p.boundary_examples:
+                    src = ex.get("input", "")
+                    is_this = ex.get("this_pattern")
+                    correct = ex.get("correct_pattern")
+                    reason = (ex.get("reason") or "").strip()
+                    if is_this is False and correct:
+                        lines.append(
+                            f"  - {src!r} → NOT {p.name}, use {correct} instead"
+                        )
+                    elif is_this is True:
+                        lines.append(f"  - {src!r} → IS {p.name} (canonical case)")
+                    else:
+                        lines.append(f"  - {src!r}")
+                    if reason:
+                        for rline in reason.splitlines():
+                            lines.append(f"      {rline.strip()}")
             lines.append("")
         return "\n".join(lines).strip()
 
@@ -149,6 +207,31 @@ def _build_pattern(name: str, body: object) -> Pattern:
     example_predicates = tuple(body.get("example_predicates") or ())
     example_extractions = tuple(body.get("example_extractions") or ())
     query_strategy = tuple(body.get("query_strategy") or ())
+    triage_verify_predicates = tuple(body.get("triage_verify_predicates") or ())
+    boundary_examples = tuple(body.get("boundary_examples") or ())
+
+    # distinct_slots: must be a 2-list of slot names if present.
+    distinct_raw = body.get("distinct_slots")
+    distinct_slots: tuple[str, str] | None = None
+    if distinct_raw is not None:
+        if (not isinstance(distinct_raw, list)
+            or len(distinct_raw) != 2
+            or not all(isinstance(s, str) for s in distinct_raw)):
+            raise PatternRegistryError(
+                f"{name}: distinct_slots must be a 2-list of slot "
+                f"names, got {distinct_raw!r}"
+            )
+        distinct_slots = (distinct_raw[0], distinct_raw[1])
+
+    agent_constraint = body.get("agent_constraint")
+    if agent_constraint is not None and agent_constraint != "must_be_user":
+        raise PatternRegistryError(
+            f"{name}: agent_constraint, when set, must be "
+            f"'must_be_user' (got {agent_constraint!r})"
+        )
+    subject_slot_for_constraint = body.get("subject_slot_for_constraint")
+    if agent_constraint is not None and subject_slot_for_constraint is None:
+        subject_slot_for_constraint = "agent"  # sensible default
 
     return Pattern(
         name=name,
@@ -158,6 +241,12 @@ def _build_pattern(name: str, body: object) -> Pattern:
         example_extractions=example_extractions,
         disambiguation_notes=str(body.get("disambiguation_notes", "") or ""),
         query_strategy=query_strategy,
+        agent_constraint=agent_constraint,
+        subject_slot_for_constraint=subject_slot_for_constraint,
+        distinct_slots=distinct_slots,
+        default_routing_method=body.get("default_routing_method"),
+        triage_verify_predicates=triage_verify_predicates,
+        boundary_examples=boundary_examples,
     )
 
 

@@ -58,10 +58,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.layer1_extraction.pattern_registry import PatternRegistry
-from src.layer2_routing.constants import (
-    USER_SUBJECT_PATTERNS,
-    is_user,
-)
+from src.layer2_routing.constants import is_user
 from src.layer2_routing.types import ValidationResult
 
 
@@ -136,9 +133,13 @@ def validate(claim: dict, registry: PatternRegistry) -> ValidationResult:
                 actual=slots.get(slot_name),
             )
 
-    # Invariant 2 — USER_SUBJECT_PATTERNS must have a user-agent.
-    user_slot = USER_SUBJECT_PATTERNS.get(pattern_name)
-    if user_slot is not None:
+    # Invariant 2 — agent_constraint (schema-driven). Patterns that
+    # declare agent_constraint="must_be_user" require their named
+    # subject slot to identify the chatting user. v0.14.3: this lives
+    # in patterns.yaml's `agent_constraint` field instead of a
+    # hardcoded USER_SUBJECT_PATTERNS dict.
+    if pattern.agent_constraint == "must_be_user":
+        user_slot = pattern.subject_slot_for_constraint or "agent"
         actual = slots.get(user_slot)
         if not is_user(actual):
             return ValidationResult.anomaly(
@@ -148,16 +149,24 @@ def validate(claim: dict, registry: PatternRegistry) -> ValidationResult:
                 actual=actual,
             )
 
-    # Invariant 3 — mereological: part != whole.
-    if pattern_name == "mereological":
-        part = slots.get("part")
-        whole = slots.get("whole")
-        if _values_equal_ci(part, whole):
+    # Invariant 3 — distinct_slots (schema-driven). Patterns that
+    # declare distinct_slots=[a, b] require slots a and b to hold
+    # distinct values (case-insensitive on strings). v0.14.3: this
+    # lives in patterns.yaml's `distinct_slots` field instead of a
+    # hardcoded mereological branch.
+    if pattern.distinct_slots is not None:
+        slot_a, slot_b = pattern.distinct_slots
+        val_a = slots.get(slot_a)
+        val_b = slots.get(slot_b)
+        if _values_equal_ci(val_a, val_b):
+            # Mereological is the canonical (and currently only) user
+            # of distinct_slots; the invariant string keeps its name
+            # for trace-UI / test stability.
             return ValidationResult.anomaly(
                 invariant=INVARIANT_MEREOLOGICAL_SELF_PARTHOOD,
-                slot="part",
-                expected="distinct from whole",
-                actual=part,
+                slot=slot_a,
+                expected=f"distinct from {slot_b}",
+                actual=val_a,
             )
 
     # Invariant 4 — event: participants is a non-empty list.

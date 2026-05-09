@@ -99,20 +99,13 @@ KEY_SLOTS_BY_PATTERN: dict[str, list[str]] = {
 }
 
 
-# Patterns whose subject slot MUST name the user. If the extractor
-# produces one of these patterns with a non-user agent, that's a
-# slot-binding bug upstream — the Phase 2 validator flags it as a
-# routing anomaly. The LLM router is never consulted for these
-# claims; the anomaly bypasses everything.
-#
-# The two patterns covered here (preference, propositional_attitude)
-# are the user-authoritative-by-construction cases: preferences and
-# attitudes about a third party are not facts AEDOS represents (a
-# claim about *what someone else* prefers or believes is in W's
-# domain, not the user's). v1's USER_SUBJECT_PATTERNS lives in
-# src/router/constants.py at the same shape; the v2 port carries
-# only the value-side map (the v1 docstring also referenced a
-# now-deleted YAML flag, ``flag_non_user_as_anomaly``).
+# DEPRECATED v0.14.3 — the source of truth for "patterns whose subject
+# slot must name the user" is now the per-pattern ``agent_constraint``
+# field in ``patterns.yaml``. The validator reads from the registry
+# directly. This constant remains as a back-compat alias for any
+# external test or downstream module still importing it; its contents
+# mirror what ``patterns.yaml`` declares but are no longer
+# load-bearing.
 USER_SUBJECT_PATTERNS: dict[str, str] = {
     "preference":             "agent",
     "propositional_attitude": "agent",
