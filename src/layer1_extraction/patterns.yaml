@@ -263,6 +263,10 @@ categorical:
     - instance_of
   query_strategy:
     - "{entity} {category}"
+    # v0.14.1 — topic-pivot. "baboons are mammals" needs the
+    # category page (Mammal) when the species page's lead doesn't
+    # state the classification explicitly.
+    - "{category}"
     - "what is {entity}"
     - "{entity}"
   example_extractions:
@@ -329,6 +333,10 @@ relational:
   query_strategy:
     - "{subject} {relation} {object}"
     - "{subject} {object}"
+    # v0.14.1 — topic-pivot. Relations like "baboons hunt cooperatively"
+    # often live on a topic page (Cooperative hunting) rather than the
+    # species page. Searching "{relation} {object}" surfaces those.
+    - "{relation} {object}"
     - "{subject}"
   example_extractions:
     - input: "Trump defeated Kamala Harris in the 2024 election"

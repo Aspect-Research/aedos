@@ -210,10 +210,10 @@ def test_dispatch_one_writes_pipeline_events(client, isolated_store):
     # routing_memo_hit fires because the memo was pre-seeded.
     assert "routing_memo_hit" in stages
 
-    # And /v2/api/trace/{turn_id} returns the same events.
+    # And /api/trace/{turn_id} returns the same events as a flat list.
     trace = client.get(f"/api/trace/{body['turn_id']}").json()
-    assert trace["turn_id"] == body["turn_id"]
-    assert len(trace["events"]) == len(events)
+    assert isinstance(trace, list)
+    assert len(trace) == len(events)
 
 
 # ============================================================================

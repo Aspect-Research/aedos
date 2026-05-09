@@ -106,6 +106,22 @@ def _build_record_tool(registry: PatternRegistry) -> dict[str, Any]:
                                 "type": "string",
                                 "description": "The exact span the fact came from.",
                             },
+                            "anchor_entity": {
+                                "type": "string",
+                                "description": (
+                                    "The TOPICAL noun phrase the response is about, "
+                                    "captured from the surrounding paragraph. Free-form. "
+                                    "Set when the claim's slots would otherwise read as "
+                                    "context-free out of the paragraph (e.g. 'social rank "
+                                    "is passed across generations' has slots about social "
+                                    "rank but its anchor is 'baboon' from the paragraph). "
+                                    "Optional — omit when the claim's subject already "
+                                    "names the topic specifically (e.g. claims about "
+                                    "'Marie Curie' or 'Anthropic' don't need an anchor). "
+                                    "NOT a slot: this is verification context, never part "
+                                    "of the claim's identity."
+                                ),
+                            },
                         },
                         "required": [
                             "pattern", "predicate", "slots", "polarity", "source_text",
@@ -154,6 +170,83 @@ SYSTEM_PROMPT_TEMPLATE = """You extract structured facts from text by mapping ea
   "Williamstown is part of Massachusetts and Asa lives in Williamstown"
   → mereological AND spatial_temporal).
 
+# HARD-CLAIM DISCIPLINE — extract less, but better
+
+A "hard claim" is one that meets ALL THREE criteria. If a clause fails
+ANY one, do not extract it. An empty list is a normal answer.
+
+  1. **Specific.** Names entities, numbers, dates, or relations between
+     named things. Vague qualitative descriptors ("intelligent", "complex",
+     "diverse", "fascinating", "sophisticated", "advanced") FAIL specificity.
+  2. **Falsifiable.** Could in principle be checked against an external
+     source. Aesthetic judgments ("baboons are fascinating"), evaluative
+     descriptions ("they have advanced cognition"), and empty subjective
+     claims ("they exhibit interesting behavior") FAIL falsifiability.
+  3. **Load-bearing (centrality test).** Removing this fact would weaken
+     the response's main point. Descriptive padding sentences ("they
+     thrive in many habitats" as a side note in a paragraph about
+     cooperation) and topical asides ("species vary widely") FAIL
+     centrality.
+
+The bar is HIGH on purpose. A 4-sentence reply about baboons that contains
+one core specific claim ("baboons hunt cooperatively for meat") and three
+descriptive sentences should yield ONE fact, not four. Soft claims that
+slip through pollute the verifier with unfalsifiable inputs and waste
+budget on retrieval that always returns inconclusive.
+
+## Reject categories with examples
+
+REJECT — vague qualitative descriptors:
+  Input: "Baboons are highly intelligent animals."
+  Output: facts=[]
+  Reasoning: "highly intelligent" is unfalsifiable — there's no external
+  measure that maps cleanly to it. Skip.
+
+REJECT — descriptive coloring:
+  Input: "Baboons are highly social and live in complex troop structures."
+  Output: facts=[]
+  Reasoning: "highly social" + "complex troop structures" are both
+  evaluative descriptors with no specific number, named structure, or
+  falsifiable relation. The response could be saying any of a dozen
+  more specific things. Skip both.
+
+REJECT — generic platitudes:
+  Input: "Different baboon species exhibit interesting variations in behavior."
+  Output: facts=[]
+  Reasoning: "interesting variations" is content-free. No specific
+  variation is named; no specific species is named. Nothing to verify.
+
+REJECT — speculative / hedged claims:
+  Input: "Baboons may have rudimentary forms of communication."
+  Output: facts=[]
+  Reasoning: "may have rudimentary forms" is a hedged conjecture, not
+  a falsifiable assertion. The model is signaling its own uncertainty.
+  Don't extract; let the hedged language pass through.
+
+REJECT — peripheral asides in a focused response:
+  Context: assistant just said "Baboons hunt cooperatively for meat,
+  with males driving prey while others ambush."
+  Input (continuation): "They're highly adaptable and can thrive in
+  many habitats from savanna to mountains."
+  Output: facts=[]
+  Reasoning: the response's load-bearing claim is cooperative hunting.
+  The habitat sentence is descriptive padding around it. Even though
+  "thrives in savanna" / "thrives in mountains" sounds extractable,
+  it's not central to what the response is asserting. Skip.
+
+ACCEPT — specific, falsifiable, central:
+  Input: "Baboons live about 30 years in the wild."
+  Output: facts=[{{"pattern":"quantitative","predicate":"wild_lifespan_years","slots":{{"subject":"baboon","property":"wild_lifespan_years","value":30}},"polarity":1,"source_text":"Baboons live about 30 years in the wild"}}]
+  Reasoning: specific number (30), specific subject (baboon), falsifiable
+  against species reference data, central to the response's content.
+
+ACCEPT — relation between named entities:
+  Input: "Baboons are one of the few primates that hunt cooperatively for meat."
+  Output: facts=[{{"pattern":"relational","predicate":"hunts_cooperatively_for","slots":{{"subject":"baboons","object":"meat"}},"polarity":1,"source_text":"Baboons are one of the few primates that hunt cooperatively for meat"}}]
+  Reasoning: specific behavior, specific subject, falsifiable
+  ("baboons hunt cooperatively" is checkable against ethology
+  references), central to the response.
+
 # Slot rules
 
 - **CRITICAL: extract VERBATIM what the source text says. Never
@@ -183,6 +276,51 @@ SYSTEM_PROMPT_TEMPLATE = """You extract structured facts from text by mapping ea
   composed of hydrogen and oxygen" — the whole is water, the parts are
   hydrogen and oxygen; combine into a single composite part value
   ("hydrogen and oxygen") rather than emitting two facts.
+
+# Anchor entity — preserve topic context across claim boundaries
+
+When a claim's slots would read as context-free out of the surrounding
+paragraph, set the optional `anchor_entity` field on that fact to the
+topical noun phrase. The anchor is verification context (used by the
+retrieval verifier to keep query construction on-topic) — NEVER part
+of the claim's identity, NEVER a slot.
+
+Set the anchor when:
+  * The claim's subject is a possessed noun phrase or generic concept
+    that loses its referent out of context. "social rank is passed
+    across generations" — subject "social rank" needs anchor="baboon"
+    to be verifiable.
+  * The claim is one of several in a paragraph about a single topic
+    and the slot values don't repeat the topic. "they hunt
+    cooperatively" in a baboon paragraph → anchor="baboon".
+
+Skip the anchor (omit the field) when:
+  * The claim's subject already names the topic specifically. "Marie
+    Curie was a physicist" — subject="Marie Curie" is the anchor;
+    don't duplicate.
+  * Named entities (people, organizations, places, products) appear
+    in the slots. "Anthropic was founded by Dario Amodei" — both
+    slots are specific named entities; no anchor needed.
+
+Anchor examples:
+
+Input (in a paragraph about baboons): "Their social rank is passed
+across generations through matrilineal lines."
+Output: facts=[{{"pattern":"relational","predicate":"passes_across","slots":{{"subject":"social rank","object":"generations","mechanism":"matrilineal lines"}},"polarity":1,"source_text":"social rank is passed across generations through matrilineal lines","anchor_entity":"baboon"}}]
+Reasoning: "social rank" alone is context-free. The anchor "baboon"
+preserves the topic so the retrieval verifier searches for "baboon
+social rank generations" instead of "social rank generations" (which
+returns articles about cycles of poverty and Generation Z).
+
+Input: "Marie Curie was born in 1867."
+Output: facts=[{{"pattern":"quantitative","predicate":"birth_year","slots":{{"subject":"Marie Curie","property":"birth_year","value":1867}},"polarity":1,"source_text":"Marie Curie was born in 1867"}}]
+Reasoning: "Marie Curie" is already specific; no anchor needed.
+
+Input (in a paragraph about Apple's iPhone 15): "It was released in
+September 2023."
+Output: facts=[{{"pattern":"event","predicate":"released","slots":{{"event_type":"release","participants":["iPhone 15"],"occurred_at":"2023-09"}},"polarity":1,"source_text":"It was released in September 2023","anchor_entity":"iPhone 15"}}]
+Reasoning: pronoun subject ("It") loses its referent out of context.
+Anchor preserves the topic.
 
 # Polarity
 
@@ -543,10 +681,18 @@ class ClaimExtractor:
         return None
 
     def _normalize(self, f: dict[str, Any]) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "pattern": str(f["pattern"]),
             "predicate": str(f["predicate"]),
             "slots": dict(f["slots"]),
             "polarity": int(f["polarity"]),
             "source_text": str(f["source_text"]),
         }
+        # v0.14.1 — anchor_entity is verification context (used by the
+        # retrieval verifier to keep query construction on-topic when
+        # the slots alone would lose the topical referent). Optional;
+        # only carried through when the extractor set it.
+        anchor = f.get("anchor_entity")
+        if isinstance(anchor, str) and anchor.strip():
+            out["anchor_entity"] = anchor.strip()
+        return out

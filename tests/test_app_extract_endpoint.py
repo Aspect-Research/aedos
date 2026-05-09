@@ -57,11 +57,12 @@ def client():
 
 
 def test_health_still_responds(client):
-    """Sanity: Phase 0's /health endpoint isn't broken by Phase 1."""
+    """Sanity: /health still responds and reports the v0.14.1 version."""
     r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "0.14-dev"
+    assert body["version"] == "0.14.2"
+    assert body["ok"] is True
 
 
 def test_extract_returns_mereological_for_williamstown_case(client):

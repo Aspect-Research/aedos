@@ -268,8 +268,47 @@ main {
 .msg.diff-open .diff-view { display: block; }
 .msg.diff-open .msg-body { display: none; }
 
-/* Inline word-level diff markers (used both in chat-bubble diff view
- * and in the Correction step's Inline diff block). */
+/* Sentence/block-level diff (used both in chat-bubble diff view and
+ * in the Correction step's Inline diff block). Each replacement
+ * renders as a deletion BLOCK followed by an insertion BLOCK so the
+ * operator can read each side as continuous prose; word-by-word
+ * interleaving is visually unparseable for long LLM rewrites. */
+.diff-block-del,
+.diff-block-ins {
+  display: block;
+  padding: 0.4rem 0.6rem;
+  margin: 0.3rem 0;
+  border-radius: 4px;
+  border-left-width: 3px;
+  border-left-style: solid;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.diff-block-del {
+  background: var(--bad-soft, rgba(239, 91, 84, 0.10));
+  color: var(--bad);
+  text-decoration: line-through;
+  text-decoration-color: rgba(239, 91, 84, 0.5);
+  text-decoration-thickness: 1px;
+  border-left-color: var(--bad);
+}
+.diff-block-ins {
+  background: var(--ok-soft, rgba(92, 194, 138, 0.10));
+  color: var(--ok);
+  border-left-color: var(--ok);
+}
+/* When a deletion block is immediately followed by an insertion
+ * block (the common "replacement" shape), tighten the gap so the
+ * pair reads as a unit rather than two unrelated paragraphs. */
+.diff-block-del + .diff-block-ins {
+  margin-top: 0.1rem;
+}
+
+/* Legacy word-level inline classes — kept for any third-party caller
+ * that imports the stylesheet but unused by the current diff
+ * renderer. */
 .diff-ins {
   background: var(--ok-soft);
   color: var(--ok);
@@ -486,7 +525,8 @@ main {
 .claim-row.claim-verified .claim-dot,
 .claim-row.claim-contradicted .claim-dot,
 .claim-row.claim-inconclusive .claim-dot,
-.claim-row.claim-not_applicable .claim-dot {
+.claim-row.claim-not_applicable .claim-dot,
+.claim-row.claim-skipped .claim-dot {
   box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25);
 }
 .claim-row.claim-verified .claim-dot { background: var(--ok); }
@@ -498,6 +538,11 @@ main {
 .claim-row.claim-contradicted  { background: rgba(239, 91, 84, 0.07); }
 .claim-row.claim-inconclusive  { background: rgba(232, 176, 77, 0.06); }
 .claim-row.claim-not_applicable { background: rgba(138, 132, 122, 0.04); }
+/* v0.14.1 — verifiability triage skipped this claim (PASS_THROUGH +
+ * U/W/derivation all missed). Neutral grey tone — distinct from
+ * inconclusive (warn) since the verifier never ran. */
+.claim-row.claim-skipped       { background: rgba(120, 120, 120, 0.05); opacity: 0.85; }
+.claim-row.claim-skipped .claim-dot { background: var(--muted); }
 
 /* Top-right corner notch: replaces the old left bar. A small slanted
  * tab made via a CSS triangle, in the status color. Subtle, present
@@ -521,6 +566,7 @@ main {
 .claim-row.claim-contradicted::after  { border-right-color: var(--bad); }
 .claim-row.claim-inconclusive::after  { border-right-color: var(--warn); }
 .claim-row.claim-not_applicable::after { border-right-color: rgba(138, 132, 122, 0.6); }
+.claim-row.claim-skipped::after       { border-right-color: rgba(120, 120, 120, 0.5); }
 
 .claim-row.claim-cached { background: rgba(92, 194, 138, 0.10); }
 
@@ -1368,6 +1414,39 @@ tr.contradicted td { background: var(--bad-soft); }
   font-family: var(--mono);
   font-size: 0.78rem;
   color: var(--ink);
+}
+
+/* Final-card response preview: mirrors the final assistant text so the
+ * pipeline flow has continuity, even though the chat bubble is the
+ * load-bearing rendering. */
+.final-response-preview {
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--r-sm);
+  background: var(--bg-elev, var(--panel-2));
+  border: 1px solid var(--border);
+}
+.final-response-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.final-response-body {
+  font-size: 0.85rem;
+  color: var(--ink);
+  line-height: 1.45;
+}
+.final-response-body p { margin: 0.3rem 0; }
+.final-response-body :first-child { margin-top: 0; }
+.final-response-body :last-child { margin-bottom: 0; }
+.final-response-truncation {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
 }
 
 /* ==== Interventions inline (Correction card) ====================== */

@@ -42,20 +42,24 @@ cp .env.example .env           # paste ANTHROPIC_API_KEY
 python -m src.app              # serves http://127.0.0.1:8000
 ```
 
-The HTTP surface (`src/app.py`) exposes the v2 stack at `/`:
+The HTTP surface (`src/app.py`):
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /` | trace-UI shell (vanilla JS, no build step) |
+| `POST /api/chat` | full-turn pipeline orchestration; returns `TurnTrace` |
+| `POST /api/chat/stream` | same, streamed via SSE — pipeline events land live in the flow pane |
 | `POST /api/extract` | Layer 1 extractor over HTTP |
-| `POST /api/dispatch-one` | Layer 2 → walker → Layer 5 for one structured claim |
+| `POST /api/dispatch-one` | Layer 2 → walker → Layer 5 for one structured claim (operator surface for testing) |
+| `GET /api/turns` | list every turn in the store |
 | `GET /api/trace/{turn_id}` | pipeline events for a turn |
+| `GET /api/facts` | filterable facts query (pattern, predicate, asserted_by, is_session_local, current_session, …) |
+| `GET /api/patterns` | the 9 patterns the extractor uses |
+| `GET /api/cache` | Tier W (verification_cache) contents + hit-rate stats |
 | `GET /api/routing-memo[/{pattern}/{predicate}]` | Layer 2 memo inspector |
 | `GET /api/substrate/{oracle-slug}[/{key...}]` | per-oracle inspectors |
 | `POST /api/substrate/{oracle-slug}/{row_id}/{affirm,contradict}` | operator-driven count updates (the only paths that mutate substrate counts) |
 | `POST /api/reset` | wipe and recreate the v0.14 schema |
-
-`/api/chat` (full turn-level orchestration) is v0.15 work. v0.14 ships dispatch-one + the inspectors.
 
 ## Eight verification states
 

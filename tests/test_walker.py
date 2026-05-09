@@ -80,6 +80,34 @@ def oracles(store):
     }
 
 
+def _seed_tier_w_row_directly(
+    store, registry, claim, verification_status, *,
+    stability_class="decade_stable",
+):
+    """v0.14.1: write_verifier_result no longer persists non-actionable
+    statuses (retrieval_inconclusive, retrieval_failed,
+    unverifiable_pending_implementation, unverifiable_in_principle).
+    Tests that need such a row to exist in Tier W (to exercise the
+    walker's defense-in-depth filter for legacy / edge-case data) seed
+    via direct SQL, bypassing the policy guard. Returns the canonical
+    key for the inserted row."""
+    canonical_key = tier_w.canonicalize_claim_key(claim, registry)
+    pattern = claim.get("pattern", "")
+    predicate = (claim.get("predicate") or "").strip().lower()
+    store._conn.execute(
+        "INSERT INTO verification_cache (canonical_key, pattern, predicate, "
+        "verdict, evidence, stability_class, cached_at, created_at, "
+        "expires_at, hit_count, refresh_count, contradiction_count) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (canonical_key, pattern, predicate, verification_status,
+         "{}", stability_class,
+         "2025-01-01T00:00:00+00:00", "2025-01-01T00:00:00+00:00",
+         None, 0, 0, 0),
+    )
+    store._conn.commit()
+    return canonical_key
+
+
 def _classified_decision(claim, method="retrieval"):
     """Build a Layer-2 Decision for a CLASSIFIED claim."""
     return Decision(
@@ -283,10 +311,12 @@ def test_tier_w_inconclusive_falls_through_to_derivation(
         "slots": {"entity": "user", "location": "Massachusetts"},
         "source_text": "user lives in Massachusetts",
     }
-    tier_w.write_verifier_result(
-        cached_claim, store,
+    # v0.14.1 — direct SQL insert; the public write path skips
+    # non-actionable statuses now. The walker still needs to handle
+    # such rows defensively (legacy data / edge cases).
+    _seed_tier_w_row_directly(
+        store, registry, cached_claim,
         verification_status="retrieval_inconclusive",
-        registry=registry,
     )
     # Set up a derivation chain that DOES match: pre-warm
     # entity_taxonomy + predicate_distribution + a Tier U fact.
@@ -338,10 +368,9 @@ def test_tier_w_failed_falls_through_to_derivation(
         "slots": {"entity": "user", "location": "Massachusetts"},
         "source_text": "user lives in Massachusetts",
     }
-    tier_w.write_verifier_result(
-        cached_claim, store,
+    _seed_tier_w_row_directly(
+        store, registry, cached_claim,
         verification_status="retrieval_failed",
-        registry=registry,
     )
     # No supporting derivation chain → walker falls through to fresh
     # (which has no dispatcher; produces unverifiable_pending_implementation).
@@ -366,10 +395,9 @@ def test_tier_w_unverifiable_in_principle_terminal(
         "slots": {"agent": "user", "object": "olives"},
         "source_text": "user loves olives",
     }
-    tier_w.write_verifier_result(
-        cached_claim, store,
+    _seed_tier_w_row_directly(
+        store, registry, cached_claim,
         verification_status="unverifiable_in_principle",
-        registry=registry,
     )
     decision = walk_claim(
         cached_claim, _classified_decision(cached_claim,

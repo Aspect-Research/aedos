@@ -129,6 +129,24 @@ Claim: pattern=quantitative, predicate=us_states_count, slots={subject:'United S
 Claim: pattern=event, predicate=launched, slots={event_type:'iPhone 15', occurred_at:'2023-09'}, polarity=1
 → stability_class: immutable, reason: "completed historical event with a fixed date."
 
+# Bias-short worked examples (v0.14.1 — these reinforce the rule
+# 'wrong-and-confident is worse than slow-and-correct')
+
+Claim: pattern=relational, predicate=has, slots={subject:'baboons', object:'matrilineal social hierarchy'}, polarity=1
+→ stability_class: decade_stable, reason: "biological/behavioral fact about a species; stable on multi-decade horizon. Wikipedia's article on the species could be edited at any time, so don't pick immutable — but the underlying fact rarely changes."
+
+Claim: pattern=quantitative, predicate=longevity_years, slots={subject:'baboon', property:'wild_lifespan_years', value:30}, polarity=1
+→ stability_class: decade_stable, reason: "average species lifespan; stable but our knowledge of it could be refined by new field studies. Don't pick immutable; biological measurements can be revised."
+
+Claim: pattern=relational, predicate=is_known_for, slots={subject:'OpenAI', object:'GPT-4'}, polarity=1
+→ stability_class: months_stable, reason: "company-product association; the company keeps releasing newer flagship models, so the 'known for' answer drifts. Re-verify on a months horizon."
+
+Claim: pattern=quantitative, predicate=number_of_employees, slots={subject:'Google', property:'employee_count', value:180000}, polarity=1
+→ stability_class: months_stable, reason: "company headcount; large companies hire/lay off at quarterly cadence. Bias short — don't pick years_stable on changing corporate metrics."
+
+Claim: pattern=role_assignment, predicate=is_ceo_of, slots={agent:'Sundar Pichai', role:'CEO', org:'Google'}, polarity=1
+→ stability_class: years_stable, reason: "current CEO; could change with executive turnover but typically stable for 4-8 years. Re-verify yearly."
+
 # Output
 
 Call the ``record_stability`` tool exactly once. Reason should explain
@@ -197,13 +215,90 @@ def _historical_period_shortcut(claim: dict) -> StabilityDecision | None:
     )
 
 
+# v0.14.1 — additional deterministic fast paths.
+#
+# Each helper returns a StabilityDecision when its rule applies, None
+# otherwise. The dispatcher tries them in order before falling through
+# to the LLM. Goal: every claim where the answer is *structurally*
+# obvious (closed historical events, deceased-person biographical
+# facts, completed events) skips the LLM call and lands on
+# ``immutable`` deterministically.
+
+
+def _completed_event_shortcut(claim: dict) -> StabilityDecision | None:
+    """Pattern-event with ``occurred_at`` strictly before the current
+    year → ``immutable``. The event's date is fixed; subsequent
+    knowledge updates can't change it (the iPhone 15 launched in
+    September 2023 forever).
+    """
+    from datetime import datetime
+    if claim.get("pattern") != "event":
+        return None
+    slots = claim.get("slots") or {}
+    raw = slots.get("occurred_at") or slots.get("date")
+    if raw is None or raw == "":
+        return None
+    try:
+        year = int(str(raw)[:4])
+    except (TypeError, ValueError):
+        return None
+    if year >= datetime.utcnow().year:
+        return None
+    return StabilityDecision(
+        stability_class="immutable",
+        reason=(
+            f"completed event with fixed date (occurred_at={raw}, "
+            f"year={year} in the past); the event cannot un-happen."
+        ),
+        ttl_seconds=None,
+        raw={"shortcut": "completed_event"},
+    )
+
+
+def _quantitative_birth_year_shortcut(claim: dict) -> StabilityDecision | None:
+    """Quantitative claim with property=birth_year/birthdate/death_year
+    /deathdate → ``immutable``. Biographical date facts are fixed once
+    they exist (a person's birth year doesn't change after their
+    birth; their death year doesn't change after their death). The
+    claim's *correctness* might be wrong, but its *temporal stability*
+    is immutable — that's what this classifier is asked.
+    """
+    if claim.get("pattern") != "quantitative":
+        return None
+    slots = claim.get("slots") or {}
+    prop = str(slots.get("property") or "").lower().strip()
+    if prop not in {"birth_year", "birthdate", "birth_date", "born",
+                    "death_year", "deathdate", "death_date", "died",
+                    "year_of_birth", "year_of_death"}:
+        return None
+    return StabilityDecision(
+        stability_class="immutable",
+        reason=(
+            f"biographical date fact (property={prop!r}); "
+            "a birth/death year doesn't change once it has occurred."
+        ),
+        ttl_seconds=None,
+        raw={"shortcut": "biographical_date"},
+    )
+
+
+# Fast paths tried in order — first match wins.
+_FAST_PATH_SHORTCUTS = (
+    _historical_period_shortcut,
+    _completed_event_shortcut,
+    _quantitative_birth_year_shortcut,
+)
+
+
 def classify_stability(claim: dict, llm: LLMClient) -> StabilityDecision:
     """One LLM call (skipped when a deterministic shortcut applies).
     Always returns a decision (raises on malformed LLM output)."""
-    # Fast path: closed historical periods → immutable, no LLM call.
-    shortcut = _historical_period_shortcut(claim)
-    if shortcut is not None:
-        return shortcut
+    # Fast paths: closed historical periods, completed events, and
+    # biographical date facts all bypass the LLM and force ``immutable``.
+    for shortcut_fn in _FAST_PATH_SHORTCUTS:
+        decision = shortcut_fn(claim)
+        if decision is not None:
+            return decision
 
     user_message = json.dumps(
         {

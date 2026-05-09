@@ -215,6 +215,20 @@ PIPELINE_STAGES = {
     # contradicted_count, confidence} after the increment.
     "oracle_affirmed",
     "oracle_contradicted",
+    # v0.14.1 — Layer 5 verdict event. Fired once per assistant claim
+    # after walker + confidence + intervention. Bundles all three so
+    # the trace UI can render the per-claim conclusion live (before
+    # the done frame arrives): chain visualization, three-factor
+    # decision confidence, intervention pill.
+    "claim_decision",
+    # v0.14.1 — Layer 1.5 verifiability triage. Fired once per
+    # assistant claim after extraction, before routing. Decides
+    # VERIFY (claim flows to Layer 2) or PASS_THROUGH (claim skips
+    # the verifier; no Tier W write; chat draft text passes
+    # unchanged). Architecturally: principle 1 ("nothing enters the
+    # verified store unless it cleared a verifier") is preserved
+    # because PASS_THROUGH claims don't enter the store.
+    "verifiability_triage",
 }
 
 
@@ -692,6 +706,22 @@ class FactStore:
             self._event_subscribers.remove(token)
         except ValueError:
             pass
+
+    def broadcast_event(
+        self, turn_id: int, stage: str, data: dict[str, Any] | list[Any],
+    ) -> None:
+        """Fire subscribers without persisting to pipeline_events.
+
+        Used for high-frequency streaming signals like ``chat_draft_token``
+        where each frame would pollute the events table but the SSE
+        consumer still needs to see them live. No stage validation
+        because these events bypass the audited stage enum.
+        """
+        for sub in list(self._event_subscribers):
+            try:
+                sub(turn_id, stage, data)
+            except Exception:
+                pass
 
     # ---- facts ------------------------------------------------------------
 

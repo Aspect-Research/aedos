@@ -1,0 +1,56 @@
+{"id": "ext-pref-001", "text": "I love olives", "expected_pattern": "preference", "notes": "self-attribute preference"}
+{"id": "ext-pref-002", "text": "I really hate cilantro", "expected_pattern": "preference", "notes": "intensified dislike"}
+{"id": "ext-pref-003", "text": "you said you prefer red wine", "expected_pattern": "preference", "notes": "preference reflected back"}
+{"id": "ext-pref-004", "text": "Asa enjoys hiking", "expected_pattern": "preference", "notes": "third-party preference"}
+
+{"id": "ext-role-001", "text": "Donald Trump is the 47th President", "expected_pattern": "role_assignment", "notes": "current political office"}
+{"id": "ext-role-002", "text": "Tim Cook is the CEO of Apple", "expected_pattern": "role_assignment", "notes": "current CEO"}
+{"id": "ext-role-003", "text": "Marie Curie served as professor at the Sorbonne from 1906 to 1934", "expected_pattern": "role_assignment", "notes": "historical role with bounds"}
+{"id": "ext-role-004", "text": "Trump was inaugurated as the 45th president in 2017", "expected_pattern": "role_assignment", "notes": "role with valid_from"}
+
+{"id": "ext-cat-001", "text": "Marie Curie was a physicist", "expected_pattern": "categorical", "notes": "profession-as-category (vs role_assignment); physicist is intrinsic, not conferred"}
+{"id": "ext-cat-002", "text": "the kakapo is a bird", "expected_pattern": "categorical", "notes": "taxonomic"}
+{"id": "ext-cat-003", "text": "Tokyo is a city", "expected_pattern": "categorical", "notes": "kind/type"}
+{"id": "ext-cat-004", "text": "baboons are mammals", "expected_pattern": "categorical", "notes": "biological classification"}
+{"id": "ext-cat-005", "text": "GPT-4 is a large language model", "expected_pattern": "categorical", "notes": "kind-of"}
+
+{"id": "ext-quant-001", "text": "there are 50 states in the US", "expected_pattern": "quantitative", "notes": "structural count"}
+{"id": "ext-quant-002", "text": "Marie Curie was born in 1867", "expected_pattern": "quantitative", "notes": "biographical year"}
+{"id": "ext-quant-003", "text": "baboons live about 30 years in the wild", "expected_pattern": "quantitative", "notes": "biological measurement (vs relational has)"}
+{"id": "ext-quant-004", "text": "the strawberry has 3 r's in its name", "expected_pattern": "quantitative", "notes": "structural count"}
+{"id": "ext-quant-005", "text": "Mount Everest is 8848 meters tall", "expected_pattern": "quantitative", "notes": "measurement"}
+
+{"id": "ext-spat-001", "text": "I live in Williamstown", "expected_pattern": "spatial_temporal", "notes": "residence"}
+{"id": "ext-spat-002", "text": "Tokyo is in Japan", "expected_pattern": "spatial_temporal", "notes": "locational containment (vs mereological)"}
+{"id": "ext-spat-003", "text": "Marie Curie worked at the Sorbonne", "expected_pattern": "spatial_temporal", "notes": "employment location"}
+{"id": "ext-spat-004", "text": "Asa visited Boston last week", "expected_pattern": "spatial_temporal", "notes": "visit"}
+
+{"id": "ext-mer-001", "text": "Williamstown is part of Massachusetts", "expected_pattern": "mereological", "notes": "constitutive parthood (vs spatial_temporal)"}
+{"id": "ext-mer-002", "text": "the engine is part of the car", "expected_pattern": "mereological", "notes": "physical part-whole"}
+{"id": "ext-mer-003", "text": "carbon is part of every organic molecule", "expected_pattern": "mereological", "notes": "structural composition"}
+{"id": "ext-mer-004", "text": "the kitchen is part of the house", "expected_pattern": "mereological", "notes": "constitutive parthood (vs locational)"}
+
+{"id": "ext-rel-001", "text": "Trump defeated Kamala Harris in the 2024 election", "expected_pattern": "relational", "notes": "defeated_in_election"}
+{"id": "ext-rel-002", "text": "Anthropic was founded by Dario Amodei", "expected_pattern": "relational", "notes": "founded_by"}
+{"id": "ext-rel-003", "text": "Paris is the capital of France", "expected_pattern": "relational", "notes": "capital_of"}
+{"id": "ext-rel-004", "text": "baboons hunt cooperatively for meat", "expected_pattern": "relational", "notes": "behavioral relation"}
+{"id": "ext-rel-005", "text": "smoking causes lung cancer", "expected_pattern": "relational", "notes": "causal predicate (stays in relational)"}
+
+{"id": "ext-event-001", "text": "Trump was inaugurated on January 20, 2025", "expected_pattern": "event", "notes": "dated occurrence"}
+{"id": "ext-event-002", "text": "the Berlin Wall fell in 1989", "expected_pattern": "event", "notes": "completed historical event"}
+{"id": "ext-event-003", "text": "Apple launched the iPhone 15 in September 2023", "expected_pattern": "event", "notes": "product launch event"}
+
+{"id": "ext-att-001", "text": "I believe the earth orbits the sun", "expected_pattern": "propositional_attitude", "notes": "belief"}
+{"id": "ext-att-002", "text": "she knows that I'm a vegetarian", "expected_pattern": "propositional_attitude", "notes": "knowledge"}
+{"id": "ext-att-003", "text": "Asa hopes the project ships next month", "expected_pattern": "propositional_attitude", "notes": "hope (vs preference)"}
+
+{"id": "ext-disambig-001", "text": "Asa lives in Williamstown and Williamstown is part of Massachusetts", "expected_pattern": "spatial_temporal", "notes": "FIRST claim only — this is the disambiguation pair; 'lives in' is locational. 2nd claim 'is part of' is mereological."}
+{"id": "ext-disambig-002", "text": "Sundar Pichai is CEO of Google", "expected_pattern": "role_assignment", "notes": "ambiguous against categorical 'is a CEO'; surface form 'CEO of Google' fixes it as role"}
+{"id": "ext-disambig-003", "text": "baboons have a matrilineal social hierarchy", "expected_pattern": "relational", "notes": "behavioral has-relation (vs categorical 'are matrilineal')"}
+{"id": "ext-disambig-004", "text": "the Mississippi is a river", "expected_pattern": "categorical", "notes": "kind"}
+{"id": "ext-disambig-005", "text": "the Mississippi flows through Minnesota", "expected_pattern": "spatial_temporal", "notes": "locational predicate; not mereological (river isn't part of state in the constitutive sense)"}
+
+{"id": "ext-edge-001", "text": "I think that's a great idea", "expected_pattern": null, "notes": "purely evaluative; abstain (no fact extracted)"}
+{"id": "ext-edge-002", "text": "the sunset was beautiful", "expected_pattern": null, "notes": "aesthetic; abstain"}
+{"id": "ext-edge-003", "text": "what time is it?", "expected_pattern": null, "notes": "question, no claim"}
+{"id": "ext-edge-004", "text": "let's say I live in Boston for this conversation", "expected_pattern": "spatial_temporal", "notes": "session marker present but the claim itself is still extractable"}

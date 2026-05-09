@@ -288,12 +288,37 @@ function appendHydratedAssistant(turn) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// ---- word-level inline diff (LCS) ----
+// ---- sentence/block-level diff (LCS) ----
+//
+// Word-level inline diffing produced unreadable output when the LLM
+// rewrote most of a paragraph: deleted-word fragments and inserted-
+// word fragments interleaved into a red-green tangle ("BaboonsI don't
+// haveapersonal fascinatingpreferences…"). Block-level diff fixes that:
+//   * Split both texts into sentence-sized chunks (sentence terminators
+//     plus hard newlines).
+//   * LCS over chunks; equal chunks render as plain text in document
+//     order; replaced runs render as a deletion BLOCK (struck through,
+//     red bg) followed by an insertion BLOCK (green bg).
+// The operator can read each side as continuous prose and compare.
 
-function diffWords(oldText, newText) {
-  const tokenize = (s) => s.split(/(\s+)/).filter((t) => t.length > 0);
-  const a = tokenize(oldText || "");
-  const b = tokenize(newText || "");
+function _diffSplitSentences(text) {
+  // Match in order: a sentence-shaped fragment ending in .!? plus
+  // trailing whitespace; OR a hard line break (preserved as its own
+  // chunk so paragraph structure survives diff alignment); OR a
+  // trailing fragment with no terminator (LLM cut mid-thought).
+  if (!text) return [];
+  const out = [];
+  const re = /([^\n.!?]+[.!?]+["')\]]*\s*)|(\n+)|([^\n]+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    out.push(m[0]);
+  }
+  return out;
+}
+
+function diffSentences(oldText, newText) {
+  const a = _diffSplitSentences(oldText || "");
+  const b = _diffSplitSentences(newText || "");
   const m = a.length, n = b.length;
   const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
   for (let i = 1; i <= m; i++) {
@@ -313,7 +338,8 @@ function diffWords(oldText, newText) {
   while (i > 0) { ops.push({ op: "-", t: a[i - 1] }); i--; }
   while (j > 0) { ops.push({ op: "+", t: b[j - 1] }); j--; }
   ops.reverse();
-  // Coalesce adjacent same-op tokens for cleaner span output.
+  // Coalesce same-op adjacent runs so each "replacement" group becomes
+  // one delete + one insert pair instead of many tiny fragments.
   const merged = [];
   for (const o of ops) {
     const last = merged[merged.length - 1];
@@ -325,12 +351,35 @@ function diffWords(oldText, newText) {
 
 function renderInlineDiff(container, oldText, newText) {
   container.innerHTML = "";
-  diffWords(oldText, newText).forEach(({ op, t }) => {
-    if (op === "=") container.appendChild(document.createTextNode(t));
-    else container.appendChild(el("span", {
-      className: op === "+" ? "diff-ins" : "diff-del", textContent: t,
-    }));
-  });
+  const ops = diffSentences(oldText, newText);
+  // Group consecutive non-equal ops into a single "replacement" so
+  // the deletion block always renders before the insertion block —
+  // even if the raw LCS produced them in opposite order.
+  let idx = 0;
+  while (idx < ops.length) {
+    const op = ops[idx];
+    if (op.op === "=") {
+      container.appendChild(document.createTextNode(op.t));
+      idx++;
+      continue;
+    }
+    const buf = [];
+    while (idx < ops.length && ops[idx].op !== "=") { buf.push(ops[idx]); idx++; }
+    const delText = buf.filter((x) => x.op === "-").map((x) => x.t).join("");
+    const insText = buf.filter((x) => x.op === "+").map((x) => x.t).join("");
+    if (delText.trim()) {
+      container.appendChild(el("div", {
+        className: "diff-block-del",
+        textContent: delText.replace(/\s+$/, ""),
+      }));
+    }
+    if (insText.trim()) {
+      container.appendChild(el("div", {
+        className: "diff-block-ins",
+        textContent: insText.replace(/\s+$/, ""),
+      }));
+    }
+  }
 }
 
 // ---- minimal markdown renderer for chat bubbles ----
@@ -613,22 +662,49 @@ const PIPELINE_STEPS = [
     title: "Claims",
   },
   {
+    // Substrate writes + warm consultations this turn. Renders only
+    // when the turn actually engaged the substrate (any *_write event,
+    // any tier_w_write, OR any *_hit when chain_walked); otherwise
+    // skipped via the "absent" state. Sits between Claims (where the
+    // substrate is consulted) and Correction (where the verdicts feed
+    // the corrector).
+    kind: "substrate",
+    title: "Substrate",
+  },
+  {
     kind: "correction",
     stage: "correction",
     title: "Correction",
     metaFn: (ev) => {
-      const n = ((ev.data || {}).interventions || []).length;
-      return n === 0 ? "no corrections needed" : `${n} intervention${n === 1 ? "" : "s"} applied`;
+      const ivs = ((ev.data || {}).interventions || []);
+      const total = ivs.length;
+      // pass_through and noop don't trigger the corrector LLM, so they
+      // don't count as "applied". The remaining set (replace + hedge +
+      // soften) is what the operator actually cares about.
+      const active = ivs.filter((iv) =>
+        iv.intervention_type !== "pass_through"
+        && iv.intervention_type !== "noop");
+      const rewrote = (ev.data || {}).rewrote;
+      if (active.length === 0) {
+        return total === 0 ? "no corrections needed"
+                           : `${total} pass-through · no corrections needed`;
+      }
+      const verb = rewrote ? "applied" : "planned (no text change)";
+      return `${active.length} of ${total} intervention${total === 1 ? "" : "s"} ${verb}`;
     },
   },
   {
     kind: "final",
     stage: "final",
     title: "Final Response",
-    // No content preview — the chat bubble already shows the response.
-    // The Correction card already shows the diff. Just the cost summary
-    // (rendered in renderEventStepNode for kind === "final").
-    metaFn: () => null,
+    metaFn: (ev) => {
+      const d = ev.data || {};
+      const n = d.n_assistant_claims ?? 0;
+      const parts = [`${n} claim${n === 1 ? "" : "s"} verified`];
+      if (d.rewrote) parts.push("response rewritten");
+      if (d.n_routing_anomalies) parts.push(`${d.n_routing_anomalies} anomaly`);
+      return parts.join(" · ");
+    },
   },
 ];
 
@@ -658,9 +734,11 @@ function claimKey(claim) {
 
 function flowEdgeClass(displayStatus) {
   // display_status: verified / contradicted / inconclusive / not_applicable
+  // / skipped (v0.14.1 — triage gate suppressed verification)
   if (displayStatus === "verified") return "verified";
   if (displayStatus === "contradicted") return "contradicted";
   if (displayStatus === "inconclusive") return "inconclusive";
+  if (displayStatus === "skipped") return "skipped";
   return "not_applicable";
 }
 
@@ -674,10 +752,26 @@ function renderFlow(turnId, events, { running = false, requestStartMs = null } =
   flowContainer.appendChild(buildFlowChart(events || [], turnId, running, requestStartMs));
 }
 
+// Stages whose presence indicates the substrate did something this
+// turn. The substrate is the FOUR ORACLES (predicate_equivalence,
+// entity_equivalence, entity_taxonomy, predicate_distribution) plus
+// derivation walks that consult them. Tier W writes are world-cache
+// activity, not substrate activity — they live in Memory tab → World
+// scope; including them here was a category error.
+const SUBSTRATE_STAGES = new Set([
+  "predicate_equivalence_write",
+  "entity_equivalence_write",
+  "entity_taxonomy_write",
+  "predicate_distribution_write",
+  "derivation_walk_completed",
+]);
+
 // Determine state for a given step from the event map.
 //   "done"      — primary event present (and, for claims, verification fired)
 //   "in_flight" — claims-only: extraction fired but verification hasn't
 //   "pending"   — nothing yet
+//   "absent"    — substrate-only: no substrate activity this turn,
+//                 step is skipped entirely
 function stepState(step, stageMap) {
   if (step.kind === "claims") {
     if (stageMap["verification"]) return "done";
@@ -688,6 +782,19 @@ function stepState(step, stageMap) {
     if (stageMap["user_storage"]) return "done";
     if (stageMap["user_extraction"]) return "in_flight";
     return "pending";
+  }
+  if (step.kind === "substrate") {
+    // Skip the card entirely on turns that didn't touch the substrate.
+    // Otherwise, the card transitions to "done" the moment any
+    // substrate write/walk lands; there's no in_flight state because
+    // the substrate work is interleaved with claim verification (which
+    // already shows in_flight on the Claims card).
+    let touched = false;
+    for (const stage of SUBSTRATE_STAGES) {
+      if (stageMap[stage]) { touched = true; break; }
+    }
+    if (!touched) return "absent";
+    return stageMap["verification"] ? "done" : "in_flight";
   }
   return stageMap[step.stage] ? "done" : "pending";
 }
@@ -705,6 +812,14 @@ function stepEndMs(step, stageMap) {
     if (s && typeof s.arrivedMs === "number") return s.arrivedMs;
     const e = stageMap["user_extraction"];
     return e && typeof e.arrivedMs === "number" ? e.arrivedMs : null;
+  }
+  if (step.kind === "substrate") {
+    // Substrate work is interleaved with verification; treat the
+    // verification aggregate's arrival as the substrate end too. The
+    // duration shown on the next step (Correction) thus measures
+    // post-verification latency only.
+    const v = stageMap["verification"];
+    return v && typeof v.arrivedMs === "number" ? v.arrivedMs : null;
   }
   const ev = stageMap[step.stage];
   return ev && typeof ev.arrivedMs === "number" ? ev.arrivedMs : null;
@@ -744,6 +859,18 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
   // Used by the Claims card's in-flight view to flip individual
   // claim rows from "pending" → "in flight".
   const routingEvents = events.filter((e) => e.stage === "routing_decision");
+  // v0.14 per-claim live signals. Each claim's verification fires its
+  // own claim_decision event from the worker thread (parallel
+  // dispatch); the aggregate `verification` event is the terminal
+  // marker. Per-claim events are what flip individual rows from
+  // in_flight → done as each verification lands.
+  const claimDecisionEvents = events.filter((e) => e.stage === "claim_decision");
+  const tierUStorageEvents = events.filter((e) => e.stage === "tier_u_storage");
+  const walkerDecisionEvents = events.filter((e) => e.stage === "walker_decision");
+  // v0.14.1 — verifiability triage events (one per assistant claim,
+  // pre-walker). Used by the per-claim row to surface PASS_THROUGH
+  // verdicts with their rule + reason.
+  const triageEvents = events.filter((e) => e.stage === "verifiability_triage");
 
   const chart = el("div", { className: "flow-chart" });
 
@@ -753,6 +880,7 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
   let renderedAny = false;
   for (const step of PIPELINE_STEPS) {
     const state = stepState(step, stageMap);
+    if (state === "absent") continue;  // optional step, skip entirely
     if (state === "pending") {
       if (running) {
         if (renderedAny) chart.appendChild(arrowDown());
@@ -766,6 +894,11 @@ function buildFlowChart(events, turnId, running, requestStartMs) {
       calls: callsByStep[step.kind] || [],
       ops: opsByStep[step.kind] || null,
       routingEvents,
+      claimDecisionEvents,
+      tierUStorageEvents,
+      walkerDecisionEvents,
+      triageEvents,
+      events,  // full events list — renderSubstrateNode walks it
       turnCost,
     }));
     renderedAny = true;
@@ -948,6 +1081,7 @@ function annotationStepFor(stage) {
 function renderStep(step, state, stageMap, ctx) {
   if (step.kind === "claims") return renderClaimsNode(state, stageMap, ctx);
   if (step.kind === "user_claims") return renderUserClaimsNode(state, stageMap, ctx);
+  if (step.kind === "substrate") return renderSubstrateNode(state, stageMap, ctx);
   return renderEventStepNode(step, stageMap[step.stage], ctx);
 }
 
@@ -960,11 +1094,48 @@ function renderUserClaimsNode(state, stageMap, ctx) {
   const storageEvent = stageMap["user_storage"];
   const valid = (extractionEvent && extractionEvent.data
                   ? extractionEvent.data.valid_facts : []) || [];
-  const decisions = (storageEvent && storageEvent.data
-                      ? storageEvent.data.decisions : []) || [];
-
+  // User-side decisions: aggregate user_storage event holds the
+  // terminal list. Per-claim signals (tier_u_storage for self-attribute
+  // self-attribute writes, walker_decision for user-stated world claims)
+  // arrive live during the user-claim-handling loop.
+  const aggregateDecisions = (storageEvent && storageEvent.data
+                               ? storageEvent.data.decisions : []) || [];
   const decisionByKey = {};
-  decisions.forEach((d) => { decisionByKey[claimKey(d.claim || {})] = d; });
+  (ctx.tierUStorageEvents || []).forEach((e) => {
+    const d = e.data || {};
+    const claim = d.claim || (d.fact && {
+      pattern: d.fact.pattern, predicate: d.fact.predicate,
+      polarity: d.fact.polarity, slots: d.fact.slots,
+    });
+    if (!claim) return;
+    decisionByKey[claimKey(claim)] = {
+      claim,
+      is_self_attribute: true,
+      storage_outcome: d.outcome,
+      walker: null,
+      // Adapter fields for the v0.14 user-claim row rendering.
+      display_status: "verified",
+      outcome: "stored",
+      verification_status: "user_asserted",
+    };
+  });
+  (ctx.walkerDecisionEvents || []).forEach((e) => {
+    const w = e.data || {};
+    if (!w.claim) return;
+    decisionByKey[claimKey(w.claim)] = {
+      claim: w.claim,
+      walker: w,
+      is_self_attribute: false,
+      display_status: _walkerDisplayStatus(w),
+      outcome: w.outcome,
+      verification_status: w.verification_status,
+    };
+  });
+  // Aggregate wins (carries the full UserClaimDecision shape with
+  // routing layer2 etc.).
+  aggregateDecisions.forEach((d) => {
+    decisionByKey[claimKey(d.claim || {})] = _adaptUserClaimDecision(d);
+  });
   const routedKeys = new Set(
     (ctx.routingEvents || []).map((e) =>
       claimKey((e.data || {}).claim || {})),
@@ -977,11 +1148,16 @@ function renderUserClaimsNode(state, stageMap, ctx) {
     dataset: { stage: "user_claims" },
   });
 
+  const doneCount = Object.keys(decisionByKey).length;
   let summary = `${valid.length} claim${valid.length === 1 ? "" : "s"}`;
   let extraRight = null;
   if (state === "in_flight") {
     extraRight = el("span", { className: "flow-step-duration thinking-dots" }, [
-      document.createTextNode("verifying"),
+      document.createTextNode(
+        valid.length > 0
+          ? `processing ${doneCount} of ${valid.length}`
+          : "processing"
+      ),
       el("span", { className: "thinking-anim" }),
     ]);
   }
@@ -1009,6 +1185,172 @@ function renderUserClaimsNode(state, stageMap, ctx) {
 
   wrapper.appendChild(node);
   return wrapper;
+}
+
+// ---- Substrate step ------------------------------------------------
+//
+// Surfaces what the substrate did this turn: new oracle rows created
+// by the LLM-driven classifiers, new Tier W cache writes from the
+// fresh verifier, and (count-only) the warm consultations that
+// short-circuited via SQL hits. Per-claim attribution is omitted in
+// v0.14.1 — the walker doesn't tag substrate writes with the
+// originating claim_key, especially under parallel verification.
+// "Best-effort by event ordering" gets too misleading too fast under
+// concurrency; v0.15 can add explicit tagging.
+
+const SUBSTRATE_WRITE_ORACLES = [
+  { stage: "predicate_equivalence_write",   label: "predicate equivalence" },
+  { stage: "entity_equivalence_write",      label: "entity equivalence" },
+  { stage: "entity_taxonomy_write",         label: "entity taxonomy" },
+  { stage: "predicate_distribution_write",  label: "predicate distribution" },
+];
+
+// Warm-consultation stages — counted only, not listed individually.
+// Mirrors SUBSTRATE_WRITE_ORACLES but with _hit suffix.
+const SUBSTRATE_HIT_STAGES = new Set([
+  "predicate_equivalence_hit",
+  "entity_equivalence_hit",
+  "entity_taxonomy_hit",
+  "predicate_distribution_hit",
+]);
+
+function renderSubstrateNode(state, stageMap, ctx) {
+  const events = ctx.events || [];
+  const wrap = el("div", { className: "flow-step-wrapper" });
+  const node = el("div", {
+    className: "flow-step flow-step-substrate"
+      + (state === "in_flight" ? " flow-step-thinking" : " flow-step-done"),
+    dataset: { stage: "substrate" },
+  });
+
+  // Aggregate counts. Substrate = four oracles + derivation walks.
+  // Tier W writes are tracked separately by the Memory tab's World
+  // scope; not surfaced here.
+  const writesByOracle = {};   // stage -> [event...]
+  let hitCount = 0;
+  let derivationCount = 0;
+
+  events.forEach((e) => {
+    if (e.stage.endsWith("_write") && e.stage !== "tier_w_write"
+        && e.stage !== "routing_memo_write") {
+      (writesByOracle[e.stage] ||= []).push(e);
+    } else if (SUBSTRATE_HIT_STAGES.has(e.stage)) {
+      hitCount++;
+    } else if (e.stage === "derivation_walk_completed") {
+      derivationCount++;
+    }
+  });
+
+  const totalWrites = SUBSTRATE_WRITE_ORACLES.reduce(
+    (acc, o) => acc + (writesByOracle[o.stage] || []).length, 0,
+  );
+
+  // Header line summary.
+  const summaryParts = [];
+  if (totalWrites) {
+    summaryParts.push(`${totalWrites} new row${totalWrites === 1 ? "" : "s"}`);
+  }
+  if (hitCount) {
+    summaryParts.push(`${hitCount} warm consultation${hitCount === 1 ? "" : "s"}`);
+  }
+  if (derivationCount) {
+    summaryParts.push(`${derivationCount} derivation walk${derivationCount === 1 ? "" : "s"}`);
+  }
+  const summary = summaryParts.length
+    ? summaryParts.join(" · ")
+    : "no substrate activity";
+
+  let extraRight = null;
+  if (state === "in_flight") {
+    extraRight = el("span", { className: "flow-step-duration thinking-dots" }, [
+      document.createTextNode("walking substrate"),
+      el("span", { className: "thinking-anim" }),
+    ]);
+  }
+  node.appendChild(buildStepHeader(`Substrate · ${summary}`,
+                                   ctx.duration, extraRight));
+
+  if (totalWrites === 0 && hitCount === 0 && derivationCount === 0) {
+    node.appendChild(el("div", { className: "flow-step-meta",
+      textContent: "(no rows written, no oracles consulted)" }));
+    wrap.appendChild(node);
+    return wrap;
+  }
+
+  // Per-oracle write groups. Each group lists every new row with its
+  // identity tuple, label, and the LLM's reason for that classification.
+  SUBSTRATE_WRITE_ORACLES.forEach((oracle) => {
+    const writes = writesByOracle[oracle.stage] || [];
+    if (!writes.length) return;
+    node.appendChild(_renderSubstrateOracleGroup(oracle, writes));
+  });
+
+  // Warm-consultation count, by-oracle (substrate oracles only).
+  const hitsByOracle = {};
+  events.forEach((e) => {
+    if (!SUBSTRATE_HIT_STAGES.has(e.stage)) return;
+    const k = e.stage.replace(/_hit$/, "");
+    hitsByOracle[k] = (hitsByOracle[k] || 0) + 1;
+  });
+  if (Object.keys(hitsByOracle).length) {
+    const hits = el("div", { className: "substrate-warm-hits" });
+    hits.appendChild(el("span", { className: "substrate-warm-label",
+      textContent: "warm consultations:" }));
+    Object.entries(hitsByOracle).sort().forEach(([k, n]) => {
+      const lbl = k.replace(/_/g, " ");
+      hits.appendChild(el("span", { className: "substrate-warm-pill",
+        textContent: `${lbl} × ${n}` }));
+    });
+    node.appendChild(hits);
+  }
+
+  wrap.appendChild(node);
+  return wrap;
+}
+
+function _renderSubstrateOracleGroup(oracle, writes) {
+  const group = el("div", { className: "substrate-oracle-group" });
+  const head = el("div", { className: "substrate-oracle-head" });
+  head.appendChild(el("span", { className: "substrate-oracle-name",
+    textContent: oracle.label }));
+  head.appendChild(el("span", { className: "substrate-oracle-count",
+    textContent: `${writes.length} new row${writes.length === 1 ? "" : "s"}` }));
+  group.appendChild(head);
+  writes.forEach((e) => {
+    const d = e.data || {};
+    const row = el("div", { className: "substrate-write-row" });
+    row.appendChild(el("span", { className: "substrate-write-identity mono",
+      textContent: _substrateIdentityText(oracle.stage, d) }));
+    row.appendChild(el("span", { className: "substrate-write-arrow",
+      textContent: "→" }));
+    row.appendChild(el("span", { className: "substrate-write-label",
+      textContent: d.label || "?" }));
+    if (d.reason) {
+      row.appendChild(el("div", { className: "substrate-write-reason",
+        textContent: d.reason }));
+    }
+    group.appendChild(row);
+  });
+  return group;
+}
+
+function _substrateIdentityText(stage, d) {
+  // Shape varies by oracle. Predicate / entity equivalences are
+  // symmetric pairs; taxonomy is directional; distribution is a
+  // 4-tuple.
+  if (stage === "predicate_equivalence_write") {
+    return `(${d.pattern}) ${d.predicate_a} ↔ ${d.predicate_b}`;
+  }
+  if (stage === "entity_equivalence_write") {
+    return `${d.entity_a} ↔ ${d.entity_b}`;
+  }
+  if (stage === "entity_taxonomy_write") {
+    return `${d.child} → ${d.parent} (${d.relation_type})`;
+  }
+  if (stage === "predicate_distribution_write") {
+    return `(${d.pattern}) ${d.predicate}/${d.polarity} under ${d.taxonomy_relation_type}`;
+  }
+  return JSON.stringify(d).slice(0, 80);
 }
 
 // ---- step header (title + duration pill) ----
@@ -1043,8 +1385,18 @@ function renderEventStepNode(step, event, ctx) {
   // explicitly asked for high-level cards with no raw-data dumps).
   if (step.kind === "correction") {
     renderCorrectionInline(node, (event && event.data) || {});
-  } else if (step.kind === "final" && ctx.turnCost) {
-    node.appendChild(renderFinalSummary(ctx.turnCost.data || {}));
+  } else if (step.kind === "final") {
+    // Response preview lives above the cost line so the operator sees
+    // what landed at a glance — the chat bubble's correctness is the
+    // load-bearing rendering, but the Final card now mirrors it for
+    // continuity in the flow chart.
+    const finalData = (event && event.data) || {};
+    if (finalData.final_content) {
+      node.appendChild(renderFinalResponsePreview(finalData));
+    }
+    if (ctx.turnCost) {
+      node.appendChild(renderFinalSummary(ctx.turnCost.data || {}));
+    }
   }
 
   wrapper.appendChild(node);
@@ -1112,6 +1464,30 @@ function renderFinalSummary(d) {
   return wrap;
 }
 
+// Truncated preview of the final response text inside the Final card.
+// Markdown rendering (so headings/lists look right) with a soft cap on
+// length — past 600 chars the operator can scroll the chat bubble for
+// the full text. textContent on the truncation marker keeps the cap
+// XSS-safe even though the source is an LLM string.
+function renderFinalResponsePreview(d) {
+  const wrap = el("div", { className: "final-response-preview" });
+  const label = el("div", { className: "final-response-label",
+    textContent: d.rewrote ? "final (rewritten)" : "final" });
+  wrap.appendChild(label);
+  const body = el("div", { className: "final-response-body" });
+  const text = String(d.final_content || "");
+  const MAX = 600;
+  if (text.length <= MAX) {
+    renderMarkdown(body, text);
+  } else {
+    renderMarkdown(body, text.slice(0, MAX));
+    body.appendChild(el("div", { className: "final-response-truncation",
+      textContent: `… (${text.length - MAX} more chars · scroll the chat bubble for the full response)` }));
+  }
+  wrap.appendChild(body);
+  return wrap;
+}
+
 // ---- combined Claims card ----
 //
 // state === "in_flight": extraction landed, verification hasn't.
@@ -1126,11 +1502,40 @@ function renderClaimsNode(state, stageMap, ctx) {
   const extractionEvent = stageMap["assistant_extraction"];
   const verificationEvent = stageMap["verification"];
   const valid = (extractionEvent && extractionEvent.data ? extractionEvent.data.valid_facts : []) || [];
-  const decisions = (verificationEvent && verificationEvent.data ? verificationEvent.data.decisions : []) || [];
 
-  // Map decisions by claim key for quick lookup when verification is done.
+  // Decisions arrive in two waves under v0.14:
+  //   * per-claim claim_decision events fire from the worker thread
+  //     during parallel verification (live updates)
+  //   * the aggregate verification event lands at the end (terminal)
+  // Merge so each claim row shows its verdict the moment its worker
+  // finishes — a 12-claim turn no longer waits for the slowest one.
+  const aggregateDecisions = (verificationEvent && verificationEvent.data
+                               ? verificationEvent.data.decisions : []) || [];
+  // v0.14.1 — verifiability triage events arrive BEFORE the per-claim
+  // decision events. Index by claim key so we can attach the triage
+  // verdict (rule + reason) to each decision when the worker finishes.
+  // PASS_THROUGH triage on a U/W-miss claim shows up as a
+  // "Skipped — verifiability triage" verdict in the per-claim row.
+  const triageByKey = {};
+  (ctx.triageEvents || []).forEach((e) => {
+    const d = e.data || {};
+    if (d.claim) triageByKey[claimKey(d.claim)] = d;
+  });
   const decisionByKey = {};
-  decisions.forEach((d) => { decisionByKey[claimKey(d.claim || {})] = d; });
+  (ctx.claimDecisionEvents || []).forEach((e) => {
+    const d = e.data || {};
+    if (d.claim) {
+      const adapted = _adaptClaimDecision(d);
+      adapted.triage = triageByKey[claimKey(d.claim)] || null;
+      decisionByKey[claimKey(d.claim)] = adapted;
+    }
+  });
+  // Aggregate wins over per-claim (carries layer2 too) when both present.
+  aggregateDecisions.forEach((d) => {
+    const adapted = _adaptClaimDecision(d);
+    adapted.triage = triageByKey[claimKey(d.claim || {})] || null;
+    decisionByKey[claimKey(d.claim || {})] = adapted;
+  });
 
   // Set of claim keys that have already routed (used while in-flight).
   const routedKeys = new Set(ctx.routingEvents.map((e) => claimKey((e.data || {}).claim || {})));
@@ -1142,12 +1547,19 @@ function renderClaimsNode(state, stageMap, ctx) {
   });
 
   // Header: title · N claims, with duration on the right (or
-  // "verifying…" while in-flight).
+  // "verifying X of Y" while in-flight). The X-of-Y form makes
+  // parallel progress visible — the operator can see claims
+  // landing as workers finish.
+  const doneCount = Object.keys(decisionByKey).length;
   let summary = `${valid.length} claim${valid.length === 1 ? "" : "s"}`;
   let extraRight = null;
   if (state === "in_flight") {
     extraRight = el("span", { className: "flow-step-duration thinking-dots" }, [
-      document.createTextNode("verifying"),
+      document.createTextNode(
+        valid.length > 0
+          ? `verifying ${doneCount} of ${valid.length}`
+          : "verifying"
+      ),
       el("span", { className: "thinking-anim" }),
     ]);
   }
@@ -1180,16 +1592,18 @@ function renderClaimsNode(state, stageMap, ctx) {
 }
 
 // One claim row inside the Claims card. The COLLAPSED row shows:
-//   [dot]  source-text-or-summary  [pattern badge]  [verifier badge]
+//   [dot]  source-text-or-summary  [pattern badge]  [routing method]
+//   [tier badge]
 // The EXPANDED detail (only when row.classList contains 'expanded')
-// shows ONLY this claim's Decision payload — slots, routing reason,
-// code-gen / retrieval blocks, correction info, notes.
+// shows ONLY this claim's full Layer 5 verdict: walker pills, three-
+// factor decision confidence, intervention, derivation chain (if any),
+// and evidence blocks (retrieval snippets / generated code) when the
+// fresh tier resolved the claim.
 function renderClaimItem(claim, state, decision) {
   const key = claimKey(claim);
   const isExpandable = state === "done";
   const row = el("li", {
     className: `claim-row claim-${claimRowClass(state, decision)}`
-      + (decision && decision.served_from_cache ? " claim-cached" : "")
       + (isExpandable ? " claim-expandable" : ""),
   });
   if (expandedClaims.has(key)) row.classList.add("expanded");
@@ -1207,11 +1621,22 @@ function renderClaimItem(claim, state, decision) {
   }));
   const methodText = state === "pending" ? "queued"
     : state === "in_flight" ? "verifying…"
-    : ((decision && decision.routing_decision || {}).method || "?");
+    : (decision && decision.routing_method) || "?";
   summaryLine.appendChild(el("span", { className: "claim-method", textContent: methodText }));
-  if (decision && decision.served_from_cache) {
-    summaryLine.appendChild(el("span", { className: "cache-badge cache-badge-hit",
-      title: "served from Tier 2 cache", textContent: "↺ cached" }));
+  // v0.14: tier badge tells the operator at a glance which tier
+  // resolved the claim (u / w / derivation / fresh).
+  const tier = decision && decision.walker && decision.walker.served_from_tier;
+  if (tier) {
+    const tierLabels = {
+      u: "Tier U", w: "Tier W",
+      derivation: "derived", fresh: "fresh",
+      routing_anomaly: "anomaly",
+    };
+    summaryLine.appendChild(el("span", {
+      className: `tier-badge tier-badge-${tier}`,
+      title: `Resolved at ${tierLabels[tier] || tier}`,
+      textContent: tierLabels[tier] || tier,
+    }));
   }
   if (isExpandable) {
     summaryLine.appendChild(el("span", { className: "claim-toggle",
@@ -1238,10 +1663,91 @@ function renderClaimItem(claim, state, decision) {
   return row;
 }
 
+// ---- v0.14 decision-shape adapters ----
+
+// Map walker.outcome + walker.verification_status → display_status enum
+// the UI uses for color coding ("verified" / "contradicted" /
+// "inconclusive" / "not_applicable" / "skipped").
+//
+// Triage-skipped (PASS_THROUGH that found nothing in U/W/derivation)
+// gets a distinct "skipped" class — it's not inconclusive (the
+// verifier didn't run), it's not verified (no evidence), and it's
+// not a routing anomaly (no validator failure). Neutral display.
+function _walkerDisplayStatus(walker, triage) {
+  if (!walker) return "inconclusive";
+  if (triage && triage.decision === "pass_through"
+      && walker.served_from_tier === "fresh"
+      && (walker.verification_status === "unverifiable_pending_implementation"
+          || walker.verification_status === "retrieval_failed")) {
+    return "skipped";
+  }
+  const status = walker.verification_status;
+  const outcome = walker.outcome;
+  if (status === "verified" || status === "user_asserted") return "verified";
+  if (status === "contradicted" || outcome === "contradiction") return "contradicted";
+  if (status === "routing_anomaly" || status === "unverifiable_in_principle") return "not_applicable";
+  return "inconclusive";
+}
+
+// Per-claim claim_decision event → adapted decision object the row
+// renderers consume. Carries the v0.14 walker/confidence/intervention
+// triplet plus derived display_status + routing_method.
+function _adaptClaimDecision(eventData) {
+  const walker = eventData.walker || {};
+  const conf = eventData.confidence || {};
+  const iv = eventData.intervention || {};
+  const layer2 = eventData.layer2 || {};
+  return {
+    claim: eventData.claim || {},
+    walker,
+    confidence: conf,
+    intervention: iv,
+    layer2,
+    threshold: eventData.threshold,
+    routing_method: walker.routing_method
+                    || layer2.method
+                    || (layer2.decision && layer2.decision.method)
+                    || "?",
+    display_status: _walkerDisplayStatus(walker),
+  };
+}
+
+// Aggregate user_storage decision → adapted shape. The aggregate
+// holds UserClaimDecision dicts (with layer2 + walker + storage_outcome).
+function _adaptUserClaimDecision(d) {
+  const walker = d.walker || null;
+  const layer2 = d.layer2 || {};
+  let display = "verified";
+  if (d.is_anomaly) display = "not_applicable";
+  else if (d.user_world_dispute) display = "contradicted";
+  else if (walker) display = _walkerDisplayStatus(walker);
+  return {
+    claim: d.claim || {},
+    walker,
+    layer2,
+    is_self_attribute: !!d.is_self_attribute,
+    is_anomaly: !!d.is_anomaly,
+    user_world_dispute: !!d.user_world_dispute,
+    storage_outcome: d.storage_outcome,
+    routing_method: layer2.method
+                    || (layer2.decision && layer2.decision.method)
+                    || (walker && walker.routing_method)
+                    || "?",
+    display_status: display,
+  };
+}
+
 function claimRowClass(state, decision) {
   if (state === "pending") return "pending";
   if (state === "in_flight") return "in-flight";
-  return flowEdgeClass((decision && decision.display_status) || "inconclusive");
+  // v0.14.1 — recompute display_status with triage in scope so
+  // triage-skipped claims get the "skipped" class even when the
+  // adapter ran before the triage event was attached.
+  const walker = decision && decision.walker;
+  const triage = decision && decision.triage;
+  const status = walker ? _walkerDisplayStatus(walker, triage)
+                        : (decision && decision.display_status) || "inconclusive";
+  return flowEdgeClass(status);
 }
 function claimDotState(state) {
   if (state === "pending") return "pending";
@@ -1249,96 +1755,304 @@ function claimDotState(state) {
   return "solid";
 }
 
-// Plain-text rendering of a claim. Prefer the source_text the
-// extractor pulled from the message; fall back to a synthesized
-// "subject predicate object" sentence if it's missing.
+// Plain-text rendering of a claim.
+//
+// The extractor often pulls source_text as a minimal noun-phrase span
+// ("matrilineal hierarchies", "30 years", "hold grudges") rather than
+// a full clause. Showing those bare fragments to the operator hides
+// what the claim actually asserts. We synthesize a "<subject>
+// <predicate> <object>" sentence from the slots first, since it
+// surfaces the full proposition. source_text becomes a fallback for
+// patterns where synthesis is incomplete.
 function claimDisplayText(claim) {
-  if (claim.source_text && claim.source_text.trim()) return claim.source_text.trim();
-  const slots = claim.slots || {};
-  const subject = slots.subject || slots.holder || slots.entity || "";
-  const object = slots.object || slots.role || slots.value || slots.target || "";
-  const pred = (claim.predicate || "").replace(/_/g, " ");
-  const polarity = claim.polarity === 0 ? "not " : "";
-  const parts = [subject, polarity + pred, object].filter((p) => p && String(p).trim());
-  return parts.length ? parts.join(" ") : "(unrecognized claim)";
+  const synthesized = _synthesizeClaimText(claim);
+  if (synthesized) return synthesized;
+  const fragment = claim.source_text && claim.source_text.trim();
+  return fragment || "(unrecognized claim)";
 }
 
+// Build a "<subject> <predicate> <object>" sentence from a claim.
+// Uses humanizeFact when the pattern is in _SLOT_ORDER_BY_PATTERN
+// (covers all 9 v0.14 patterns); falls back to the v1 subject-search
+// for unknown shapes.
+function _synthesizeClaimText(claim) {
+  const slots = claim.slots || {};
+  // For patterns in the ordered set, use the same humanizer the
+  // Memory tab uses — keeps the wording consistent across the UI.
+  if (claim.pattern && _SLOT_ORDER_BY_PATTERN[claim.pattern]) {
+    const sentence = humanizeFact({
+      pattern: claim.pattern,
+      predicate: claim.predicate,
+      slots,
+      polarity: claim.polarity,
+    });
+    return sentence && sentence.trim() ? sentence : null;
+  }
+  // Generic subject-search fallback for unrecognized patterns.
+  const subject = slots.subject || slots.holder || slots.entity
+                || slots.agent || slots.part || slots.event_type || "";
+  const object = slots.object || slots.role || slots.value
+              || slots.target || slots.location || slots.category
+              || slots.whole || slots.proposition || "";
+  const pred = (claim.predicate || "").replace(/_/g, " ");
+  const polarity = claim.polarity === 0 ? "not " : "";
+  const parts = [subject, polarity + pred, object]
+    .map((p) => String(p).trim())
+    .filter((p) => p);
+  return parts.length ? parts.join(" ") : null;
+}
+
+// Reimagined per-claim detail (v0.14.1, post-feedback):
+//
+//   1. Verdict headline — one plain-English sentence describing what
+//      happened to this claim, plus an intervention pill on the right.
+//      Replaces the walker-tier/outcome/status three-pill cluster and
+//      the decision-confidence breakdown box for the per-claim view.
+//   2. Evidence block — retrieval snippets / generated code / matching
+//      stored fact / derivation chain / routing-anomaly explanation.
+//      This is the operationally interesting bit; it leads.
+//   3. Claim shape — pattern + slot table at the bottom for
+//      grounding.
+//
+// What's NOT here anymore:
+//   * decision-confidence breakdown box (path × chain × evidence) —
+//     that math is the same all-defaults numerology for fresh-DB
+//     turns and obscures which claim was actually verified vs
+//     inconclusive. Lives in Inspector → Pipeline events for
+//     operators who want it.
+//   * walker tier/outcome/status pills — collapsed into the verdict.
+//   * substrate consultation `via` list — folded into the new
+//     Substrate pipeline step (per-turn aggregate).
 function renderClaimDetailBody(container, claim, d) {
-  // Per-claim Decision detail. Mirrors what the old "Verification"
-  // detail block showed for one decision, restricted to this claim.
-  const meta = [];
-  if (typeof d.confidence === "number") meta.push(`conf=${d.confidence.toFixed(2)}`);
-  if (d.stored_fact_id != null) meta.push(`stored fact id=${d.stored_fact_id}`);
-  if (d.boosted_fact_id != null) meta.push(`boosted fact id=${d.boosted_fact_id}`);
-  if (meta.length) container.appendChild(el("div", { className: "decision-meta", textContent: meta.join(" · ") }));
+  const walker = d.walker || {};
+  const iv = d.intervention || {};
+  const conf = d.confidence || {};
+  const T = d.threshold !== undefined ? d.threshold : 0.5;
 
-  // Tier-provenance badge (microtheory / user_store / cache / fresh).
-  if (d.served_from_tier && d.served_from_tier !== "fresh") {
-    const tierRow = el("div", { className: "decision-trust" });
-    const labels = {
-      microtheory: "↻ this conversation",
-      user_store:  "✦ user store",
-      cache:       "⚙ cache",
-    };
-    const tooltips = {
-      microtheory: "Matched a session-scoped user assertion (microtheory tier)",
-      user_store:  "Matched a cross-session user-asserted fact (user-store tier)",
-      cache:       "Matched a cached world-fact verdict (cache tier)",
-    };
-    tierRow.appendChild(el("span", {
-      className: `trust-badge trust-tier-${d.served_from_tier}`,
-      title: tooltips[d.served_from_tier] || "",
-      textContent: labels[d.served_from_tier] || d.served_from_tier,
-    }));
-    container.appendChild(tierRow);
-  }
+  // 1. Verdict headline.
+  container.appendChild(_renderVerdictHeadline(walker, iv, conf, T, d.triage));
 
-  // Surface refresh / contradiction counts on cache hits so the
-  // "verified Nx" pattern is visible — these counts also drive the
-  // displayed confidence via confidence_from_counts.
-  const rr = d.retrieval_result;
-  if (rr && rr.served_from_cache) {
-    const reinforcedRow = el("div", { className: "decision-trust" });
-    // Reinforcement: hits + 1 (this lookup) when refresh_count is 0
-    // means this is the second sighting; refresh_count > 0 means it
-    // has been re-confirmed before. We display the cumulative count.
-    const hitCount = rr.cache_hit_count;
-    if (typeof hitCount === "number") {
-      const badge = el("span", { className: "trust-badge trust-reinforced",
-        textContent: `↻ verified ×${hitCount + 1}` });
-      badge.title = "Number of times this verdict has been served from cache";
-      reinforcedRow.appendChild(badge);
-    }
-    if (rr.cache_match_score != null) {
-      reinforcedRow.appendChild(el("span", { className: "trust-badge trust-semantic",
-        title: "Semantic-shape match — predicate token similarity to the cached entry",
-        textContent: `~ semantic match ${rr.cache_match_score.toFixed(2)}` }));
-    }
-    container.appendChild(reinforcedRow);
-  }
+  // 2. Evidence block (varies by tier).
+  const evidenceNode = _renderClaimEvidence(walker, claim);
+  if (evidenceNode) container.appendChild(evidenceNode);
 
-  // Status badges (verification + display).
-  const badges = el("div", { className: "decision-header" }, [
-    el("span", { className: `outcome outcome-${d.outcome}`, textContent: d.outcome }),
-    el("span", { className: `display-status display-${d.display_status || "inconclusive"}`,
-      textContent: d.display_status || d.verification_status }),
-  ]);
-  container.appendChild(badges);
-
-  // Claim shape (slots, polarity).
+  // 3. Claim shape — slots + polarity at the bottom.
   container.appendChild(renderClaimBlock(claim));
+}
 
-  // Routing decision, code-gen, retrieval, correction, notes.
-  if (d.routing_decision) container.appendChild(renderRoutingBlock(d.routing_decision));
-  if (d.code_gen_result) container.appendChild(renderCodeGenBlock(d.code_gen_result));
-  if (d.retrieval_result) container.appendChild(renderRetrievalBlock(d.retrieval_result));
-  if (d.correction) {
-    container.appendChild(el("div", { className: "correction-block",
-      textContent: `correction: ${JSON.stringify(d.correction.original_object)} → ${JSON.stringify(d.correction.corrected_object)}` }));
-  }
-  (d.notes || []).forEach((n) => {
-    container.appendChild(el("div", { className: "verifier-explanation", textContent: n }));
+// Verdict synthesis: walker + intervention → one plain sentence + pill.
+function _renderVerdictHeadline(walker, intervention, conf, T, triage) {
+  const wrap = el("div", { className: "claim-verdict-headline" });
+  const text = verdictSummary(walker, triage);
+  const verdictClass = _walkerDisplayStatus(walker, triage);
+  const verdictNode = el("span", {
+    className: `claim-verdict-text claim-verdict-${verdictClass}`,
+    textContent: text,
   });
+  wrap.appendChild(verdictNode);
+  // Intervention pill + (optional conf annotation when soft verdict).
+  const ivType = intervention.intervention_type;
+  if (ivType) {
+    const ivWrap = el("span", { className: "claim-verdict-iv" });
+    ivWrap.appendChild(el("span", {
+      className: `v2-iv-pill v2-iv-pill-${ivType}`,
+      title: intervention.reason || "intervention",
+      textContent: ivType,
+    }));
+    if (typeof conf.value === "number"
+        && (ivType === "hedge" || ivType === "soften")) {
+      ivWrap.appendChild(el("span", {
+        className: "claim-verdict-conf",
+        title: "decision confidence vs threshold T",
+        textContent: ` conf ${conf.value.toFixed(2)} < T=${T.toFixed(2)}`,
+      }));
+    }
+    wrap.appendChild(ivWrap);
+  }
+  if (intervention.reason) {
+    wrap.appendChild(el("div", { className: "claim-verdict-reason",
+      textContent: intervention.reason }));
+  }
+  return wrap;
+}
+
+// Plain-English verdict from walker shape. Routing-anomaly + each tier
+// + each verification_status combination has a tailored phrase. The
+// optional `triage` argument carries the verifiability_triage event
+// data for this claim — when present and the walker landed on
+// fresh/unverifiable_pending (the canonical "everything missed and
+// triage suppressed fresh dispatch" case), we override the verdict
+// with a triage-skipped explanation.
+function verdictSummary(walker, triage) {
+  const tier = walker.served_from_tier;
+  const outcome = walker.outcome;
+  const status = walker.verification_status;
+  const method = walker.routing_method;
+
+  // v0.14.1 — triage-skipped takes precedence when the walker had
+  // nothing useful to say (lookups missed and fresh was suppressed).
+  if (triage && triage.decision === "pass_through"
+      && tier === "fresh"
+      && (status === "unverifiable_pending_implementation"
+          || status === "retrieval_failed")) {
+    return `Skipped — verifiability triage (${triage.rule || "no_signal"}); model trusted`;
+  }
+
+  if (tier === "routing_anomaly") {
+    return "Routing anomaly — Layer 2 validator rejected this claim";
+  }
+  if (tier === "u") {
+    if (outcome === "match" && status === "user_asserted") {
+      return "Match — your earlier assertion (Tier U)";
+    }
+    if (outcome === "contradiction") {
+      return "Contradicted — disagrees with your earlier assertion";
+    }
+  }
+  if (tier === "w") {
+    if (outcome === "match") {
+      return `Match — cached verifier verdict (Tier W, ${status || "verified"})`;
+    }
+    if (outcome === "contradiction") {
+      return "Contradicted — cached verifier verdict says otherwise";
+    }
+  }
+  if (tier === "derivation") {
+    const n = (walker.derivation_path || []).length;
+    if (outcome === "match") {
+      return `Derived — ${n}-step substrate chain supports the claim`;
+    }
+    if (outcome === "contradiction") {
+      return `Contradicted by derivation (${n}-step substrate chain)`;
+    }
+  }
+  if (tier === "fresh") {
+    const verifier = method === "retrieval" ? "Wikipedia retrieval"
+                   : method === "python" ? "Python verifier"
+                   : method === "python_with_canonical_constants" ? "Python verifier (canonical constants)"
+                   : "fresh verifier";
+    if (status === "verified")               return `Verified by ${verifier}`;
+    if (status === "contradicted")           return `Contradicted by ${verifier}`;
+    if (status === "retrieval_inconclusive") return `Inconclusive — judge couldn't decide on the evidence`;
+    if (status === "retrieval_failed")       return `Verifier failed — no evidence retrieved`;
+    if (status === "unverifiable_in_principle") return `Unverifiable in principle (preference / aesthetic / counterfactual)`;
+    if (status === "unverifiable_pending_implementation") return `Unverifiable — verifier-side error`;
+  }
+  // Catch-all.
+  return `${status || outcome || tier || "unknown"}`;
+}
+
+// Evidence block — picks the right renderer based on what the walker
+// actually surfaced (matching fact for U/W, derivation chain for
+// derived, snippets/code for fresh, validator failure for anomaly).
+// Returns null when there's nothing meaningful to show (rare —
+// walker.evidence is usually populated).
+function _renderClaimEvidence(walker, claim) {
+  const ev = walker.evidence;
+  const tier = walker.served_from_tier;
+
+  // Routing anomaly: render the validator's failed-invariant explanation.
+  if (tier === "routing_anomaly") {
+    const notes = walker.notes || [];
+    if (notes.length) {
+      const wrap = el("div", { className: "claim-evidence claim-evidence-anomaly" });
+      wrap.appendChild(el("div", { className: "claim-evidence-label",
+        textContent: "validator rejection" }));
+      notes.forEach((n) => {
+        wrap.appendChild(el("div", { className: "claim-evidence-anomaly-line",
+          textContent: n }));
+      });
+      return wrap;
+    }
+    return null;
+  }
+
+  // Derivation: render the chain (trace.js helper).
+  if (tier === "derivation"
+      && walker.derivation_path && walker.derivation_path.length) {
+    if (window.Aedos && window.Aedos.renderChain) {
+      const wrap = el("div", { className: "claim-evidence claim-evidence-derivation" });
+      wrap.appendChild(window.Aedos.renderChain(
+        walker.derivation_path, walker.chain_reliability,
+      ));
+      return wrap;
+    }
+  }
+
+  // Tier U match: show the matching fact's identity (we have row id;
+  // detailed slot diff requires a fetch, deferred to v0.15).
+  if (tier === "u" && walker.matching_fact_id != null) {
+    const wrap = el("div", { className: "claim-evidence claim-evidence-tier-u" });
+    wrap.appendChild(el("div", { className: "claim-evidence-label",
+      textContent: "matched user fact" }));
+    wrap.appendChild(el("div", { className: "claim-evidence-row mono",
+      textContent: `Tier U row #${walker.matching_fact_id}` }));
+    if (walker.notes && walker.notes.length) {
+      walker.notes.forEach((n) => {
+        wrap.appendChild(el("div", { className: "claim-evidence-note",
+          textContent: n }));
+      });
+    }
+    return wrap;
+  }
+  if (tier === "u" && walker.contradicting_fact_id != null) {
+    const wrap = el("div", { className: "claim-evidence claim-evidence-tier-u" });
+    wrap.appendChild(el("div", { className: "claim-evidence-label",
+      textContent: "contradicting user fact" }));
+    wrap.appendChild(el("div", { className: "claim-evidence-row mono",
+      textContent: `Tier U row #${walker.contradicting_fact_id}` }));
+    return wrap;
+  }
+
+  // Tier W match: cache row id + cached verdict.
+  if (tier === "w" && (walker.matching_w_row_id != null
+                      || walker.contradicting_w_row_id != null)) {
+    const rowId = walker.matching_w_row_id ?? walker.contradicting_w_row_id;
+    const wrap = el("div", { className: "claim-evidence claim-evidence-tier-w" });
+    wrap.appendChild(el("div", { className: "claim-evidence-label",
+      textContent: "cached verifier verdict" }));
+    wrap.appendChild(el("div", { className: "claim-evidence-row mono",
+      textContent: `Tier W row #${rowId}` }));
+    if (ev && typeof ev === "object") {
+      const evDump = el("details", { className: "claim-evidence-evdump" });
+      evDump.appendChild(el("summary", { textContent: "cached evidence" }));
+      evDump.appendChild(el("pre", { className: "json-dump",
+        textContent: JSON.stringify(ev, null, 2).slice(0, 2000) }));
+      wrap.appendChild(evDump);
+    }
+    return wrap;
+  }
+
+  // Fresh tier: dispatch by evidence shape (retrieval vs python).
+  if (ev) {
+    if (ev.attempts || ev.snippets || ev.verdict) {
+      const wrap = el("div", { className: "claim-evidence claim-evidence-fresh" });
+      wrap.appendChild(el("div", { className: "claim-evidence-label",
+        textContent: "retrieval evidence" }));
+      wrap.appendChild(renderRetrievalBlock(ev));
+      return wrap;
+    }
+    if (ev.code || ev.execution || ev.trace) {
+      const wrap = el("div", { className: "claim-evidence claim-evidence-fresh" });
+      wrap.appendChild(el("div", { className: "claim-evidence-label",
+        textContent: "python verifier" }));
+      wrap.appendChild(renderCodeGenBlock(ev));
+      return wrap;
+    }
+  }
+
+  // Walker notes (last-resort textual evidence — e.g., when the
+  // verifier returned no structured payload but the walker's notes
+  // explain the verdict).
+  if (walker.notes && walker.notes.length) {
+    const wrap = el("div", { className: "claim-evidence claim-evidence-notes" });
+    walker.notes.forEach((n) => {
+      wrap.appendChild(el("div", { className: "claim-evidence-note",
+        textContent: n }));
+    });
+    return wrap;
+  }
+  return null;
 }
 
 function renderThinkingNode(step) {
@@ -1467,12 +2181,151 @@ function renderAnnotation(event) {
   else if (event.stage === "routing_anomaly_detected") renderRoutingAnomalyAnnotation(wrap, data);
   else if (event.stage === "verifier_failure") renderVerifierFailureAnnotation(wrap, data);
   else if (event.stage === "turn_cost") renderTurnCostAnnotation(wrap, data);
+  // v0.14 specialized renderers
+  else if (event.stage === "routing_decision") renderRoutingDecisionAnnotation(wrap, data);
+  else if (event.stage === "tier_u_storage") renderTierUStorageAnnotation(wrap, data);
+  else if (event.stage === "walker_decision") renderWalkerDecisionAnnotation(wrap, data);
+  else if (event.stage === "claim_decision") renderClaimDecisionAnnotation(wrap, data);
+  else if (event.stage === "user_extraction" || event.stage === "assistant_extraction") renderExtractionAnnotation(wrap, data);
   else {
     // Unknown / generic: dump JSON. Forward-compat with new event types.
     wrap.appendChild(el("pre", { className: "json-dump",
       textContent: JSON.stringify(data, null, 2).slice(0, 800) }));
   }
   return wrap;
+}
+
+// ---- v0.14 specialized renderers ----
+
+function renderRoutingDecisionAnnotation(wrap, d) {
+  const method = d.method || (d.decision || {}).method || "?";
+  wrap.appendChild(el("span", { className: `routing-method routing-method-${method}`,
+    textContent: method }));
+  if (d.memo_hit !== undefined) {
+    wrap.appendChild(el("span", { className: "routing-memo-tag",
+      textContent: d.memo_hit ? "memo hit" : "memo miss" }));
+  }
+  const reason = (d.decision || {}).reason || d.reason;
+  if (reason) {
+    wrap.appendChild(el("div", { className: "routing-reason", textContent: reason }));
+  }
+}
+
+function renderTierUStorageAnnotation(wrap, d) {
+  const outcome = d.outcome || "?";
+  wrap.appendChild(el("span", { className: `tier-u-outcome tier-u-outcome-${outcome}`,
+    textContent: outcome }));
+  const sids = d.session_ids_after || [];
+  if (d.is_session_local) {
+    wrap.appendChild(el("span", { className: "tier-u-tag",
+      textContent: `session-local (${sids.join(", ") || "—"})` }));
+  } else if (sids.length) {
+    wrap.appendChild(el("span", { className: "tier-u-tag",
+      textContent: `cross-session (${sids.length} session${sids.length === 1 ? "" : "s"})` }));
+  } else {
+    wrap.appendChild(el("span", { className: "tier-u-tag", textContent: "cross-session" }));
+  }
+  if (d.affirmed_count_after !== undefined) {
+    wrap.appendChild(el("span", { className: "tier-u-counts",
+      textContent: `affirmed=${d.affirmed_count_after}` }));
+  }
+  if (d.marker_detected_phrase) {
+    wrap.appendChild(el("div", { className: "tier-u-marker",
+      textContent: `marker: "${d.marker_detected_phrase}"` }));
+  }
+}
+
+function renderWalkerDecisionAnnotation(wrap, d) {
+  const tier = d.served_from_tier || "?";
+  const outcome = d.outcome || "?";
+  const status = d.verification_status || "?";
+  wrap.appendChild(el("span", { className: `walker-tier walker-tier-${tier}`,
+    textContent: `tier: ${tier}` }));
+  wrap.appendChild(el("span", { className: `walker-outcome walker-outcome-${outcome}`,
+    textContent: outcome }));
+  wrap.appendChild(el("span", { className: `walker-status walker-status-${status}`,
+    textContent: status }));
+  const via = d.via || [];
+  if (via.length) {
+    const viaBox = el("div", { className: "walker-via" });
+    viaBox.appendChild(el("span", { className: "walker-via-label", textContent: "via:" }));
+    via.forEach((v) => {
+      viaBox.appendChild(el("span", { className: "walker-via-pill", textContent: v }));
+    });
+    wrap.appendChild(viaBox);
+  }
+  if (d.derivation_path && d.derivation_path.length && window.Aedos && window.Aedos.renderChain) {
+    wrap.appendChild(window.Aedos.renderChain(d.derivation_path, d.chain_reliability));
+  }
+}
+
+function renderClaimDecisionAnnotation(wrap, d) {
+  // Per-claim Layer 5 verdict: walker + decision_confidence +
+  // intervention bundled. The most operator-useful event because it
+  // surfaces the entire per-claim conclusion in one place.
+  const claim = d.claim || {};
+  const walker = d.walker || {};
+  const conf = d.confidence || {};
+  const iv = d.intervention || {};
+  const T = d.threshold !== undefined ? d.threshold : 0.5;
+
+  // Top-line claim summary.
+  const claimLine = el("div", { className: "claim-summary mono" });
+  const pol = claim.polarity === 0 ? "NOT " : "";
+  const slots = Object.entries(claim.slots || {})
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ");
+  claimLine.textContent = `${pol}${claim.pattern}.${claim.predicate}(${slots})`;
+  wrap.appendChild(claimLine);
+
+  // Walker line.
+  const tier = walker.served_from_tier || "?";
+  const outcome = walker.outcome || "?";
+  const status = walker.verification_status || "?";
+  const walkerLine = el("div", { className: "claim-walker-line" });
+  walkerLine.appendChild(el("span", { className: `walker-tier walker-tier-${tier}`,
+    textContent: tier }));
+  walkerLine.appendChild(el("span", { className: `walker-outcome walker-outcome-${outcome}`,
+    textContent: outcome }));
+  walkerLine.appendChild(el("span", { className: `walker-status walker-status-${status}`,
+    textContent: status }));
+  wrap.appendChild(walkerLine);
+
+  // Decision confidence + intervention pill (via trace.js helper).
+  if (window.Aedos && window.Aedos.renderDecisionConfidence) {
+    wrap.appendChild(window.Aedos.renderDecisionConfidence(conf, T, iv));
+  }
+
+  // Derivation chain when applicable.
+  if (walker.derivation_path && walker.derivation_path.length
+      && window.Aedos && window.Aedos.renderChain) {
+    wrap.appendChild(window.Aedos.renderChain(
+      walker.derivation_path, walker.chain_reliability));
+  }
+}
+
+function renderExtractionAnnotation(wrap, d) {
+  const facts = d.valid_facts || d.facts || [];
+  if (!facts.length) {
+    wrap.appendChild(el("span", { className: "extraction-empty",
+      textContent: "no facts extracted" }));
+    return;
+  }
+  wrap.appendChild(el("span", { className: "extraction-count",
+    textContent: `${facts.length} fact${facts.length === 1 ? "" : "s"}` }));
+  const list = el("ul", { className: "extraction-list mono" });
+  facts.forEach((f) => {
+    const pol = f.polarity === 0 ? "NOT " : "";
+    const slots = Object.entries(f.slots || {})
+      .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ");
+    list.appendChild(el("li", {
+      textContent: `${pol}${f.pattern}.${f.predicate}(${slots})`,
+    }));
+  });
+  wrap.appendChild(list);
+  if (d.rejected_facts && d.rejected_facts.length) {
+    wrap.appendChild(el("div", { className: "extraction-rejected hint",
+      textContent: `${d.rejected_facts.length} rejected` }));
+  }
 }
 
 function renderCacheLookupAnnotation(wrap, d) {
@@ -1626,6 +2479,7 @@ function selectInspectorTab(name) {
   if (name === "patterns") refreshPatterns();
   if (name === "memory") refreshMemory();
   if (name === "pipeline") refreshPipelineEvents();
+  if (name === "routing-memo") refreshRoutingMemo();
 }
 
 // Re-trigger the active inspector tab's refresh — invoked after the
@@ -1637,6 +2491,7 @@ function refreshActiveInspector() {
   if (active === "patterns") refreshPatterns();
   else if (active === "memory") refreshMemory();
   else if (active === "pipeline") refreshPipelineEvents();
+  else if (active === "routing-memo") refreshRoutingMemo();
 }
 
 $("#inspector-btn").addEventListener("click", () => openInspector());
@@ -1747,13 +2602,16 @@ function renderMemoryConversation() {
   const facts = _memoryFactsByScope.conversation;
   if (!facts.length) {
     container.appendChild(el("p", { className: "hint",
-      textContent: "No session-scoped user facts yet. The microtheory layer fills as the user makes assertions tagged to a specific conversation." }));
+      textContent: "No session-local user facts yet. Tier U session-local facts are the user's \"let's say for this conversation\" hypotheticals, scoped to one session by the marker check." }));
     return;
   }
-  // Group by session_id so each conversation is its own block.
+  // Group by session id (each session-local fact has exactly one entry
+  // in session_ids). Cross-session facts go to the User scope, not
+  // here.
   const bySession = {};
   facts.forEach((f) => {
-    const k = f.session_id || "(unset)";
+    const sids = f.session_ids || [];
+    const k = sids.length ? sids[0] : "(unset)";
     (bySession[k] ||= []).push(f);
   });
   Object.keys(bySession).sort().forEach((sid) => {
@@ -1797,18 +2655,25 @@ function _setScopeCount(scope, n) {
 }
 
 async function refreshMemory() {
-  // Three API calls in parallel — keeps switching scopes instant.
+  // Two API calls in parallel — keeps switching scopes instant.
   const [allFacts, cacheData] = await Promise.all([
     api("GET", "/api/facts"),
     api("GET", "/api/cache"),
   ]);
-  // Bucket every fact by its origin: user-conversation / user-cross /
-  // model. Anything else (python_verifier, external) drops here too —
-  // surface it under Model so it doesn't disappear.
+  // v0.14 model: Tier U has both session-local + cross-session
+  // user-asserted facts. Anything asserted_by != "user" is the model-
+  // claims dual-write trail (asserted_by=model for the model's own
+  // assertion + asserted_by=python_verifier for verifier-corrected
+  // values).
+  //
+  //   Conversation = is_session_local=1 (Tier U session-local)
+  //   User         = asserted_by="user" + is_session_local=0 (Tier U cross-session)
+  //   Model        = asserted_by != "user" (model + python_verifier rows)
+  //   World        = Tier W (verification_cache, served via /api/cache)
   _memoryFactsByScope.conversation = allFacts.filter(
-    (f) => f.asserted_by === "user" && f.session_id);
+    (f) => f.asserted_by === "user" && f.is_session_local === 1);
   _memoryFactsByScope.user = allFacts.filter(
-    (f) => f.asserted_by === "user" && !f.session_id);
+    (f) => f.asserted_by === "user" && f.is_session_local !== 1);
   _memoryFactsByScope.model = allFacts.filter(
     (f) => f.asserted_by !== "user");
   _setScopeCount("conversation", _memoryFactsByScope.conversation.length);
@@ -1843,6 +2708,9 @@ const _SLOT_ORDER_BY_PATTERN = {
   "relational":             ["subject", "object"],
   "quantitative":           ["subject", "property"],
   "event":                  ["event_type", "occurred_at"],
+  // v0.14 added mereological as a separate pattern (constitutive
+  // parthood; locational containment stays in spatial_temporal).
+  "mereological":           ["part", "whole"],
 };
 
 function _humanizePredicate(pred) {
@@ -2060,24 +2928,12 @@ function renderCacheTable() {
       e.expires_at ? (e.is_expired ? `${e.expires_at} (EXP)` : e.expires_at) : "(never)",
     ].forEach((v) => row.appendChild(el("td", { textContent: String(v) })));
 
-    // Action cell — only delete remains.
-    const actions = el("td", { className: "cache-actions" });
-    const delBtn = el("button", { className: "cache-action-btn cache-action-danger",
-      title: "Hard-delete this entry", textContent: "✕" });
-    delBtn.addEventListener("click", () =>
-      cacheActionInvalidateOne(e.canonical_key));
-    actions.appendChild(delBtn);
-    row.appendChild(actions);
-
+    // Per-row actions are v0.15 work (cascade-invalidation discipline);
+    // the world cache is read-only for v0.14.x. Operators wipe the
+    // entire store via the header's Reset DB button when needed.
     table.appendChild(row);
   });
   container.appendChild(table);
-}
-
-async function cacheActionInvalidateOne(key) {
-  if (!confirm(`Hard-delete cache entry?\n${key.slice(0, 100)}…`)) return;
-  await api("POST", "/api/cache/invalidate-one", { canonical_key: key });
-  await refreshMemory();
 }
 
 // ---- Pipeline events (raw event log for the latest assistant turn) ----
@@ -2189,6 +3045,56 @@ async function refreshPipelineEvents() {
 }
 
 $("#pipeline-refresh").addEventListener("click", refreshPipelineEvents);
+
+// =====================================================================
+// 6.5. Routing memo inspector
+// =====================================================================
+
+async function refreshRoutingMemo() {
+  const container = $("#routing-memo-table");
+  const stats = $("#routing-memo-stats");
+  container.innerHTML = "";
+  stats.textContent = "loading…";
+  try {
+    const resp = await api("GET", "/api/routing-memo");
+    const rows = resp.rows || [];
+    if (!rows.length) {
+      stats.textContent = "no memo rows yet";
+      container.appendChild(el("p", { className: "hint",
+        textContent: "Layer 2's classification cache fills as the LLM router classifies (pattern, predicate) pairs. Send some messages to populate it." }));
+      return;
+    }
+    stats.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
+    const table = el("table", { className: "routing-memo-table" });
+    const thead = el("thead");
+    const headRow = el("tr");
+    [
+      "pattern", "predicate", "method", "reason", "✓", "✗",
+      "created", "last consulted",
+    ].forEach((h) => headRow.appendChild(el("th", { textContent: h })));
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    rows.forEach((r) => {
+      const tr = el("tr");
+      const ts = (s) => (s || "").slice(0, 19).replace("T", " ");
+      [
+        r.pattern, r.predicate, r.method, r.reason || "—",
+        String(r.affirmed_count || 0),
+        String(r.contradicted_count || 0),
+        ts(r.created_at), ts(r.last_consulted_at),
+      ].forEach((v) => tr.appendChild(el("td", { textContent: String(v) })));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  } catch (err) {
+    stats.textContent = "error";
+    container.appendChild(el("p", { className: "hint", textContent: String(err) }));
+  }
+}
+
+$("#routing-memo-refresh").addEventListener("click", refreshRoutingMemo);
 
 // =====================================================================
 // 7. reset
