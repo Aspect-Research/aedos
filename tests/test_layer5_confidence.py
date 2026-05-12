@@ -433,3 +433,109 @@ def test_decision_confidence_to_dict_round_trip(store):
     assert d["evidence_strength"] == 1.0
     assert d["value"] == 1.0
     assert "explanation" in d
+
+
+# ============================================================================
+# v0.14.6 — freshly-cached Tier W rows clear the decision threshold
+# ============================================================================
+#
+# Pin the bug fix from v0.14.6: Tier W's write_verifier_result seeds the
+# initial insert with refresh_count=1 (the first verifier verdict is one
+# independent evidence event under principle 3, mirroring Tier U's
+# affirmed_count=1 on initial storage). Without this seed,
+# chain_reliability is Beta(1,1)=0.5 on the first cache hit and the
+# product with path_prior (0.85 retrieval / 0.99 immutable) lands at
+# 0.425 / 0.495 — both under the default 0.5 threshold — so a freshly
+# verified fact gets hedged on the very next turn.
+
+
+def test_freshly_cached_retrieval_row_clears_threshold(store, tmp_path):
+    """End-to-end: write a verified retrieval verdict to Tier W via the
+    public writer, then compute the decision_confidence for a Tier W
+    MATCH against that row. Must be ≥ 0.5 (default threshold) so the
+    intervention planner does NOT hedge."""
+    from src.layer1_extraction.pattern_registry import (
+        load_default_registry, reset_cache,
+    )
+    from src.layer4_lookup import tier_w
+    reset_cache()
+    registry = load_default_registry()
+    claim = {
+        "pattern": "quantitative", "predicate": "completion_year",
+        "polarity": 1,
+        "slots": {"subject": "Brooklyn Bridge",
+                  "property": "completion_year", "value": 1883},
+        "source_text": "Brooklyn Bridge was completed in 1883",
+    }
+    outcome = tier_w.write_verifier_result(
+        claim, store,
+        verification_status="verified",
+        registry=registry,
+        stability_class="decade_stable",
+        ttl_seconds=3600,
+    )
+    assert outcome.action == "inserted"
+    assert outcome.row_id is not None
+
+    dec = _wd(
+        served_from_tier="w",
+        outcome=LookupOutcome.MATCH,
+        verification_status="verified",
+        routing_method="retrieval",
+        matching_w_row_id=outcome.row_id,
+    )
+    cd = compute_decision_confidence(dec, store=store)
+    # path_prior=0.85 (decade_stable → retrieval) × chain=2/3 × evidence=1.0
+    # = 0.567, comfortably above 0.5.
+    assert cd.path_prior == pytest.approx(0.85)
+    assert cd.chain_reliability == pytest.approx(2 / 3)
+    assert cd.value >= get_threshold(), (
+        f"freshly verified retrieval fact must clear threshold, "
+        f"got value={cd.value:.3f}"
+    )
+    reset_cache()
+
+
+def test_freshly_cached_immutable_row_clears_threshold(store, tmp_path):
+    """Same regression for an immutable (e.g. historical date) row.
+    The Brooklyn-Bridge case from the bug report was specifically an
+    immutable row: path_prior=0.99, chain=0.5 → value=0.495 < 0.5 →
+    hedge. After the fix: chain=2/3 → value=0.66 → no hedge."""
+    from src.layer1_extraction.pattern_registry import (
+        load_default_registry, reset_cache,
+    )
+    from src.layer4_lookup import tier_w
+    reset_cache()
+    registry = load_default_registry()
+    claim = {
+        "pattern": "quantitative", "predicate": "born_in_year",
+        "polarity": 1,
+        "slots": {"subject": "Marie Curie",
+                  "property": "birth_year", "value": 1867},
+        "source_text": "Marie Curie was born in 1867",
+    }
+    outcome = tier_w.write_verifier_result(
+        claim, store,
+        verification_status="verified",
+        registry=registry,
+        stability_class="immutable",
+        ttl_seconds=None,
+    )
+    assert outcome.action == "inserted"
+    assert outcome.row_id is not None
+
+    dec = _wd(
+        served_from_tier="w",
+        outcome=LookupOutcome.MATCH,
+        verification_status="verified",
+        routing_method="retrieval",
+        matching_w_row_id=outcome.row_id,
+    )
+    cd = compute_decision_confidence(dec, store=store)
+    assert cd.path_prior == pytest.approx(0.99)
+    assert cd.chain_reliability == pytest.approx(2 / 3)
+    assert cd.value >= get_threshold(), (
+        f"freshly verified immutable fact must clear threshold, "
+        f"got value={cd.value:.3f}"
+    )
+    reset_cache()

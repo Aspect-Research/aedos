@@ -652,3 +652,136 @@ def test_assistant_claim_contradicts_tier_u_corrector_rewrites(tmp_path):
     # Corrector rewrote.
     assert trace.original_content == "You don't like olives."
     assert trace.final_content == "Actually, you like olives."
+
+
+# ============================================================================
+# v0.14.6 — chat-prompt facts block splits just-asserted vs prior knowledge
+# ============================================================================
+#
+# Bug pinned: after the user said "I love sushi", the chat model's reply
+# was "I know you have a strong love for sushi" — pretending prior
+# knowledge of a fact the user JUST asserted. Root cause: stage 4 built
+# the chat system prompt from `_tier_u_visible_facts()`, which includes
+# the fact stored in stage 3 from the same user message, under a
+# "What you know about the user" heading that reads as recalled context.
+# Fix: pass current_user_turn_id into _format_facts_block so just-
+# asserted facts render under a distinct "Just asserted (this turn)"
+# sub-section, and add an explicit phrasing rule to the system prompt.
+
+
+def test_format_facts_block_splits_just_asserted_from_prior():
+    """Pure-function test for the formatter — no pipeline needed.
+    Facts whose source_turn_id matches current_user_turn_id render
+    under "Just asserted (this turn)"; everything else lands under
+    "From prior conversation"."""
+    from src.fact_store import Fact
+    from src.pipeline import _format_facts_block
+
+    just_now = Fact(
+        pattern="preference", predicate="loves",
+        slots={"agent": "user", "object": "sushi"},
+        polarity=1, asserted_by="user",
+        verification_status="user_asserted",
+        confidence=0.5, affirmed_count=1,
+        is_session_local=0, session_ids=[],
+        source_turn_id=42,
+    )
+    earlier = Fact(
+        pattern="preference", predicate="loves",
+        slots={"agent": "user", "object": "ramen"},
+        polarity=1, asserted_by="user",
+        verification_status="user_asserted",
+        confidence=0.5, affirmed_count=1,
+        is_session_local=0, session_ids=[],
+        source_turn_id=10,
+    )
+    block = _format_facts_block([just_now, earlier], current_user_turn_id=42)
+    assert "## Just asserted (this turn)" in block
+    assert "## From prior conversation" in block
+    # Just-asserted block must precede the prior block (the prompt rule
+    # depends on the order to discourage the "I already know X" reply).
+    assert block.index("Just asserted") < block.index("From prior conversation")
+    # Sushi (just-asserted) appears before ramen (prior).
+    assert block.index("sushi") < block.index("ramen")
+
+
+def test_format_facts_block_no_current_turn_id_renders_all_as_prior():
+    """Back-compat: when current_user_turn_id is None, every fact is
+    treated as prior conversation (the just-asserted sub-section is
+    omitted). This preserves the previous shape for any caller that
+    doesn't supply the turn id."""
+    from src.fact_store import Fact
+    from src.pipeline import _format_facts_block
+
+    f = Fact(
+        pattern="preference", predicate="loves",
+        slots={"agent": "user", "object": "ramen"},
+        polarity=1, asserted_by="user",
+        verification_status="user_asserted",
+        confidence=0.5, affirmed_count=1,
+        is_session_local=0, session_ids=[],
+        source_turn_id=10,
+    )
+    block = _format_facts_block([f], current_user_turn_id=None)
+    assert "## Just asserted (this turn)" not in block
+    assert "## From prior conversation" in block
+
+
+def test_chat_system_prompt_marks_just_asserted_user_fact(tmp_path):
+    """Pipeline integration: when the user asserts a NEW preference in
+    this turn, the fact lands under "Just asserted (this turn)" in the
+    chat system prompt — NOT under "From prior conversation". The chat
+    model also receives a phrasing rule that forbids "I know you …"
+    style replies on just-asserted facts.
+
+    This test pins the FORMAT of the system prompt; behavioral verification
+    that the model actually follows the rule is a live-LLM test (skipped
+    by default) and a manual UI smoke."""
+    captured_systems: list[str] = []
+
+    class _CaptureLLM(StubLLM):
+        def chat_stream(self, system, messages, on_token=None,
+                        max_tokens=4096, purpose="chat"):
+            captured_systems.append(system)
+            return super().chat_stream(
+                system, messages, on_token=on_token,
+                max_tokens=max_tokens, purpose=purpose,
+            )
+
+    llm = _CaptureLLM(
+        extracts=[
+            {"facts": [{
+                "pattern": "preference",
+                "predicate": "loves",
+                "polarity": 1,
+                "slots": {"agent": "user", "object": "sushi", "intensity": "strong"},
+                "source_text": "I love sushi",
+            }]},
+            {"facts": []},
+        ],
+        chats=["Got it."],
+        routes=[
+            RoutingDecision(method="user_authoritative", reason="self-attr",
+                            python_inputs_self_contained=None,
+                            retrieval_query_hint=None,
+                            canonical_constants_needed=None),
+        ],
+    )
+    p = _build_pipeline(tmp_path, llm)
+
+    p.run_turn("I love sushi")
+
+    assert captured_systems, "chat_stream was never called"
+    system = captured_systems[0]
+    assert "## Just asserted (this turn)" in system
+    assert "object='sushi'" in system
+    # The phrasing-rule section must accompany the split (we never want
+    # the rule and the split to drift apart).
+    assert "Just-asserted vs prior knowledge" in system
+    # And critically: sushi is NOT under the prior-conversation header.
+    if "## From prior conversation" in system:
+        prior_idx = system.index("## From prior conversation")
+        assert "sushi" not in system[prior_idx:], (
+            "freshly asserted 'sushi' leaked into the prior-conversation "
+            "section — the split is broken"
+        )

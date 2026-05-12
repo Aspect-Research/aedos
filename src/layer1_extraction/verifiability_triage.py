@@ -45,11 +45,12 @@ A claim is VERIFY-eligible iff at least one of:
      ``valid_until``, ``occurred_at``, ``date``, or whose value
      matches a 4-digit-year pattern. Historical facts are checkable.
 
-  3. **Multiple named-entity slots.** At least two slots whose values
-     look like specific named entities (capitalized multi-word, or
-     non-generic identifiers). Catches relations between specific
-     things ("Paris is the capital of France"; "Trump defeated
-     Harris").
+  3. **Multiple specific-referent slots** (v0.14.6). At least two
+     slots whose values look like concrete referents ("Paris" /
+     "France"; "cats" / "mice"). Replaces v0.14.5's
+     `multiple_named_entities`, which required capitalized proper
+     nouns and so missed common-knowledge claims with lowercase
+     subjects.
 
   4. **Comparative / superlative claim.** The
      ``comparative.detect_comparative`` heuristic returns non-None
@@ -59,6 +60,23 @@ A claim is VERIFY-eligible iff at least one of:
      ``anchor_entity`` AND the predicate isn't a vague generic
      (``is``, ``has``, ``does``); the anchor signals the extractor
      pulled this from substantive content.
+
+  6. **Verify-predicate allow-list** (v0.14.3). The claim's predicate
+     appears in its pattern's ``triage_verify_predicates`` field
+     (declared in patterns.yaml). Catches predicates whose
+     verifiability is intrinsic to the predicate's meaning rather
+     than the slot shape (``current_time``, ``has_count``,
+     ``located_in``, etc.).
+
+  7. **Specific subject + value slot** (v0.14.1). Any slot looks
+     like a concrete referent AND a ``value`` slot exists.
+
+  8. **Concrete categorical** (v0.14.6). A ``categorical.is_a``
+     claim where BOTH ``entity`` and ``category`` clear the
+     specificity check. Wikipedia is reliable on textbook is_a
+     claims like "cats are mammals" / "pizza is Italian" — the
+     v0.14.5 named-entity heuristic rejected these because both
+     slots were lowercase common nouns.
 
 Everything else → PASS_THROUGH (cheap walker only, no fresh dispatch).
 """
@@ -143,9 +161,47 @@ _DATE_SLOT_NAMES: frozenset[str] = frozenset({
 })
 
 _YEAR_PATTERN = re.compile(r"\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\b")
-# Heuristic for "specific named entity" — capitalized multi-word, or
-# a single capitalized token that isn't a generic English noun.
-_NAMED_ENTITY_PATTERN = re.compile(r"^[A-Z][A-Za-z0-9.\-']*( [A-Z][A-Za-z0-9.\-']*)+$")
+
+# v0.14.6 — vague-noun stopword list. Replaces the v0.14.5
+# orthography-biased _NAMED_ENTITY_PATTERN, which required
+# capitalized multi-word phrases or 4+ char capitalized tokens.
+# That heuristic systematically PASS_THROUGH'd textbook common-
+# knowledge claims like "cats are mammals" / "pizza is Italian"
+# whose slots are lowercase common nouns — Wikipedia handles those
+# fine. The new heuristic asks "does this slot value name a concrete
+# referent?" and rejects only an explicit list of vague placeholders.
+#
+# Keep this list FOCUSED. Each entry should be a noun (or
+# noun-shaped adjective) that is so generic it can't anchor a
+# Wikipedia query on its own. When in doubt, leave it OUT —
+# false-positive specificity costs one inconclusive retrieval call;
+# false-negative specificity (which the v0.14.5 heuristic produced
+# en masse) means real facts never get checked.
+_VAGUE_NOUNS: frozenset[str] = frozenset({
+    # Pronouns / demonstratives / first-person placeholders
+    "it", "this", "that", "these", "those", "they", "them",
+    "he", "she", "him", "her", "i", "me", "we", "us", "user",
+    # Generic placeholder nouns
+    "thing", "things", "stuff", "something", "someone", "somewhere",
+    "anything", "anyone", "anywhere",
+    # Vague descriptor / category nouns
+    "way", "ways", "type", "types", "kind", "kinds",
+    "form", "forms", "sort", "sorts", "manner", "manners",
+    # Vague qualitative slot fillers
+    "behavior", "behaviors", "system", "systems", "environment",
+    "environments", "level", "levels", "amount", "amounts",
+    "nature", "world", "area", "areas", "topic", "topics",
+    "concept", "concepts", "subject", "subjects", "aspect", "aspects",
+    "feeling", "feelings", "state", "states",
+    # Vague qualitative adjectives that creep into category slots
+    "intelligent", "complex", "advanced", "important", "significant",
+    "various", "diverse", "interesting", "simple", "general",
+    "good", "bad", "high", "low",
+})
+
+# Articles / determiners stripped before the vague-noun lookup so
+# "the cat" / "a cat" / "an apple" tokenize down to the head noun.
+_ARTICLES: frozenset[str] = frozenset({"a", "an", "the"})
 
 
 @dataclass(frozen=True)
@@ -269,42 +325,73 @@ def _triage_decide(claim: dict, registry: Any | None) -> TriageResult:
                 rule="numeric_slot",
             )
 
-    # Rule 7: named-entity subject + value slot. When a slot value
-    # looks named-entity-like AND a `value` slot exists (any type),
-    # VERIFY. Catches structured-but-non-numeric value claims that
-    # the multi-named-entity rule misses ("Cairo current time is
-    # 2:56 am" — Cairo is named, value=2:56 am is the falsifiable
+    # Rule 7: specific subject + value slot. When a slot value
+    # looks like a concrete referent AND a `value` slot exists (any
+    # type), VERIFY. Catches structured-but-non-numeric value claims
+    # that the multi-specific rule misses ("Cairo current time is
+    # 2:56 am" — Cairo is specific, value=2:56 am is the falsifiable
     # assertion). The presence of an explicit `value` slot is the
     # falsifiability signal regardless of whether it's a number.
     if "value" in slots:
-        named_subject_present = any(
-            isinstance(v, str) and _looks_named_entity(v)
-            for v in slots.values()
+        specific_subject_present = any(
+            _looks_specific(v) for v in slots.values()
         )
-        if named_subject_present:
+        if specific_subject_present:
             return TriageResult(
                 decision=TriageDecision.VERIFY,
                 reason=(
-                    "named-entity subject + explicit `value` slot → "
+                    "specific subject + explicit `value` slot → "
                     "structured value claim, checkable"
                 ),
-                rule="named_subject_with_value",
+                rule="specific_subject_with_value",
             )
 
-    # Rule 3: multiple named-entity slots.
-    named_entity_slots = [
+    # Rule 8 (v0.14.6) — checked BEFORE Rule 3 so categorical claims
+    # surface the more semantic rule name in the audit event. A
+    # `categorical.is_a` claim where BOTH ``entity`` and ``category``
+    # clear the specificity check is VERIFY-eligible. Catches
+    # textbook common-knowledge classifications — "cats are mammals"
+    # / "pizza is Italian" / "the kakapo is a bird" — that the
+    # v0.14.5 multi-named-entity rule rejected because the slots
+    # were lowercase common nouns. Wikipedia is reliable on these.
+    #
+    # Functionally Rule 8 overlaps with Rule 3 (which would also fire
+    # on the same shape) — running it first is a labeling choice so
+    # the trace UI shows the semantic-shape reason rather than the
+    # generic multi-slot reason. The vague-noun stopword filter on
+    # both slots is what keeps "X is intelligent" / "X is a thing"
+    # from sneaking through.
+    if pattern_name == "categorical":
+        entity = slots.get("entity")
+        category = slots.get("category")
+        if _looks_specific(entity) and _looks_specific(category):
+            return TriageResult(
+                decision=TriageDecision.VERIFY,
+                reason=(
+                    f"concrete categorical: entity {entity!r} and "
+                    f"category {category!r} are both specific "
+                    "referents → checkable"
+                ),
+                rule="concrete_categorical",
+            )
+
+    # Rule 3: multiple specific slots. v0.14.6 — formerly
+    # `multiple_named_entities`, restricted to capitalized proper
+    # nouns. The new check accepts any concrete referent (lowercase
+    # common nouns included) so claims like "cats hunt mice" qualify.
+    specific_slots = [
         (k, v) for k, v in slots.items()
-        if isinstance(v, str) and _looks_named_entity(v)
+        if _looks_specific(v)
     ]
-    if len(named_entity_slots) >= 2:
-        keys = [k for k, _ in named_entity_slots]
+    if len(specific_slots) >= 2:
+        keys = [k for k, _ in specific_slots]
         return TriageResult(
             decision=TriageDecision.VERIFY,
             reason=(
-                f"≥2 named-entity slots ({keys}) → relation between "
-                "specific things"
+                f"≥2 specific-referent slots ({keys}) → relation between "
+                "concrete things"
             ),
-            rule="multiple_named_entities",
+            rule="multiple_specific_slots",
         )
 
     # Rule 4: comparative / superlative.
@@ -338,9 +425,9 @@ def _triage_decide(claim: dict, registry: Any | None) -> TriageResult:
     return TriageResult(
         decision=TriageDecision.PASS_THROUGH,
         reason=(
-            "no numeric / date / multi-entity / comparative / anchored-"
-            "specific signal — claim shape is too vague to verify "
-            "reliably; trusting the chat model"
+            "no numeric / date / multi-specific / comparative / anchored-"
+            "specific / concrete-categorical signal — claim shape is too "
+            "vague to verify reliably; trusting the chat model"
         ),
         rule="no_falsifiability_signal",
     )
@@ -369,27 +456,52 @@ def _is_numeric(v: Any) -> bool:
     return False
 
 
-def _looks_named_entity(s: str) -> bool:
-    """Heuristic: looks like a specific named entity rather than a
-    generic noun. Multi-word capitalized phrases ("Marie Curie",
-    "United States"); or a single capitalized token longer than a
-    short generic noun ("Anthropic", "Apple", "Tokyo").
+def _looks_specific(s: Any) -> bool:
+    """Heuristic: looks like a CONCRETE referent rather than a vague
+    placeholder. v0.14.6 replacement for the v0.14.5
+    ``_looks_named_entity`` orthographic check.
 
-    This is a specificity heuristic, not a real NER — it overfits a
-    bit to English orthography but is good enough for the triage
-    gate's binary decision.
+    The triage gate is asking "is this slot value verifiable?", not
+    "is this a proper noun?". A lowercase common noun like ``cat`` /
+    ``pizza`` / ``mammal`` is a fine retrieval target — Wikipedia has
+    articles on all three. The orthographic bias was dropping
+    textbook categoricals into PASS_THROUGH ("cats are mammals" got
+    silently skipped because both slots were lowercase common nouns).
+
+    Reject only:
+      * non-string / empty / whitespace-only values
+      * single-token values shorter than 3 chars (catches articles,
+        short pronouns, common stop tokens that slip through the
+        leading-article strip)
+      * single-token values (case-insensitive, after stripping
+        leading articles ``a`` / ``an`` / ``the``) that appear in
+        the ``_VAGUE_NOUNS`` stopword list
+
+    Multi-word phrases bypass the stopword check unconditionally:
+    "vague behavior" or "the United States" is more specific than
+    its head noun alone, because at minimum the modifier carries
+    information. This is intentionally permissive — false-positive
+    specificity costs one inconclusive retrieval call; false-negative
+    specificity is what the v0.14.5 heuristic was producing in bulk.
     """
+    if not isinstance(s, str):
+        return False
     s = s.strip()
     if not s:
         return False
-    # Multi-word capitalized.
-    if _NAMED_ENTITY_PATTERN.match(s):
+    parts = s.split()
+    # Strip a single leading article so "the cat" → "cat" for the
+    # vague-noun check; "the United States" → "United States" still
+    # qualifies via the multi-word path.
+    if parts and parts[0].lower() in _ARTICLES:
+        parts = parts[1:]
+    if not parts:
+        return False
+    if len(parts) >= 2:
         return True
-    # Single capitalized token of 4+ chars: probably a proper noun.
-    if (len(s) >= 4
-        and s[0].isupper()
-        and s[1:].isalnum()
-        and " " not in s
-        and not s.isupper()):  # exclude shouted COMMON nouns
-        return True
-    return False
+    word = parts[0].lower()
+    if len(word) < 3:
+        return False
+    if word in _VAGUE_NOUNS:
+        return False
+    return True

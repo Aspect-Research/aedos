@@ -105,9 +105,20 @@ def _build_record_tool(
                             "slots": {
                                 "type": "object",
                                 "description": (
-                                    "Object whose keys come from the chosen "
-                                    "pattern's slot list. Required slots must "
-                                    "be populated."
+                                    "NESTED OBJECT holding the pattern's slot "
+                                    "key-value pairs. Required slots from the "
+                                    "chosen pattern's slot list must be "
+                                    "populated. Slot keys (agent, object, "
+                                    "subject, entity, part, whole, etc.) MUST "
+                                    "live INSIDE this object — never at the "
+                                    "top level of the fact. A fact emitted as "
+                                    "{pattern, predicate, polarity, "
+                                    "source_text, agent, object, ...} with "
+                                    "slot keys flattened to the top level is "
+                                    "REJECTED by the validator and the user's "
+                                    "claim is lost. Always wrap them: "
+                                    "{..., \"slots\": {\"agent\": ..., "
+                                    "\"object\": ...}, ...}."
                                 ),
                                 "additionalProperties": True,
                             },
@@ -379,8 +390,63 @@ ACCEPT — variation as one claim:
   each individual claim is awkwardly worded ("can be" hedges the
   assertion in a way that doesn't map cleanly to retrieval).
 
+## Contrastive corrections — extract BOTH polarities
+
+Sentences of the shape "X, not Y" / "X rather than Y" / "X instead
+of Y" are DOUBLE-POLARITY corrections — the speaker is asserting X
+(positive) AND simultaneously denying Y (negative) on the same
+predicate and same agent. Extract BOTH facts, with opposite polarity
+values.
+
+The discourse-marker prefixes "Actually," / "Wait," / "Sorry,"
+signal a CORRECTION — the speaker is updating a prior state. Extract
+the new claim (or claims) NORMALLY; the prefix is NOT a reason to
+abstain. (The interrogative-meta abstain rule applies to "I think I
+told you X" / "Did I say X?" — those are QUESTIONS about prior
+assertions; "Actually, I love X" is a NEW assertion.)
+
+ACCEPT — contrastive correction yields TWO facts:
+  Input: "Actually, I love ramen, not sushi"
+  Output: facts=[
+    {{"pattern":"preference","predicate":"loves","slots":{{"agent":"user","object":"ramen","intensity":"strong"}},"polarity":1,"source_text":"I love ramen"}},
+    {{"pattern":"preference","predicate":"loves","slots":{{"agent":"user","object":"sushi"}},"polarity":0,"source_text":"not sushi"}}
+  ]
+  Reasoning: "Actually" signals a correction of a prior state; "I
+  love ramen, not sushi" asserts BOTH a positive (loves ramen) and
+  an explicit negation (does not love sushi). Two preferences, same
+  agent, opposite polarities. Note the slots structure: agent /
+  object / intensity are NESTED inside `slots`, never at the top
+  level of the fact.
+
+ACCEPT — same shape without the discourse marker:
+  Input: "I love ramen, not sushi"
+  Output: facts=[
+    {{"pattern":"preference","predicate":"loves","slots":{{"agent":"user","object":"ramen","intensity":"strong"}},"polarity":1,"source_text":"I love ramen"}},
+    {{"pattern":"preference","predicate":"loves","slots":{{"agent":"user","object":"sushi"}},"polarity":0,"source_text":"not sushi"}}
+  ]
+  Reasoning: same double-polarity shape; the "Actually," prefix is
+  optional. Still TWO facts.
+
+ACCEPT — comparative preference is ONE fact (different shape):
+  Input: "I prefer ramen to sushi"
+  Output: facts=[{{"pattern":"preference","predicate":"prefers","slots":{{"agent":"user","object":"ramen","over":"sushi"}},"polarity":1,"source_text":"I prefer ramen to sushi"}}]
+  Reasoning: "I prefer X to Y" is a SINGLE comparative preference,
+  not a contrastive correction. Capture Y as an `over` (or
+  `compared_to`) slot. Do NOT split into two preferences here —
+  the comparative form asserts ranking, not affirmation+negation.
+
 # Slot rules
 
+- **STRUCTURAL CRITICAL: every slot key MUST live inside the `slots`
+  object on each fact, never at the top level. Correct shape:
+  `{{"pattern": ..., "predicate": ..., "slots": {{"agent": "user",
+  "object": "ramen"}}, "polarity": 1, "source_text": ...}}`. WRONG
+  shape (validator rejects, claim is silently lost):
+  `{{"pattern": ..., "predicate": ..., "agent": "user", "object":
+  "ramen", "polarity": 1, "source_text": ...}}`. Short inputs like
+  "I love ramen" tempt the model to flatten the structure — don't.
+  Always wrap slot keys in the `slots` object even when there is
+  only one key.**
 - **CRITICAL: extract VERBATIM what the source text says. Never
   substitute, correct, round, normalize, or "improve" a value. If
   the text says "the population is 21,455", the value MUST be
