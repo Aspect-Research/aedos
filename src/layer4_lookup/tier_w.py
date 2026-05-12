@@ -1160,14 +1160,22 @@ def write_verifier_result(
     cache). All other values produce ``expires_at = now +
     ttl_seconds`` ISO-8601.
 
-    Refresh / contradiction count semantics on conflict (when the
-    canonical_key already exists):
-      * If the new verdict equals the prior verdict: ``refresh_count``
-        bumps by 1, ``contradiction_count`` unchanged.
-      * If the new verdict differs: ``refresh_count`` unchanged,
-        ``contradiction_count`` bumps by 1, ``verdict`` overwritten
-        with the new value.
-    Both reuse v1's bookkeeping convention.
+    Refresh / contradiction count semantics:
+      * **Initial insert** (no prior row): ``refresh_count=1``,
+        ``contradiction_count=0``. The verifier's first verdict IS one
+        independent external evidence event (architectural principle 3),
+        same as Tier U's ``affirmed_count=1`` on initial user-fact
+        storage. Without this seed, the freshly-cached fact's
+        chain_reliability is Beta(1,1)=0.5 and the next cache hit lands
+        below the decision threshold, hedging a fact the verifier just
+        confirmed.
+      * Same verdict as prior: ``refresh_count`` bumps by 1,
+        ``contradiction_count`` unchanged.
+      * Different verdict: ``refresh_count`` unchanged,
+        ``contradiction_count`` bumps by 1, ``verdict`` overwritten with
+        the new value.
+    Cache HITS bump ``hit_count`` only — never ``refresh_count`` —
+    because looking at the row isn't independent evidence (principle 3).
 
     Pipeline events emitted:
       * ``tier_w_write`` (action + key + verdict)
@@ -1265,7 +1273,17 @@ def write_verifier_result(
     prior_verdict = prior_row["verdict"] if prior_row else None
 
     if prior_row is None:
-        new_refresh = 0
+        # v0.14.6 — the verifier's first verdict on a claim IS the first
+        # independent external evidence event under principle 3, so the
+        # initial insert seeds refresh_count=1 (architecturally
+        # affirmed_count). Mirrors Tier U's store_user_fact, which seeds
+        # affirmed_count=1 on first assertion. Without this, the freshly
+        # cached fact's chain_reliability is Beta(1,1) = 0.5, and a
+        # subsequent cache HIT in the same conversation reads
+        # decision_confidence = path_prior × 0.5 = 0.425 (retrieval) or
+        # 0.495 (immutable) — both under the 0.5 threshold — so the
+        # corrector hedges a fact the verifier just confirmed.
+        new_refresh = 1
         new_contradictions = 0
         action = "inserted"
     elif prior_verdict == verification_status:

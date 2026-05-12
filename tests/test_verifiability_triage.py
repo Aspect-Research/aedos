@@ -68,15 +68,14 @@ def test_year_in_value_triggers_verify():
     assert r.decision is TriageDecision.VERIFY
 
 
-# ---- Rule 3: multiple named-entity slots -----------------------------
+# ---- Rule 3: multiple specific-referent slots (v0.14.6) --------------
 
 
 def test_two_named_entities_triggers_verify():
-    """When no registry is passed, the per-pattern verify-predicates
-    fall back to the flat _COMPUTABLE_PREDICATES constant. With a
-    registry, ``founded_by`` is in relational's allow-list and Rule 6
-    fires first — so we use a predicate NOT in the allow-list to
-    isolate the multi-named-entity rule."""
+    """Marie Curie + Pierre Curie — both proper nouns, both specific.
+    The predicate co_authored_paper_with is intentionally NOT in
+    relational's verify-allow-list so Rule 6 doesn't preempt; Rule 3
+    is the one that fires."""
     claim = {
         "pattern": "relational", "predicate": "co_authored_paper_with",
         "polarity": 1,
@@ -85,22 +84,56 @@ def test_two_named_entities_triggers_verify():
     }
     r = triage_claim(claim)
     assert r.decision is TriageDecision.VERIFY
-    assert r.rule == "multiple_named_entities"
+    assert r.rule == "multiple_specific_slots"
 
 
-def test_one_named_entity_does_not_trigger_named_entity_rule():
-    """Single named entity isn't enough on its own — needs another
-    falsifiability signal. Generic 'social rank' subject + named
-    'baboons' object should fall through to the anchored-specific
-    rule or default."""
+def test_two_lowercase_common_nouns_trigger_verify():
+    """v0.14.6 loosening: lowercase common nouns ("cats", "mice") now
+    qualify as specific referents under Rule 3. Wikipedia handles
+    'Cat' and 'Mouse' fine; the v0.14.5 capitalized-only heuristic
+    was systematically PASS_THROUGH'ing claims about animals,
+    materials, foods, etc."""
     claim = {
-        "pattern": "relational", "predicate": "passes_across",
+        "pattern": "relational", "predicate": "hunts",
         "polarity": 1,
-        "slots": {"subject": "social rank", "object": "generations"},
-        "source_text": "social rank is passed across generations",
+        "slots": {"subject": "cats", "object": "mice"},
+        "source_text": "cats hunt mice",
     }
     r = triage_claim(claim)
-    # No anchor, no numeric, no date, no two named entities → default.
+    assert r.decision is TriageDecision.VERIFY
+    assert r.rule == "multiple_specific_slots"
+
+
+def test_two_vague_nouns_still_pass_through():
+    """The vague-noun stopword list catches the cases where the
+    loosened heuristic shouldn't have accepted both slots: pronouns,
+    'thing', 'behavior', etc. Both subject and object must be
+    stopword-listed for Rule 3 to abstain."""
+    claim = {
+        "pattern": "relational", "predicate": "affects",
+        "polarity": 1,
+        "slots": {"subject": "behavior", "object": "things"},
+        "source_text": "behavior affects things",
+    }
+    r = triage_claim(claim)
+    assert r.decision is TriageDecision.PASS_THROUGH
+    assert r.rule == "no_falsifiability_signal"
+
+
+def test_one_specific_one_vague_does_not_trigger_rule_3():
+    """When only one slot clears the specificity check (the other is
+    a vague placeholder like 'things' / 'behavior'), Rule 3's
+    ≥2-specific-slots requirement isn't met. The claim falls through
+    to the anchor / categorical / default rules."""
+    claim = {
+        "pattern": "relational", "predicate": "exhibits",
+        "polarity": 1,
+        "slots": {"subject": "baboons", "object": "behavior"},
+        "source_text": "baboons exhibit behavior",
+    }
+    r = triage_claim(claim)
+    # baboons is specific; behavior is in the vague-noun stopword.
+    # No anchor, not categorical, not numeric → PASS_THROUGH.
     assert r.decision is TriageDecision.PASS_THROUGH
 
 
@@ -108,11 +141,16 @@ def test_one_named_entity_does_not_trigger_named_entity_rule():
 
 
 def test_anchor_with_specific_predicate_triggers_verify():
+    """Anchor + specific (non-vague) predicate, with vague slot
+    contents that don't trip Rule 3 themselves. The anchor is the
+    falsifiability signal here — the extractor saw enough topical
+    context that the claim is grounded even when the slot values
+    aren't standalone-verifiable."""
     claim = {
         "pattern": "relational", "predicate": "passes_across",
         "polarity": 1,
-        "slots": {"subject": "social rank", "object": "generations"},
-        "source_text": "social rank is passed across generations",
+        "slots": {"subject": "behavior", "object": "things"},
+        "source_text": "behavior passes across things",
         "anchor_entity": "baboon",
     }
     r = triage_claim(claim)
@@ -265,9 +303,10 @@ def test_unknown_predicate_does_not_trigger_rule_6():
 
 def test_named_subject_with_value_triggers_verify():
     """Cairo current_time(subject=Cairo, value='2:56 am') has only
-    one named entity (Rule 3 fails) and a string value (Rule 1
-    fails). Rule 7 catches it via the named-subject + explicit-value
-    combination — the value is the falsifiable thing being asserted.
+    one specific slot (Rule 3 fails on count alone) and a string
+    value (Rule 1 fails). Rule 7 catches it via the
+    specific-subject + explicit-value combination — the value is
+    the falsifiable thing being asserted.
 
     Note: in practice this claim ALSO hits Rule 6 first via the
     current_time allow-list, so this test isolates Rule 7 by using a
@@ -282,16 +321,21 @@ def test_named_subject_with_value_triggers_verify():
     }
     r = triage_claim(claim)
     assert r.decision is TriageDecision.VERIFY
-    assert r.rule == "named_subject_with_value"
+    assert r.rule == "specific_subject_with_value"
 
 
 def test_value_slot_without_named_entity_does_not_trigger_rule_7():
+    """When EVERY slot value is a vague-noun stopword, Rule 7's
+    'any-specific-slot' check fails and the claim falls through.
+    With the v0.14.6 loosening this requires actually-vague values
+    (the prior 'feeling level high' shape now has 'feeling' as a
+    specific referent — Wikipedia has an article on 'Feeling')."""
     claim = {
         "pattern": "quantitative", "predicate": "happiness_level",
         "polarity": 1,
-        "slots": {"subject": "feeling", "property": "level",
+        "slots": {"subject": "thing", "property": "level",
                   "value": "high"},
-        "source_text": "feeling level is high",
+        "source_text": "thing level is high",
     }
     r = triage_claim(claim)
     assert r.decision is TriageDecision.PASS_THROUGH
@@ -314,3 +358,166 @@ def test_triage_is_deterministic():
     r3 = triage_claim(claim)
     assert r1.decision == r2.decision == r3.decision
     assert r1.rule == r2.rule == r3.rule
+
+
+# ---- Rule 8: concrete categorical (v0.14.6) --------------------------
+
+
+def test_concrete_categorical_lowercase_common_nouns_triggers_verify():
+    """The canonical regression: 'cats are mammals' under v0.14.5 fell
+    into PASS_THROUGH because both slots were lowercase common nouns
+    that the orthography-biased _looks_named_entity heuristic
+    rejected. Wikipedia handles this fine; v0.14.6's Rule 8 catches
+    it via the per-slot specificity check on categorical claims."""
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "polarity": 1,
+        "slots": {"entity": "cats", "category": "mammals"},
+        "source_text": "cats are mammals",
+    }
+    r = triage_claim(claim)
+    assert r.decision is TriageDecision.VERIFY
+    assert r.rule == "concrete_categorical"
+
+
+def test_concrete_categorical_with_capitalized_entity_still_triggers():
+    """Capitalized + lowercase combination — proper noun entity, common
+    noun category — also catches Rule 8 (and would have caught Rule 3
+    via the v0.14.5 path too, but Rule 8 fires first when both are
+    specific)."""
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "polarity": 1,
+        "slots": {"entity": "Tokyo", "category": "city"},
+        "source_text": "Tokyo is a city",
+    }
+    r = triage_claim(claim)
+    assert r.decision is TriageDecision.VERIFY
+    # Rule 8 wins over Rule 3 because Rule 8 is checked AFTER Rule 3
+    # in the new ordering — but Rule 3 requires both slots to clear
+    # specificity with cap >=2; "Tokyo" passes, "city" length 4 not
+    # in stopword passes. So Rule 3 fires first.
+    assert r.rule in ("multiple_specific_slots", "concrete_categorical")
+
+
+def test_vague_categorical_falls_through():
+    """When the category is a vague qualitative descriptor
+    ('intelligent', 'complex', 'advanced'), Rule 8 abstains. This
+    pins the discipline that the loosening is bounded — the
+    extractor's hard-claim filter already rejects most of these,
+    but Rule 8 is the second line of defense."""
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "polarity": 1,
+        "slots": {"entity": "baboons", "category": "intelligent"},
+        "source_text": "baboons are intelligent",
+    }
+    r = triage_claim(claim)
+    assert r.decision is TriageDecision.PASS_THROUGH
+    assert r.rule == "no_falsifiability_signal"
+
+
+def test_categorical_with_thing_category_falls_through():
+    """The placeholder-noun trap. 'X is a thing' must always
+    PASS_THROUGH — there's no Wikipedia article that can settle 'X
+    is a thing' for any X."""
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "polarity": 1,
+        "slots": {"entity": "concept", "category": "thing"},
+        "source_text": "concept is a thing",
+    }
+    r = triage_claim(claim)
+    assert r.decision is TriageDecision.PASS_THROUGH
+
+
+def test_categorical_with_pronoun_entity_falls_through():
+    """Pronouns ('it', 'this', 'they') don't anchor a Wikipedia
+    query — they're context-dependent referents. Rule 8 abstains."""
+    claim = {
+        "pattern": "categorical", "predicate": "is_a",
+        "polarity": 1,
+        "slots": {"entity": "it", "category": "mammal"},
+        "source_text": "it is a mammal",
+    }
+    r = triage_claim(claim)
+    assert r.decision is TriageDecision.PASS_THROUGH
+
+
+# ---- _looks_specific helper edge cases (v0.14.6) ---------------------
+#
+# Direct unit tests on the specificity helper. Belt-and-suspenders for
+# the rules above — the helper's contract is what makes each rule's
+# loosening bounded.
+
+
+def test_looks_specific_strips_leading_article():
+    """The vague-noun lookup runs after stripping a leading article
+    so 'the cat' / 'a cat' / 'an apple' tokenize to their head noun
+    for the stopword check. This matters because the extractor often
+    preserves articles in slot values."""
+    from src.layer1_extraction.verifiability_triage import _looks_specific
+    assert _looks_specific("the cat") is True
+    assert _looks_specific("a cat") is True
+    assert _looks_specific("an apple") is True
+    # Still rejects when the stripped head noun is a stopword.
+    assert _looks_specific("the thing") is False
+    assert _looks_specific("a behavior") is False
+
+
+def test_looks_specific_multi_word_bypasses_stopword():
+    """Multi-word phrases qualify regardless of head noun — a
+    modifier always carries some information. 'vague behavior' /
+    'social system' / 'simple thing' beat the bare-head-noun
+    rejection because the modifier narrows the referent."""
+    from src.layer1_extraction.verifiability_triage import _looks_specific
+    assert _looks_specific("operating system") is True
+    assert _looks_specific("social behavior") is True
+    assert _looks_specific("the United States") is True
+
+
+def test_looks_specific_rejects_short_tokens():
+    """Single-token values shorter than 3 chars (after article strip)
+    don't qualify even if they're not in the stopword list. Catches
+    short tokens like 'a' / 'is' that would otherwise sneak through
+    the stopword check."""
+    from src.layer1_extraction.verifiability_triage import _looks_specific
+    assert _looks_specific("ab") is False
+    assert _looks_specific("a") is False
+    assert _looks_specific("") is False
+    assert _looks_specific("   ") is False
+
+
+def test_looks_specific_rejects_non_strings():
+    """Defensive: numeric / None / list values aren't strings and
+    can't be referent names. The helper returns False rather than
+    raising, so triage doesn't crash on extractor weirdness."""
+    from src.layer1_extraction.verifiability_triage import _looks_specific
+    assert _looks_specific(None) is False
+    assert _looks_specific(42) is False
+    assert _looks_specific(["cat"]) is False
+    assert _looks_specific({"name": "cat"}) is False
+
+
+def test_looks_specific_accepts_lowercase_common_nouns():
+    """The headline change. Lowercase common nouns of 3+ chars that
+    aren't stopwords now qualify. This is what enables the ≥2-slot
+    Rule 3 and the concrete-categorical Rule 8 to fire on textbook
+    common-knowledge claims."""
+    from src.layer1_extraction.verifiability_triage import _looks_specific
+    assert _looks_specific("cat") is True
+    assert _looks_specific("pizza") is True
+    assert _looks_specific("mammal") is True
+    assert _looks_specific("oxygen") is True
+
+
+def test_looks_specific_rejects_user_token():
+    """The 'user' token is the chatting user's placeholder per the
+    extractor convention (first-person 'I' / 'me' canonicalize to
+    'user'). It's intentionally in the stopword list so preference /
+    propositional_attitude claims with agent='user' don't trip the
+    multi-specific-slot rule on the agent slot alone."""
+    from src.layer1_extraction.verifiability_triage import _looks_specific
+    assert _looks_specific("user") is False
+    assert _looks_specific("me") is False
+    assert _looks_specific("i") is False

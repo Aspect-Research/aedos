@@ -100,6 +100,15 @@ CHAT_SYSTEM_TEMPLATE = """You are a helpful assistant in a single-conversation d
 
 Respond naturally and directly. When answering questions whose answer appears in the user-self section above, state it plainly. Do not speculate about user preferences that aren't listed — say you don't know instead.
 
+# Just-asserted vs prior knowledge — phrasing rule
+
+The user-self section may be split into two sub-sections: **Just asserted (this turn)** and **From prior conversation**. They are NOT interchangeable in how you respond:
+
+  * **Just asserted (this turn)** — the user stated this in the message you're replying to. Treat it as NEW information you're hearing now. Do NOT say "I know you …" or "I remember you mentioned …" or "Yes, I recall …" — those phrasings claim prior knowledge the user knows you don't have, and they read as fabrication. Acknowledge naturally: "Got it — ramen it is" / "Noted" / "That makes sense" / or just engage with the substance.
+  * **From prior conversation** — the user told you this earlier in the same conversation (or in a previous one). Recall is appropriate: "I remember you mentioned …" / "Right, you said you …" / "Based on what you've told me before …".
+
+If a fact appears in BOTH sub-sections (the user re-asserted something they'd already told you), treat it as a re-affirmation: "Yes, you've mentioned that before" rather than "I just learned that."
+
 # You have downstream verification — refusing to answer is the wrong move
 
 Every factual claim you make is checked by an external verification pipeline before the user sees your reply. The pipeline runs arbitrary Python in a sandbox (full standard library — `zoneinfo`/IANA timezone database, `datetime`, `math`, `statistics`, `re`, `hashlib`, `decimal`, etc.) and can also search Wikipedia for world facts.
@@ -158,18 +167,59 @@ Disputed claims:
 """
 
 
-def _format_facts_block(user_facts: list[Fact]) -> str:
+def _format_facts_block(
+    user_facts: list[Fact],
+    *,
+    current_user_turn_id: Optional[int] = None,
+) -> str:
     """Render user-asserted facts as a system-prompt section.
 
     Empty list → empty section (the chat model gets the standard prompt
     without a user-self block). Non-empty → ``# What you know about
     the user`` heading + bulleted lines.
+
+    v0.14.6 — split the rendered facts into two sub-sections by
+    ``source_turn_id``:
+
+      * **Just asserted (this turn)** — facts whose ``source_turn_id``
+        equals ``current_user_turn_id`` (the turn the user JUST sent).
+        These are new information; the chat model must NOT claim prior
+        knowledge of them.
+      * **From prior conversation** — everything else.
+
+    The split is the fix for the "I love sushi" → "I know you have a
+    strong love for sushi" misbehavior. Without the split, the chat
+    model's system prompt enumerates the just-stored fact under a
+    "What you know about the user" heading and the model treats it as
+    recalled context. With ``current_user_turn_id=None`` the split is
+    skipped (back-compat for tests / callers that don't supply it) and
+    every fact lands in the "From prior conversation" sub-section.
     """
     if not user_facts:
         return ""
-    lines = ["# What you know about the user"]
+
+    just_asserted: list[Fact] = []
+    prior: list[Fact] = []
     for f in user_facts:
-        lines.append(f"  - {_fact_inline(f)}")
+        if (
+            current_user_turn_id is not None
+            and f.source_turn_id == current_user_turn_id
+        ):
+            just_asserted.append(f)
+        else:
+            prior.append(f)
+
+    lines = ["# What you know about the user"]
+    if just_asserted:
+        lines.append("")
+        lines.append("## Just asserted (this turn)")
+        for f in just_asserted:
+            lines.append(f"  - {_fact_inline(f)}")
+    if prior:
+        lines.append("")
+        lines.append("## From prior conversation")
+        for f in prior:
+            lines.append(f"  - {_fact_inline(f)}")
     return "\n".join(lines) + "\n"
 
 
@@ -369,9 +419,16 @@ class Pipeline:
             "n_disputes": len(disputes),
         })
 
-        # Stage 4: build chat context
+        # Stage 4: build chat context. v0.14.6 — pass user_turn_id so
+        # facts the user JUST asserted in this turn render under a
+        # distinct "Just asserted (this turn)" sub-section, preventing
+        # the chat model from claiming prior knowledge of them ("I know
+        # you love sushi" right after the user said "I love sushi").
         visible_facts = self._tier_u_visible_facts()
-        system_prompt = self._build_chat_system(visible_facts, disputes)
+        system_prompt = self._build_chat_system(
+            visible_facts, disputes,
+            current_user_turn_id=user_turn_id,
+        )
         history = self._build_history(prior_to_turn_id=user_turn_id)
 
         # Stage 5: insert assistant turn (placeholder content; updated post-draft)
@@ -874,9 +931,15 @@ class Pipeline:
         return [_row_to_fact(r) for r in rows]
 
     def _build_chat_system(
-        self, user_facts: list[Fact], disputes: list[dict],
+        self,
+        user_facts: list[Fact],
+        disputes: list[dict],
+        *,
+        current_user_turn_id: Optional[int] = None,
     ) -> str:
-        facts_block = _format_facts_block(user_facts)
+        facts_block = _format_facts_block(
+            user_facts, current_user_turn_id=current_user_turn_id,
+        )
         prompt = CHAT_SYSTEM_TEMPLATE.format(facts_block=facts_block)
         if disputes:
             prompt = prompt + CHAT_USER_DISPUTE_TEMPLATE.format(

@@ -677,6 +677,17 @@ class TestWriteVerifierResult:
             verification_status="verified",
             registry=registry,
         )
+        # v0.14.6 — initial insert seeds refresh_count=1 (first
+        # verifier verdict IS the first independent evidence event,
+        # mirroring Tier U's affirmed_count=1 on initial storage).
+        first_row = store._conn.execute(
+            "SELECT refresh_count, contradiction_count FROM verification_cache "
+            "WHERE canonical_key = ?",
+            (first.canonical_key,),
+        ).fetchone()
+        assert first_row["refresh_count"] == 1
+        assert first_row["contradiction_count"] == 0
+
         second = tier_w.write_verifier_result(
             claim, store,
             verification_status="verified",
@@ -684,13 +695,13 @@ class TestWriteVerifierResult:
         )
         assert first.action == "inserted"
         assert second.action == "refreshed"
-        # Verify the row's refresh_count reflects the second write.
+        # Second write at the same verdict bumps refresh_count to 2.
         row = store._conn.execute(
             "SELECT refresh_count, contradiction_count FROM verification_cache "
             "WHERE canonical_key = ?",
             (second.canonical_key,),
         ).fetchone()
-        assert row["refresh_count"] == 1
+        assert row["refresh_count"] == 2
         assert row["contradiction_count"] == 0
 
     def test_contradiction_count_bumps_on_different_verdict(
@@ -709,13 +720,16 @@ class TestWriteVerifierResult:
         )
         assert outcome.action == "contradicted_and_replaced"
         assert outcome.prior_verdict == "verified"
+        # v0.14.6 — initial insert seeded refresh_count=1; a contradicting
+        # second verdict leaves refresh_count alone (1) and bumps
+        # contradiction_count to 1.
         row = store._conn.execute(
             "SELECT verdict, refresh_count, contradiction_count "
             "FROM verification_cache WHERE canonical_key = ?",
             (outcome.canonical_key,),
         ).fetchone()
         assert row["verdict"] == "contradicted"
-        assert row["refresh_count"] == 0
+        assert row["refresh_count"] == 1
         assert row["contradiction_count"] == 1
 
 
