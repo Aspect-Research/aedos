@@ -158,13 +158,21 @@ class TestFailureModeMultiHopDistribution:
 
 
 # ---------------------------------------------------------------------------
-# Failure mode 2 — cross-source unification
+# Failure mode 2 — cross-source: independent single-source walks (see N2)
 # ---------------------------------------------------------------------------
 
 class TestFailureModeCrossSource:
-    def test_cross_source_tier_u_and_kb(self):
-        """der_cross_005: one claim grounded in Tier U (personal fact), another
-        in the KB (geographic fact) — the verification draws on both sources."""
+    def test_cross_source_independent_walks(self):
+        """This test does NOT exercise cross-source unification (architecture
+        §8.1 failure mode 2 in its full form). It verifies that walks against
+        Tier U and against the KB each produce correct verdicts independently.
+        Genuine cross-source unification, where a single derivation chain
+        composes a Tier U premise with a KB-sourced taxonomy step, requires
+        KB-sourced neighbor enumeration in the walker — see v0.16 delta D5. The
+        medium-bar evaluation's `cross_source_unification` cases will fail in
+        Phase 10.5 unless they pre-seed substrate `subsumption` rows for every
+        taxonomy step. This is a known capability gap, not a calibration issue.
+        """
         kb = MockKB(
             resolutions={"Williams College": "Q49112", "Massachusetts": "Q771"},
             statements={("Q49112", "P131"): [Statement(value="Q771", value_type="entity")]},
