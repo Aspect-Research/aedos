@@ -104,45 +104,18 @@ async def chat(request: ChatRequest) -> JSONResponse:
 
     if _chat_wrapper is None:
         from src.aedos_v0_15.deployment.chat_wrapper import ChatWrapper
-        from src.aedos_v0_15.layer1_extraction.extractor import Extractor
-        from src.aedos_v0_15.layer3_substrate import Substrate
-        from src.aedos_v0_15.layer3_substrate.consistency import ConsistencyChecker
-        from src.aedos_v0_15.layer3_substrate.predicate_distribution import PredicateDistributionOracle
-        from src.aedos_v0_15.layer3_substrate.predicate_translation import PredicateTranslation
-        from src.aedos_v0_15.layer3_substrate.resolver import EntityResolver
-        from src.aedos_v0_15.layer3_substrate.subsumption import SubsumptionOracle
-        from src.aedos_v0_15.layer4_sources.kb_wikidata import WikidataAdapter
-        from src.aedos_v0_15.layer4_sources.kb_verifier import KBVerifier
-        from src.aedos_v0_15.layer4_sources.python_verifier import PythonVerifier
-        from src.aedos_v0_15.layer4_sources.tier_u import TierU
-        from src.aedos_v0_15.layer4_sources.walker import Walker
-        from src.aedos_v0_15.layer5_result.aggregator import Aggregator
-        from src.aedos_v0_15.layer5_result.retraction import RetractionPropagator
-        from src.aedos_v0_15.llm.client import LLMClient
+        from src.aedos_v0_15.pipeline import build_pipeline
 
-        client = LLMClient()
-        kb = WikidataAdapter()
-        # Correctness mechanisms: the consistency checker runs on every oracle
-        # row write (architecture 5.4) and propagates retractions through the
-        # propagator's verdict-trace index (architecture 7.3).
-        propagator = RetractionPropagator(db=_db)
-        consistency = ConsistencyChecker(db=_db, retraction_propagator=propagator)
-        pt = PredicateTranslation(db=_db, llm_client=client, consistency_checker=consistency)
-        resolver = EntityResolver(kb_protocol=kb, db=_db)
-        sub = SubsumptionOracle(db=_db, llm_client=client, kb_protocol=kb, consistency_checker=consistency)
-        pd = PredicateDistributionOracle(db=_db, llm_client=client, consistency_checker=consistency)
-        substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
-        tier_u = TierU(db=_db, predicate_translation=pt)
-        kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
-        py_verifier = PythonVerifier(llm_client=client)
-        walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier, substrate=substrate)
-        extractor = Extractor(llm_client=client)
-        aggregator = Aggregator(retraction_propagator=propagator, db=_db)
+        # build_pipeline assembles the full verification pipeline with the
+        # correctness mechanisms wired in (architecture 5.4 / 7.3). It is shared
+        # with the medium-bar benchmark so app and benchmark have one wiring
+        # definition rather than two drifting copies.
+        pipeline = build_pipeline(_db)
         _chat_wrapper = ChatWrapper(
-            extractor=extractor,
-            walker=walker,
-            aggregator=aggregator,
-            llm_client=client,
+            extractor=pipeline.extractor,
+            walker=pipeline.walker,
+            aggregator=pipeline.aggregator,
+            llm_client=pipeline.llm_client,
         )
 
     ctx = {"asserting_party_id": request.asserting_party_id or "user"}

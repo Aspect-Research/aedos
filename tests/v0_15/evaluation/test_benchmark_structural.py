@@ -138,3 +138,63 @@ class TestBenchmarkHarness:
         assert _normalize_verdict("contradicted") == "contradicted"
         assert _normalize_verdict("no_grounding_found") == "abstain"
         assert _normalize_verdict("error") == "abstain"
+
+    def test_validate_harness(self, tmp_path):
+        # M5 Step 6 wiring check: build_pipeline against mocks, run one case
+        # through each runner, write a report. This is the discriminating test
+        # for the stale-signature fix — with AedosRunner.run_case's pre-fix
+        # signatures, run_case reports `error` and _validate_harness raises.
+        from tests.v0_15.evaluation.benchmark import _validate_harness
+        out = tmp_path / "harness_report.md"
+        assert _validate_harness(output_path=out) is True
+        assert out.exists()
+        assert out.read_text(encoding="utf-8").strip()
+
+    def test_metrics_synthetic_mix(self):
+        # A synthetic mix of correct / false-verified / false-abstain results
+        # confirms compute_metrics produces the right counts and rates.
+        from tests.v0_15.evaluation.benchmark import (
+            BenchmarkCase, RunResult, compute_metrics,
+        )
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("v2", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("a1", "s", "abstain", "principled_abstention", ""),
+        ]
+        results = [
+            RunResult("v1", "verified"),            # correct
+            RunResult("v2", "no_grounding_found"),  # false abstain (true claim abstained)
+            RunResult("c1", "verified"),            # false verified (contradicted -> verified)
+            RunResult("a1", "no_grounding_found"),  # correct abstain
+        ]
+        m = compute_metrics(cases, results)
+        assert m.total == 4
+        assert m.correct == 2
+        assert m.accuracy == 0.5
+        assert m.false_verified == 1
+        assert m.false_verified_rate == 0.25
+        assert m.false_abstain == 1
+        assert m.false_abstain_rate == 0.5  # 1 of 2 verified-ground-truth cases
+        assert m.per_failure_mode["multi_hop_distribution"]["accuracy"] == 0.5
+        assert m.per_failure_mode["belief_revision"]["accuracy"] == 0.0
+        assert m.per_failure_mode["principled_abstention"]["accuracy"] == 1.0
+
+    def test_report_renders_all_four_criteria(self):
+        # generate_report must render all four Phase 10.5 acceptance criteria
+        # the runbook lists (false-verified, accuracy delta, no-regression,
+        # significant improvement).
+        from tests.v0_15.evaluation.benchmark import (
+            BenchmarkCase, RunResult, generate_report,
+        )
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+        ]
+        aedos = [RunResult("v1", "verified"), RunResult("c1", "contradicted")]
+        baseline = [RunResult("v1", "no_grounding_found"), RunResult("c1", "verified")]
+        report = generate_report(cases, aedos, baseline)
+        assert "False-verified" in report
+        assert "baseline + 15pp" in report
+        assert "No-regression multi_hop_distribution" in report
+        assert "Significant improvement" in report

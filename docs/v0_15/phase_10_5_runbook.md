@@ -261,7 +261,22 @@ AEDOS_DB_PATH=aedos_zero_seed.db py -m pytest tests/v0_15/cold_start/ -v
 
 ## Step 6 — Medium-bar evaluation
 
-**Purpose:** Compare Aedos v0.15 against LLM-only baseline on 122-case curated test set.
+**Purpose:** Compare Aedos v0.15 against an LLM-only baseline on the 122-case
+curated test set. `benchmark.py`'s live runner is implemented (fix-up 2).
+
+**Pre-flight (optional, no API cost):** confirm the harness wiring before
+spending on live calls —
+
+```bash
+py -m tests.v0_15.evaluation.benchmark --validate-harness
+```
+
+Expected: `Harness validation: PASS`.
+
+**Run the evaluation.** Requires `RUN_LIVE_TESTS=1` and `RUN_LIVE_KB=1` (set in
+Step 1) — the runner exits with an error if they are unset and never silently
+falls back to mocks. It evaluates against the seeded `$AEDOS_DB_PATH` database
+from Step 2.
 
 ```bash
 py -m tests.v0_15.evaluation.benchmark \
@@ -271,15 +286,20 @@ py -m tests.v0_15.evaluation.benchmark \
 
 **Expected runtime:** 60-120 minutes (122 cases × Aedos pipeline + baseline LLM calls).
 
-**Acceptance thresholds:**
+**Expected output:** the report is printed and written to the `--output` path,
+ending with `Results written to docs/v0_15/evaluation_results.md`.
+
+**Acceptance thresholds** (the runner's report prints PASS/FAIL for each):
 1. Aedos false-verified rate ≤ 5%.
 2. Aedos overall accuracy ≥ baseline + 15 percentage points.
 3. Aedos accuracy ≥ baseline on every failure mode (no regression).
-4. Aedos accuracy ≥ baseline + 20pp on at least 4 of 6 failure modes.
+4. Aedos accuracy ≥ baseline + 20pp on at least 4 of 6 failure modes — the
+   runbook's operationalization of the plan's "significantly higher".
 
 Results written to `docs/v0_15/evaluation_results.md`.
 
-Run 3 times and report median to account for LLM non-determinism.
+Run 3 times and report median to account for LLM non-determinism. `--baseline-only`
+and `--aedos-only` re-run a single runner during development.
 
 ---
 
