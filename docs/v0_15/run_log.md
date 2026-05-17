@@ -25,3 +25,15 @@ This file records one entry per phase of the unattended overnight build.
 - Blockers: none
 - One-sentence summary: Implemented the full Layer 1 extraction stack — Extractor class with mocked-LLM test roundtrip, predicate normalization (canonical map + snake_case fallback), multi-participant event decomposition with shared reified_event_id, temporal scope extraction (explicit, implicit past-tense → before_present sentinel, relative scope, future rejection), verifiability triage (5 rule categories), and hard-claim / first-person / source-text discipline in post-processing, with 122 new passing tests.
 
+
+## Phase 2 — Predicate Translation Oracle
+
+- Commit SHA: f397e6b
+- Tag: v0.15-phase-2-complete
+- Test count: 39 new (239 cumulative; target was ~50 new / ~160 cumulative; all pass)
+- Calibration corpus: tests/v0_15/calibration/predicate_metadata_corpus.jsonl — 80 cases across 5 sub-categories (user_authoritative 20, python 15, kb_resolvable 30, abstain 10, ambiguous 5)
+- Ambiguities resolved this phase: 5 (see phase_2_ambiguities.md)
+- Blockers: none
+- One-sentence summary: Implemented the PredicateTranslation oracle with cold-cache LLM generation (INSERT OR REPLACE for retracted row re-generation), warm-cache lookup with used_count/last_consulted_at update, retraction (sets retracted_at, excludes from future consults), query_neighbors (conflict detection by kb_property), and audit log integration for row_created / row_retracted / row_generation_failed events, with 39 new passing tests.
+
+
