@@ -12,6 +12,46 @@ from src.aedos_v0_15.database import open_memory_db
 from src.aedos_v0_15.llm.client import LLMClient, ChatMessage
 
 
+# ---------------------------------------------------------------------------
+# Calibration gating
+#
+# The calibration corpus runner (tests/v0_15/calibration/test_corpus_runner.py)
+# is collected only when --run-calibration is passed; otherwise it is
+# deselected so the default `make test` run is unaffected (no extra skips).
+# Live LLM/KB evaluation is further gated on the RUN_CALIBRATION env var; with
+# --run-calibration but no RUN_CALIBRATION the runner does a harness dry-run.
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-calibration",
+        action="store_true",
+        default=False,
+        help="Collect and run the calibration corpus runner.",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "calibration: corpus calibration test; collected only with --run-calibration",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-calibration"):
+        return
+    remaining, deselected = [], []
+    for item in items:
+        if item.get_closest_marker("calibration"):
+            deselected.append(item)
+        else:
+            remaining.append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = remaining
+
+
 class MockTransport:
     """Canned-response LLM transport for tests.
 
