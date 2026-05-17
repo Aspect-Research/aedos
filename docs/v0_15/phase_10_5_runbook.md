@@ -136,6 +136,27 @@ Each test id is `test_corpus_calibration[<corpus>]`, so `-k "<corpus>"` selects
 it. The acceptance thresholds below are reproduced verbatim from the
 implementation plan's "Calibration deferral policy" table.
 
+**Threshold summary.** This table is the canonical runbook copy of the
+calibration thresholds. It is kept in lock-step with the runner's `THRESHOLDS`
+dict (`tests/v0_15/calibration/test_corpus_runner.py` — the single source of
+truth) by `tests/v0_15/unit/test_runbook_thresholds.py`, which fails CI if the
+two diverge. The per-Phase sub-sections below restate the same thresholds as
+operator narrative.
+
+| Corpus (`-k` filter) | Runner threshold | Plan bar |
+|---|---|---|
+| `extraction_corpus` | 90% | ≥ 90% |
+| `predicate_metadata_corpus` | 85% | ≥ 85% |
+| `temporal_scope_corpus` | 90% | extraction ≥ 90%, lookup 100% |
+| `entity_resolution_corpus` | 90% | ≥ 90% (live KB) |
+| `kb_mapping_corpus` | 90% | ≥ 90% (live KB) |
+| `subsumption_corpus` | 80% | ≥ 90% KB-mediated, ≥ 80% substrate |
+| `predicate_distribution_corpus` | 85% | ≥ 85% |
+| `derivation_corpus` | 80% | ≥ 80% (live KB) |
+| `python_verification_corpus` | 85% | ≥ 85% |
+| `consistency_check_corpus` | 100% | 100% detection + circuit breaker |
+| `intervention_corpus` | 90% | ≥ 90% |
+
 ### Phase 1 — Extraction corpus
 
 ```bash
