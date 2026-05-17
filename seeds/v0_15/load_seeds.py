@@ -30,6 +30,7 @@ _REQUIRED_FIELDS = {
     "kb_namespace",
     "kb_property",
     "slot_to_qualifier",
+    "single_valued",
     "reason",
 }
 
@@ -75,8 +76,8 @@ def load_seeds(db_path: str) -> int:
                 INSERT OR REPLACE INTO predicate_translation
                     (aedos_predicate, object_type, user_subject_required, distinct_slots,
                      routing_hint, kb_namespace, kb_property, slot_to_qualifier,
-                     reason, created_at, used_count, last_consulted_at, retracted_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
+                     single_valued, reason, created_at, used_count, last_consulted_at, retracted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
                 """,
                 (
                     entry["aedos_predicate"],
@@ -87,6 +88,7 @@ def load_seeds(db_path: str) -> int:
                     kb_namespace,
                     entry.get("kb_property"),
                     slot_json,
+                    int(entry["single_valued"]),
                     entry.get("reason", ""),
                     now,
                 ),

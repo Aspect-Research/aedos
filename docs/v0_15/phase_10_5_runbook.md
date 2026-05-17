@@ -70,12 +70,12 @@ version: 1.0.0
 date_reviewed: 2026-05-17
 ...
 
-Loaded 65 predicate translation seeds into aedos_phase10_5.db
+Loaded 61 predicate translation seeds into aedos_phase10_5.db
 ```
 
 **Expected runtime:** < 5 seconds (no LLM calls; pure DB inserts).
 
-**Acceptance threshold:** 65 seeds loaded, 0 errors.
+**Acceptance threshold:** 61 seeds loaded, 0 errors.
 
 ---
 

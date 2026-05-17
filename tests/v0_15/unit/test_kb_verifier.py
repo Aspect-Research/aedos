@@ -222,17 +222,73 @@ class TestKBVerifierSingleValued:
 
     def test_single_valued_mismatch_is_contradicted(self):
         # born_in / P19 is functional: a person has one birthplace, so a
-        # statement for a different place contradicts the claim.
+        # statement for a different place contradicts the claim. This is the
+        # N1 "legitimate contradiction" path — the object "New York City"
+        # resolves to a real (different) Q-number, so CONTRADICTED is correct.
         stmts = [Statement(value="Q18094", value_type="entity")]  # Honolulu
         verifier = _make_verifier(stmts, kb_property="P19", single_valued=1)
         result = verifier.verify(_claim(predicate="born_in", object_val="New York City"))
         assert result.verdict == KBVerdictType.CONTRADICTED
+        # N1: a functional-predicate contradiction only fires when the object
+        # actually resolved. Contrast TestKBVerifierN1ResolutionFailure below.
+        assert result.trace.get("object_resolved") is True
 
     def test_single_valued_match_is_verified(self):
         stmts = [Statement(value="Q18094", value_type="entity")]
         verifier = _make_verifier(stmts, kb_property="P19", single_valued=1)
         result = verifier.verify(_claim(predicate="born_in", object_val="Honolulu"))
         assert result.verdict == KBVerdictType.VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# TestKBVerifierN1ResolutionFailure  (N1: a functional predicate whose object
+# reference fails to resolve must abstain, not contradict — resolution failure
+# is a false-abstain source per architecture 3.2, never a false-contradiction
+# source. The trace records why the verdict abstained.)
+# ---------------------------------------------------------------------------
+
+class TestKBVerifierN1ResolutionFailure:
+    def test_single_valued_unresolved_object_is_no_match(self):
+        # born_in is functional, but "Some Unknown Place Xyzzy" does not resolve
+        # to a KB entity. Comparing an unresolved string against KB Q-numbers
+        # never matches — that non-match is a resolution failure, not evidence
+        # the claim is false. Pre-N1 this returned CONTRADICTED.
+        stmts = [Statement(value="Q18094", value_type="entity")]  # Honolulu
+        verifier = _make_verifier(stmts, kb_property="P19", single_valued=1)
+        result = verifier.verify(
+            _claim(predicate="born_in", object_val="Some Unknown Place Xyzzy")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("object_resolved") is False
+        assert result.trace.get("abstention_reason") == "object_unresolved"
+
+    def test_negated_single_valued_unresolved_object_stays_no_match(self):
+        # NO_MATCH from a resolution failure is polarity-invariant: a negated
+        # claim with an unresolved object is still an abstention, not a verified.
+        stmts = [Statement(value="Q18094", value_type="entity")]
+        verifier = _make_verifier(stmts, kb_property="P19", single_valued=1)
+        result = verifier.verify(
+            _claim(predicate="born_in", object_val="Some Unknown Place Xyzzy", polarity=0)
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "object_unresolved"
+
+    def test_no_statements_trace_records_reason(self):
+        # The trace distinguishes a resolution failure ("object_unresolved")
+        # from a genuine absence of evidence ("no_statements").
+        verifier = _make_verifier([])
+        result = verifier.verify(_claim())
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "no_statements"
+
+    def test_multivalued_no_match_trace_records_reason(self):
+        # A multi-valued predicate whose object resolved but matched nothing
+        # abstains with the "no_matching_statement" reason.
+        stmts = [Statement(value="Q4416090", value_type="entity")]  # Senator
+        verifier = _make_verifier(stmts, single_valued=0)
+        result = verifier.verify(_claim(object_val="President of the United States"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "no_matching_statement"
 
 
 # ---------------------------------------------------------------------------
