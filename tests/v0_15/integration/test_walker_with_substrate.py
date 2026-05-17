@@ -172,3 +172,157 @@ class TestWalkerTraceIntegration:
         result = walker.walk(claim, _ctx())
         d = trace_to_json(result.trace)
         json.dumps(d)
+
+
+# ---------------------------------------------------------------------------
+# Fix-up (C2, M3): derivation, polarity, and conflict-detection integration
+# tests. Cases are sourced from tests/v0_15/calibration/derivation_corpus.jsonl.
+# ---------------------------------------------------------------------------
+
+def _seed_subsumption(db, a, b, relation_type, verdict="a_subsumed_by_b"):
+    """Seed a substrate subsumption row (verdict a_subsumed_by_b means a R b)."""
+    db.execute(
+        """INSERT INTO subsumption
+           (entity_a_namespace, entity_a_identifier, entity_b_namespace, entity_b_identifier,
+            relation_type, verdict, source, reason, created_at)
+           VALUES ('aedos', ?, 'aedos', ?, ?, ?, 'substrate', 'seeded test row', '2026-01-01T00:00:00')""",
+        (a, b, relation_type, verdict),
+    )
+    db.commit()
+
+
+def _seed_distribution(db, predicate, relation_type, verdict, polarity=1):
+    """Seed a substrate predicate_distribution row."""
+    db.execute(
+        """INSERT INTO predicate_distribution
+           (aedos_predicate, polarity, relation_type, verdict, reason, created_at)
+           VALUES (?, ?, ?, ?, 'seeded test row', '2026-01-01T00:00:00')""",
+        (predicate, polarity, relation_type, verdict),
+    )
+    db.commit()
+
+
+class TestWalkerSubsumptionDerivation:
+    """C2: distribution-gated subsumption traversal. Pre-fix the traversal block
+    was a `pass` stub, so every case here returned no_grounding_found."""
+
+    def test_single_hop_distribution_derivation(self):
+        # der_multihop_001 paraphrase: Tier U grounds the town-level claim;
+        # the goal is the state-level claim derived via part_of + distributes_up.
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_subsumption(db, "Williamstown", "Massachusetts", "part_of")
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "verified"
+
+    def test_multi_hop_distribution_derivation(self):
+        # Architectural sanity check: derive "Asa lives in the United States"
+        # from Tier U "Asa lives_in Williamstown" + a two-hop part_of chain.
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_subsumption(db, "Williamstown", "Massachusetts", "part_of")
+        _seed_subsumption(db, "Massachusetts", "United States", "part_of")
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="United States")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "verified"
+
+    def test_subsumption_traversal_emits_trace_edge(self):
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_subsumption(db, "Williamstown", "Massachusetts", "part_of")
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
+        result = walker.walk(goal, _ctx())
+        edge_types = [e.edge_type for e in result.trace.edges]
+        assert "subsumption_traversal" in edge_types
+
+    def test_distribution_gate_blocks_invalid_traversal(self):
+        # der_multihop_009: `prefers` does NOT distribute over is_a. Even with a
+        # subsumption row golden_retriever is_a dog, the gate must stay closed.
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="prefers", object_val="golden_retriever"))
+        _seed_subsumption(db, "golden_retriever", "dog", "is_a")
+        _seed_distribution(db, "prefers", "is_a", "neither")
+        goal = _claim(subject="Asa", predicate="prefers", object_val="dog")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert "subsumption_traversal" not in [e.edge_type for e in result.trace.edges]
+
+    def test_distributes_down_ascends_to_parent(self):
+        # der_multihop_006: "Obama is mortal" from "Obama is_a human" — mortal
+        # distributes_down over is_a, so the walker ascends to the parent.
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="human", predicate="has_property", object_val="mortal"))
+        _seed_subsumption(db, "Obama", "human", "is_a")
+        _seed_distribution(db, "has_property", "is_a", "distributes_down")
+        goal = _claim(subject="Obama", predicate="has_property", object_val="mortal")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "verified"
+
+
+class TestWalkerPolarityVerdicts:
+    """M3a / M3 belief-revision: negated-claim verdict handling."""
+
+    def test_negated_claim_grounded_in_negated_tier_u_is_verified(self):
+        # der_cross_009: "Asa dislikes tea" == (Asa, prefers, tea, polarity=0),
+        # grounded in a Tier U row of the same negated polarity -> verified.
+        walker, tier_u, _ = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="prefers", object_val="tea", polarity=0))
+        goal = _claim(subject="Asa", predicate="prefers", object_val="tea", polarity=0)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "verified"
+
+    def test_negated_claim_contradicting_positive_prior(self):
+        # der_revision_003: "Asa is not a student" vs Tier U "Asa is a student".
+        walker, tier_u, _ = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="holds_role", object_val="student", polarity=1))
+        goal = _claim(subject="Asa", predicate="holds_role", object_val="student", polarity=0)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "contradicted"
+
+    def test_positive_claim_contradicting_negated_prior(self):
+        # Symmetric: positive claim vs an asserted negation in Tier U.
+        walker, tier_u, _ = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="holds_role", object_val="student", polarity=0))
+        goal = _claim(subject="Asa", predicate="holds_role", object_val="student", polarity=1)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "contradicted"
+
+    def test_polarity_trace_records_every_visited_node(self):
+        # M3c: polarity_trace was a static one-element list. A multi-hop walk
+        # visits >1 node, so the trace must have >1 entry.
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_subsumption(db, "Williamstown", "Massachusetts", "part_of")
+        _seed_subsumption(db, "Massachusetts", "United States", "part_of")
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="United States")
+        result = walker.walk(goal, _ctx())
+        assert len(result.trace.polarity_trace) > 1
+        assert all(p == 1 for p in result.trace.polarity_trace)
+
+
+class TestWalkerMultiChainConflict:
+    """M3b: the multi-chain conflict-detection branch was unreachable because
+    the walker broke on the first `verified`."""
+
+    def test_conflicting_chains_resolve_to_contradicted(self):
+        # Mechanical conflict test. The goal subject has two is_a children;
+        # expanding the subject slot yields two sibling nodes in one frontier:
+        # one grounds the claim verified, the other grounds its negation.
+        # Architecture 6.4: conflicting chains -> contradicted. The children
+        # have distinct subjects, so the two Tier U rows do not trigger
+        # contradiction-closure of one another.
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="MemberA", predicate="holds_role", object_val="winner", polarity=1))
+        tier_u.write(_claim(subject="MemberB", predicate="holds_role", object_val="winner", polarity=0))
+        _seed_subsumption(db, "MemberA", "Team", "is_a")
+        _seed_subsumption(db, "MemberB", "Team", "is_a")
+        _seed_distribution(db, "holds_role", "is_a", "distributes_up")
+        goal = _claim(subject="Team", predicate="holds_role", object_val="winner")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "contradicted"
+        assert result.trace.walk_metadata.get("conflict") is True

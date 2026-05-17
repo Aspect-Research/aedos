@@ -230,3 +230,66 @@ class TestSubsumptionOracleQueryNeighbors:
         db.commit()
         results = oracle.query_neighbors(_aedos("Asa"), "is_a")
         assert len(results) == 0
+
+
+# ---------------------------------------------------------------------------
+# TestSubsumptionOracleFindNeighbors  (C2 fix-up: walker taxonomy traversal)
+# ---------------------------------------------------------------------------
+
+def _insert_subsumption(db, a, b, relation_type, verdict, retracted=False):
+    db.execute(
+        """INSERT INTO subsumption
+           (entity_a_namespace, entity_a_identifier, entity_b_namespace, entity_b_identifier,
+            relation_type, verdict, source, reason, created_at, retracted_at)
+           VALUES ('aedos', ?, 'aedos', ?, ?, ?, 'substrate', 'test', '2026-01-01', ?)""",
+        (a, b, relation_type, verdict, "2026-01-02" if retracted else None),
+    )
+    db.commit()
+
+
+class TestSubsumptionOracleFindNeighbors:
+    def test_a_subsumed_by_b_yields_parent_for_a(self):
+        oracle, _, db = _oracle()
+        _insert_subsumption(db, "Williamstown", "Massachusetts", "part_of", "a_subsumed_by_b")
+        neighbors = oracle.find_neighbors(_aedos("Williamstown"), "part_of")
+        assert len(neighbors) == 1
+        assert neighbors[0].entity.identifier == "Massachusetts"
+        assert neighbors[0].direction == "parent"
+
+    def test_a_subsumed_by_b_yields_child_for_b(self):
+        oracle, _, db = _oracle()
+        _insert_subsumption(db, "Williamstown", "Massachusetts", "part_of", "a_subsumed_by_b")
+        neighbors = oracle.find_neighbors(_aedos("Massachusetts"), "part_of")
+        assert len(neighbors) == 1
+        assert neighbors[0].entity.identifier == "Williamstown"
+        assert neighbors[0].direction == "child"
+
+    def test_b_subsumed_by_a_directions(self):
+        oracle, _, db = _oracle()
+        _insert_subsumption(db, "dog", "poodle", "is_a", "b_subsumed_by_a")
+        # poodle is_a dog: querying dog finds poodle as a child
+        dog_neighbors = oracle.find_neighbors(_aedos("dog"), "is_a")
+        assert [(n.entity.identifier, n.direction) for n in dog_neighbors] == [("poodle", "child")]
+        # querying poodle finds dog as a parent
+        poodle_neighbors = oracle.find_neighbors(_aedos("poodle"), "is_a")
+        assert [(n.entity.identifier, n.direction) for n in poodle_neighbors] == [("dog", "parent")]
+
+    def test_find_neighbors_excludes_retracted(self):
+        oracle, _, db = _oracle()
+        _insert_subsumption(db, "Williamstown", "Massachusetts", "part_of", "a_subsumed_by_b", retracted=True)
+        assert oracle.find_neighbors(_aedos("Williamstown"), "part_of") == []
+
+    def test_find_neighbors_skips_equivalent_and_unrelated(self):
+        oracle, _, db = _oracle()
+        _insert_subsumption(db, "NYC", "New York City", "is_a", "equivalent")
+        _insert_subsumption(db, "NYC", "banana", "is_a", "unrelated")
+        assert oracle.find_neighbors(_aedos("NYC"), "is_a") == []
+
+    def test_find_neighbors_filters_relation_type(self):
+        oracle, _, db = _oracle()
+        _insert_subsumption(db, "Williamstown", "Massachusetts", "part_of", "a_subsumed_by_b")
+        assert oracle.find_neighbors(_aedos("Williamstown"), "is_a") == []
+
+    def test_find_neighbors_empty_when_no_rows(self):
+        oracle, _, db = _oracle()
+        assert oracle.find_neighbors(_aedos("Nowhere"), "part_of") == []

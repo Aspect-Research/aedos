@@ -60,6 +60,21 @@ class SubsumptionVerdict:
     traversal_chain: list[str] = field(default_factory=list)
 
 
+@dataclass
+class SubsumptionNeighbor:
+    """A taxonomy neighbor of a query entity, for derivation-walk traversal.
+
+    `direction` is 'parent' when the query entity is subsumed by `entity`
+    (query relation entity), and 'child' when `entity` is subsumed by the query
+    entity (entity relation query).
+    """
+    entity: EntityRef
+    direction: str  # 'parent' | 'child'
+    relation_type: str
+    row_id: int
+    source: str
+
+
 class SubsumptionOracleError(Exception):
     pass
 
@@ -143,6 +158,51 @@ class SubsumptionOracle:
             )
             for r in rows
         ]
+
+    def find_neighbors(
+        self, entity: EntityRef, relation_type: str
+    ) -> list[SubsumptionNeighbor]:
+        """Enumerate the taxonomy neighbors of `entity` from non-retracted rows.
+
+        Used by the derivation walker to traverse a subsumption relation. A
+        neighbor is a 'parent' when `entity` is subsumed by it, and a 'child'
+        when it is subsumed by `entity`. Rows are inspected in both slot
+        positions and the verdict determines the direction. `equivalent` and
+        `unrelated` rows are not traversal neighbors and are skipped.
+        """
+        neighbors: list[SubsumptionNeighbor] = []
+
+        rows_a = self._db.execute(
+            """SELECT * FROM subsumption
+               WHERE entity_a_namespace=? AND entity_a_identifier=?
+               AND relation_type=? AND retracted_at IS NULL""",
+            (entity.namespace, entity.identifier, relation_type),
+        ).fetchall()
+        for r in rows_a:
+            other = EntityRef(namespace=r["entity_b_namespace"], identifier=r["entity_b_identifier"])
+            if r["verdict"] == SubsumptionVerdictType.A_SUBSUMED_BY_B.value:
+                # entity (a) is subsumed by other (b) -> other is a parent
+                neighbors.append(SubsumptionNeighbor(other, "parent", relation_type, r["id"], r["source"]))
+            elif r["verdict"] == SubsumptionVerdictType.B_SUBSUMED_BY_A.value:
+                # other (b) is subsumed by entity (a) -> other is a child
+                neighbors.append(SubsumptionNeighbor(other, "child", relation_type, r["id"], r["source"]))
+
+        rows_b = self._db.execute(
+            """SELECT * FROM subsumption
+               WHERE entity_b_namespace=? AND entity_b_identifier=?
+               AND relation_type=? AND retracted_at IS NULL""",
+            (entity.namespace, entity.identifier, relation_type),
+        ).fetchall()
+        for r in rows_b:
+            other = EntityRef(namespace=r["entity_a_namespace"], identifier=r["entity_a_identifier"])
+            if r["verdict"] == SubsumptionVerdictType.A_SUBSUMED_BY_B.value:
+                # other (a) is subsumed by entity (b) -> other is a child
+                neighbors.append(SubsumptionNeighbor(other, "child", relation_type, r["id"], r["source"]))
+            elif r["verdict"] == SubsumptionVerdictType.B_SUBSUMED_BY_A.value:
+                # entity (b) is subsumed by other (a) -> other is a parent
+                neighbors.append(SubsumptionNeighbor(other, "parent", relation_type, r["id"], r["source"]))
+
+        return neighbors
 
     # ------------------------------------------------------------------
     # Private
