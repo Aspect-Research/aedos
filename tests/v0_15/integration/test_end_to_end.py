@@ -70,21 +70,24 @@ class MockKB:
 
 
 def _make_pipeline(kb_stmts=None):
+    """Assemble the pipeline with the correctness mechanisms wired together
+    (M1, M2): the consistency checker runs on every oracle write, and the
+    aggregator records verdict traces with the retraction propagator."""
     db = open_memory_db()
     client = LLMClient(_transport=MockTransport())
     kb = MockKB(kb_stmts)
-    pt = PredicateTranslation(db=db, llm_client=client)
+    propagator = RetractionPropagator(db=db)
+    consistency = ConsistencyChecker(db=db, retraction_propagator=propagator)
+    pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=consistency)
     resolver = EntityResolver(kb_protocol=kb, db=db)
-    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
-    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb, consistency_checker=consistency)
+    pd = PredicateDistributionOracle(db=db, llm_client=client, consistency_checker=consistency)
     substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
     tier_u = TierU(db=db, predicate_translation=pt)
     kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
     py_verifier = PythonVerifier()  # no LLM: always returns no_terminal_result
     walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier, substrate=substrate)
-    aggregator = Aggregator()
-    consistency = ConsistencyChecker(db=db)
-    propagator = RetractionPropagator(db=db)
+    aggregator = Aggregator(retraction_propagator=propagator, db=db)
     tracer = ContradictionTracer(db=db, retraction_propagator=propagator)
     return walker, tier_u, aggregator, consistency, propagator, tracer, db
 
@@ -238,3 +241,119 @@ class TestRetractionPropagation:
         propagator.record_verdict_trace("c1", "verified", [("tier_u", 200)])
         result = tracer.trace_contradiction("c1", {"source": "user_correction"})
         assert any(r.claim_id == "c1" for r in result)
+
+
+# ---------------------------------------------------------------------------
+# Fix-up (M1, M2, m6): the correctness mechanisms are wired into the pipeline.
+# ---------------------------------------------------------------------------
+
+class _ConflictMetadataTransport:
+    """Two predicates get conflicting slot_to_qualifier mappings to the same
+    kb_property — a transitive_equivalence_violation the on-write consistency
+    check must catch."""
+
+    def extract_with_tool(self, *a, purpose=None, **kw):
+        user_message = a[1] if len(a) > 1 else kw.get("user_message", "")
+        sq = {"start": "P580"} if "alpha" in user_message else {"end": "P582"}
+        return {
+            "object_type": "entity", "user_subject_required": 0, "distinct_slots": None,
+            "routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P39",
+            "slot_to_qualifier": sq, "single_valued": 0, "reason": "test",
+        }
+
+    def chat(self, *a, **kw):
+        return ""
+
+
+class _SpyPropagator:
+    def __init__(self):
+        self.calls = []
+
+    def propagate_retraction(self, table, row_id):
+        self.calls.append((table, row_id))
+        return []
+
+
+class TestConsistencyCheckWiring:
+    """M1: the consistency check runs on every oracle row write."""
+
+    def test_oracle_write_triggers_consistency_check_and_retracts(self):
+        db = open_memory_db()
+        client = LLMClient(_transport=_ConflictMetadataTransport())
+        checker = ConsistencyChecker(db=db)
+        pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=checker)
+        # First predicate: no conflict yet. Second: conflicts on slot_to_qualifier.
+        pt.consult("alpha_predicate")
+        pt.consult("beta_predicate")
+        rows = db.execute("SELECT retracted_at FROM predicate_translation").fetchall()
+        assert len(rows) == 2
+        # The on-write check on the second row detects the conflict and the
+        # retract-both policy retracts both predicate_translation rows.
+        assert all(r["retracted_at"] is not None for r in rows)
+
+    def test_resolve_conflict_propagates_retraction(self):
+        # M1: ConsistencyChecker.resolve_conflict drives the retraction
+        # propagator (architecture 5.4 step 2).
+        db = open_memory_db()
+        spy = _SpyPropagator()
+        checker = ConsistencyChecker(db=db, retraction_propagator=spy)
+        for pred, sq in (("alpha", '{"start": "P580"}'), ("beta", '{"end": "P582"}')):
+            db.execute(
+                "INSERT INTO predicate_translation "
+                "(aedos_predicate, object_type, routing_hint, kb_namespace, kb_property, "
+                "slot_to_qualifier, reason, created_at) "
+                "VALUES (?, 'entity', 'kb_resolvable', 'wikidata', 'P39', ?, 't', '2026-01-01')",
+                (pred, sq),
+            )
+        db.commit()
+        rows = db.execute("SELECT id FROM predicate_translation ORDER BY id").fetchall()
+        conflict = checker.check_on_write("predicate_translation", rows[1]["id"])
+        assert conflict.status == "conflict"
+        checker.resolve_conflict(conflict)
+        assert len(spy.calls) == 2  # both retracted rows propagated
+
+
+class TestRetractionWiring:
+    """M2: the aggregator records verdict traces; ContradictionTracer retracts."""
+
+    def test_aggregator_records_verdict_trace_with_source_rows(self):
+        walker, tier_u, aggregator, _, propagator, _, _ = _make_pipeline()
+        claim = _claim()
+        tier_u.write(claim)
+        result = walker.walk(claim, _ctx())
+        aggregator.aggregate([claim], [result])
+        # The aggregator registered the verdict's trace, and the source rows
+        # were extracted from the trace (the walker now carries row ids).
+        assert claim.claim_id in propagator._trace_index
+        recorded = propagator._trace_index[claim.claim_id]
+        assert any(table == "tier_u" for table, _ in recorded)
+
+    def test_retracting_a_recorded_row_propagates_to_the_verdict(self):
+        walker, tier_u, aggregator, _, propagator, _, _ = _make_pipeline()
+        claim = _claim()
+        write = tier_u.write(claim)
+        result = walker.walk(claim, _ctx())
+        aggregator.aggregate([claim], [result])
+        retractions = propagator.propagate_retraction("tier_u", write.row_id)
+        assert any(r.claim_id == claim.claim_id for r in retractions)
+
+    def test_contradiction_tracer_issues_retracted_at_update(self):
+        walker, tier_u, aggregator, _, propagator, tracer, db = _make_pipeline()
+        claim = _claim()
+        write = tier_u.write(claim)
+        result = walker.walk(claim, _ctx())
+        aggregator.aggregate([claim], [result])
+        tracer.trace_contradiction(claim.claim_id, {"source": "user_correction"})
+        row = db.execute(
+            "SELECT retracted_at FROM tier_u WHERE id=?", (write.row_id,)
+        ).fetchone()
+        assert row["retracted_at"] is not None
+
+    def test_verification_result_audit_log_entries_populated(self):
+        # m6: audit_log_entries is no longer a hardcoded [].
+        walker, tier_u, aggregator, _, _, _, _ = _make_pipeline()
+        claim = _claim()
+        tier_u.write(claim)
+        result = walker.walk(claim, _ctx())
+        vr = aggregator.aggregate([claim], [result])
+        assert len(vr.audit_log_entries) == 1

@@ -86,11 +86,13 @@ class SubsumptionOracle:
         llm_client: LLMClient,
         kb_protocol=None,
         audit_log=None,
+        consistency_checker=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
         self._kb = kb_protocol
         self._audit = audit_log
+        self._consistency = consistency_checker
 
     def consult(
         self, entity_a: EntityRef, entity_b: EntityRef, relation_type: str
@@ -272,6 +274,12 @@ class SubsumptionOracle:
                     "verdict": verdict_str,
                 },
             )
+
+        # Substrate-internal consistency check on write (architecture 5.4).
+        if self._consistency is not None:
+            _result = self._consistency.check_on_write("subsumption", row_id)
+            if _result.status == "conflict":
+                self._consistency.resolve_conflict(_result)
 
         return SubsumptionVerdict(
             verdict=SubsumptionVerdictType(verdict_str),

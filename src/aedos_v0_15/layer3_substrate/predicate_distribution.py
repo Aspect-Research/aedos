@@ -65,10 +65,12 @@ class PredicateDistributionOracle:
         db: sqlite3.Connection,
         llm_client: LLMClient,
         audit_log=None,
+        consistency_checker=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
         self._audit = audit_log
+        self._consistency = consistency_checker
 
     def consult(
         self, predicate: str, polarity: int, relation_type: str
@@ -190,6 +192,12 @@ class PredicateDistributionOracle:
                     "verdict": verdict_str,
                 },
             )
+
+        # Substrate-internal consistency check on write (architecture 5.4).
+        if self._consistency is not None:
+            _result = self._consistency.check_on_write("predicate_distribution", row_id)
+            if _result.status == "conflict":
+                self._consistency.resolve_conflict(_result)
 
         return DistributionVerdict(
             verdict=DistributionVerdictType(verdict_str),

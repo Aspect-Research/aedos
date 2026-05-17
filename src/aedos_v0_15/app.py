@@ -106,6 +106,7 @@ async def chat(request: ChatRequest) -> JSONResponse:
         from src.aedos_v0_15.deployment.chat_wrapper import ChatWrapper
         from src.aedos_v0_15.layer1_extraction.extractor import Extractor
         from src.aedos_v0_15.layer3_substrate import Substrate
+        from src.aedos_v0_15.layer3_substrate.consistency import ConsistencyChecker
         from src.aedos_v0_15.layer3_substrate.predicate_distribution import PredicateDistributionOracle
         from src.aedos_v0_15.layer3_substrate.predicate_translation import PredicateTranslation
         from src.aedos_v0_15.layer3_substrate.resolver import EntityResolver
@@ -116,21 +117,27 @@ async def chat(request: ChatRequest) -> JSONResponse:
         from src.aedos_v0_15.layer4_sources.tier_u import TierU
         from src.aedos_v0_15.layer4_sources.walker import Walker
         from src.aedos_v0_15.layer5_result.aggregator import Aggregator
+        from src.aedos_v0_15.layer5_result.retraction import RetractionPropagator
         from src.aedos_v0_15.llm.client import LLMClient
 
         client = LLMClient()
         kb = WikidataAdapter()
-        pt = PredicateTranslation(db=_db, llm_client=client)
+        # Correctness mechanisms: the consistency checker runs on every oracle
+        # row write (architecture 5.4) and propagates retractions through the
+        # propagator's verdict-trace index (architecture 7.3).
+        propagator = RetractionPropagator(db=_db)
+        consistency = ConsistencyChecker(db=_db, retraction_propagator=propagator)
+        pt = PredicateTranslation(db=_db, llm_client=client, consistency_checker=consistency)
         resolver = EntityResolver(kb_protocol=kb, db=_db)
-        sub = SubsumptionOracle(db=_db, llm_client=client, kb_protocol=kb)
-        pd = PredicateDistributionOracle(db=_db, llm_client=client)
+        sub = SubsumptionOracle(db=_db, llm_client=client, kb_protocol=kb, consistency_checker=consistency)
+        pd = PredicateDistributionOracle(db=_db, llm_client=client, consistency_checker=consistency)
         substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
         tier_u = TierU(db=_db, predicate_translation=pt)
         kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
         py_verifier = PythonVerifier(llm_client=client)
         walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier, substrate=substrate)
         extractor = Extractor(llm_client=client)
-        aggregator = Aggregator()
+        aggregator = Aggregator(retraction_propagator=propagator, db=_db)
         _chat_wrapper = ChatWrapper(
             extractor=extractor,
             walker=walker,
