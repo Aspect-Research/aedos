@@ -5,23 +5,26 @@ the operator needs to run for Phase 10.5 (calibration pass), in the order to
 run them, with expected runtimes and acceptance thresholds.
 
 **Prerequisites before starting Phase 10.5:**
-- Phase 10 is tagged `v0.15-phase-10-complete`.
+- The post-audit fix-up is tagged `v0.15-phase-10-complete-fixup-1` (this is the
+  baseline Phase 10.5 runs against, not the original `v0.15-phase-10-complete`).
 - `ANTHROPIC_API_KEY` is set.
 - Wikidata internet access is available.
 - Python 3.11+ is installed.
-- All Phase 0-10 tests pass: `py -m pytest tests/v0_15/ -q` (no `RUN_LIVE_TESTS`).
+- All mocked tests pass: `py -m pytest tests/v0_15/ -q` (no `RUN_LIVE_TESTS`).
 
 ---
 
-## Step 0 — Confirm Phase 10 baseline
+## Step 0 — Confirm the fix-up baseline
 
-**Purpose:** Verify the unattended build completed successfully.
+**Purpose:** Verify the build + fix-up are intact before live calibration.
 
 ```bash
 py -m pytest tests/v0_15/ -q
 ```
 
-**Expected:** All tests pass. Count approximately 592+ passing. No failures.
+**Expected:** All tests pass — 664 passing, 1 gated skip (the cold-start test,
+deferred to Step 5). The 11 calibration corpus tests are deselected here; they
+run in Step 4 under `--run-calibration`.
 
 **Expected runtime:** 2-5 minutes (all mocked, no live calls).
 
@@ -89,6 +92,8 @@ from src.aedos_v0_15.layer3_substrate.predicate_translation import PredicateTran
 
 db = open_db("aedos_phase10_5.db")
 # NOTE: these assertions use routing_hint=user_authoritative; seeded directly.
+# Column names match the tier_u schema (architecture 6.1): `object` (not
+# `object_val`) and `asserting_party` (not `asserting_party_id`).
 assertions = [
     ("Asa", "lives_in", "Williamstown"),
     ("Asa", "educated_at", "Williams College"),
@@ -96,9 +101,9 @@ assertions = [
 ]
 for subj, pred, obj in assertions:
     db.execute(
-        "INSERT OR REPLACE INTO tier_u (subject, predicate, object_val, polarity, "
-        "asserting_party_id, asserted_at, valid_from, valid_until, source_text) "
-        "VALUES (?, ?, ?, 1, 'operator', datetime('now'), NULL, NULL, 'Phase 10.5 seed')",
+        "INSERT OR REPLACE INTO tier_u (asserting_party, subject, predicate, object, "
+        "polarity, asserted_at, valid_from, valid_until, source_text) "
+        "VALUES ('operator', ?, ?, ?, 1, datetime('now'), NULL, NULL, 'Phase 10.5 seed')",
         (subj, pred, obj),
     )
 db.commit()
@@ -114,134 +119,124 @@ print("Tier U assertions seeded.")
 
 ## Step 4 — Run calibration corpora
 
-Run each deferred calibration corpus in phase order. Each corpus is a `.jsonl`
-file under `tests/v0_15/calibration/`.
+The calibration runner is `tests/v0_15/calibration/test_corpus_runner.py`. It
+loads each corpus, runs every case through the responsible component, computes
+per-corpus accuracy, and asserts it against the threshold below — the runner
+fails the test if accuracy is under threshold, so no manual grading is needed.
+
+Gating:
+- The runner is collected only with `--run-calibration`.
+- With `--run-calibration` but no `RUN_CALIBRATION=1`, it does a harness
+  dry-run (loads + validates the corpus, skips with a count) — useful to
+  confirm the harness works without spending on live calls.
+- With `RUN_CALIBRATION=1` set (Step 1) it evaluates live. `RUN_LIVE_KB=1` and
+  `RUN_LIVE_TESTS=1` (also set in Step 1) make the KB and LLM calls live.
+
+Each test id is `test_corpus_calibration[<corpus>]`, so `-k "<corpus>"` selects
+it. The acceptance thresholds below are reproduced verbatim from the
+implementation plan's "Calibration deferral policy" table.
 
 ### Phase 1 — Extraction corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "extraction_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "extraction_corpus"
 ```
 
-**Expected runtime:** 10-30 minutes (LLM calls for 60 cases).
+**Expected runtime:** 10-30 minutes (LLM calls for 57 cases).
 
-**Acceptance threshold:** ≥ 85% accuracy across all 60 cases.
-- normalization (15): ≥ 85%
-- decomposition (10): ≥ 80%
-- temporal (15): ≥ 90%
-- hard-claim discipline (7): 100%
-- first-person (10): ≥ 85%
+**Acceptance threshold:** ≥ 90%.
 
 ### Phase 2 — Predicate metadata corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "predicate_metadata_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "predicate_metadata_corpus"
 ```
 
-**Expected runtime:** 15-45 minutes (LLM + KB calls for 80 cases).
+**Expected runtime:** 15-45 minutes (LLM calls for 80 cases).
 
-**Acceptance threshold:** ≥ 88% across all 80 cases.
-- user_authoritative (20): ≥ 90%
-- python (15): ≥ 90%
-- kb_resolvable (30): ≥ 85%
-- abstain (10): ≥ 90%
-- ambiguous (5): ≥ 60% (lower — genuinely hard)
+**Acceptance threshold:** ≥ 85%.
 
 ### Phase 3 — Temporal scope corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "temporal_scope_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "temporal_scope_corpus"
 ```
 
 **Expected runtime:** 5-15 minutes (40 cases).
 
-**Acceptance threshold:** ≥ 90% across all 40 cases.
-- explicit_scope (10): ≥ 90%
-- implicit_past (10): ≥ 90%
-- relative_scope (10): ≥ 85%
-- no_markers (5): ≥ 80%
-- future_rejection (5): 100%
+**Acceptance threshold:** extraction ≥ 90%, lookup 100%. (The runner asserts the
+extraction accuracy ≥ 90%; the lookup-100% bar is verified by the Phase 3
+mocked unit suite.)
 
 ### Phase 4 — Entity resolution + KB mapping corpora
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "entity_resolution_corpus or kb_mapping_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "entity_resolution_corpus or kb_mapping_corpus"
 ```
 
 **Expected runtime:** 20-60 minutes (90 cases; Wikidata API calls).
 
 **Acceptance threshold:**
-- entity_resolution_corpus (50): ≥ 80%
-  - unambiguous (20): ≥ 90%
-  - ambiguous (15): ≥ 70%
-  - type_filter (10): ≥ 80%
-  - no_match (5): ≥ 80%
-- kb_mapping_corpus (40): ≥ 85%
+- entity_resolution_corpus: ≥ 90% (live KB).
+- kb_mapping_corpus: ≥ 90% (live KB).
 
 ### Phase 5 — Subsumption + predicate distribution corpora
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "subsumption_corpus or predicate_distribution_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "subsumption_corpus or predicate_distribution_corpus"
 ```
 
 **Expected runtime:** 20-45 minutes (110 cases).
 
 **Acceptance threshold:**
-- subsumption_corpus (60): ≥ 82%
-- predicate_distribution_corpus (50): ≥ 80%
+- subsumption_corpus: ≥ 90% KB-mediated, ≥ 80% substrate-generation. (The runner
+  asserts the overall corpus accuracy ≥ 80%; inspect the KB-mediated subset for
+  the ≥ 90% bar.)
+- predicate_distribution_corpus: ≥ 85%.
 
 ### Phase 6 — Derivation corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "derivation_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "derivation_corpus"
 ```
 
 **Expected runtime:** 30-90 minutes (50 cases; multi-hop walks).
 
-**Acceptance threshold:** ≥ 80% across all 50 cases.
-- multi_hop_distribution (12): ≥ 80%
-- cross_source (10): ≥ 80%
-- entity_disambiguation (8): ≥ 75%
-- predicate_translation (8): ≥ 85%
-- belief_revision (6): ≥ 85%
-- abstention (6): ≥ 90%
+**Acceptance threshold:** ≥ 80% (live KB).
 
 ### Phase 7 — Python verification corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "python_verification_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "python_verification_corpus"
 ```
 
 **Expected runtime:** 10-20 minutes (30 cases).
 
-**Acceptance threshold:** ≥ 90% across all 30 cases.
-- date_arithmetic (10): ≥ 85%
-- string_operations (8): ≥ 90%
-- numerical_comparison (6): 100%
-- list_set_operations (6): ≥ 90%
+**Acceptance threshold:** ≥ 85%.
 
-### Phase 8 — Consistency check corpus (regeneration sub-corpus)
+### Phase 8 — Consistency check corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "consistency_check_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "consistency_check_corpus"
 ```
 
-**Note:** Only the regeneration-convergence sub-corpus (8 cases) is deferred;
-the seeded-conflict (10) and circuit-breaker (7) sub-corpora already pass.
+**Note:** detection is deterministic; the runner evaluates the
+seeded-conflict-detection sub-corpus. The regeneration-convergence sub-corpus
+involves live LLM regeneration and is inspected separately.
 
 **Expected runtime:** 10-20 minutes.
 
-**Acceptance threshold:** ≥ 85% on regeneration-convergence sub-corpus.
+**Acceptance threshold:** 100% detection, 100% circuit breaker correctness.
 
 ### Phase 9 — Intervention corpus
 
 ```bash
-py -m pytest tests/v0_15/ -q -k "intervention_corpus" --run-calibration
+py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "intervention_corpus"
 ```
 
 **Expected runtime:** 20-45 minutes (30 cases; full pipeline).
 
-**Acceptance threshold:** ≥ 90% intervention-type-classification correctness end-to-end.
+**Acceptance threshold:** ≥ 90% intervention-type classification.
 
 ---
 
