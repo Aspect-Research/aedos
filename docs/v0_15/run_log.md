@@ -81,3 +81,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented the derivation Walker (BFS depth-4, cycle detection via canonical claim key, budget enforcement for wall_clock_seconds and max_llm_calls, polarity tracking, predicate-distribution gating on subsumption expansion), JustificationTrace structure (TraceNode, TraceEdge, polarity_trace, source_breakdown, walk_metadata, trace_to_json serialization), PythonVerifier stub (terminal=False until Phase 7), and WalkResult with BudgetConsumption, with 39 new passing tests across unit, integration, and calibration corpus files.
 
 
+## Phase 7 — Python Verification Path
+
+- Commit SHA: b924567
+- Tag: v0.15-phase-7-complete
+- Test count: 34 new (468 cumulative; target was ~40 new; all pass)
+- Calibration corpus: python_verification_corpus.jsonl (30 cases: date_arithmetic 10, string_operations 8, numerical_comparison 6, list_set_operations 6)
+- Ambiguities resolved this phase: 3 (no_terminal_result vs abstain semantics; string-only slot inputs; bool coercion for truthy non-bool returns)
+- Blockers: none
+- One-sentence summary: Implemented full PythonVerifier (LLM generates verify(subject, predicate, obj)->bool via PYTHON_VERIFY_TOOL, sandbox executes with real subprocess, stdout TRUE/FALSE determines verdict, all error cases return no_terminal_result), updated Walker to emit python trace edges and check verdict != "no_terminal_result" instead of terminal flag, and authored an adversarial 30-case calibration corpus covering date off-by-one traps (1900 leap year, non-leap Feb 29), string count adversarials (Mississippi, strawberry), and integer-vs-string sort pitfalls, with 34 new passing tests across unit and integration suites.
+
+
