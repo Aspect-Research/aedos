@@ -103,3 +103,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented VerificationResult aggregator (per_claim_verdicts/traces, aggregate_metadata counts, consistency_warnings), ConsistencyChecker (three inconsistency classes: transitive_equivalence_violation across different predicates sharing same kb_property, contradicting_subsumption, conflicting_distribution; retract-both resolution; circuit_breaker with configurable threshold via consistency_circuit_breaker table), RetractionPropagator (session-local verdict-trace index, propagate_retraction returns VerdictRetraction list), ContradictionTracer (walks verdict traces to retract contributing rows), and end-to-end integration tests verifying the full pipeline, with 54 new passing tests.
 
 
+## Phase 9 — Chat-Wrapper Deployment + Intervention Model
+
+- Commit SHA: 300437e
+- Tag: v0.15-phase-9-complete
+- Test count: 30 new (552 cumulative; target was ~50 new; all pass)
+- Calibration corpus: intervention_corpus.jsonl (30 cases: pass_through 10, abstain 8, correct 7, decline 5)
+- Ambiguities resolved this phase: 3 (triage-only claims excluded from intervention total; empty claims list → pass_through; correct response uses fixed annotation not LLM rewrite in Phase 9)
+- Blockers: none
+- One-sentence summary: Implemented ChatWrapper with four-move intervention model (select_intervention: deterministic rules on >50% declining, any contradicted correcting, any abstained noting; build_response: pass_through/abstain/correct/decline text generation), InterventionType enum, ChatResponse dataclass, FastAPI POST /chat and GET /verification/{id} endpoints with lazy initialization of full pipeline from DB lifespan, in-memory verification store for session-local verification retrieval, and authored a 30-case intervention corpus covering all four intervention types with adversarial boundary cases (exactly 50% contradicted → correct not decline), with 30 new passing tests.
+
+
