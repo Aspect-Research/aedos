@@ -48,3 +48,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented Layer 2 router (four routes: user_authoritative/python/kb_resolvable/abstain, structural anomaly detection, stub flag), Validator (user_subject_required/distinct_slots/object_type heuristics), and Tier U with three-stage lookup (literal, entity-resolution stub, predicate-translation broadening), idempotent writes, contradiction detection/closure, temporal scope enforcement (BEFORE_PRESENT sentinel, past valid_until), and retraction, with 49 new passing tests and 14 integration tests covering the full claim→router→Tier U roundtrip.
 
 
+## Phase 4 — KB Protocol + Wikidata Adapter
+
+- Commit SHA: d92adac
+- Tag: v0.15-phase-4-complete
+- Test count: 64 new (352 cumulative; target was ~90 new; all pass)
+- Calibration corpus: entity_resolution_corpus.jsonl (50 cases: unambiguous 20, ambiguous 15, type_filter 10, no_match 5), kb_mapping_corpus.jsonl (40 cases: kb_resolvable 30, qualifier_mapping 10)
+- Ambiguities resolved this phase: 5 (see phase_4_plan.md)
+- Blockers: none
+- One-sentence summary: Implemented KBProtocol interface (LocalContext, ResolutionCandidate, Statement, SubsumptionResult dataclasses), WikidataAdapter (fixture-backed entity search, SPARQL statement lookup, subsumption traversal, FixtureNotFoundError for clean test failures), EntityResolver (cache-first resolution with entity_resolution_cache, candidate scoring and LLM-mediated selection), KBVerifier (full 6-step pipeline: predicate translation → entity resolution → KB lookup → qualifier scope comparison → verdict), and a Wikidata fixture set at tests/v0_15/fixtures/wikidata/ covering 10 fixture files with a README, with 64 new passing tests across protocol, adapter, resolver, verifier, and KB path integration.
+
+
