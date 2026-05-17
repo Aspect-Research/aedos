@@ -191,6 +191,8 @@ def walk_claim(
         user_id=user_id, current_session=current_session,
         llm=llm, source_turn_id=source_turn_id,
         entity_oracle=entity_oracle,
+        taxonomy_oracle=taxonomy_oracle,
+        registry=registry,
         active_context_tokens=active_context_tokens,
     )
     if tier_u_result.outcome is _tier_u.TierUOutcome.MATCH:
@@ -236,6 +238,7 @@ def walk_claim(
         registry=registry,
         llm=llm, source_turn_id=source_turn_id,
         entity_oracle=entity_oracle,
+        taxonomy_oracle=taxonomy_oracle,
         active_context_tokens=active_context_tokens,
     )
 

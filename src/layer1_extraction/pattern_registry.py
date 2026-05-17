@@ -88,6 +88,19 @@ class Pattern:
     triage_verify_predicates: tuple[str, ...] = field(default_factory=tuple)
     boundary_examples: tuple[dict, ...] = field(default_factory=tuple)
 
+    # v0.14.8 — slots whose values commonly stand in containment
+    # (part_of) relations rather than just alias-equivalence. The
+    # walker's alias-broadening path consults entity_taxonomy(part_of)
+    # FIRST on these slots before falling through to entity_equivalence,
+    # so containment pairs ("Massachusetts" ↔ "United States",
+    # "the Berkshires" ↔ "United States") record taxonomy rows
+    # instead of accumulating "different" entity_equivalence rows
+    # that aren't useful for downstream derivation. Slots not listed
+    # here go straight to entity_equivalence as before. Intentionally
+    # narrow — only patterns where containment is structurally
+    # plausible declare it (spatial_temporal.location, etc.).
+    taxonomy_relevant_slots: tuple[str, ...] = field(default_factory=tuple)
+
     def slot(self, name: str) -> Slot | None:
         for s in self.slots:
             if s.name == name:
@@ -209,6 +222,7 @@ def _build_pattern(name: str, body: object) -> Pattern:
     query_strategy = tuple(body.get("query_strategy") or ())
     triage_verify_predicates = tuple(body.get("triage_verify_predicates") or ())
     boundary_examples = tuple(body.get("boundary_examples") or ())
+    taxonomy_relevant_slots = tuple(body.get("taxonomy_relevant_slots") or ())
 
     # distinct_slots: must be a 2-list of slot names if present.
     distinct_raw = body.get("distinct_slots")
@@ -247,6 +261,7 @@ def _build_pattern(name: str, body: object) -> Pattern:
         default_routing_method=body.get("default_routing_method"),
         triage_verify_predicates=triage_verify_predicates,
         boundary_examples=boundary_examples,
+        taxonomy_relevant_slots=taxonomy_relevant_slots,
     )
 
 

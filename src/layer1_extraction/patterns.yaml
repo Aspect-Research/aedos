@@ -324,6 +324,14 @@ spatial_temporal:
     Both can be true of the same pair — extract per the surface form
     the speaker used, not by inference.
   default_routing_method: retrieval
+  taxonomy_relevant_slots:
+    # location stands in containment chains constantly: Williamstown
+    # ↔ Massachusetts, Massachusetts ↔ United States, the Berkshires
+    # ↔ Massachusetts. The walker's alias-broadening path consults
+    # entity_taxonomy(part_of) on this slot before falling through
+    # to entity_equivalence so containment pairs go to the right
+    # oracle table. v0.14.8 fix.
+    - location
   triage_verify_predicates:
     # Locational predicates the retrieval verifier can settle against
     # Wikipedia geography / timezone / political-boundary articles.
@@ -726,6 +734,13 @@ mereological:
     requires that example_extractions never violate it.
   default_routing_method: retrieval
   distinct_slots: [part, whole]
+  taxonomy_relevant_slots:
+    # part_of is the entire point of mereological — both slots stand
+    # in containment chains that should consult entity_taxonomy
+    # rather than entity_equivalence in the alias-broadening path.
+    # v0.14.8 fix.
+    - part
+    - whole
   boundary_examples:
     - input: "Tokyo is in Japan"
       this_pattern: false

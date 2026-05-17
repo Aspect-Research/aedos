@@ -122,6 +122,10 @@ from src.layer3_substrate.entity_equivalence import (
     EntityEquivalence,
     EntityEquivalenceVerdict,
 )
+from src.layer3_substrate.entity_taxonomy import (
+    EntityTaxonomy,
+    EntityTaxonomyVerdict,
+)
 from src.layer3_substrate.predicate_equivalence import (
     PredicateEquivalence,
     PredicateEquivalenceVerdict,
@@ -216,6 +220,51 @@ def _resolve_entity_equivalence(
     )
 
 
+def _resolve_entity_taxonomy(
+    oracle: EntityTaxonomy,
+    child: str,
+    parent: str,
+    relation_type: str,
+    *,
+    llm: Optional[LLMClient],
+    source_turn_id: Optional[int],
+) -> Optional[EntityTaxonomyVerdict]:
+    """Lookup-first entity_taxonomy resolution. v0.14.8 — used by the
+    alias-broadening path on slots declared as ``taxonomy_relevant_slots``
+    in the pattern's schema. Mirrors tier_w.py's helper.
+
+    On cold cell with no LLM, returns None. The caller treats None
+    as "no signal yet" and falls through to entity_equivalence.
+    On consult ValueError (empty / self-pair / unknown relation_type)
+    also returns None — the caller falls through rather than crashing.
+    """
+    if llm is None:
+        existing = oracle.lookup(child, parent, relation_type)
+        if existing is None:
+            return None
+        return EntityTaxonomyVerdict(
+            label=existing.label,
+            reason=existing.reason,
+            row_id=existing.id,
+            served_from_cache=True,
+            confidence=existing.confidence(),
+            classification_failed=False,
+        )
+    try:
+        return oracle.consult(
+            child, parent, relation_type,
+            llm=llm, source_turn_id=source_turn_id,
+        )
+    except ValueError:
+        return None
+
+
+_TAXONOMY_CONTAINMENT_LABELS: frozenset[str] = frozenset({
+    "child_subsumed_by_parent",
+    "parent_subsumed_by_child",
+})
+
+
 class TierUOutcome(str, Enum):
     """Three outcomes from a Tier U lookup.
 
@@ -287,6 +336,8 @@ def lookup(
     llm: Optional[LLMClient] = None,
     source_turn_id: Optional[int] = None,
     entity_oracle: Optional[EntityEquivalence] = None,
+    taxonomy_oracle: Optional[EntityTaxonomy] = None,
+    registry: Optional[Any] = None,
     active_context_tokens: Optional[frozenset] = None,
 ) -> TierUResult:
     """Look for a matching or contradicting prior user-asserted fact.
@@ -406,6 +457,8 @@ def lookup(
             store, pattern, key_slots, key_slot_names, user_id,
             current_session,
             entity_oracle, llm, source_turn_id,
+            taxonomy_oracle=taxonomy_oracle,
+            registry=registry,
             active_context_tokens=active_context_tokens,
         )
         for candidate, entity_row_ids in alias_candidates:
@@ -582,6 +635,8 @@ def _gather_alias_identity_candidates(
     llm: Optional[LLMClient],
     source_turn_id: Optional[int],
     *,
+    taxonomy_oracle: Optional[EntityTaxonomy] = None,
+    registry: Optional[Any] = None,
     active_context_tokens: Optional[frozenset] = None,
 ) -> list[tuple[Fact, list[int]]]:
     """Gather user-asserted facts under (pattern) whose identity
@@ -604,8 +659,31 @@ def _gather_alias_identity_candidates(
     'different' or classification_failed), the entity_equivalence
     rows that DID get written along the way still cost their LLM
     calls — see the module docstring for why this is intentional.
+
+    v0.14.8 — for slots declared as ``taxonomy_relevant_slots`` on
+    the pattern's schema (requires both ``taxonomy_oracle`` and
+    ``registry`` to be passed), the function consults
+    ``entity_taxonomy(part_of)`` BEFORE ``entity_equivalence``. When
+    the taxonomy verdict is ``child_subsumed_by_parent`` or
+    ``parent_subsumed_by_child``, the slot values are in a
+    containment relation (Williamstown ↔ Massachusetts, etc.) — NOT
+    aliases — and the candidate doesn't qualify here; derivation
+    will compose the containment chain via predicate_distribution.
     """
     out: list[tuple[Fact, list[int]]] = []
+
+    # v0.14.8 — taxonomy-relevant slots from the pattern schema.
+    # Requires both registry and taxonomy_oracle; otherwise the
+    # taxonomy short-circuit is disabled (back-compat).
+    taxonomy_relevant: frozenset[str] = frozenset()
+    if registry is not None and taxonomy_oracle is not None:
+        try:
+            if registry.has(pattern):
+                taxonomy_relevant = frozenset(
+                    registry.get(pattern).taxonomy_relevant_slots
+                )
+        except Exception:
+            taxonomy_relevant = frozenset()
 
     # All currently-valid user-asserted facts under (pattern), with
     # NO identity-slot filter. The exact-identity candidates from
@@ -664,6 +742,42 @@ def _gather_alias_identity_candidates(
                 # through: don't qualify.
                 all_qualify = False
                 break
+
+            # v0.14.8 — taxonomy-aware short-circuit. For slots the
+            # pattern declared as taxonomy_relevant, consult
+            # entity_taxonomy(part_of) FIRST. Containment pairs
+            # (Williamstown ↔ Massachusetts, the Berkshires ↔
+            # Massachusetts) record taxonomy rows instead of polluting
+            # entity_equivalence with "different" verdicts; derivation
+            # composes the containment chain via predicate_distribution.
+            if slot_name in taxonomy_relevant:
+                tax_verdict = _resolve_entity_taxonomy(
+                    taxonomy_oracle, cv, sv, "part_of",
+                    llm=llm, source_turn_id=source_turn_id,
+                )
+                if (
+                    tax_verdict is not None
+                    and not tax_verdict.classification_failed
+                    and tax_verdict.label in _TAXONOMY_CONTAINMENT_LABELS
+                ):
+                    # Containment, not alias. Don't qualify here;
+                    # derivation will compose the chain.
+                    all_qualify = False
+                    break
+                if (
+                    tax_verdict is not None
+                    and not tax_verdict.classification_failed
+                    and tax_verdict.label == "equivalent"
+                ):
+                    # Rare taxonomy "equivalent" verdict — treat as
+                    # alias match via the taxonomy row.
+                    if tax_verdict.row_id is not None:
+                        entity_row_ids.append(tax_verdict.row_id)
+                    any_via_oracle = True
+                    continue
+                # tax_verdict is None / classification_failed /
+                # label == "neither" → fall through to
+                # entity_equivalence below.
 
             verdict = _resolve_entity_equivalence(
                 entity_oracle, cv, sv,
