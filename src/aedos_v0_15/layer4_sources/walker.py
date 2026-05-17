@@ -79,6 +79,23 @@ def _claim_from_parts(
     )
 
 
+def _distribution_directions(verdict) -> set[str]:
+    """Neighbor directions the walker may traverse for a distribution verdict.
+
+    distributes_up   (P(X) and X R Y => P(Y)): to verify P(E), descend to children.
+    distributes_down (P(Y) and X R Y => P(X)): to verify P(E), ascend to parents.
+    both: either direction. neither: gate closed.
+    """
+    v = verdict.value if hasattr(verdict, "value") else verdict
+    if v == "distributes_up":
+        return {"child"}
+    if v == "distributes_down":
+        return {"parent"}
+    if v == "both":
+        return {"child", "parent"}
+    return set()
+
+
 class Walker:
     def __init__(
         self,
@@ -116,7 +133,7 @@ class Walker:
             root=root_node,
             source_breakdown={"tier_u": 0, "kb": 0, "python": 0},
         )
-        polarity_trace: list[int] = [claim.polarity]
+        polarity_trace: list[int] = []
 
         frontier: list[Claim] = [claim]
         visited: dict[str, Claim] = {}
@@ -153,28 +170,26 @@ class Walker:
                 if key in visited:
                     continue
                 visited[key] = node
+                polarity_trace.append(node.polarity)
 
                 # Direct premise lookup
                 verdict, lookup_source, llm_delta = self._direct_lookup(node, context, trace)
                 llm_calls += llm_delta
 
                 if verdict is not None:
-                    # Handle conflicting verdicts
+                    # Handle conflicting verdicts (architecture 6.4): contradiction wins.
                     if current_verdict is None:
                         current_verdict = verdict
                     elif current_verdict != verdict:
-                        # Conflict: contradicted wins
                         current_verdict = "contradicted"
                         trace.walk_metadata["conflict"] = True
-                    # Terminal on contradiction; on verified keep walking for conflicts
                     if current_verdict == "contradicted":
                         break
+                    # A grounded `verified` node needs no expansion; keep scanning
+                    # the rest of this frontier so a conflicting verdict is caught.
+                    continue
 
-                    # If verified, still add to trace but we'll return it below
-                    if current_verdict == "verified":
-                        break
-
-                # Expand via substrate
+                # Expand via substrate (ungrounded nodes only)
                 expanded, llm_delta = self._expand_via_substrate(node, trace, depth)
                 llm_calls += llm_delta
                 next_frontier.extend(expanded)
@@ -218,13 +233,32 @@ class Walker:
                 edge_type="premise_lookup",
                 source=trace.root,
                 target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
-                metadata={"source": "tier_u", "polarity": node.polarity},
+                metadata={"source": "tier_u", "polarity": node.polarity, "verdict": "verified"},
             ))
-            return "verified" if node.polarity == 1 else "contradicted", "tier_u", 0
+            # TierU._stage1 matches polarity exactly: a `found` hit is an
+            # assertion of the SAME polarity as the claim, hence verified —
+            # including a negated claim grounded in a negated Tier U row.
+            return "verified", "tier_u", 0
         if tier_u_result.historical_only:
             # Historical match means claim was true at some point, counts as partial evidence
             # but does NOT ground a present-tense claim → skip
             pass
+
+        # Belief revision (architecture 8.1): if the claim's exact negation is
+        # asserted in Tier U — a currently-valid, non-retracted row of opposite
+        # polarity for the same (party, subject, predicate, object) — the
+        # authoritative prior contradicts the claim.
+        flipped = _claim_from_parts(node, polarity=1 - node.polarity)
+        flipped_result = self._tier_u.lookup(flipped, current_time=context.current_time)
+        if flipped_result.found:
+            trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
+            trace.edges.append(TraceEdge(
+                edge_type="premise_lookup",
+                source=trace.root,
+                target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
+                metadata={"source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted"},
+            ))
+            return "contradicted", "tier_u", 0
 
         # KB verification
         if self._kb_verifier is not None:
@@ -289,32 +323,54 @@ class Walker:
         except Exception:
             pass
 
-        # Distribution-gated subsumption traversal
-        for slot in ["subject", "object"]:
-            slot_val = node.subject if slot == "subject" else node.object
-            for relation_type in ["is_a", "part_of"]:
-                try:
-                    dist = self._substrate.predicate_distribution.consult(
-                        node.predicate, node.polarity, relation_type
-                    )
-                    llm_delta += (0 if dist.was_cached else 1)
-                except Exception:
-                    continue
+        # Distribution-gated subsumption traversal.
+        # For goal claim P(E): consult predicate_distribution to learn whether
+        # the predicate distributes over the relation; if so, substitute the
+        # slot entity with a taxonomy neighbor and emit a subsumption_traversal
+        # edge. distributes_up => descend to children; distributes_down =>
+        # ascend to parents; neither => gate closed.
+        for relation_type in ("is_a", "part_of"):
+            try:
+                dist = self._substrate.predicate_distribution.consult(
+                    node.predicate, node.polarity, relation_type
+                )
+                llm_delta += (0 if dist.was_cached else 1)
+            except Exception:
+                continue
 
-                if dist.verdict.value == "neither":
-                    continue  # gate closed
+            directions = _distribution_directions(dist.verdict)
+            if not directions:
+                continue  # gate closed (neither)
 
-                # Find subsumption neighbors for this slot
+            for slot in ("subject", "object"):
+                slot_val = node.subject if slot == "subject" else node.object
                 entity_ref = EntityRef(namespace="aedos", identifier=slot_val)
                 try:
-                    sub_neighbors = self._substrate.subsumption.query_neighbors(entity_ref, relation_type)
-                    for sub in sub_neighbors:
-                        # Determine target identifier from the neighbor verdict
-                        # query_neighbors returns verdicts involving entity_ref as entity_a
-                        # We need to find the entity_b identifier from the DB
-                        # For now, skip actual entity lookup in walker — this is exercised via mocked substrate
-                        pass
+                    sub_neighbors = self._substrate.subsumption.find_neighbors(
+                        entity_ref, relation_type
+                    )
                 except Exception:
-                    pass
+                    continue
+                for sub in sub_neighbors:
+                    if sub.direction not in directions:
+                        continue
+                    new_id = sub.entity.identifier
+                    if slot == "subject":
+                        new_node = _claim_from_parts(node, subject=new_id)
+                    else:
+                        new_node = _claim_from_parts(node, object_val=new_id)
+                    trace.edges.append(TraceEdge(
+                        edge_type="subsumption_traversal",
+                        source=TraceNode("claim", {slot: slot_val}),
+                        target=TraceNode("claim", {slot: new_id}),
+                        metadata={
+                            "relation_type": relation_type,
+                            "direction": sub.direction,
+                            "distribution": dist.verdict.value,
+                            "subsumption_row_id": sub.row_id,
+                            "polarity": node.polarity,
+                        },
+                    ))
+                    expanded.append(new_node)
 
         return expanded, llm_delta
