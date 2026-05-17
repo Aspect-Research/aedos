@@ -43,17 +43,29 @@ class KBVerifier:
         self._audit = audit_log
 
     def verify(self, claim: Claim, current_time: Optional[str] = None) -> KBVerdict:
-        """Full KB verification: resolve → translate → lookup → scope compare.
+        """Full KB verification: translate → map slots → resolve → lookup → compare.
 
         Honors claim polarity (C1): a negated claim inverts the KB's positive-
-        content verdict. Resolves the object entity, not just the subject (M4),
-        and only treats a value mismatch as a contradiction for functional
-        (single_valued) predicates (M4).
+        content verdict. Resolves the value entity, not just the lookup
+        subject (M4), and only treats a value mismatch as a contradiction for
+        functional (single_valued) predicates (M4).
+
+        Honors the slot_to_qualifier lookup direction (D19). For a standard
+        predicate the KB statement is keyed on the claim's subject; for an
+        inverse predicate (capital_of on P36, mother_of on P25 — whose seed maps
+        the Aedos subject to ``statement_value``) the statement is keyed on the
+        claim's *object*, so the lookup and the expected value are swapped.
+        ``_lookup_targets`` decides the direction. The trace records it as
+        ``lookup_inverted``; the trace's ``entity`` / ``object_value`` /
+        ``object_resolved`` / ``subject_*`` fields name KB *statement* positions
+        (statement subject, statement value) — these coincide with the Aedos
+        subject/object for a standard predicate and are swapped for an inverse
+        one, which ``lookup_inverted`` disambiguates.
         """
         if current_time is None:
             current_time = _NOW()
 
-        # Step 1: get predicate metadata
+        # Step 1: get predicate metadata.
         try:
             meta = self._pt.consult(claim.predicate)
         except PredicateTranslationError:
@@ -62,74 +74,103 @@ class KBVerifier:
         if meta.routing_hint != "kb_resolvable" or not meta.kb_property:
             return KBVerdict(verdict=KBVerdictType.NO_KB_PATH, trace={"reason": "not_kb_resolvable"})
 
-        # Step 2: resolve subject entity
-        subject_ctx = LocalContext(
+        # Step 2: map the claim's slots onto KB statement positions (D19). An
+        # inverse predicate keys its statement on the claim's *object*, so the
+        # lookup entity and the expected value are swapped vs a standard one.
+        targets = _lookup_targets(claim, meta)
+        if targets is None:
+            # A slot_to_qualifier shape the verifier cannot interpret. Abstain
+            # with a clear trace note — never guess a direction, never crash.
+            return KBVerdict(
+                verdict=KBVerdictType.NO_KB_PATH,
+                trace={
+                    "reason": "unsupported_slot_to_qualifier",
+                    "slot_to_qualifier": meta.slot_to_qualifier,
+                },
+            )
+        lookup_ref, expected_ref, lookup_inverted = targets
+        # The Aedos slot each reference came from — keeps the resolver cache key
+        # and the LocalContext honest about slot position.
+        lookup_slot = "object" if lookup_inverted else "subject"
+        value_slot = "subject" if lookup_inverted else "object"
+
+        # Step 3: resolve the KB lookup entity — the entity the statement is
+        # keyed on (it becomes the KB statement subject).
+        lookup_ctx = LocalContext(
             predicate=claim.predicate,
-            slot_position="subject",
+            slot_position=lookup_slot,
             asserting_party=claim.asserting_party,
         )
-        subject_id = self._resolver.select(
-            self._resolver.resolve(claim.subject, subject_ctx), subject_ctx
+        lookup_subject_id = self._resolver.select(
+            self._resolver.resolve(lookup_ref, lookup_ctx), lookup_ctx
         )
-        if subject_id is None:
+        if lookup_subject_id is None:
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
                 trace={
                     "reason": "subject_resolution_failed",
-                    "reference": claim.subject,
+                    "reference": lookup_ref,
                     "abstention_reason": "subject_unresolved",
+                    "lookup_inverted": lookup_inverted,
                 },
             )
 
-        # Step 3: resolve the object entity when the predicate's object slot is
-        # an entity (M4). Falls back to the raw string for literal comparison.
-        object_val = claim.object
-        object_resolved = False
+        # Step 4: resolve the expected-value entity — compared against the
+        # looked-up statement values (M4's object resolution, now applied to
+        # whichever Aedos slot is the KB statement value). Falls back to the raw
+        # string for literal comparison.
+        expected_value = expected_ref
+        value_resolved = False
         if meta.object_type == "entity":
-            object_ctx = LocalContext(
+            value_ctx = LocalContext(
                 predicate=claim.predicate,
-                slot_position="object",
+                slot_position=value_slot,
                 asserting_party=claim.asserting_party,
             )
-            resolved_object = self._resolver.select(
-                self._resolver.resolve(claim.object, object_ctx), object_ctx
+            resolved_value = self._resolver.select(
+                self._resolver.resolve(expected_ref, value_ctx), value_ctx
             )
-            if resolved_object is not None:
-                object_val = resolved_object
-                object_resolved = True
+            if resolved_value is not None:
+                expected_value = resolved_value
+                value_resolved = True
 
-        # Step 4: look up KB statements for (subject, kb_property)
-        statements = self._kb.lookup_statements(subject_id, meta.kb_property)
+        # Step 5: look up KB statements for (lookup entity, kb_property).
+        statements = self._kb.lookup_statements(lookup_subject_id, meta.kb_property)
         if not statements:
             # NO_MATCH is polarity-invariant — absence of evidence is not evidence.
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
-                subject_kb_id=subject_id,
+                subject_kb_id=lookup_subject_id,
                 trace={
                     "reason": "no_statements_found",
-                    "entity": subject_id,
+                    "entity": lookup_subject_id,
                     "property": meta.kb_property,
                     "abstention_reason": "no_statements",
+                    "lookup_inverted": lookup_inverted,
                 },
             )
 
-        # Step 5: verdict for the claim's *positive* content (polarity-agnostic).
+        # Step 6: verdict for the claim's *positive* content (polarity-agnostic).
+        # _compare_positive is direction-agnostic — it compares the expected
+        # value against the statement values regardless of which Aedos slot the
+        # expected value came from.
         pos_verdict, statement, abstention_reason = self._compare_positive(
-            statements, claim, object_val, object_resolved, meta, current_time
+            statements, claim, expected_value, value_resolved, meta, current_time
         )
 
-        # Step 6: apply claim polarity (C1). A negated claim asserts the triple
+        # Step 7: apply claim polarity (C1). A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
         final_verdict = _apply_polarity(pos_verdict, claim.polarity)
 
         trace = {
-            "entity": subject_id,
+            "entity": lookup_subject_id,
             "property": meta.kb_property,
-            "object_value": object_val,
-            "object_resolved": object_resolved,
+            "object_value": expected_value,
+            "object_resolved": value_resolved,
             "polarity": claim.polarity,
             "positive_verdict": pos_verdict.value,
             "single_valued": meta.single_valued,
+            "lookup_inverted": lookup_inverted,
         }
         # When the verdict is an abstention (NO_MATCH), record *why* — Phase 10.5
         # debugging needs to tell a resolution failure apart from a genuine
@@ -140,7 +181,7 @@ class KBVerifier:
         return KBVerdict(
             verdict=final_verdict,
             matched_statement=statement,
-            subject_kb_id=subject_id,
+            subject_kb_id=lookup_subject_id,
             trace=trace,
         )
 
@@ -194,6 +235,49 @@ class KBVerifier:
 
         reason = "object_unresolved" if object_unresolved else "no_matching_statement"
         return KBVerdictType.NO_MATCH, None, reason
+
+
+def _lookup_targets(claim: Claim, meta) -> Optional[tuple[str, str, bool]]:
+    """Map a claim's slots onto KB statement positions via slot_to_qualifier (D19).
+
+    Returns ``(kb_lookup_ref, expected_value_ref, lookup_inverted)``:
+
+    - ``kb_lookup_ref`` — the claim slot value to resolve and key the
+      ``lookup_statements`` call on; it becomes the KB statement *subject*.
+    - ``expected_value_ref`` — the claim slot value compared against the
+      looked-up statement values; it is the KB statement *value*.
+    - ``lookup_inverted`` — True when the claim's *object* is the KB statement
+      subject — an inverse predicate, e.g. ``capital_of`` on P36 or
+      ``mother_of`` on P25, whose seed maps the Aedos subject to
+      ``statement_value``.
+
+    Standard mapping (``subject`` -> ``statement_subject``): the lookup is keyed
+    on the claim's subject and the object is the expected value. Inverse mapping
+    (``subject`` -> ``statement_value``): the KB stores the statement on the
+    other entity, so the lookup is keyed on the claim's object and the subject
+    is the expected value.
+
+    A null/absent ``slot_to_qualifier`` is treated as the standard mapping — the
+    pre-D19 default, preserved so every non-inverse predicate behaves exactly as
+    before and inline-generated rows without an explicit map keep working.
+
+    Returns ``None`` for a ``slot_to_qualifier`` the verifier cannot interpret
+    (a qualifier-keyed or contradictory subject/object map). ``verify`` turns
+    that into a ``NO_KB_PATH`` abstention with a trace note — it never guesses a
+    direction and never crashes. The v0.15 seed pack has no such map (verified
+    in ``docs/v0_15/fixup3_scope.md``); this branch guards only against
+    malformed inline-generated rows.
+    """
+    slot_map = meta.slot_to_qualifier
+    if not slot_map:
+        return (claim.subject, claim.object, False)
+    subject_slot = slot_map.get("subject")
+    object_slot = slot_map.get("object")
+    if subject_slot in (None, "statement_subject") and object_slot in (None, "statement_value"):
+        return (claim.subject, claim.object, False)
+    if subject_slot == "statement_value" and object_slot in (None, "statement_subject"):
+        return (claim.object, claim.subject, True)
+    return None
 
 
 def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:
