@@ -1,21 +1,30 @@
 """
 Medium-bar evaluation benchmark for Aedos v0.15.
 
-Written in Phase 10. Execution is DEFERRED TO PHASE 10.5.
-This module contains:
-  - BenchmarkRunner: runs Aedos against the test set
-  - BaselineRunner: runs an LLM-only forward pass
-  - MetricsComputer: accuracy, false-verified rate, per-failure-mode breakdown
-  - Structural self-test: confirms the harness works against mocks/fixtures
+The live runner is implemented (fix-up 2, M5 Step 6). The medium-bar evaluation
+itself is run under operator supervision in Phase 10.5 — it requires live LLM
+and live Wikidata calls.
 
-Phase 10.5 acceptance thresholds (from implementation plan §Phase 10):
+This module contains:
+  - AedosRunner: runs the full Aedos pipeline against the test set
+  - BaselineRunner: runs an LLM-only forward pass
+  - compute_metrics / generate_report: accuracy, false-verified rate,
+    false-abstain rate, per-failure-mode breakdown
+  - _structural_test: checks the metrics/report machinery against mock results
+  - _validate_harness: builds the production pipeline against mocks and runs one
+    case through each runner — confirms the wiring without live API cost
+
+Phase 10.5 acceptance thresholds (implementation plan §Phase 10):
   - Aedos false-verified rate ≤ 5%
-  - Aedos overall accuracy ≥ baseline + 15pp on curated test set
+  - Aedos overall accuracy ≥ baseline + 15pp on the curated test set
   - Aedos accuracy ≥ baseline on every failure mode (no regression)
   - Aedos accuracy significantly higher on ≥ 4 of 6 failure modes
 
-Usage (Phase 10.5 operator-supervised):
-    RUN_LIVE_TESTS=1 RUN_LIVE_KB=1 python -m tests.v0_15.evaluation.benchmark \\
+Usage:
+    # harness wiring check (mocked, no API cost — part of `make test`):
+    py -m tests.v0_15.evaluation.benchmark --validate-harness
+    # live evaluation (Phase 10.5, operator-supervised):
+    RUN_LIVE_TESTS=1 RUN_LIVE_KB=1 py -m tests.v0_15.evaluation.benchmark \\
         --test-set tests/v0_15/evaluation/medium_bar_test_set.jsonl \\
         --output docs/v0_15/evaluation_results.md
 """
@@ -169,16 +178,29 @@ class AedosRunner:
 
     def run_case(self, case: BenchmarkCase) -> RunResult:
         import time
+        from datetime import datetime, timezone
+
+        from src.aedos_v0_15.layer1_extraction.extractor import ExtractionContext
+        from src.aedos_v0_15.layer1_extraction.triage import TriageDecision
+        from src.aedos_v0_15.layer4_sources.walker import VerificationContext
+
         if self._pipeline is None:
             return RunResult(case_id=case.case_id, verdict="no_grounding_found")
         extractor, walker, aggregator = self._pipeline
         start = time.monotonic()
         try:
-            claims = extractor.extract(case.statement, context={})
+            ctx = ExtractionContext(asserting_party="benchmark", context_type="document")
+            claims = extractor.extract(case.statement, ctx)
+            # Only VERIFY-triaged claims are verified (matches the chat-wrapper).
+            claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
             if not claims:
                 return RunResult(case_id=case.case_id, verdict="no_grounding_found",
                                  latency_seconds=time.monotonic() - start)
-            results = [walker.walk(c) for c in claims]
+            vctx = VerificationContext(
+                current_time=datetime.now(timezone.utc).isoformat(),
+                asserting_party="benchmark",
+            )
+            results = [walker.walk(c, vctx) for c in claims]
             vr = aggregator.aggregate(claims, results)
             verdicts = list(vr.per_claim_verdicts.values())
             verdict = verdicts[0] if len(verdicts) == 1 else (
@@ -215,12 +237,19 @@ class BaselineRunner:
 
     def run_case(self, case: BenchmarkCase) -> RunResult:
         import time
+
+        from src.aedos_v0_15.llm.client import ChatMessage
+
         if self._client is None:
             return RunResult(case_id=case.case_id, verdict="no_grounding_found")
         start = time.monotonic()
         try:
             prompt = self.BASELINE_PROMPT_TEMPLATE.format(statement=case.statement)
-            response = self._client.chat([{"role": "user", "content": prompt}])
+            response = self._client.chat(
+                system="",
+                messages=[ChatMessage(role="user", content=prompt)],
+                purpose="chat",
+            )
             text = response.strip().upper()
             if "VERIFIED" in text:
                 verdict = "verified"
@@ -270,12 +299,23 @@ def generate_report(
         f"(delta: {aedos_metrics.accuracy - baseline_metrics.accuracy:+.1%})",
     ]
 
-    # Per-failure-mode no-regression check
+    # Per-failure-mode no-regression check (criterion 3).
+    big_gains = 0
     for mode in sorted(aedos_metrics.per_failure_mode):
         a_acc = aedos_metrics.per_failure_mode[mode]["accuracy"]
         b_acc = baseline_metrics.per_failure_mode.get(mode, {}).get("accuracy", 0.0)
         status = "PASS" if a_acc >= b_acc else "FAIL"
         lines.append(f"No-regression {mode}: {status} (Aedos {a_acc:.1%} vs baseline {b_acc:.1%})")
+        if a_acc >= b_acc + 0.20:
+            big_gains += 1
+
+    # Criterion 4: significant improvement on >= 4 of 6 modes. The plan says
+    # "significantly higher"; the runbook operationalizes that as >= +20pp.
+    n_modes = len(aedos_metrics.per_failure_mode)
+    lines.append(
+        f"Significant improvement (>= +20pp) on >= 4 of 6 modes: "
+        f"{'PASS' if big_gains >= 4 else 'FAIL'} ({big_gains}/{n_modes} modes)"
+    )
 
     report = "\n".join(lines)
     if output_path is not None:
@@ -317,23 +357,174 @@ def _structural_test():
     return True
 
 
+# ---------------------------------------------------------------------------
+# Harness validation — builds the production pipeline against mocks and runs one
+# case through each runner. Confirms the M5-Step-6 wiring (pipeline build, the
+# runner signatures, generate_report) without consuming live API. Runs as part
+# of the default mocked suite via tests/v0_15/evaluation/test_benchmark_structural.py.
+# ---------------------------------------------------------------------------
+
+class _HarnessTransport:
+    """Minimal mock LLM transport: returns safe canned tool outputs keyed by
+    tool name, so the full pipeline can be exercised once with no live API."""
+
+    def extract_with_tool(self, system, user_message, tool, model="", purpose=None):
+        name = tool.get("name", "")
+        if name == "extract_claims":
+            # One claim whose subject is a substring of the text (hard-claim
+            # check) and whose predicate triages to VERIFY (located_in is in
+            # triage._ALWAYS_VERIFY) — so the walk is genuinely exercised.
+            head = (user_message.strip().split() or ["entity"])[0]
+            return {"claims": [{
+                "subject": head, "predicate": "located_in", "object": head,
+                "polarity": 1, "source_text": user_message.strip()[:60] or head,
+                "verb_tense": "present",
+            }]}
+        if name == "generate_predicate_metadata":
+            return {
+                "object_type": "entity", "user_subject_required": 0,
+                "distinct_slots": None, "routing_hint": "abstain",
+                "kb_namespace": None, "kb_property": None,
+                "slot_to_qualifier": None, "single_valued": 0,
+                "reason": "harness mock",
+            }
+        if name == "generate_subsumption_verdict":
+            return {"verdict": "unrelated", "reason": "harness mock"}
+        if name == "generate_python_verify":
+            return {"code": "def verify(subject, predicate, obj):\n    return None",
+                    "reasoning": "harness mock"}
+        # predicate-distribution tool and any other: a gate-closed verdict.
+        return {"verdict": "neither", "reason": "harness mock"}
+
+    def chat(self, system, messages, model="", purpose=None):
+        return "ABSTAIN"
+
+
+class _HarnessKB:
+    """Mock KB that grounds nothing — the harness walk abstains cleanly."""
+
+    def resolve_entity(self, reference, local_context):
+        return []
+
+    def lookup_statements(self, entity, predicate):
+        return []
+
+    def subsumption(self, entity_a, entity_b, relation_type):
+        from src.aedos_v0_15.layer4_sources.kb_protocol import SubsumptionResult
+        return SubsumptionResult(verdict="unrelated")
+
+
+def _validate_harness(
+    test_set_path: Path = _TEST_SET_PATH,
+    output_path: Optional[Path] = None,
+) -> bool:
+    """Build the production pipeline against mocks and run one case through each
+    runner. Confirms the wiring — pipeline construction, the runner signatures,
+    generate_report — without consuming live API. Returns True on success;
+    raises AssertionError if the wiring is broken (e.g. a stale runner signature
+    makes run_case report an `error` verdict).
+    """
+    from src.aedos_v0_15.database import open_memory_db
+    from src.aedos_v0_15.llm.client import LLMClient
+    from src.aedos_v0_15.pipeline import build_pipeline
+
+    cases = load_test_set(test_set_path)
+    assert cases, "test set is empty"
+
+    client = LLMClient(_transport=_HarnessTransport())
+    pipeline = build_pipeline(open_memory_db(), llm_client=client, kb=_HarnessKB())
+
+    aedos = AedosRunner(pipeline=(pipeline.extractor, pipeline.walker, pipeline.aggregator))
+    baseline = BaselineRunner(llm_client=client)
+
+    a = aedos.run_case(cases[0])
+    b = baseline.run_case(cases[0])
+    # An "error" verdict means the runner caught an exception — the wiring is
+    # broken (e.g. a stale walker.walk / extractor.extract signature).
+    assert a.verdict != "error", "AedosRunner errored — pipeline wiring is broken"
+    assert b.verdict != "error", "BaselineRunner errored — wiring is broken"
+    assert a.verdict in ("verified", "contradicted", "no_grounding_found")
+    assert b.verdict in ("verified", "contradicted", "no_grounding_found")
+
+    report = generate_report(cases, [a], [b], output_path=output_path)
+    assert "# Aedos v0.15 Medium-Bar Evaluation Results" in report
+    assert "Phase 10.5 Acceptance Criteria" in report
+    if output_path is not None:
+        assert output_path.exists() and output_path.read_text(encoding="utf-8").strip()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Live evaluation entrypoint (Phase 10.5)
+# ---------------------------------------------------------------------------
+
+def _run_live(args) -> int:
+    """Run the medium-bar evaluation live against the production pipeline.
+    Returns a process exit code."""
+    from src.aedos_v0_15.database import open_db
+    from src.aedos_v0_15.pipeline import build_pipeline
+
+    db_path = os.environ.get("AEDOS_DB_PATH", "aedos_phase10_5.db")
+    cases = load_test_set(args.test_set)
+    print(f"Loaded {len(cases)} cases from {args.test_set}")
+    print(f"Database: {db_path} (load the seed pack first — runbook Step 2)")
+
+    pipeline = build_pipeline(open_db(db_path))
+    aedos = AedosRunner(pipeline=(pipeline.extractor, pipeline.walker, pipeline.aggregator))
+    baseline = BaselineRunner(llm_client=pipeline.llm_client)
+
+    if args.baseline_only:
+        print(f"Running baseline only over {len(cases)} cases ...")
+        print(compute_metrics(cases, baseline.run_all(cases)).summary())
+        return 0
+    if args.aedos_only:
+        print(f"Running Aedos only over {len(cases)} cases ...")
+        print(compute_metrics(cases, aedos.run_all(cases)).summary())
+        return 0
+
+    print(f"Running LLM-only baseline over {len(cases)} cases ...")
+    baseline_results = baseline.run_all(cases)
+    print(f"Running Aedos pipeline over {len(cases)} cases ...")
+    aedos_results = aedos.run_all(cases)
+
+    report = generate_report(cases, aedos_results, baseline_results, output_path=args.output)
+    print()
+    print(report)
+    if args.output is not None:
+        print(f"\nResults written to {args.output}")
+    return 0
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Aedos v0.15 medium-bar evaluation")
     parser.add_argument("--test-set", type=Path, default=_TEST_SET_PATH)
     parser.add_argument("--output", type=Path, default=None)
-    parser.add_argument("--structural-test", action="store_true")
+    parser.add_argument("--structural-test", action="store_true",
+                        help="Check the metrics/report machinery against mock results.")
+    parser.add_argument("--validate-harness", action="store_true",
+                        help="Build the production pipeline against mocks and run one "
+                             "case through each runner — confirms wiring, no live API.")
+    parser.add_argument("--baseline-only", action="store_true",
+                        help="Development: run only the LLM-only baseline.")
+    parser.add_argument("--aedos-only", action="store_true",
+                        help="Development: run only the Aedos pipeline.")
     args = parser.parse_args()
 
     if args.structural_test:
         ok = _structural_test()
         print("Structural test: PASS" if ok else "Structural test: FAIL")
-    else:
-        if not (os.environ.get("RUN_LIVE_TESTS") == "1" and os.environ.get("RUN_LIVE_KB") == "1"):
-            print("Live evaluation requires RUN_LIVE_TESTS=1 and RUN_LIVE_KB=1. "
-                  "Use --structural-test for mock validation.")
-            raise SystemExit(1)
+        raise SystemExit(0 if ok else 1)
 
-        cases = load_test_set(args.test_set)
-        print(f"Loaded {len(cases)} cases from {args.test_set}")
-        print("Live evaluation not yet implemented — deferred to Phase 10.5.")
+    if args.validate_harness:
+        ok = _validate_harness(args.test_set)
+        print("Harness validation: PASS" if ok else "Harness validation: FAIL")
+        raise SystemExit(0 if ok else 1)
+
+    # Live evaluation — Phase 10.5 only. Must use live calls, never mocks.
+    if not (os.environ.get("RUN_LIVE_TESTS") == "1" and os.environ.get("RUN_LIVE_KB") == "1"):
+        print("Live evaluation requires RUN_LIVE_TESTS=1 and RUN_LIVE_KB=1 "
+              "(Phase 10.5). Use --validate-harness for a mocked wiring check.")
+        raise SystemExit(1)
+
+    raise SystemExit(_run_live(args))
