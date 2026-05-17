@@ -92,3 +92,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented full PythonVerifier (LLM generates verify(subject, predicate, obj)->bool via PYTHON_VERIFY_TOOL, sandbox executes with real subprocess, stdout TRUE/FALSE determines verdict, all error cases return no_terminal_result), updated Walker to emit python trace edges and check verdict != "no_terminal_result" instead of terminal flag, and authored an adversarial 30-case calibration corpus covering date off-by-one traps (1900 leap year, non-leap Feb 29), string count adversarials (Mississippi, strawberry), and integer-vs-string sort pitfalls, with 34 new passing tests across unit and integration suites.
 
 
+## Phase 8 — Layer 5 + Substrate-Internal Consistency Check
+
+- Commit SHA: d63e1e4
+- Tag: v0.15-phase-8-complete
+- Test count: 54 new (522 cumulative; target was ~70 new; all pass)
+- Calibration corpus: consistency_check_corpus.jsonl (25 cases: seeded_conflict_detection 10, retract_and_regenerate 8, circuit_breaker_trigger 7)
+- Ambiguities resolved this phase: 3 (transitive_equivalence_violation detection uses cross-predicate same-kb_property logic not same-predicate UNIQUE-violating rows; UNIQUE constraints mean sub/dist conflict tests use synthetic ConsistencyResult; PythonVerifier in end-to-end tests uses no-client stub)
+- Blockers: UNIQUE constraints on subsumption/predicate_distribution prevent inserting two conflicting rows via normal INSERT — resolved by (a) using predicate_translation for all check_on_write tests, (b) testing resolve_conflict/circuit_breaker with directly-constructed ConsistencyResult objects
+- One-sentence summary: Implemented VerificationResult aggregator (per_claim_verdicts/traces, aggregate_metadata counts, consistency_warnings), ConsistencyChecker (three inconsistency classes: transitive_equivalence_violation across different predicates sharing same kb_property, contradicting_subsumption, conflicting_distribution; retract-both resolution; circuit_breaker with configurable threshold via consistency_circuit_breaker table), RetractionPropagator (session-local verdict-trace index, propagate_retraction returns VerdictRetraction list), ContradictionTracer (walks verdict traces to retract contributing rows), and end-to-end integration tests verifying the full pipeline, with 54 new passing tests.
+
+
