@@ -43,7 +43,13 @@ class KBVerifier:
         self._audit = audit_log
 
     def verify(self, claim: Claim, current_time: Optional[str] = None) -> KBVerdict:
-        """Full KB verification: resolve → translate → lookup → scope compare."""
+        """Full KB verification: resolve → translate → lookup → scope compare.
+
+        Honors claim polarity (C1): a negated claim inverts the KB's positive-
+        content verdict. Resolves the object entity, not just the subject (M4),
+        and only treats a value mismatch as a contradiction for functional
+        (single_valued) predicates (M4).
+        """
         if current_time is None:
             current_time = _NOW()
 
@@ -57,61 +63,116 @@ class KBVerifier:
             return KBVerdict(verdict=KBVerdictType.NO_KB_PATH, trace={"reason": "not_kb_resolvable"})
 
         # Step 2: resolve subject entity
-        local_ctx = LocalContext(
+        subject_ctx = LocalContext(
             predicate=claim.predicate,
             slot_position="subject",
             asserting_party=claim.asserting_party,
         )
-        subject_candidates = self._resolver.resolve(claim.subject, local_ctx)
-        subject_id = self._resolver.select(subject_candidates, local_ctx)
+        subject_id = self._resolver.select(
+            self._resolver.resolve(claim.subject, subject_ctx), subject_ctx
+        )
         if subject_id is None:
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
                 trace={"reason": "subject_resolution_failed", "reference": claim.subject},
             )
 
-        # Step 3: look up KB statements for (subject, kb_property)
+        # Step 3: resolve the object entity when the predicate's object slot is
+        # an entity (M4). Falls back to the raw string for literal comparison.
+        object_val = claim.object
+        object_resolved = False
+        if meta.object_type == "entity":
+            object_ctx = LocalContext(
+                predicate=claim.predicate,
+                slot_position="object",
+                asserting_party=claim.asserting_party,
+            )
+            resolved_object = self._resolver.select(
+                self._resolver.resolve(claim.object, object_ctx), object_ctx
+            )
+            if resolved_object is not None:
+                object_val = resolved_object
+                object_resolved = True
+
+        # Step 4: look up KB statements for (subject, kb_property)
         statements = self._kb.lookup_statements(subject_id, meta.kb_property)
         if not statements:
+            # NO_MATCH is polarity-invariant — absence of evidence is not evidence.
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
                 subject_kb_id=subject_id,
                 trace={"reason": "no_statements_found", "entity": subject_id, "property": meta.kb_property},
             )
 
-        # Step 4: compare each statement's value against claim.object + temporal scope
-        object_val = claim.object
-        contradicted_statement: Optional[Statement] = None
+        # Step 5: verdict for the claim's *positive* content (polarity-agnostic).
+        pos_verdict, statement = self._compare_positive(
+            statements, claim, object_val, meta, current_time
+        )
 
+        # Step 6: apply claim polarity (C1). A negated claim asserts the triple
+        # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
+        final_verdict = _apply_polarity(pos_verdict, claim.polarity)
+
+        return KBVerdict(
+            verdict=final_verdict,
+            matched_statement=statement,
+            subject_kb_id=subject_id,
+            trace={
+                "entity": subject_id,
+                "property": meta.kb_property,
+                "object_value": object_val,
+                "object_resolved": object_resolved,
+                "polarity": claim.polarity,
+                "positive_verdict": pos_verdict.value,
+                "single_valued": meta.single_valued,
+            },
+        )
+
+    def _compare_positive(
+        self,
+        statements: list[Statement],
+        claim: Claim,
+        object_val,
+        meta,
+        current_time: str,
+    ) -> tuple[KBVerdictType, Optional[Statement]]:
+        """Verdict for the claim's positive content, ignoring polarity.
+
+        A value match on a scope-compatible statement is VERIFIED. A
+        scope-compatible statement whose value does not match is a CONTRADICTED
+        only for a functional (single_valued) predicate — for a multi-valued
+        predicate the KB simply holds other values and the claim's value may
+        also be true, so the result is NO_MATCH.
+        """
+        scope_mismatch: Optional[Statement] = None
         for stmt in statements:
             if not _scope_compatible(stmt, claim, current_time):
                 continue
-            # Value comparison: statement.value should match claim object
-            # For entity values, compare Q-numbers; for literals, string-compare
             if _value_matches(stmt.value, object_val):
-                return KBVerdict(
-                    verdict=KBVerdictType.VERIFIED,
-                    matched_statement=stmt,
-                    subject_kb_id=subject_id,
-                    trace={"entity": subject_id, "property": meta.kb_property},
-                )
-            elif _scope_compatible(stmt, claim, current_time):
-                # Same property, compatible scope, but different value → contradiction
-                contradicted_statement = stmt
+                return KBVerdictType.VERIFIED, stmt
+            if scope_mismatch is None:
+                scope_mismatch = stmt
 
-        if contradicted_statement is not None:
-            return KBVerdict(
-                verdict=KBVerdictType.CONTRADICTED,
-                matched_statement=contradicted_statement,
-                subject_kb_id=subject_id,
-                trace={"entity": subject_id, "property": meta.kb_property, "kb_value": contradicted_statement.value},
-            )
+        if scope_mismatch is not None and meta.single_valued:
+            return KBVerdictType.CONTRADICTED, scope_mismatch
+        return KBVerdictType.NO_MATCH, None
 
-        return KBVerdict(
-            verdict=KBVerdictType.NO_MATCH,
-            subject_kb_id=subject_id,
-            trace={"reason": "scope_mismatch_or_no_value_match"},
-        )
+
+def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:
+    """Apply claim polarity to a positive-content verdict (C1).
+
+    For an asserted claim (polarity 1) the verdict is unchanged. For a negated
+    claim (polarity 0) a KB-verified positive triple makes the negation
+    CONTRADICTED and a KB-contradicted positive triple makes it VERIFIED.
+    NO_MATCH carries no polarity information and is unchanged.
+    """
+    if polarity == 1:
+        return pos_verdict
+    if pos_verdict == KBVerdictType.VERIFIED:
+        return KBVerdictType.CONTRADICTED
+    if pos_verdict == KBVerdictType.CONTRADICTED:
+        return KBVerdictType.VERIFIED
+    return pos_verdict
 
 
 def _value_matches(kb_value, claim_object: str) -> bool:
