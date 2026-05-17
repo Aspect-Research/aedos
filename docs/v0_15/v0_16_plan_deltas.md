@@ -9,7 +9,9 @@ implementation plan — they are recorded here for whoever writes the v0.16 plan
 - **D12–D17** were identified by the re-audit (`reaudit_report.md` §3). D12 and
   D17 carry fixup-2 updates where the underlying defect was resolved in code.
 - **D18–D19** were noticed in passing during the second fix-up (fix-up 2),
-  out of that fix-up's named scope.
+  out of that fix-up's named scope. Both carry fix-up 3 updates: D19 was
+  resolved, D18 was confirmed out of Phase 10.5 scope.
+- **D20** was added by the third fix-up (fix-up 3).
 
 ---
 
@@ -231,6 +233,15 @@ not part of the architecture (§4.6) — but it makes the chat-wrapper deploymen
 verification-inert. v0.16 should fix the call to pass an `ExtractionContext`
 and add an end-to-end `/chat` test that asserts claims are actually extracted.
 
+**Update (fixup-3).** Confirmed **out of Phase 10.5 scope** by fix-up 3's scope
+check 2 (`docs/v0_15/fixup3_scope.md`): `benchmark.py`'s `AedosRunner.run_case`
+builds the verification pipeline via `build_pipeline` and calls
+`extractor.extract` / `walker.walk` / `aggregator.aggregate` directly
+(`benchmark.py:189,194,203-204`) — it never routes through `/chat`. The
+calibration corpus runner is likewise direct. So D18 does not distort Phase
+10.5's measurement. It remains v0.16-scope: the `/chat` chat-wrapper deployment
+is still verification-inert until the `ExtractionContext` signature is fixed.
+
 ### D19 — The KB verifier ignores `slot_to_qualifier`; inverse predicates look up the wrong entity
 
 `KBVerifier.verify` resolves `claim.subject` and calls
@@ -243,6 +254,37 @@ and add an end-to-end `/chat` test that asserts claims are actually extracted.
 predicates (D4). The KB path for every inverse-direction seed predicate is
 therefore inert. v0.16 should make the KB verifier honor `slot_to_qualifier`'s
 subject/object direction (resolve and look up against the entity the KB
-actually keys the statement on). Phase 10.5 `kb_mapping`/`derivation` cases over
-`capital_of`, `mother_of` will abstain until then — a capability gap, not a
-calibration failure.
+actually keys the statement on).
+
+**Update (fixup-3).** **Resolved.** Fix-up 3's Cluster D19 (`6a6a466`) added
+`_lookup_targets` to `kb_verifier.py`: `verify` now reads `slot_to_qualifier`,
+keys the lookup on whichever entity the KB stores the statement on (the claim's
+object for an inverse predicate), and compares against the other slot. The two
+inverse seed predicates (`capital_of`, `mother_of`) produce real verdicts; the
+trace records the direction as `lookup_inverted`. An uninterpretable
+`slot_to_qualifier` abstains with `NO_KB_PATH` rather than crashing. Phase 10.5
+`kb_mapping`/`derivation` cases over `capital_of`/`mother_of` no longer abstain
+for this reason. What remains for v0.16 is the **architecture wording**: §5.2 /
+§6.2 should state that `slot_to_qualifier` governs the KB lookup direction (see
+D20). Per-predicate detail in `docs/v0_15/fixup3_report.md`.
+
+### D20 — KB verifier trace field names and architecture lookup-direction wording
+
+Fix-up 3 (D19) made the KB verifier's lookup direction depend on
+`slot_to_qualifier`. Two follow-ups for v0.16, both cosmetic / documentation —
+neither blocks anything:
+
+1. **Trace field names.** `KBVerdict.trace` keeps the field names
+   `object_resolved`, `object_value`, and the abstention reasons
+   `subject_unresolved` / `object_unresolved`. Read as KB-*statement*-relative
+   (statement subject / statement value) they are correct under both lookup
+   directions, and the `lookup_inverted` flag disambiguates; fix-up 3 kept them
+   to avoid churning the four fixup-2 N1 tests and the walker. A future audit
+   may prefer direction-neutral names (`value_resolved`,
+   `lookup_subject_unresolved`, …). If renamed, every trace consumer must be
+   updated together.
+2. **Architecture wording.** The architecture §5.2 (predicate_translation
+   schema) and §6.2 (`lookup_statements`) describe the KB lookup as keyed on the
+   claim subject. They should state that `slot_to_qualifier`'s subject/object
+   direction governs which entity the lookup is keyed on, so the document and
+   the D19 implementation agree.
