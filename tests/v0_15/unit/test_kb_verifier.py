@@ -27,11 +27,12 @@ from src.aedos_v0_15.llm.client import LLMClient
 
 class MockTransport:
     def __init__(self, routing_hint="kb_resolvable", kb_property="P39",
-                 object_type="entity", single_valued=0):
+                 object_type="entity", single_valued=0, slot_to_qualifier=None):
         self._hint = routing_hint
         self._prop = kb_property
         self._object_type = object_type
         self._single_valued = single_valued
+        self._sq = slot_to_qualifier
 
     def extract_with_tool(self, *a, **kw):
         return {
@@ -41,7 +42,7 @@ class MockTransport:
             "routing_hint": self._hint,
             "kb_namespace": "wikidata" if self._hint == "kb_resolvable" else None,
             "kb_property": self._prop if self._hint == "kb_resolvable" else None,
-            "slot_to_qualifier": None,
+            "slot_to_qualifier": self._sq,
             "single_valued": self._single_valued,
             "reason": "test",
         }
@@ -83,9 +84,11 @@ class MockKB:
 
 
 def _make_verifier(statements, routing_hint="kb_resolvable", kb_property="P39",
-                   object_type="entity", single_valued=0, resolutions=None):
+                   object_type="entity", single_valued=0, resolutions=None,
+                   slot_to_qualifier=None):
     db = open_memory_db()
-    transport = MockTransport(routing_hint, kb_property, object_type, single_valued)
+    transport = MockTransport(routing_hint, kb_property, object_type, single_valued,
+                              slot_to_qualifier)
     client = LLMClient(_transport=transport)
     pt = PredicateTranslation(db=db, llm_client=client)
     kb = MockKB(statements, resolutions)
@@ -379,3 +382,29 @@ class TestKBVerifierCaseInsensitive:
         verifier = _make_verifier(stmts, kb_property="P39")
         result = verifier.verify(_claim(object_val="President"))
         assert result.verdict == KBVerdictType.VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# TestKBVerifierInverseMapping  (D19: the verifier honors slot_to_qualifier;
+# an uninterpretable mapping abstains cleanly rather than guessing or crashing.
+# Behavioral coverage of the inverse seed predicates lives in the integration
+# test tests/v0_15/integration/test_inverse_predicate_kb.py.)
+# ---------------------------------------------------------------------------
+
+class TestKBVerifierInverseMapping:
+    def test_unsupported_slot_to_qualifier_is_no_kb_path(self):
+        # A slot_to_qualifier the verifier cannot interpret — here the subject
+        # is mapped to a qualifier, which is neither statement_subject nor
+        # statement_value. _lookup_targets cannot decide a direction, so verify
+        # abstains with NO_KB_PATH and a clear trace note. It must NOT crash
+        # (no NotImplementedError) and must NOT silently guess the standard
+        # direction. Pre-D19 the verifier ignored slot_to_qualifier entirely
+        # and would have returned VERIFIED here.
+        stmts = [Statement(value="Q11696", value_type="entity")]
+        verifier = _make_verifier(
+            stmts,
+            slot_to_qualifier={"subject": "qualifier:P580", "object": "statement_value"},
+        )
+        result = verifier.verify(_claim())
+        assert result.verdict == KBVerdictType.NO_KB_PATH
+        assert result.trace.get("reason") == "unsupported_slot_to_qualifier"
