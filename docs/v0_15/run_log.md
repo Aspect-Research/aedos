@@ -74,7 +74,9 @@ This file records one entry per phase of the unattended overnight build.
 
 - Commit SHA: 7b1a2b7
 - Tag: v0.15-phase-6-complete
-- Test count: 39 new (434 cumulative; target was ~50 new; all pass)
+- Test count: 39 new (434 cumulative; target was ~80 new per the implementation
+  plan Phase 6 and phase_6_plan.md:32 — 39 is ~51% under target; the original
+  entry misquoted the target as "~50". Corrected during fix-up 1 per audit M6.)
 - Calibration corpus: derivation_corpus.jsonl (50 cases: multi_hop_distribution 12, cross_source 10, entity_disambiguation 8, predicate_translation 8, belief_revision 6, abstention 6)
 - Ambiguities resolved this phase: 3 (wall_clock budget negative-threshold trick; MockTransport purpose= dispatch; BudgetExceeded exception shape)
 - Blockers: wall_clock budget tests initially used 0.0 threshold — fixed to -1.0 so elapsed > threshold is always true on first check
