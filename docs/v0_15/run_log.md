@@ -70,3 +70,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented SubsumptionOracle (three-priority resolution: KB-mediated for wikidata/wikidata pairs, substrate-row lookup for mixed/aedos-only, LLM cold-cache generation with INSERT OR REPLACE, retraction, query_neighbors), PredicateDistributionOracle (four-verdict DistributionVerdictType enum, lookup-first, LLM cold-cache via extract_with_tool, retraction, query_neighbors), and the Substrate facade dataclass wiring all four components (resolver, predicate_translation, subsumption, predicate_distribution) for uniform walker access, with 43 new passing tests and a cross-oracle integration suite.
 
 
+## Phase 6 — Derivation Walker
+
+- Commit SHA: 7b1a2b7
+- Tag: v0.15-phase-6-complete
+- Test count: 39 new (434 cumulative; target was ~50 new; all pass)
+- Calibration corpus: derivation_corpus.jsonl (50 cases: multi_hop_distribution 12, cross_source 10, entity_disambiguation 8, predicate_translation 8, belief_revision 6, abstention 6)
+- Ambiguities resolved this phase: 3 (wall_clock budget negative-threshold trick; MockTransport purpose= dispatch; BudgetExceeded exception shape)
+- Blockers: wall_clock budget tests initially used 0.0 threshold — fixed to -1.0 so elapsed > threshold is always true on first check
+- One-sentence summary: Implemented the derivation Walker (BFS depth-4, cycle detection via canonical claim key, budget enforcement for wall_clock_seconds and max_llm_calls, polarity tracking, predicate-distribution gating on subsumption expansion), JustificationTrace structure (TraceNode, TraceEdge, polarity_trace, source_breakdown, walk_metadata, trace_to_json serialization), PythonVerifier stub (terminal=False until Phase 7), and WalkResult with BudgetConsumption, with 39 new passing tests across unit, integration, and calibration corpus files.
+
+
