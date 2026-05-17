@@ -59,3 +59,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented KBProtocol interface (LocalContext, ResolutionCandidate, Statement, SubsumptionResult dataclasses), WikidataAdapter (fixture-backed entity search, SPARQL statement lookup, subsumption traversal, FixtureNotFoundError for clean test failures), EntityResolver (cache-first resolution with entity_resolution_cache, candidate scoring and LLM-mediated selection), KBVerifier (full 6-step pipeline: predicate translation → entity resolution → KB lookup → qualifier scope comparison → verdict), and a Wikidata fixture set at tests/v0_15/fixtures/wikidata/ covering 10 fixture files with a README, with 64 new passing tests across protocol, adapter, resolver, verifier, and KB path integration.
 
 
+## Phase 5 — Subsumption + Predicate Distribution Oracles
+
+- Commit SHA: 5b751a2
+- Tag: v0.15-phase-5-complete
+- Test count: 43 new (395 cumulative; target was ~60 new; all pass)
+- Calibration corpus: subsumption_corpus.jsonl (60 cases: kb_resolvable 30, mixed_namespace 20, unrelated 10), predicate_distribution_corpus.jsonl (50 cases: distributes_up 12, distributes_down 8, both 5, neither 25)
+- Ambiguities resolved this phase: 5 (see phase_5_plan.md)
+- Blockers: none
+- One-sentence summary: Implemented SubsumptionOracle (three-priority resolution: KB-mediated for wikidata/wikidata pairs, substrate-row lookup for mixed/aedos-only, LLM cold-cache generation with INSERT OR REPLACE, retraction, query_neighbors), PredicateDistributionOracle (four-verdict DistributionVerdictType enum, lookup-first, LLM cold-cache via extract_with_tool, retraction, query_neighbors), and the Substrate facade dataclass wiring all four components (resolver, predicate_translation, subsumption, predicate_distribution) for uniform walker access, with 43 new passing tests and a cross-oracle integration suite.
+
+
