@@ -123,6 +123,17 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log(occurred_at);
 
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
+    # Migration guard (N6): a database created before single_valued was added
+    # to predicate_translation lacks the column — CREATE TABLE IF NOT EXISTS
+    # will not add it to an existing table. ALTER it in idempotently. On a
+    # fresh DB the column already exists from the CREATE above, so the ALTER
+    # raises OperationalError ("duplicate column name") and is swallowed.
+    try:
+        conn.execute(
+            "ALTER TABLE predicate_translation ADD COLUMN single_valued INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
 
 

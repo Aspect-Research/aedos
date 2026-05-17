@@ -92,7 +92,7 @@ class TestPredicateTranslationSchema:
         required = {
             "id", "aedos_predicate", "object_type", "user_subject_required",
             "distinct_slots", "routing_hint", "kb_namespace", "kb_property",
-            "slot_to_qualifier", "reason", "created_at",
+            "slot_to_qualifier", "single_valued", "reason", "created_at",
             "last_consulted_at", "used_count", "retracted_at", "retraction_reason",
         }
         assert required.issubset(cols)
@@ -179,3 +179,51 @@ class TestEntityResolutionCacheSchema:
             "retracted_at", "retraction_reason",
         }
         assert required.issubset(cols)
+
+
+# ---------------------------------------------------------------------------
+# TestSingleValuedMigration  (N6: create_schema migrates a pre-fixup DB that
+# lacks the single_valued column on predicate_translation)
+# ---------------------------------------------------------------------------
+
+class TestSingleValuedMigration:
+    def test_alter_table_adds_missing_column(self):
+        from src.aedos_v0_15.database import create_schema
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        # Simulate a pre-fixup database: predicate_translation WITHOUT the
+        # single_valued column, holding one existing row.
+        conn.execute(
+            "CREATE TABLE predicate_translation ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, aedos_predicate TEXT NOT NULL, "
+            "object_type TEXT NOT NULL, routing_hint TEXT NOT NULL, "
+            "reason TEXT NOT NULL, created_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO predicate_translation "
+            "(aedos_predicate, object_type, routing_hint, reason, created_at) "
+            "VALUES ('born_in', 'entity', 'kb_resolvable', 'pre-fixup row', '2026-01-01')"
+        )
+        conn.commit()
+        assert "single_valued" not in _column_names(conn, "predicate_translation")
+
+        create_schema(conn)  # the migration guard runs here
+
+        assert "single_valued" in _column_names(conn, "predicate_translation")
+        row = conn.execute(
+            "SELECT single_valued FROM predicate_translation WHERE aedos_predicate='born_in'"
+        ).fetchone()
+        assert row["single_valued"] == 0  # the existing row gets the safe default
+        conn.close()
+
+    def test_create_schema_idempotent_on_fresh_db(self):
+        # On a fresh DB the column already exists from CREATE TABLE; the ALTER
+        # raises OperationalError and is swallowed. A second create_schema call
+        # must not raise either.
+        from src.aedos_v0_15.database import create_schema
+
+        conn = open_memory_db()  # already ran create_schema once
+        create_schema(conn)      # second call — must not raise
+        assert "single_valued" in _column_names(conn, "predicate_translation")
+        conn.close()

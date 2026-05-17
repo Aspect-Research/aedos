@@ -22,6 +22,37 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _is_inverse_mapping(sq_a_raw, sq_b_raw) -> bool:
+    """True if two slot_to_qualifier maps are exact subject/object inversions
+    of each other (N5).
+
+    Inverse predicates — e.g. ``capital_of`` and ``has_capital``, both mapped
+    to Wikidata P36 — legitimately map to the same KB property with subject and
+    object swapped. The ``transitive_equivalence_violation`` rule must not flag
+    such a pair as a conflict. Two maps qualify as inverses when A's subject is
+    B's object, A's object is B's subject, and every other key is identical.
+    Any other form of divergence on the same KB property remains a conflict.
+    """
+    if sq_a_raw is None or sq_b_raw is None:
+        return False
+    try:
+        a = json.loads(sq_a_raw) if isinstance(sq_a_raw, str) else sq_a_raw
+        b = json.loads(sq_b_raw) if isinstance(sq_b_raw, str) else sq_b_raw
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    if a.keys() != b.keys():
+        return False
+    if "subject" not in a or "object" not in a:
+        return False
+    # subject/object must be a clean swap...
+    if a.get("subject") != b.get("object") or a.get("object") != b.get("subject"):
+        return False
+    # ...and every other key must be identical.
+    return all(a[k] == b[k] for k in a if k not in ("subject", "object"))
+
+
 class ConsistencyChecker:
     def __init__(
         self,
@@ -123,6 +154,11 @@ class ConsistencyChecker:
 
         for c in conflicts:
             if c["slot_to_qualifier"] != sq:
+                # N5: inverse predicates (capital_of / has_capital) map to the
+                # same KB property with subject/object swapped. That is a
+                # legitimate inverse pair, not an incompatible mapping — skip it.
+                if _is_inverse_mapping(sq, c["slot_to_qualifier"]):
+                    continue
                 return ConsistencyResult(
                     status="conflict",
                     inconsistency_class="transitive_equivalence_violation",

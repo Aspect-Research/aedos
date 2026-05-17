@@ -34,9 +34,13 @@ RUN_CALIBRATION = os.environ.get("RUN_CALIBRATION") == "1"
 _CORPUS_DIR = Path(__file__).parent
 
 
-# Per-corpus acceptance thresholds — verbatim from the implementation plan's
-# "Calibration deferral policy" table. Single-number floors; the two corpora
-# the plan gives a compound bar for are noted inline.
+# Per-corpus acceptance thresholds — the SINGLE SOURCE OF TRUTH for the Phase
+# 10.5 calibration thresholds (N7). Values are verbatim from the implementation
+# plan's "Calibration deferral policy" table; the two corpora the plan gives a
+# compound bar for keep the runner-asserted floor here and note the compound
+# bar inline. The Phase 10.5 runbook's Step 4 threshold table is checked against
+# this dict by tests/v0_15/unit/test_runbook_thresholds.py — change a threshold
+# here and the runbook table; the doc-test catches any divergence.
 THRESHOLDS: dict[str, float] = {
     "extraction_corpus": 0.90,
     "predicate_metadata_corpus": 0.85,

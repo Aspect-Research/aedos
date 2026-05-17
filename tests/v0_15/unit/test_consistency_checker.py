@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src.aedos_v0_15.database import open_memory_db
@@ -109,6 +111,52 @@ class TestTransitiveEquivalenceViolation:
         row_b = _insert_pt(db, "occupied_position", "wikidata", "P131", '{"end": "P582"}')
         result = checker.check_on_write("predicate_translation", row_b)
         assert result.status == "pass"
+
+
+# ---------------------------------------------------------------------------
+# TestInversePredicates  (N5: inverse predicates capital_of / has_capital map
+# to the same KB property with subject/object swapped — a legitimate inverse
+# pair, not a transitive_equivalence_violation conflict)
+# ---------------------------------------------------------------------------
+
+class TestInversePredicates:
+    _CAPITAL_OF = json.dumps({"subject": "statement_value", "object": "statement_subject"})
+    _HAS_CAPITAL = json.dumps({"subject": "statement_subject", "object": "statement_value"})
+
+    def test_inverse_predicates_on_write_no_conflict(self):
+        db = open_memory_db()
+        checker = ConsistencyChecker(db)
+        _insert_pt(db, "capital_of", "wikidata", "P36", self._CAPITAL_OF)
+        row_b = _insert_pt(db, "has_capital", "wikidata", "P36", self._HAS_CAPITAL)
+        result = checker.check_on_write("predicate_translation", row_b)
+        assert result.status == "pass"
+
+    def test_inverse_predicates_periodic_scan_no_conflict(self):
+        # The architecturally-mandated periodic scan (§5.4) must not flag — and
+        # so must not retract-both — the hand-curated capital_of / has_capital
+        # seeds. Pre-N5 this returned a conflict.
+        db = open_memory_db()
+        checker = ConsistencyChecker(db)
+        _insert_pt(db, "capital_of", "wikidata", "P36", self._CAPITAL_OF)
+        _insert_pt(db, "has_capital", "wikidata", "P36", self._HAS_CAPITAL)
+        conflicts = checker.check_periodic()
+        assert conflicts == []
+
+    def test_swapped_with_extra_divergence_still_conflicts(self):
+        # subject/object swapped BUT a third key also diverges — not a clean
+        # inverse, so the conflict still fires (direction-awareness is precise,
+        # not a blanket exemption for same-property pairs).
+        db = open_memory_db()
+        checker = ConsistencyChecker(db)
+        a = json.dumps({"subject": "statement_value", "object": "statement_subject",
+                        "start": "qualifier:P580"})
+        b = json.dumps({"subject": "statement_subject", "object": "statement_value",
+                        "start": "qualifier:P999"})
+        _insert_pt(db, "pred_a", "wikidata", "P100", a)
+        row_b = _insert_pt(db, "pred_b", "wikidata", "P100", b)
+        result = checker.check_on_write("predicate_translation", row_b)
+        assert result.status == "conflict"
+        assert result.inconsistency_class == "transitive_equivalence_violation"
 
 
 # ---------------------------------------------------------------------------
