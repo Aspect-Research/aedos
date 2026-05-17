@@ -114,3 +114,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented ChatWrapper with four-move intervention model (select_intervention: deterministic rules on >50% declining, any contradicted correcting, any abstained noting; build_response: pass_through/abstain/correct/decline text generation), InterventionType enum, ChatResponse dataclass, FastAPI POST /chat and GET /verification/{id} endpoints with lazy initialization of full pipeline from DB lifespan, in-memory verification store for session-local verification retrieval, and authored a 30-case intervention corpus covering all four intervention types with adversarial boundary cases (exactly 50% contradicted → correct not decline), with 30 new passing tests.
 
 
+## Phase 10 — Hardening + Seeds + Cold-Start Docs + Evaluation Scaffolding
+
+- Commit SHA: 1f617d1
+- Tag: v0.15-phase-10-complete
+- Test count: 71 new (623 cumulative; target was ~40 new; all pass; 1 skipped/deferred)
+- Calibration corpus: medium_bar_test_set.jsonl (122 cases across 6 failure modes: multi_hop_distribution 20, cross_source_unification 18, entity_disambiguation 16, predicate_translation 18, belief_revision 10, principled_abstention 20, bonus 20)
+- Ambiguities resolved this phase: 3 (SQLite NULL≠NULL in UNIQUE prevents INSERT OR REPLACE idempotency for null-kb_namespace seeds — fixed with DELETE+INSERT; zero-seed latency test uses >= 0 not > 0 for Windows timer granularity; benchmark structural self-test uses mock results not live run)
+- Blockers: none
+- One-sentence summary: Implemented the optional predicate translation seed pack (65 entries spanning 7 category groups, idempotent load_seeds.py with NULL-namespace fix), cold-start zero-seed test scaffolding (10 representative claims across all routing paths, deferred live execution), audit-log query endpoint tests (23 new integration tests confirming all four /audit/* endpoints return correct event types and respect limit parameter), medium-bar evaluation scaffolding (122-case test set across six failure modes, benchmark.py with AedosRunner/BaselineRunner/MetricsComputer/generate_report, structural self-test confirming harness wiring), and all three Phase 10.5 handoff documents (cold_start.md, evaluation_methodology.md, phase_10_5_runbook.md), with 71 new passing tests.
+
+
