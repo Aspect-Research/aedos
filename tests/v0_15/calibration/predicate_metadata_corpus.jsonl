@@ -1,1 +1,80 @@
-﻿
+{"id": "pred_ua_001", "aedos_predicate": "prefers", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1, "object_type": "entity"}, "notes": "preference is user-authoritative; asserting party is ground truth"}
+{"id": "pred_ua_002", "aedos_predicate": "believes", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1, "object_type": "proposition"}, "notes": "propositional attitude"}
+{"id": "pred_ua_003", "aedos_predicate": "wants", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "desire is authoritative"}
+{"id": "pred_ua_004", "aedos_predicate": "intends", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "intention"}
+{"id": "pred_ua_005", "aedos_predicate": "feels", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "subjective state"}
+{"id": "pred_ua_006", "aedos_predicate": "thinks", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1, "object_type": "proposition"}, "notes": "thinks = believes"}
+{"id": "pred_ua_007", "aedos_predicate": "dislikes", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "negative preference"}
+{"id": "pred_ua_008", "aedos_predicate": "remembers", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "memory is authoritative"}
+{"id": "pred_ua_009", "aedos_predicate": "fears", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "fear is subjective"}
+{"id": "pred_ua_010", "aedos_predicate": "hopes", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "hope is authoritative"}
+{"id": "pred_ua_011", "aedos_predicate": "experienced", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "personal experience is authoritative"}
+{"id": "pred_ua_012", "aedos_predicate": "rates", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "adversarial: ratings sound factual but are user-authoritative"}
+{"id": "pred_ua_013", "aedos_predicate": "enjoys", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "subjective enjoyment"}
+{"id": "pred_ua_014", "aedos_predicate": "recommends", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "recommendations are authoritative"}
+{"id": "pred_ua_015", "aedos_predicate": "claims", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1, "object_type": "proposition"}, "notes": "claims = asserts (first-person)"}
+{"id": "pred_ua_016", "aedos_predicate": "estimates", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "estimates are authoritative"}
+{"id": "pred_ua_017", "aedos_predicate": "ranks", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "adversarial: user rankings"}
+{"id": "pred_ua_018", "aedos_predicate": "prioritizes", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "priority is subjective"}
+{"id": "pred_ua_019", "aedos_predicate": "approves_of", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1}, "notes": "approval is subjective"}
+{"id": "pred_ua_020", "aedos_predicate": "disagrees_with", "expected_metadata": {"routing_hint": "user_authoritative", "user_subject_required": 1, "object_type": "proposition"}, "notes": "disagreement is authoritative"}
+{"id": "pred_py_001", "aedos_predicate": "is_greater_than", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "numeric comparison"}
+{"id": "pred_py_002", "aedos_predicate": "is_less_than", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "numeric comparison"}
+{"id": "pred_py_003", "aedos_predicate": "equals", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "numeric equality"}
+{"id": "pred_py_004", "aedos_predicate": "is_divisible_by", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "arithmetic predicate"}
+{"id": "pred_py_005", "aedos_predicate": "is_before", "expected_metadata": {"routing_hint": "python", "object_type": "time"}, "notes": "temporal ordering"}
+{"id": "pred_py_006", "aedos_predicate": "is_after", "expected_metadata": {"routing_hint": "python", "object_type": "time"}, "notes": "temporal ordering"}
+{"id": "pred_py_007", "aedos_predicate": "has_length_of", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "quantitative measurement"}
+{"id": "pred_py_008", "aedos_predicate": "has_sum", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "arithmetic"}
+{"id": "pred_py_009", "aedos_predicate": "is_multiple_of", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "arithmetic"}
+{"id": "pred_py_010", "aedos_predicate": "duration_is", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "time duration"}
+{"id": "pred_py_011", "aedos_predicate": "is_similar_to", "expected_metadata": {"routing_hint": "abstain"}, "notes": "adversarial: looks quantitative but not reducible to deterministic computation"}
+{"id": "pred_py_012", "aedos_predicate": "has_count", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "counting"}
+{"id": "pred_py_013", "aedos_predicate": "is_between", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "range check"}
+{"id": "pred_py_014", "aedos_predicate": "is_prime", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "mathematical property"}
+{"id": "pred_py_015", "aedos_predicate": "chronologically_precedes", "expected_metadata": {"routing_hint": "python", "object_type": "time"}, "notes": "temporal ordering variant"}
+{"id": "pred_kb_001", "aedos_predicate": "holds_role", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P39", "object_type": "entity"}, "notes": "position held"}
+{"id": "pred_kb_002", "aedos_predicate": "born_in", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P19", "object_type": "entity"}, "notes": "place of birth P19"}
+{"id": "pred_kb_003", "aedos_predicate": "died_in", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P20", "object_type": "entity"}, "notes": "place of death P20"}
+{"id": "pred_kb_004", "aedos_predicate": "has_nationality", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P27", "object_type": "entity"}, "notes": "country of citizenship P27"}
+{"id": "pred_kb_005", "aedos_predicate": "educated_at", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P69", "object_type": "entity"}, "notes": "educated at P69"}
+{"id": "pred_kb_006", "aedos_predicate": "employed_by", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P108", "object_type": "entity"}, "notes": "employer P108"}
+{"id": "pred_kb_007", "aedos_predicate": "located_in", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P131", "object_type": "entity"}, "notes": "located in administrative entity P131"}
+{"id": "pred_kb_008", "aedos_predicate": "part_of", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P361", "object_type": "entity", "distinct_slots_required": true}, "notes": "part of P361; distinct_slots=[subject,object]"}
+{"id": "pred_kb_009", "aedos_predicate": "instance_of", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P31", "object_type": "entity"}, "notes": "instance of P31"}
+{"id": "pred_kb_010", "aedos_predicate": "has_population", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P1082", "object_type": "quantity"}, "notes": "population P1082"}
+{"id": "pred_kb_011", "aedos_predicate": "has_capital", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P36", "object_type": "entity"}, "notes": "capital P36"}
+{"id": "pred_kb_012", "aedos_predicate": "has_official_language", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P37", "object_type": "entity"}, "notes": "official language P37"}
+{"id": "pred_kb_013", "aedos_predicate": "received_award", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P166", "object_type": "entity"}, "notes": "award received P166"}
+{"id": "pred_kb_014", "aedos_predicate": "authored", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "object_type": "entity"}, "notes": "author - P50 or P57 depending on media type"}
+{"id": "pred_kb_015", "aedos_predicate": "founded", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P112", "object_type": "entity"}, "notes": "founded by P112"}
+{"id": "pred_kb_016", "aedos_predicate": "has_parent", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "object_type": "entity"}, "notes": "father P22 or mother P25"}
+{"id": "pred_kb_017", "aedos_predicate": "has_spouse", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P26", "object_type": "entity"}, "notes": "spouse P26"}
+{"id": "pred_kb_018", "aedos_predicate": "member_of", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P463", "object_type": "entity"}, "notes": "member of P463"}
+{"id": "pred_kb_019", "aedos_predicate": "has_area", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P2046", "object_type": "quantity"}, "notes": "area P2046"}
+{"id": "pred_kb_020", "aedos_predicate": "has_height", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P2048", "object_type": "quantity"}, "notes": "height P2048"}
+{"id": "pred_kb_021", "aedos_predicate": "has_headquarters", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P159", "object_type": "entity"}, "notes": "headquarters P159"}
+{"id": "pred_kb_022", "aedos_predicate": "graduated_from", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P69", "object_type": "entity"}, "notes": "educated at - same as educated_at in different surface form; adversarial same KB property"}
+{"id": "pred_kb_023", "aedos_predicate": "affiliated_with", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "object_type": "entity"}, "notes": "affiliation - P1416 employer or P463 member of"}
+{"id": "pred_kb_024", "aedos_predicate": "has_currency", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P38", "object_type": "entity"}, "notes": "currency P38"}
+{"id": "pred_kb_025", "aedos_predicate": "successor_of", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P1365", "object_type": "entity"}, "notes": "replaces P1365"}
+{"id": "pred_kb_026", "aedos_predicate": "has_isbn", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "object_type": "entity"}, "notes": "adversarial: ISBN is a structured identifier; kb_resolvable but unusual object_type"}
+{"id": "pred_kb_027", "aedos_predicate": "co_founded", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P112", "object_type": "entity"}, "notes": "co-founded = founded_by P112; same kb_property as founded - consistency-check trigger"}
+{"id": "pred_kb_028", "aedos_predicate": "has_ceo", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "object_type": "entity"}, "notes": "CEO - P169 chief executive officer"}
+{"id": "pred_kb_029", "aedos_predicate": "has_age", "expected_metadata": {"routing_hint": "python", "object_type": "quantity"}, "notes": "adversarial: age looks kb_resolvable but is computed from birth date - should be python"}
+{"id": "pred_kb_030", "aedos_predicate": "place_of_birth", "expected_metadata": {"routing_hint": "kb_resolvable", "kb_namespace": "wikidata", "kb_property": "P19", "object_type": "entity"}, "notes": "adversarial: same P19 as born_in - different surface form, same property"}
+{"id": "pred_abstain_001", "aedos_predicate": "metaphorically_represents", "expected_metadata": {"routing_hint": "abstain"}, "notes": "metaphor has no KB encoding"}
+{"id": "pred_abstain_002", "aedos_predicate": "symbolizes", "expected_metadata": {"routing_hint": "abstain"}, "notes": "symbolism is not KB-encoded"}
+{"id": "pred_abstain_003", "aedos_predicate": "could_be", "expected_metadata": {"routing_hint": "abstain"}, "notes": "adversarial: modal predicate - not verifiable"}
+{"id": "pred_abstain_004", "aedos_predicate": "might_have", "expected_metadata": {"routing_hint": "abstain"}, "notes": "adversarial: modal - not verifiable"}
+{"id": "pred_abstain_005", "aedos_predicate": "caused", "expected_metadata": {"routing_hint": "abstain"}, "notes": "adversarial: causation is not KB-encoded in general"}
+{"id": "pred_abstain_006", "aedos_predicate": "influenced", "expected_metadata": {"routing_hint": "abstain"}, "notes": "influence is not deterministically verifiable"}
+{"id": "pred_abstain_007", "aedos_predicate": "is_better_than", "expected_metadata": {"routing_hint": "abstain"}, "notes": "adversarial: sounds comparative but is not numeric - abstain unless quantity"}
+{"id": "pred_abstain_008", "aedos_predicate": "deserves", "expected_metadata": {"routing_hint": "abstain"}, "notes": "normative predicate - not verifiable"}
+{"id": "pred_abstain_009", "aedos_predicate": "means", "expected_metadata": {"routing_hint": "abstain"}, "notes": "semantic predicate - no KB encoding"}
+{"id": "pred_abstain_010", "aedos_predicate": "is_inspired_by", "expected_metadata": {"routing_hint": "abstain"}, "notes": "inspiration is not KB-verifiable"}
+{"id": "pred_ambig_001", "aedos_predicate": "rating", "notes": "adversarial: could be user_authoritative (subjective) or kb_resolvable (IMDb rating); deployment-dependent", "expected_metadata": {"routing_hint_options": ["user_authoritative", "kb_resolvable"]}}
+{"id": "pred_ambig_002", "aedos_predicate": "is_popular_in", "notes": "adversarial: popularity is vague; could be abstain or kb_resolvable depending on measurement", "expected_metadata": {"routing_hint_options": ["abstain", "kb_resolvable"]}}
+{"id": "pred_ambig_003", "aedos_predicate": "succeeded", "notes": "adversarial: succeeded in (completed task) is different from succeeded (replaced a position); context determines", "expected_metadata": {"routing_hint_options": ["abstain", "kb_resolvable"]}}
+{"id": "pred_ambig_004", "aedos_predicate": "has_score", "notes": "adversarial: test score (kb_resolvable) vs user's score (user_authoritative)", "expected_metadata": {"routing_hint_options": ["user_authoritative", "kb_resolvable"]}}
+{"id": "pred_ambig_005", "aedos_predicate": "responded_to", "notes": "adversarial: social context (user_authoritative) vs historical event response (kb_resolvable)", "expected_metadata": {"routing_hint_options": ["user_authoritative", "kb_resolvable", "abstain"]}}
