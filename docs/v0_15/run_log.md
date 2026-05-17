@@ -17,7 +17,7 @@ This file records one entry per phase of the unattended overnight build.
 
 ## Phase 1 — Extraction (Layer 1)
 
-- Commit SHA: (set after commit)
+- Commit SHA: 9f8728a
 - Tag: v0.15-phase-1-complete
 - Test count: 122 new (200 cumulative; target was ~80 new / ~158 cumulative; all pass)
 - Calibration corpus: tests/v0_15/calibration/extraction_corpus.jsonl — 60 cases across 5 sub-categories (normalization 15, decomposition 10, temporal 15, hard-claim discipline 7, first-person 10)
