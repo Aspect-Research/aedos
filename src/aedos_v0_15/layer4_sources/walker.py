@@ -247,11 +247,20 @@ class Walker:
                 ))
                 return "contradicted", "kb", 0
 
-        # Python verifier (stubbed until Phase 7)
+        # Python verifier
         if self._python_verifier is not None:
             py_result = self._python_verifier.verify(node)
-            if getattr(py_result, "terminal", False):
+            if py_result.verdict != "no_terminal_result":
                 trace.source_breakdown["python"] = trace.source_breakdown.get("python", 0) + 1
+                trace.edges.append(TraceEdge(
+                    edge_type="premise_lookup",
+                    source=trace.root,
+                    target=TraceNode("python_result", {
+                        "code": getattr(py_result, "generated_code", ""),
+                        "output": str(getattr(py_result, "output", "")),
+                    }),
+                    metadata={"source": "python", "verdict": py_result.verdict},
+                ))
                 return py_result.verdict, "python", 0
 
         return None, "", 0
