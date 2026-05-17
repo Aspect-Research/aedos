@@ -1,0 +1,11 @@
+{
+  "results": {
+    "bindings": [
+      {
+        "value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q771397"},
+        "valueType": {"type": "literal", "value": "entity"},
+        "rank": {"type": "uri", "value": "http://wikiba.se/ontology#PreferredRank"}
+      }
+    ]
+  }
+}

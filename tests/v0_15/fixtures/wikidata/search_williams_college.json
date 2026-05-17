@@ -1,0 +1,14 @@
+{
+  "searchinfo": {"search": "Williams College"},
+  "search": [
+    {
+      "id": "Q49112",
+      "title": "Q49112",
+      "pageid": 49112,
+      "url": "//www.wikidata.org/wiki/Q49112",
+      "description": "liberal arts college in Williamstown, Massachusetts, US",
+      "label": "Williams College",
+      "match": {"type": "label", "language": "en", "text": "Williams College"}
+    }
+  ]
+}

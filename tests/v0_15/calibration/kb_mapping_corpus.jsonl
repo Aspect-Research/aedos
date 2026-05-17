@@ -1,1 +1,40 @@
-﻿
+{"id": "kb_map_001", "category": "kb_resolvable", "predicate": "holds_role", "expected_output": {"kb_property": "P39", "kb_namespace": "wikidata"}, "notes": "position held"}
+{"id": "kb_map_002", "category": "kb_resolvable", "predicate": "born_in", "expected_output": {"kb_property": "P19", "kb_namespace": "wikidata"}, "notes": "place of birth"}
+{"id": "kb_map_003", "category": "kb_resolvable", "predicate": "died_in", "expected_output": {"kb_property": "P20", "kb_namespace": "wikidata"}, "notes": "place of death"}
+{"id": "kb_map_004", "category": "kb_resolvable", "predicate": "employed_by", "expected_output": {"kb_property": "P108", "kb_namespace": "wikidata"}, "notes": "employer"}
+{"id": "kb_map_005", "category": "kb_resolvable", "predicate": "co_founded", "expected_output": {"kb_property": "P112", "kb_namespace": "wikidata"}, "notes": "founded by (reverse: founder of)"}
+{"id": "kb_map_006", "category": "kb_resolvable", "predicate": "located_in", "expected_output": {"kb_property": "P131", "kb_namespace": "wikidata"}, "notes": "located in administrative entity"}
+{"id": "kb_map_007", "category": "kb_resolvable", "predicate": "member_of", "expected_output": {"kb_property": "P463", "kb_namespace": "wikidata"}, "notes": "member of organization"}
+{"id": "kb_map_008", "category": "kb_resolvable", "predicate": "received_award", "expected_output": {"kb_property": "P166", "kb_namespace": "wikidata"}, "notes": "award received"}
+{"id": "kb_map_009", "category": "kb_resolvable", "predicate": "educated_at", "expected_output": {"kb_property": "P69", "kb_namespace": "wikidata"}, "notes": "educated at institution"}
+{"id": "kb_map_010", "category": "kb_resolvable", "predicate": "authored", "expected_output": {"kb_property": "P50", "kb_namespace": "wikidata"}, "notes": "author of work"}
+{"id": "kb_map_011", "category": "kb_resolvable", "predicate": "nationality", "expected_output": {"kb_property": "P27", "kb_namespace": "wikidata"}, "notes": "country of citizenship"}
+{"id": "kb_map_012", "category": "kb_resolvable", "predicate": "part_of", "expected_output": {"kb_property": "P361", "kb_namespace": "wikidata"}, "notes": "part of whole"}
+{"id": "kb_map_013", "category": "kb_resolvable", "predicate": "has_capital", "expected_output": {"kb_property": "P36", "kb_namespace": "wikidata"}, "notes": "capital city"}
+{"id": "kb_map_014", "category": "kb_resolvable", "predicate": "official_language", "expected_output": {"kb_property": "P37", "kb_namespace": "wikidata"}, "notes": "official language of country"}
+{"id": "kb_map_015", "category": "kb_resolvable", "predicate": "head_of_government", "expected_output": {"kb_property": "P6", "kb_namespace": "wikidata"}, "notes": "head of government"}
+{"id": "kb_map_016", "category": "kb_resolvable", "predicate": "instance_of", "expected_output": {"kb_property": "P31", "kb_namespace": "wikidata"}, "notes": "instance of type"}
+{"id": "kb_map_017", "category": "kb_resolvable", "predicate": "subclass_of", "expected_output": {"kb_property": "P279", "kb_namespace": "wikidata"}, "notes": "subclass of"}
+{"id": "kb_map_018", "category": "kb_resolvable", "predicate": "spouse", "expected_output": {"kb_property": "P26", "kb_namespace": "wikidata"}, "notes": "spouse relationship"}
+{"id": "kb_map_019", "category": "kb_resolvable", "predicate": "child_of", "expected_output": {"kb_property": "P40", "kb_namespace": "wikidata"}, "notes": "child relationship"}
+{"id": "kb_map_020", "category": "kb_resolvable", "predicate": "successor_of", "expected_output": {"kb_property": "P1365", "kb_namespace": "wikidata"}, "notes": "replaces"}
+{"id": "kb_map_021", "category": "kb_resolvable", "predicate": "shares_border_with", "expected_output": {"kb_property": "P47", "kb_namespace": "wikidata"}, "notes": "shares border with"}
+{"id": "kb_map_022", "category": "kb_resolvable", "predicate": "headquarters_in", "expected_output": {"kb_property": "P159", "kb_namespace": "wikidata"}, "notes": "headquarters location"}
+{"id": "kb_map_023", "category": "kb_resolvable", "predicate": "parent_organization", "expected_output": {"kb_property": "P749", "kb_namespace": "wikidata"}, "notes": "parent organization"}
+{"id": "kb_map_024", "category": "kb_resolvable", "predicate": "has_population", "expected_output": {"kb_property": "P1082", "kb_namespace": "wikidata"}, "notes": "population"}
+{"id": "kb_map_025", "category": "kb_resolvable", "predicate": "notable_work", "expected_output": {"kb_property": "P800", "kb_namespace": "wikidata"}, "notes": "notable work"}
+{"id": "kb_map_026", "category": "kb_resolvable", "predicate": "inception_date", "expected_output": {"kb_property": "P571", "kb_namespace": "wikidata"}, "notes": "inception/founding date"}
+{"id": "kb_map_027", "category": "kb_resolvable", "predicate": "dissolved_in", "expected_output": {"kb_property": "P576", "kb_namespace": "wikidata"}, "notes": "dissolved, abolished or demolished date"}
+{"id": "kb_map_028", "category": "kb_resolvable", "predicate": "date_of_birth", "expected_output": {"kb_property": "P569", "kb_namespace": "wikidata"}, "notes": "date of birth"}
+{"id": "kb_map_029", "category": "kb_resolvable", "predicate": "date_of_death", "expected_output": {"kb_property": "P570", "kb_namespace": "wikidata"}, "notes": "date of death"}
+{"id": "kb_map_030", "category": "kb_resolvable", "predicate": "genre", "expected_output": {"kb_property": "P136", "kb_namespace": "wikidata"}, "notes": "genre of creative work"}
+{"id": "kb_map_qualifier_001", "category": "qualifier_mapping", "predicate": "holds_role", "expected_output": {"kb_property": "P39", "slot_to_qualifier": {"valid_from": "P580", "valid_until": "P582"}}, "notes": "P39 has start/end time qualifiers"}
+{"id": "kb_map_qualifier_002", "category": "qualifier_mapping", "predicate": "employed_by", "expected_output": {"kb_property": "P108", "slot_to_qualifier": {"valid_from": "P580", "valid_until": "P582"}}, "notes": "P108 has start/end time qualifiers"}
+{"id": "kb_map_qualifier_003", "category": "qualifier_mapping", "predicate": "member_of", "expected_output": {"kb_property": "P463", "slot_to_qualifier": {"valid_from": "P580", "valid_until": "P582"}}, "notes": "P463 has start/end time qualifiers"}
+{"id": "kb_map_qualifier_004", "category": "qualifier_mapping", "predicate": "educated_at", "expected_output": {"kb_property": "P69", "slot_to_qualifier": {"valid_from": "P580", "valid_until": "P582"}}, "notes": "P69 has start/end time qualifiers"}
+{"id": "kb_map_qualifier_005", "category": "qualifier_mapping", "predicate": "spouse", "expected_output": {"kb_property": "P26", "slot_to_qualifier": {"valid_from": "P580", "valid_until": "P582"}}, "notes": "P26 has start/end time qualifiers for marriage period"}
+{"id": "kb_map_qualifier_006", "category": "qualifier_mapping", "predicate": "located_in", "expected_output": {"kb_property": "P131", "slot_to_qualifier": {}}, "notes": "P131 typically no time qualifier — location assumed stable"}
+{"id": "kb_map_qualifier_007", "category": "qualifier_mapping", "predicate": "head_of_government", "expected_output": {"kb_property": "P6", "slot_to_qualifier": {"valid_from": "P580", "valid_until": "P582"}}, "notes": "P6 has start/end time qualifiers"}
+{"id": "kb_map_qualifier_008", "category": "qualifier_mapping", "predicate": "received_award", "expected_output": {"kb_property": "P166", "slot_to_qualifier": {"time": "P585"}}, "notes": "P166 has point-in-time qualifier"}
+{"id": "kb_map_qualifier_009", "category": "qualifier_mapping", "predicate": "has_population", "expected_output": {"kb_property": "P1082", "slot_to_qualifier": {"time": "P585"}}, "notes": "P1082 has point-in-time qualifier for census year"}
+{"id": "kb_map_qualifier_010", "category": "qualifier_mapping", "predicate": "notable_work", "expected_output": {"kb_property": "P800", "slot_to_qualifier": {}}, "notes": "P800 typically no time qualifier"}

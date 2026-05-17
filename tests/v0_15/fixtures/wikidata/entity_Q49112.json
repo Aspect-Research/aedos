@@ -1,0 +1,38 @@
+{
+  "entities": {
+    "Q49112": {
+      "type": "item",
+      "id": "Q49112",
+      "labels": {
+        "en": {"language": "en", "value": "Williams College"}
+      },
+      "descriptions": {
+        "en": {"language": "en", "value": "liberal arts college in Williamstown, Massachusetts, US"}
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "datavalue": {"value": {"entity-type": "item", "id": "Q189004"}, "type": "wikibase-entityid"}
+            },
+            "type": "statement",
+            "rank": "normal"
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "datavalue": {"value": {"entity-type": "item", "id": "Q771397"}, "type": "wikibase-entityid"}
+            },
+            "type": "statement",
+            "rank": "preferred"
+          }
+        ]
+      }
+    }
+  }
+}
