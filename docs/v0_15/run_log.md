@@ -37,3 +37,14 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented the PredicateTranslation oracle with cold-cache LLM generation (INSERT OR REPLACE for retracted row re-generation), warm-cache lookup with used_count/last_consulted_at update, retraction (sets retracted_at, excludes from future consults), query_neighbors (conflict detection by kb_property), and audit log integration for row_created / row_retracted / row_generation_failed events, with 39 new passing tests.
 
 
+## Phase 3 — Routing + Tier U
+
+- Commit SHA: 72edfb6
+- Tag: v0.15-phase-3-complete
+- Test count: 49 new (288 cumulative; target was ~80 new; all pass)
+- Calibration corpus: tests/v0_15/calibration/temporal_scope_corpus.jsonl — 40 cases across 5 sub-categories (explicit_scope 10, implicit_past 10, relative_scope 10, no_markers 5, future_rejection 5)
+- Ambiguities resolved this phase: 5 (see phase_3_ambiguities.md)
+- Blockers: none
+- One-sentence summary: Implemented Layer 2 router (four routes: user_authoritative/python/kb_resolvable/abstain, structural anomaly detection, stub flag), Validator (user_subject_required/distinct_slots/object_type heuristics), and Tier U with three-stage lookup (literal, entity-resolution stub, predicate-translation broadening), idempotent writes, contradiction detection/closure, temporal scope enforcement (BEFORE_PRESENT sentinel, past valid_until), and retraction, with 49 new passing tests and 14 integration tests covering the full claim→router→Tier U roundtrip.
+
+
