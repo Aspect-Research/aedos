@@ -1,0 +1,9 @@
+{
+  "results": {
+    "bindings": [
+      {"intermediate": {"type": "uri", "value": "http://www.wikidata.org/entity/Q4830453"}},
+      {"intermediate": {"type": "uri", "value": "http://www.wikidata.org/entity/Q43229"}},
+      {"intermediate": {"type": "uri", "value": "http://www.wikidata.org/entity/Q783794"}}
+    ]
+  }
+}
