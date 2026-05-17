@@ -61,7 +61,7 @@ def test_health_still_responds(client):
     r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "0.14.8"
+    assert body["version"] == "0.15.0-alpha.0"
     assert body["ok"] is True
 
 
