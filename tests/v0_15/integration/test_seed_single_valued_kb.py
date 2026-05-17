@@ -109,14 +109,14 @@ def test_seeded_born_in_contradicts_wrong_resolved_place(tmp_path):
     )
     result = _verifier(db, kb).verify(_born_in_claim("Chicago"))
     assert result.verdict == KBVerdictType.CONTRADICTED
-    assert result.trace.get("object_resolved") is True
+    assert result.trace.get("value_resolved") is True
     db.close()
 
 
 def test_seeded_born_in_unresolvable_place_abstains(tmp_path):
     """The coupling (load-bearing): born_in is single_valued after the backfill,
-    but "Foobar" does not resolve to a KB entity. N1 makes this NO_MATCH with an
-    object_unresolved abstention reason — NOT a false CONTRADICTED.
+    but "Foobar" does not resolve to a KB entity. N1 makes this NO_MATCH with a
+    value_unresolved abstention reason — NOT a false CONTRADICTED.
 
     Against the intermediate state (seeds backfilled, kb_verifier.py at the
     fixup-1 revision) this case returns CONTRADICTED — the false contradiction
@@ -128,6 +128,6 @@ def test_seeded_born_in_unresolvable_place_abstains(tmp_path):
     )
     result = _verifier(db, kb).verify(_born_in_claim("Foobar"))
     assert result.verdict == KBVerdictType.NO_MATCH
-    assert result.trace.get("object_resolved") is False
-    assert result.trace.get("abstention_reason") == "object_unresolved"
+    assert result.trace.get("value_resolved") is False
+    assert result.trace.get("abstention_reason") == "value_unresolved"
     db.close()

@@ -24,13 +24,15 @@ from src.aedos_v0_15.llm.client import LLMClient
 # Helpers
 # ---------------------------------------------------------------------------
 
-_RESOLUTIONS = {"Obama": "Q76", "President": "Q11696", "Honolulu": "Q18094"}
+_RESOLUTIONS = {"Obama": "Q76", "President": "Q11696", "Honolulu": "Q18094",
+                "Berlin": "Q64", "Germany": "Q183"}
 
 
 class MockTransport:
-    def __init__(self, kb_property="P39", single_valued=0):
+    def __init__(self, kb_property="P39", single_valued=0, slot_to_qualifier=None):
         self._prop = kb_property
         self._single_valued = single_valued
+        self._sq = slot_to_qualifier
 
     def extract_with_tool(self, *a, purpose=None, **kw):
         if purpose == "distribution_generation":
@@ -44,7 +46,7 @@ class MockTransport:
             "routing_hint": "kb_resolvable",
             "kb_namespace": "wikidata",
             "kb_property": self._prop,
-            "slot_to_qualifier": None,
+            "slot_to_qualifier": self._sq,
             "single_valued": self._single_valued,
             "reason": "test",
         }
@@ -61,9 +63,9 @@ class MockKB:
     def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
 
 
-def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0):
+def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0, slot_to_qualifier=None):
     db = open_memory_db()
-    client = LLMClient(_transport=MockTransport(kb_property, single_valued))
+    client = LLMClient(_transport=MockTransport(kb_property, single_valued, slot_to_qualifier))
     kb = MockKB(kb_stmts)
     pt = PredicateTranslation(db=db, llm_client=client)
     resolver = EntityResolver(kb_protocol=kb, db=db)
@@ -338,3 +340,43 @@ class TestWalkerMultiChainConflict:
         result = walker.walk(goal, _ctx())
         assert result.verdict == "contradicted"
         assert result.trace.walk_metadata.get("conflict") is True
+
+
+class TestWalkerKBLookupInverted:
+    """R1: the walker copies the D19 ``lookup_inverted`` flag from
+    ``KBVerdict.trace`` onto the KB ``premise_lookup`` trace edge, so the
+    result-level trace records which KB lookups took the inverted path.
+    Pre-R1 the KB edge metadata had no ``lookup_inverted`` key."""
+
+    @staticmethod
+    def _kb_edge(result):
+        for e in result.trace.edges:
+            if e.edge_type == "premise_lookup" and e.metadata.get("source") == "kb":
+                return e
+        return None
+
+    def test_inverse_predicate_edge_records_lookup_inverted_true(self):
+        # capital_of is inverse-mapped (subject -> statement_value): the KB
+        # statement `Germany P36 Berlin` verifies capital_of(Berlin, Germany).
+        stmts = [Statement(value="Q64", value_type="entity")]  # Berlin
+        walker, _, _ = _make_full_system(
+            kb_stmts=stmts, kb_property="P36",
+            slot_to_qualifier={"subject": "statement_value", "object": "statement_subject"},
+        )
+        result = walker.walk(
+            _claim(subject="Berlin", predicate="capital_of", object_val="Germany"), _ctx()
+        )
+        assert result.verdict == "verified"
+        edge = self._kb_edge(result)
+        assert edge is not None
+        assert edge.metadata.get("lookup_inverted") is True
+
+    def test_standard_predicate_edge_records_lookup_inverted_false(self):
+        # holds_role is standard-mapped: lookup_inverted is False on the edge.
+        stmts = [Statement(value="Q11696", value_type="entity")]
+        walker, _, _ = _make_full_system(kb_stmts=stmts)
+        result = walker.walk(_claim(object_val="President"), _ctx())
+        assert result.verdict == "verified"
+        edge = self._kb_edge(result)
+        assert edge is not None
+        assert edge.metadata.get("lookup_inverted") is False
