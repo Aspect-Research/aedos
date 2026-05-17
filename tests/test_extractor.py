@@ -466,6 +466,150 @@ def test_role_validation():
         extractor.extract("x", role="system")
 
 
+# ---------- v0.14.7: source_text discipline backstop ----------
+
+
+def test_source_text_bare_noun_phrase_rejected():
+    """The canonical context-entity hallucination shape: a structurally
+    valid claim whose source_text is a bare noun phrase ('Williams
+    College') rather than an assertion span. The extractor invented a
+    world fact about an entity the user mentioned only in passing;
+    the substring check at _flag_substitutions doesn't catch this
+    because the noun phrase IS a substring of the input."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "spatial_temporal",
+                "predicate": "located_in",
+                "slots": {"entity": "Williams College",
+                          "location": "United States"},
+                "polarity": 1,
+                "source_text": "Williams College",  # bare noun phrase
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "My name is Asa and I'm a junior at Williams College", role="user",
+    )
+    assert result.valid_facts == []
+    assert len(result.rejected_facts) == 1
+    reason = result.rejected_facts[0]["reason"]
+    assert "bare noun phrase" in reason
+    assert "assertion span" in reason
+
+
+def test_source_text_single_proper_noun_rejected():
+    """Even shorter — a single capitalized token like 'Anthropic' for
+    a fact about Anthropic. Same hallucination shape."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "event",
+                "predicate": "founded",
+                "slots": {"event_type": "company_founding",
+                          "participants": ["Anthropic"],
+                          "occurred_at": "2021"},
+                "polarity": 1,
+                "source_text": "Anthropic",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "I work at Anthropic", role="user",
+    )
+    assert result.valid_facts == []
+    assert "bare noun phrase" in result.rejected_facts[0]["reason"]
+
+
+def test_source_text_first_person_short_span_accepted():
+    """Two-token spans containing first-person pronouns or contractions
+    pass — they're real assertion spans even when terse. 'I'm CEO'
+    is a valid extraction span."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "role_assignment",
+                "predicate": "is_ceo_of",
+                "slots": {"agent": "user", "role": "CEO",
+                          "org": "MyStartup"},
+                "polarity": 1,
+                "source_text": "I'm CEO",  # 2 tokens but has contraction + first-person
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "I'm CEO of MyStartup", role="user",
+    )
+    assert len(result.valid_facts) == 1
+    assert result.rejected_facts == []
+
+
+def test_source_text_negation_short_span_accepted():
+    """The contrastive correction case: 'not sushi' as source_text
+    for the negative-polarity preference. Two tokens but contains
+    'not' — a real assertion span."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "loves",
+                "slots": {"agent": "user", "object": "sushi"},
+                "polarity": 0,
+                "source_text": "not sushi",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "I love ramen, not sushi", role="user",
+    )
+    assert len(result.valid_facts) == 1
+    assert result.rejected_facts == []
+
+
+def test_source_text_numeric_short_span_accepted():
+    """Counting claims often have short source_texts containing the
+    numeric value: '3 words'. The numeric token is the assertion
+    signal — no rejection."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "quantitative",
+                "predicate": "has_count",
+                "slots": {"subject": "the quick brown fox",
+                          "property": "words_with_e",
+                          "value": 3},
+                "polarity": 1,
+                "source_text": "3 words",
+            }
+        ]
+    }
+    result = _mk(payload).extract(
+        "How many words have 'e' in 'the quick brown fox'? 3 words.",
+        role="user",
+    )
+    assert len(result.valid_facts) == 1
+    assert result.rejected_facts == []
+
+
+def test_source_text_three_token_span_accepted():
+    """Any 3+ token source_text passes the minimum-length threshold,
+    even all-noun ones. The heuristic is permissive on the loose
+    side — only the canonical short bare-noun shape gets caught."""
+    payload = {
+        "facts": [
+            {
+                "pattern": "preference",
+                "predicate": "likes",
+                "slots": {"agent": "user", "object": "olives"},
+                "polarity": 1,
+                "source_text": "I like olives",  # 3 tokens
+            }
+        ]
+    }
+    result = _mk(payload).extract("I like olives", role="user")
+    assert len(result.valid_facts) == 1
+
+
 def test_tool_schema_lists_all_pattern_names():
     """Tool schema enum must include all 9 pattern names (8 legacy +
     mereological). v0.14.3: per-role tools — assistant requires

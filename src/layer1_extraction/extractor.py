@@ -42,6 +42,50 @@ def _normalize_for_substring(s: str) -> str:
     return " ".join(s.split())
 
 
+_ASSERTION_SIGNAL_RE = re.compile(r"\b(i|me|my|not|never|n't)\b", re.IGNORECASE)
+
+
+def _looks_like_assertion_span(source_text: str) -> bool:
+    """Heuristic: does source_text look like a fact-stating clause
+    rather than a bare noun phrase?
+
+    The architectural rule (extractor prompt's source_text discipline)
+    says source_text MUST be a span containing the actual assertion
+    — subject + verb + complement. A bare noun phrase like
+    'Williams College' / 'Anthropic' / 'Hamlet' is NEVER a valid
+    source_text; the substring-check at _flag_substitutions doesn't
+    catch this because the noun phrase IS a substring of the input.
+
+    v0.14.7 — this validator backstop catches the canonical bug
+    shape: a SHORT source_text (≤ 2 whitespace-separated tokens)
+    consisting purely of noun tokens with no verb, preposition,
+    contraction, number, first-person pronoun, or negation. Such
+    source_texts are essentially always hallucinated world facts
+    about a context entity rather than real extractions.
+
+    Returns True for source_texts that look like real assertion
+    spans (≥ 3 tokens OR contain an assertion signal). Returns
+    False for bare noun phrases. Conservative on the loose side —
+    only the canonical bug shape gets rejected; longer noun phrases
+    like 'the United States of America' pass through (very rare to
+    appear as a hallucinated source_text since LLMs default to the
+    bare entity name when fabricating).
+    """
+    if not source_text:
+        return False
+    tokens = source_text.split()
+    if len(tokens) >= 3:
+        return True
+    s = source_text
+    if any(c.isdigit() for c in s):
+        return True  # numeric: e.g. "3 words", "5 r's"
+    if "'" in s or "’" in s:
+        return True  # contraction: "I'm CEO", "she's a doctor"
+    if _ASSERTION_SIGNAL_RE.search(s):
+        return True  # first-person / negation: "not sushi", "I love"
+    return False
+
+
 @dataclass
 class ExtractionResult:
     valid_facts: list[dict[str, Any]] = field(default_factory=list)
@@ -465,8 +509,6 @@ ACCEPT — comparative preference is ONE fact (different shape):
 - For role_assignment claims that are CURRENTLY HELD, leave valid_until
   null (do not write "present" or "now"). The downstream verifier
   treats null valid_until as currently held.
-- For preference / propositional_attitude with first-person "I", set
-  agent="user".
 - For mereological, the slots are part and whole. Both are required and
   MUST be different entities (no self-parthood). The lexical cue
   ("X is part of Y", "X is composed of Y", "X is a member of Y")
@@ -474,6 +516,117 @@ ACCEPT — comparative preference is ONE fact (different shape):
   composed of hydrogen and oxygen" — the whole is water, the parts are
   hydrogen and oxygen; combine into a single composite part value
   ("hydrogen and oxygen") rather than emitting two facts.
+
+## First-person canonicalization (UNIVERSAL — every pattern)
+
+Whenever the speaker refers to THEMSELVES — "I", "me", "my", "mine",
+"I'm", "I've", "I'll" — canonicalize the reference to the literal
+string ``user`` in the appropriate slot. This rule applies to ALL
+patterns, not just preference / propositional_attitude. The downstream
+substrate is keyed on the literal slot value; using the user's name
+("Asa", "Alex") instead of ``user`` causes Tier U lookups to miss and
+the walker falls through to fresh dispatch with a routing_anomaly.
+
+Per-pattern slot mapping for first-person references:
+
+  * preference                — agent="user"
+  * propositional_attitude    — agent="user"
+  * role_assignment           — agent="user"  (NOT the user's name)
+  * spatial_temporal          — entity="user"
+  * relational                — subject="user"  (when speaker is the subject)
+  * quantitative              — subject="user"  (rare; e.g. "I am 35 years old")
+  * categorical               — entity="user"   (rare; e.g. "I am a programmer")
+  * event                     — participants=["user", ...]
+  * mereological              — generally not first-person
+
+This holds even when the user mentions their name in the SAME message.
+"My name is Asa and I'm a junior at Williams College" → ONE
+role_assignment claim with agent="user" (not "Asa"). The "my name is
+Asa" clause is metadata about the speaker's identity; the
+"I'm a junior" clause is a fact-stating clause about user — the
+slot value is ``user``, not "Asa", because that's the literal token
+the substrate keys on for self-attributes.
+
+ACCEPT — first-person role_assignment:
+  Input: "I'm a junior at Williams College"
+  Output: facts=[{{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"user","role":"junior","org":"Williams College"}},"polarity":1,"source_text":"I'm a junior at Williams College"}}]
+  Reasoning: First-person "I'm" → agent="user". The role is "junior" (an academic class standing); the org is the institution. Do NOT use the user's name from another clause as the agent.
+
+ACCEPT — first-person role_assignment with prior-clause name reference:
+  Input: "My name is Asa and I'm the CEO of MyStartup"
+  Output: facts=[{{"pattern":"role_assignment","predicate":"is_ceo_of","slots":{{"agent":"user","role":"CEO","org":"MyStartup"}},"polarity":1,"source_text":"I'm the CEO of MyStartup"}}]
+  Reasoning: Even with "My name is Asa" in the prior clause, the role_assignment's agent is still ``user`` — the substrate's user-self lookup keys on the literal ``user`` token. The "my name is Asa" clause produces no extracted claim (there's no `name` pattern; identity is metadata).
+
+ACCEPT — third-person role_assignment uses the actual name:
+  Input: "Asa is a junior at Williams College"
+  Output: facts=[{{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"Asa","role":"junior","org":"Williams College"}},"polarity":1,"source_text":"Asa is a junior at Williams College"}}]
+  Reasoning: No first-person reference; the speaker is asserting a fact about Asa as an external entity. agent="Asa" is correct here. The first-person rule only fires when the source text uses "I" / "me" / "my".
+
+# HARD-CLAIM DISCIPLINE — don't extract world facts about CONTEXT entities
+
+When the user's message names an entity (a person, organization,
+place, product, work) ONLY as the org / location / object / etc. of
+ANOTHER claim, do NOT extract additional facts about that entity from
+your own world knowledge. The user is asserting their relationship
+to the entity, not making a claim about the entity itself.
+
+The mistake to avoid: hallucinating slot values from parametric
+knowledge into a freshly invented claim, with a source_text that's
+just the entity's name (which IS a substring of the input, so the
+substring check doesn't catch the hallucination — but the claim
+itself wasn't actually said).
+
+REJECT — context-entity hallucination (the canonical bug):
+  Input: "My name is Asa and I'm a junior at Williams College"
+  WRONG output: facts=[
+    {{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"user","role":"junior","org":"Williams College"}},"polarity":1,"source_text":"I'm a junior at Williams College"}},
+    {{"pattern":"spatial_temporal","predicate":"located_in","slots":{{"entity":"Williams College","location":"United States"}},"polarity":1,"source_text":"Williams College"}}
+  ]
+  Reasoning for REJECTING the second claim: The user said NOTHING about Williams College being in the United States. The location was invented from world knowledge. source_text="Williams College" is a noun phrase, not an assertion span — it doesn't contain a verb. Extract ONLY the role_assignment.
+  RIGHT output: facts=[
+    {{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"user","role":"junior","org":"Williams College"}},"polarity":1,"source_text":"I'm a junior at Williams College"}}
+  ]
+
+REJECT — context-entity hallucination (employer):
+  Input: "I work at Anthropic"
+  Output: facts=[{{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"user","role":"employee","org":"Anthropic"}},"polarity":1,"source_text":"I work at Anthropic"}}]
+  Reasoning: ONE fact — the user's relationship to Anthropic. Do NOT extract Anthropic.founded_by(Dario Amodei), Anthropic.is_a(AI safety company), or Anthropic.located_in(San Francisco). The user said none of those.
+
+REJECT — context-entity hallucination (work mentioned in passing):
+  Input: "I read Hamlet last week"
+  Output: facts=[{{"pattern":"event","predicate":"completed_reading","slots":{{"event_type":"reading","participants":["user"],"object":"Hamlet","occurred_at":"last week"}},"polarity":1,"source_text":"I read Hamlet last week"}}]
+  Reasoning: ONE event. Do NOT extract Hamlet.authored_by(Shakespeare) or Hamlet.is_a(play). The user mentioned the work as the object of their reading event; they didn't claim those world facts.
+
+ACCEPT — same-clause world fact IS extractable when the user explicitly states it:
+  Input: "I work at Anthropic, which was founded in 2021"
+  Output: facts=[
+    {{"pattern":"role_assignment","predicate":"holds_role","slots":{{"agent":"user","role":"employee","org":"Anthropic"}},"polarity":1,"source_text":"I work at Anthropic"}},
+    {{"pattern":"event","predicate":"founded","slots":{{"event_type":"company_founding","participants":["Anthropic"],"occurred_at":"2021"}},"polarity":1,"source_text":"Anthropic, which was founded in 2021"}}
+  ]
+  Reasoning: The user EXPLICITLY asserted the founding year. Two facts, both with assertion-span source_texts (the second contains "founded in 2021").
+
+## source_text discipline — must contain the assertion span
+
+source_text MUST be a span from the input that contains the actual
+ASSERTION — subject + verb + complement, at minimum. A bare noun
+phrase ("Williams College", "Anthropic", "Hamlet") is NEVER a valid
+source_text — noun phrases name things; they don't assert facts.
+
+If you can't find a contiguous span in the input that contains the
+assertion you want to extract, the assertion isn't there — abstain
+on that claim. The substring-check ensures source_text comes from
+the input; the assertion-span discipline ensures the input actually
+made the assertion.
+
+The minimum acceptable source_text shape:
+  * Subject phrase + verb phrase (+ object/complement)
+  * For first-person assertions: includes "I" / "I'm" / "my"
+  * For copula assertions: includes "is" / "was" / "are"
+
+REJECT — bare-noun source_text:
+  source_text="Williams College" for a claim about its location → invalid; the input never contained "Williams College is in X".
+REJECT — bare-noun source_text:
+  source_text="Anthropic" for a founding-year claim → invalid; needs a span like "Anthropic was founded in 2021".
 
 # Anchor entity — preserve topic context across claim boundaries
 
@@ -995,6 +1148,28 @@ class ClaimExtractor:
         ]
         if missing_required:
             return f"missing required slots {missing_required} for pattern {pattern_name!r}"
+
+        # v0.14.7 — source_text discipline backstop. Last check so it
+        # only fires when every structural validation passed. The
+        # canonical bug shape: a fact that's structurally valid but
+        # whose source_text is a bare noun phrase ("Williams College")
+        # — the extractor invented a world fact about a context entity
+        # rather than extracting a real assertion. The prompt's
+        # source_text discipline is the primary enforcement; this is
+        # the validator backstop.
+        src = f.get("source_text")
+        if isinstance(src, str) and not _looks_like_assertion_span(src):
+            return (
+                f"source_text {src!r} looks like a bare noun phrase, "
+                "not an assertion span. Per the source_text "
+                "discipline, the span must contain a verb / "
+                "preposition / first-person pronoun / negation / "
+                "numeric token that anchors the assertion. This "
+                "shape is almost always a context-entity "
+                "hallucination — the extractor invented a world "
+                "fact about an entity the user only mentioned in "
+                "passing."
+            )
         return None
 
     def _normalize(self, f: dict[str, Any]) -> dict[str, Any]:

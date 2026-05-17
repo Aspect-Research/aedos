@@ -73,6 +73,16 @@ role_assignment:
         predicate: is_ceo_of
         slots: { agent: "Tim Cook", role: "CEO", org: "Apple" }
         polarity: 1
+    - input: "I'm a junior at Williams College"
+      output:
+        pattern: role_assignment
+        predicate: holds_role
+        slots: { agent: "user", role: "junior", org: "Williams College" }
+        polarity: 1
+      # First-person canonicalization: agent="user", NEVER the user's name
+      # from a prior clause. Tier U keys on the literal "user" token for
+      # self-attributes; using the speaker's actual name causes lookup
+      # misses + routing_anomaly via fresh dispatch.
   disambiguation_notes: |
     role_assignment vs categorical: role_assignment is held during a time
     period and is conferrable (someone became, someone else will become).
