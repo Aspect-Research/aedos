@@ -187,7 +187,7 @@ def test_capital_of_unresolvable_capital_abstains(tmp_path):
     assert result.verdict == KBVerdictType.NO_MATCH
     assert result.trace.get("lookup_inverted") is True
     # The expected value (the Aedos subject, under inversion) failed to resolve.
-    assert result.trace.get("abstention_reason") == "object_unresolved"
+    assert result.trace.get("abstention_reason") == "value_unresolved"
     db.close()
 
 
@@ -198,9 +198,9 @@ def test_capital_of_unresolvable_capital_abstains(tmp_path):
 def test_capital_of_unresolvable_country_abstains(tmp_path):
     """capital_of(Berlin, "FooCountry") where "FooCountry" does not resolve.
     Under the inverse mapping the Aedos object is the KB lookup entity, so its
-    resolution failure abstains with `subject_unresolved` (the KB statement
-    subject could not be resolved). Pre-D19 the lookup keyed on Berlin and
-    abstained for the unrelated reason `no_statements`."""
+    resolution failure abstains with `lookup_subject_unresolved` (the KB
+    statement subject could not be resolved). Pre-D19 the lookup keyed on Berlin
+    and abstained for the unrelated reason `no_statements`."""
     db = _seeded_db(tmp_path)
     kb = _MockKB(
         resolutions={"Berlin": _BERLIN},  # "FooCountry" absent
@@ -209,7 +209,7 @@ def test_capital_of_unresolvable_country_abstains(tmp_path):
     result = _verifier(db, kb).verify(_claim("Berlin", "capital_of", "FooCountry"))
     assert result.verdict == KBVerdictType.NO_MATCH
     assert result.trace.get("lookup_inverted") is True
-    assert result.trace.get("abstention_reason") == "subject_unresolved"
+    assert result.trace.get("abstention_reason") == "lookup_subject_unresolved"
     db.close()
 
 
@@ -272,4 +272,30 @@ def test_mother_of_inverted_multivalued_is_verified(tmp_path):
     assert result.verdict == KBVerdictType.VERIFIED
     assert result.trace.get("lookup_inverted") is True
     assert result.subject_kb_id == _JESUS
+    db.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 9 (R3) — polarity x inverted predicate: a negated inverse claim.
+# ---------------------------------------------------------------------------
+
+def test_negated_capital_of_wrong_value_is_verified(tmp_path):
+    """capital_of(Munich, Germany, polarity=0) — "Munich is not the capital of
+    Germany" — against the KB statement `Germany P36 Berlin`. The positive
+    content is CONTRADICTED (Munich != Berlin, capital_of is single_valued, the
+    object resolved); negating it inverts the verdict to VERIFIED.
+
+    Covers the polarity x inverse-predicate interaction (R3): _apply_polarity
+    composes with the direction-aware positive verdict. The re-audit established
+    this is correct by composition; this test makes the coverage explicit."""
+    db = _seeded_db(tmp_path)
+    kb = _MockKB(
+        resolutions={"Berlin": _BERLIN, "Germany": _GERMANY, "Munich": _MUNICH},
+        statements={(_GERMANY, "P36"): [Statement(value=_BERLIN, value_type="entity")]},
+    )
+    result = _verifier(db, kb).verify(_claim("Munich", "capital_of", "Germany", polarity=0))
+    assert result.verdict == KBVerdictType.VERIFIED
+    assert result.trace.get("lookup_inverted") is True
+    # The positive content was CONTRADICTED; polarity inverted it to VERIFIED.
+    assert result.trace.get("positive_verdict") == "contradicted"
     db.close()

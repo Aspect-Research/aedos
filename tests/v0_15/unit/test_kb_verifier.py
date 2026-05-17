@@ -196,8 +196,8 @@ class TestKBVerifierObjectResolution:
         verifier = _make_verifier(stmts)
         result = verifier.verify(_claim(object_val="President of the United States"))
         assert result.verdict == KBVerdictType.VERIFIED
-        assert result.trace.get("object_resolved") is True
-        assert result.trace.get("object_value") == "Q11696"
+        assert result.trace.get("value_resolved") is True
+        assert result.trace.get("value_entity") == "Q11696"
 
     def test_object_resolution_failure_falls_back_to_literal_compare(self):
         # When the object does not resolve to an entity, the verifier falls
@@ -206,7 +206,7 @@ class TestKBVerifierObjectResolution:
         verifier = _make_verifier(stmts)
         result = verifier.verify(_claim(object_val="POTUS"))
         assert result.verdict == KBVerdictType.VERIFIED
-        assert result.trace.get("object_resolved") is False
+        assert result.trace.get("value_resolved") is False
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ class TestKBVerifierSingleValued:
         assert result.verdict == KBVerdictType.CONTRADICTED
         # N1: a functional-predicate contradiction only fires when the object
         # actually resolved. Contrast TestKBVerifierN1ResolutionFailure below.
-        assert result.trace.get("object_resolved") is True
+        assert result.trace.get("value_resolved") is True
 
     def test_single_valued_match_is_verified(self):
         stmts = [Statement(value="Q18094", value_type="entity")]
@@ -262,8 +262,8 @@ class TestKBVerifierN1ResolutionFailure:
             _claim(predicate="born_in", object_val="Some Unknown Place Xyzzy")
         )
         assert result.verdict == KBVerdictType.NO_MATCH
-        assert result.trace.get("object_resolved") is False
-        assert result.trace.get("abstention_reason") == "object_unresolved"
+        assert result.trace.get("value_resolved") is False
+        assert result.trace.get("abstention_reason") == "value_unresolved"
 
     def test_negated_single_valued_unresolved_object_stays_no_match(self):
         # NO_MATCH from a resolution failure is polarity-invariant: a negated
@@ -274,10 +274,10 @@ class TestKBVerifierN1ResolutionFailure:
             _claim(predicate="born_in", object_val="Some Unknown Place Xyzzy", polarity=0)
         )
         assert result.verdict == KBVerdictType.NO_MATCH
-        assert result.trace.get("abstention_reason") == "object_unresolved"
+        assert result.trace.get("abstention_reason") == "value_unresolved"
 
     def test_no_statements_trace_records_reason(self):
-        # The trace distinguishes a resolution failure ("object_unresolved")
+        # The trace distinguishes a resolution failure ("value_unresolved")
         # from a genuine absence of evidence ("no_statements").
         verifier = _make_verifier([])
         result = verifier.verify(_claim())

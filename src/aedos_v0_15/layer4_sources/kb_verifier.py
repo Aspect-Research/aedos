@@ -56,11 +56,11 @@ class KBVerifier:
         the Aedos subject to ``statement_value``) the statement is keyed on the
         claim's *object*, so the lookup and the expected value are swapped.
         ``_lookup_targets`` decides the direction. The trace records it as
-        ``lookup_inverted``; the trace's ``entity`` / ``object_value`` /
-        ``object_resolved`` / ``subject_*`` fields name KB *statement* positions
-        (statement subject, statement value) — these coincide with the Aedos
-        subject/object for a standard predicate and are swapped for an inverse
-        one, which ``lookup_inverted`` disambiguates.
+        ``lookup_inverted``; the other trace fields use direction-neutral names
+        for the KB *statement* positions — ``entity`` is the statement subject,
+        ``value_entity`` / ``value_resolved`` describe the statement value, and
+        the abstention reasons are ``lookup_subject_unresolved`` /
+        ``value_unresolved`` (R2).
         """
         if current_time is None:
             current_time = _NOW()
@@ -110,7 +110,7 @@ class KBVerifier:
                 trace={
                     "reason": "subject_resolution_failed",
                     "reference": lookup_ref,
-                    "abstention_reason": "subject_unresolved",
+                    "abstention_reason": "lookup_subject_unresolved",
                     "lookup_inverted": lookup_inverted,
                 },
             )
@@ -165,8 +165,8 @@ class KBVerifier:
         trace = {
             "entity": lookup_subject_id,
             "property": meta.kb_property,
-            "object_value": expected_value,
-            "object_resolved": value_resolved,
+            "value_entity": expected_value,
+            "value_resolved": value_resolved,
             "polarity": claim.polarity,
             "positive_verdict": pos_verdict.value,
             "single_valued": meta.single_valued,
@@ -189,8 +189,8 @@ class KBVerifier:
         self,
         statements: list[Statement],
         claim: Claim,
-        object_val,
-        object_resolved: bool,
+        expected_value,
+        value_resolved: bool,
         meta,
         current_time: str,
     ) -> tuple[KBVerdictType, Optional[Statement], Optional[str]]:
@@ -202,38 +202,38 @@ class KBVerifier:
         predicate the KB simply holds other values and the claim's value may
         also be true, so the result is NO_MATCH.
 
-        N1: when the object is an entity reference that did not resolve, a value
-        mismatch is *not* a contradiction. An unresolved natural-language string
-        compared against KB Q-numbers never matches, so a non-match is a
+        N1: when the expected value is an entity reference that did not resolve,
+        a value mismatch is *not* a contradiction. An unresolved natural-language
+        string compared against KB Q-numbers never matches, so a non-match is a
         resolution failure, not evidence of falsity — architecture 3.2 classes
         resolution failure as a false-abstain source, never a false-contradiction
         source. The functional-predicate CONTRADICTED branch is therefore
-        suppressed when `meta.object_type == "entity"` and the object did not
-        resolve; the literal-match VERIFIED path above is unaffected.
+        suppressed when `meta.object_type == "entity"` and the expected value
+        did not resolve; the literal-match VERIFIED path above is unaffected.
 
         Returns (verdict, statement, abstention_reason). abstention_reason is
-        None for VERIFIED/CONTRADICTED and one of "object_unresolved" /
+        None for VERIFIED/CONTRADICTED and one of "value_unresolved" /
         "no_matching_statement" for NO_MATCH.
         """
         scope_mismatch: Optional[Statement] = None
         for stmt in statements:
             if not _scope_compatible(stmt, claim, current_time):
                 continue
-            if _value_matches(stmt.value, object_val):
+            if _value_matches(stmt.value, expected_value):
                 return KBVerdictType.VERIFIED, stmt, None
             if scope_mismatch is None:
                 scope_mismatch = stmt
 
-        object_unresolved = meta.object_type == "entity" and not object_resolved
+        value_unresolved = meta.object_type == "entity" and not value_resolved
 
         if scope_mismatch is not None and meta.single_valued:
-            if object_unresolved:
-                # N1: the object reference never resolved — the mismatch is a
-                # resolution failure, not a contradiction. Abstain, do not lie.
-                return KBVerdictType.NO_MATCH, None, "object_unresolved"
+            if value_unresolved:
+                # N1: the expected-value reference never resolved — the mismatch
+                # is a resolution failure, not a contradiction. Abstain, not lie.
+                return KBVerdictType.NO_MATCH, None, "value_unresolved"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
-        reason = "object_unresolved" if object_unresolved else "no_matching_statement"
+        reason = "value_unresolved" if value_unresolved else "no_matching_statement"
         return KBVerdictType.NO_MATCH, None, reason
 
 

@@ -275,7 +275,12 @@ class Walker:
                     edge_type="premise_lookup",
                     source=trace.root,
                     target=TraceNode("kb_statement", {"entity": kb_result.subject_kb_id}),
-                    metadata={"source": "kb", "verdict": "verified"},
+                    metadata={
+                        "source": "kb", "verdict": "verified",
+                        # R1: surface the D19 lookup direction on the result-level
+                        # trace so Phase 10.5 debugging can see inverted lookups.
+                        "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                    },
                 ))
                 return "verified", "kb", 0
             elif kb_result.verdict == KBVerdictType.CONTRADICTED:
@@ -283,7 +288,10 @@ class Walker:
                     edge_type="premise_lookup",
                     source=trace.root,
                     target=TraceNode("kb_statement", {"entity": kb_result.subject_kb_id}),
-                    metadata={"source": "kb", "verdict": "contradicted"},
+                    metadata={
+                        "source": "kb", "verdict": "contradicted",
+                        "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                    },
                 ))
                 return "contradicted", "kb", 0
 
