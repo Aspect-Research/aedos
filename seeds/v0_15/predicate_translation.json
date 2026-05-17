@@ -8,7 +8,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P39",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "org": "qualifier:P642", "valid_from": "qualifier:P580", "valid_until": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P39 (position held) is canonical for role-organization claims about persons; P642 (of) qualifies the organization."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P39 (position held) is canonical for role-organization claims about persons; P642 (of) qualifies the organization. Multi-valued: a person holds many positions over time."
   },
   {
     "aedos_predicate": "educated_at",
@@ -19,7 +20,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P69",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "degree": "qualifier:P512", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P69 (educated at) with degree qualifier P512."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P69 (educated at) with degree qualifier P512. Multi-valued: people attend several institutions."
   },
   {
     "aedos_predicate": "employed_by",
@@ -30,7 +32,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P108",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P108 (employer)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P108 (employer). Multi-valued: many employers over a career."
   },
   {
     "aedos_predicate": "member_of",
@@ -41,7 +44,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P463",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P463 (member of)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P463 (member of). Multi-valued: people belong to many groups."
   },
   {
     "aedos_predicate": "awarded",
@@ -52,7 +56,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P166",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "year": "qualifier:P585"},
-    "reason": "Seed mapping. Wikidata P166 (award received); P585 for point-in-time."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P166 (award received); P585 for point-in-time. Multi-valued: many awards."
   },
   {
     "aedos_predicate": "lives_in",
@@ -63,7 +68,8 @@
     "kb_namespace": null,
     "kb_property": null,
     "slot_to_qualifier": null,
-    "reason": "Seed mapping. Residence is user-context information; not resolvable in KB for individuals."
+    "single_valued": 0,
+    "reason": "Seed mapping. Residence is user-context information; not resolvable in KB for individuals. user_authoritative — single_valued is not consulted on the user-authoritative route."
   },
   {
     "aedos_predicate": "located_in",
@@ -74,7 +80,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P276",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P276 (location) for objects or events."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P276 (location) for objects or events. Multi-valued: P276 commonly holds several locations."
   },
   {
     "aedos_predicate": "born_in",
@@ -85,7 +92,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P19",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P19 (place of birth)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P19 (place of birth). Functional: a person has exactly one birthplace."
   },
   {
     "aedos_predicate": "died_in",
@@ -96,7 +104,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P20",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P20 (place of death)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P20 (place of death). Functional: a person has exactly one place of death."
   },
   {
     "aedos_predicate": "born_on",
@@ -107,7 +116,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P569",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P569 (date of birth)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P569 (date of birth). Functional: a person has exactly one birth date."
   },
   {
     "aedos_predicate": "died_on",
@@ -118,7 +128,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P570",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P570 (date of death)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P570 (date of death). Functional: a person has exactly one death date."
   },
   {
     "aedos_predicate": "capital_of",
@@ -129,7 +140,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P36",
     "slot_to_qualifier": {"subject": "statement_value", "object": "statement_subject"},
-    "reason": "Seed mapping. Wikidata P36 (capital); subject/object inverted to match Aedos claim direction."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P36 (capital); subject/object inverted to match Aedos claim direction. Functional: a country has one capital in intended use (inverse of has_capital)."
   },
   {
     "aedos_predicate": "has_capital",
@@ -140,7 +152,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P36",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P36 (capital); standard direction."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P36 (capital); standard direction. Functional: a country has one capital in intended use."
   },
   {
     "aedos_predicate": "country_of",
@@ -151,7 +164,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P17",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P17 (country)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P17 (country). Multi-valued (conservative): P17 is functional for a place, but the predicate name is not subject-type-constrained and a citizenship-style claim could route here, where cardinality is plural (dual citizens)."
   },
   {
     "aedos_predicate": "continent_of",
@@ -162,7 +176,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P30",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P30 (continent)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P30 (continent). Functional: a place is on one continent in intended use (transcontinental edge cases exist)."
   },
   {
     "aedos_predicate": "spouse_of",
@@ -173,7 +188,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P26",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P26 (spouse); may be user-authoritative for private individuals."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P26 (spouse); may be user-authoritative for private individuals. Multi-valued: a person may have several spouses over a lifetime."
   },
   {
     "aedos_predicate": "parent_of",
@@ -184,7 +200,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P40",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P40 (child) — subject is parent, object is child."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P40 (child) — subject is parent, object is child. Multi-valued: a parent has many children."
   },
   {
     "aedos_predicate": "child_of",
@@ -195,7 +212,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P22",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P22 (father); P25 (mother). Seed covers the father slot; mother analogously."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P22 (father); P25 (mother). Seed covers the father slot; mother analogously. Multi-valued: a person has two parents."
   },
   {
     "aedos_predicate": "mother_of",
@@ -206,7 +224,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P25",
     "slot_to_qualifier": {"subject": "statement_value", "object": "statement_subject"},
-    "reason": "Seed mapping. Wikidata P25 (mother); subject/object inverted."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P25 (mother); subject/object inverted, so the Aedos subject is the mother. Multi-valued: a mother has many children (the re-audit's 'functional' label read the inverse direction, 'a person's mother')."
   },
   {
     "aedos_predicate": "sibling_of",
@@ -217,7 +236,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P3373",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P3373 (sibling)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P3373 (sibling). Multi-valued: a person may have many siblings."
   },
   {
     "aedos_predicate": "is_a",
@@ -228,7 +248,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P31",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P31 (instance of)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P31 (instance of). Multi-valued: entities have many types."
   },
   {
     "aedos_predicate": "instance_of",
@@ -239,7 +260,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P31",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P31 (instance of). Alias for is_a."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P31 (instance of). Alias for is_a. Multi-valued: entities have many types."
   },
   {
     "aedos_predicate": "subclass_of",
@@ -250,7 +272,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P279",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P279 (subclass of). Used for taxonomic subsumption."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P279 (subclass of). Used for taxonomic subsumption. Multi-valued: a class may be a subclass of several superclasses."
   },
   {
     "aedos_predicate": "nationality",
@@ -261,7 +284,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P27",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P27 (country of citizenship)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P27 (country of citizenship). Multi-valued: dual citizens."
   },
   {
     "aedos_predicate": "occupation",
@@ -272,7 +296,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P106",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P106 (occupation)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P106 (occupation). Multi-valued: a person may have several occupations."
   },
   {
     "aedos_predicate": "part_of",
@@ -283,7 +308,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P361",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P361 (part of) — mereological relation."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P361 (part of) — mereological relation. Multi-valued: a thing may be part of several wholes."
   },
   {
     "aedos_predicate": "has_part",
@@ -294,7 +320,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P527",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P527 (has part or parts)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P527 (has part or parts). Multi-valued."
   },
   {
     "aedos_predicate": "contains",
@@ -305,7 +332,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P527",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P527 (has part or parts). Alias for has_part in containment direction."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P527 (has part or parts). Alias for has_part in containment direction. Multi-valued."
   },
   {
     "aedos_predicate": "adjacent_to",
@@ -316,7 +344,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P47",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P47 (shares border with)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P47 (shares border with). Multi-valued: many neighbors."
   },
   {
     "aedos_predicate": "population_of",
@@ -327,7 +356,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P1082",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "point_in_time": "qualifier:P585"},
-    "reason": "Seed mapping. Wikidata P1082 (population)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P1082 (population). Multi-valued: many recorded figures across census years."
   },
   {
     "aedos_predicate": "area_of",
@@ -338,7 +368,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P2046",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P2046 (area)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P2046 (area). Multi-valued (conservative): land/total/water areas are recorded separately."
   },
   {
     "aedos_predicate": "elevation_of",
@@ -349,7 +380,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P2044",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P2044 (elevation above sea level)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P2044 (elevation above sea level). Multi-valued (conservative): highest/lowest/mean points are recorded separately."
   },
   {
     "aedos_predicate": "founded_in_year",
@@ -360,7 +392,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P571",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P571 (inception/founding date)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P571 (inception/founding date). Functional: an entity has one inception date."
   },
   {
     "aedos_predicate": "founded_by",
@@ -371,7 +404,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P112",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P112 (founded by)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P112 (founded by). Multi-valued: an entity may have several founders."
   },
   {
     "aedos_predicate": "occurred_in",
@@ -382,7 +416,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P585",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P585 (point in time) for events."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P585 (point in time) for events. Multi-valued (conservative): events may carry several recorded dates (start/end/point)."
   },
   {
     "aedos_predicate": "located_at",
@@ -393,7 +428,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P131",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P131 (located in the administrative territorial entity)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P131 (located in the administrative territorial entity). Multi-valued: P131 commonly holds several administrative parents."
   },
   {
     "aedos_predicate": "headquarters_in",
@@ -404,7 +440,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P159",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P159 (headquarters location)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P159 (headquarters location). Multi-valued: an organization may have several headquarters."
   },
   {
     "aedos_predicate": "authored_by",
@@ -415,7 +452,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P50",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P50 (author)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P50 (author). Multi-valued: a work may have several authors."
   },
   {
     "aedos_predicate": "published_in_year",
@@ -426,7 +464,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P577",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P577 (publication date)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P577 (publication date). Multi-valued (conservative): editions and regional releases carry distinct dates."
   },
   {
     "aedos_predicate": "publisher",
@@ -437,7 +476,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P123",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P123 (publisher)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P123 (publisher). Multi-valued: a work may have several publishers."
   },
   {
     "aedos_predicate": "directed_by",
@@ -448,7 +488,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P57",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P57 (director)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P57 (director). Multi-valued: co-directors."
   },
   {
     "aedos_predicate": "released_in_year",
@@ -459,7 +500,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P577",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P577 (publication date). Same property as published_in_year; used for films/albums."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P577 (publication date). Same property as published_in_year; used for films/albums. Multi-valued (conservative): regional releases carry distinct dates."
   },
   {
     "aedos_predicate": "genre",
@@ -470,7 +512,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P136",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P136 (genre)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P136 (genre). Multi-valued: a work may span several genres."
   },
   {
     "aedos_predicate": "language",
@@ -481,7 +524,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P407",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P407 (language of work or name)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P407 (language of work or name). Multi-valued: a work may exist in several languages."
   },
   {
     "aedos_predicate": "speaks",
@@ -492,7 +536,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P1412",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P1412 (languages spoken, written or signed)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P1412 (languages spoken, written or signed). Multi-valued."
   },
   {
     "aedos_predicate": "religion",
@@ -503,7 +548,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P140",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P140 (religion or worldview)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P140 (religion or worldview). Multi-valued (conservative): a person's affiliation may change over time."
   },
   {
     "aedos_predicate": "political_party",
@@ -514,7 +560,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P102",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P102 (member of political party)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P102 (member of political party). Multi-valued: people change parties."
   },
   {
     "aedos_predicate": "head_of_government",
@@ -525,7 +572,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P6",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P6 (head of government)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P6 (head of government). Functional: one head of government at a time — the LLM-generated valid_from/valid_until qualifiers carry the over-time change."
   },
   {
     "aedos_predicate": "head_of_state",
@@ -536,7 +584,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P35",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "start": "qualifier:P580", "end": "qualifier:P582"},
-    "reason": "Seed mapping. Wikidata P35 (head of state)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P35 (head of state). Functional: one head of state at a time — the LLM-generated valid_from/valid_until qualifiers carry the over-time change."
   },
   {
     "aedos_predicate": "won_prize",
@@ -547,7 +596,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P166",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "year": "qualifier:P585"},
-    "reason": "Seed mapping. Wikidata P166 (award received). Alias for awarded."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P166 (award received). Alias for awarded. Multi-valued: many prizes."
   },
   {
     "aedos_predicate": "discovered_by",
@@ -558,7 +608,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P61",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P61 (discoverer or inventor)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P61 (discoverer or inventor). Multi-valued: co-discoverers."
   },
   {
     "aedos_predicate": "invented_by",
@@ -569,7 +620,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P61",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P61 (discoverer or inventor). Alias for discovered_by."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P61 (discoverer or inventor). Alias for discovered_by. Multi-valued: co-inventors."
   },
   {
     "aedos_predicate": "has_successor",
@@ -580,7 +632,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P156",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P156 (followed by)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P156 (followed by). Multi-valued (conservative): branching sequences admit several successors."
   },
   {
     "aedos_predicate": "has_predecessor",
@@ -591,7 +644,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P155",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P155 (follows)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P155 (follows). Multi-valued (conservative): branching sequences admit several predecessors."
   },
   {
     "aedos_predicate": "currency_of",
@@ -602,7 +656,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P38",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P38 (currency)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P38 (currency). Multi-valued (conservative): some countries have several legal-tender currencies."
   },
   {
     "aedos_predicate": "operator_of",
@@ -613,7 +668,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P137",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P137 (operator)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P137 (operator). Multi-valued: a facility may have several operators."
   },
   {
     "aedos_predicate": "owned_by",
@@ -624,7 +680,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P127",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P127 (owned by)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P127 (owned by). Multi-valued: shared ownership."
   },
   {
     "aedos_predicate": "applies_to",
@@ -635,7 +692,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P6104",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P6104 (maintained by WikiProject) — approximate; deployment may refine."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P6104 (maintained by WikiProject) — approximate; deployment may refine. Multi-valued."
   },
   {
     "aedos_predicate": "number_of_employees",
@@ -646,7 +704,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P1128",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "point_in_time": "qualifier:P585"},
-    "reason": "Seed mapping. Wikidata P1128 (employees)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P1128 (employees). Multi-valued: many figures across reporting years."
   },
   {
     "aedos_predicate": "revenue",
@@ -657,7 +716,8 @@
     "kb_namespace": "wikidata",
     "kb_property": "P2139",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value", "point_in_time": "qualifier:P585"},
-    "reason": "Seed mapping. Wikidata P2139 (total revenue)."
+    "single_valued": 0,
+    "reason": "Seed mapping. Wikidata P2139 (total revenue). Multi-valued: many figures across reporting years."
   },
   {
     "aedos_predicate": "gender",
@@ -668,6 +728,7 @@
     "kb_namespace": "wikidata",
     "kb_property": "P21",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
-    "reason": "Seed mapping. Wikidata P21 (sex or gender)."
+    "single_valued": 1,
+    "reason": "Seed mapping. Wikidata P21 (sex or gender). Functional: P21 carries a single sex-or-gender value per subject."
   }
 ]

@@ -74,7 +74,11 @@ class KBVerifier:
         if subject_id is None:
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
-                trace={"reason": "subject_resolution_failed", "reference": claim.subject},
+                trace={
+                    "reason": "subject_resolution_failed",
+                    "reference": claim.subject,
+                    "abstention_reason": "subject_unresolved",
+                },
             )
 
         # Step 3: resolve the object entity when the predicate's object slot is
@@ -101,31 +105,43 @@ class KBVerifier:
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
                 subject_kb_id=subject_id,
-                trace={"reason": "no_statements_found", "entity": subject_id, "property": meta.kb_property},
+                trace={
+                    "reason": "no_statements_found",
+                    "entity": subject_id,
+                    "property": meta.kb_property,
+                    "abstention_reason": "no_statements",
+                },
             )
 
         # Step 5: verdict for the claim's *positive* content (polarity-agnostic).
-        pos_verdict, statement = self._compare_positive(
-            statements, claim, object_val, meta, current_time
+        pos_verdict, statement, abstention_reason = self._compare_positive(
+            statements, claim, object_val, object_resolved, meta, current_time
         )
 
         # Step 6: apply claim polarity (C1). A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
         final_verdict = _apply_polarity(pos_verdict, claim.polarity)
 
+        trace = {
+            "entity": subject_id,
+            "property": meta.kb_property,
+            "object_value": object_val,
+            "object_resolved": object_resolved,
+            "polarity": claim.polarity,
+            "positive_verdict": pos_verdict.value,
+            "single_valued": meta.single_valued,
+        }
+        # When the verdict is an abstention (NO_MATCH), record *why* — Phase 10.5
+        # debugging needs to tell a resolution failure apart from a genuine
+        # absence of evidence (N1).
+        if abstention_reason is not None:
+            trace["abstention_reason"] = abstention_reason
+
         return KBVerdict(
             verdict=final_verdict,
             matched_statement=statement,
             subject_kb_id=subject_id,
-            trace={
-                "entity": subject_id,
-                "property": meta.kb_property,
-                "object_value": object_val,
-                "object_resolved": object_resolved,
-                "polarity": claim.polarity,
-                "positive_verdict": pos_verdict.value,
-                "single_valued": meta.single_valued,
-            },
+            trace=trace,
         )
 
     def _compare_positive(
@@ -133,29 +149,51 @@ class KBVerifier:
         statements: list[Statement],
         claim: Claim,
         object_val,
+        object_resolved: bool,
         meta,
         current_time: str,
-    ) -> tuple[KBVerdictType, Optional[Statement]]:
+    ) -> tuple[KBVerdictType, Optional[Statement], Optional[str]]:
         """Verdict for the claim's positive content, ignoring polarity.
 
         A value match on a scope-compatible statement is VERIFIED. A
-        scope-compatible statement whose value does not match is a CONTRADICTED
+        scope-compatible statement whose value does not match is CONTRADICTED
         only for a functional (single_valued) predicate — for a multi-valued
         predicate the KB simply holds other values and the claim's value may
         also be true, so the result is NO_MATCH.
+
+        N1: when the object is an entity reference that did not resolve, a value
+        mismatch is *not* a contradiction. An unresolved natural-language string
+        compared against KB Q-numbers never matches, so a non-match is a
+        resolution failure, not evidence of falsity — architecture 3.2 classes
+        resolution failure as a false-abstain source, never a false-contradiction
+        source. The functional-predicate CONTRADICTED branch is therefore
+        suppressed when `meta.object_type == "entity"` and the object did not
+        resolve; the literal-match VERIFIED path above is unaffected.
+
+        Returns (verdict, statement, abstention_reason). abstention_reason is
+        None for VERIFIED/CONTRADICTED and one of "object_unresolved" /
+        "no_matching_statement" for NO_MATCH.
         """
         scope_mismatch: Optional[Statement] = None
         for stmt in statements:
             if not _scope_compatible(stmt, claim, current_time):
                 continue
             if _value_matches(stmt.value, object_val):
-                return KBVerdictType.VERIFIED, stmt
+                return KBVerdictType.VERIFIED, stmt, None
             if scope_mismatch is None:
                 scope_mismatch = stmt
 
+        object_unresolved = meta.object_type == "entity" and not object_resolved
+
         if scope_mismatch is not None and meta.single_valued:
-            return KBVerdictType.CONTRADICTED, scope_mismatch
-        return KBVerdictType.NO_MATCH, None
+            if object_unresolved:
+                # N1: the object reference never resolved — the mismatch is a
+                # resolution failure, not a contradiction. Abstain, do not lie.
+                return KBVerdictType.NO_MATCH, None, "object_unresolved"
+            return KBVerdictType.CONTRADICTED, scope_mismatch, None
+
+        reason = "object_unresolved" if object_unresolved else "no_matching_statement"
+        return KBVerdictType.NO_MATCH, None, reason
 
 
 def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:

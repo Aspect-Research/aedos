@@ -19,9 +19,19 @@ _REQUIRED_FIELDS = {
     "kb_namespace",
     "kb_property",
     "slot_to_qualifier",
+    "single_valued",
     "reason",
 }
 _VALID_ROUTING_HINTS = {"user_authoritative", "kb_resolvable", "python", "abstain"}
+
+# The functional (single-valued) predicates in the seed pack — a subject has at
+# most one true object (M4 backfill). See docs/v0_15/fixup2_report.md for the
+# per-predicate reasoning.
+_FUNCTIONAL_PREDICATES = {
+    "born_in", "died_in", "born_on", "died_on", "capital_of", "has_capital",
+    "continent_of", "founded_in_year", "head_of_government", "head_of_state",
+    "gender",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +136,45 @@ class TestSeedParsing:
 
 
 # ---------------------------------------------------------------------------
+# M4 backfill — single_valued
+# ---------------------------------------------------------------------------
+
+class TestSeedSingleValued:
+    """M4 backfill: every entry carries single_valued; the functional
+    predicates are 1 and everything else is 0."""
+
+    @pytest.fixture(scope="class")
+    def seeds(self):
+        return json.loads(_SEEDS_FILE.read_text(encoding="utf-8"))
+
+    def test_every_entry_has_single_valued(self, seeds):
+        for idx, entry in enumerate(seeds):
+            assert "single_valued" in entry, (
+                f"Entry {idx} ({entry.get('aedos_predicate')!r}): missing single_valued"
+            )
+            assert entry["single_valued"] in (0, 1), (
+                f"Entry {idx}: single_valued must be 0 or 1, got {entry['single_valued']!r}"
+            )
+
+    def test_functional_predicates_are_single_valued(self, seeds):
+        by_pred = {e["aedos_predicate"]: e for e in seeds}
+        for pred in _FUNCTIONAL_PREDICATES:
+            assert pred in by_pred, f"functional predicate {pred!r} missing from seed pack"
+            assert by_pred[pred]["single_valued"] == 1, f"{pred!r} should be single_valued=1"
+
+    def test_non_functional_predicates_not_single_valued(self, seeds):
+        for entry in seeds:
+            if entry["aedos_predicate"] not in _FUNCTIONAL_PREDICATES:
+                assert entry["single_valued"] == 0, (
+                    f"{entry['aedos_predicate']!r} should be single_valued=0 (conservative default)"
+                )
+
+    def test_exactly_eleven_functional(self, seeds):
+        functional = [e for e in seeds if e["single_valued"] == 1]
+        assert len(functional) == 11 == len(_FUNCTIONAL_PREDICATES)
+
+
+# ---------------------------------------------------------------------------
 # Load into in-memory DB
 # ---------------------------------------------------------------------------
 
@@ -195,3 +244,22 @@ class TestSeedLoading:
         stq = json.loads(row[0])
         assert "subject" in stq
         assert "object" in stq
+
+    def test_loaded_rows_carry_single_valued(self, db_path):
+        # M4 Step 3: a clean DB load lands every functional predicate with
+        # single_valued=1, not the column default 0. Pre-Step-3, load_seeds did
+        # not list single_valued in its INSERT, so all 61 rows defaulted to 0.
+        import sqlite3
+        from seeds.v0_15.load_seeds import load_seeds
+        load_seeds(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT aedos_predicate, single_valued FROM predicate_translation"
+        ).fetchall()
+        conn.close()
+        by_pred = {r["aedos_predicate"]: r["single_valued"] for r in rows}
+        for pred in _FUNCTIONAL_PREDICATES:
+            assert by_pred[pred] == 1, f"{pred!r} loaded with single_valued={by_pred[pred]}"
+        loaded_functional = {p for p, sv in by_pred.items() if sv == 1}
+        assert loaded_functional == _FUNCTIONAL_PREDICATES
