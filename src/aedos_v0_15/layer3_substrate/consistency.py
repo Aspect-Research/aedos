@@ -23,9 +23,16 @@ def _now_iso() -> str:
 
 
 class ConsistencyChecker:
-    def __init__(self, db, audit_log=None, config: Optional[dict] = None) -> None:
+    def __init__(
+        self,
+        db,
+        audit_log=None,
+        retraction_propagator=None,
+        config: Optional[dict] = None,
+    ) -> None:
         self._db = db
         self._audit = audit_log
+        self._retraction_propagator = retraction_propagator
         cfg = config or {}
         self._threshold = cfg.get("circuit_breaker_threshold", _DEFAULT_CIRCUIT_BREAKER_THRESHOLD)
 
@@ -66,6 +73,13 @@ class ConsistencyChecker:
                 (now, f"consistency_check:{conflict.inconsistency_class}", row_id),
             )
         self._db.commit()
+
+        # Architecture 5.4 step 2: verdicts whose justification traces include
+        # either retracted row are propagated for re-derivation.
+        if self._retraction_propagator is not None:
+            for row_id in (conflict.row_a_id, conflict.row_b_id):
+                if row_id is not None:
+                    self._retraction_propagator.propagate_retraction(conflict.table, row_id)
 
         sig = self._question_signature(conflict)
         self._increment_circuit_breaker(sig, now)

@@ -233,7 +233,10 @@ class Walker:
                 edge_type="premise_lookup",
                 source=trace.root,
                 target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
-                metadata={"source": "tier_u", "polarity": node.polarity, "verdict": "verified"},
+                metadata={
+                    "source": "tier_u", "polarity": node.polarity, "verdict": "verified",
+                    "tier_u_row_id": tier_u_result.rows[0]["id"] if tier_u_result.rows else None,
+                },
             ))
             # TierU._stage1 matches polarity exactly: a `found` hit is an
             # assertion of the SAME polarity as the claim, hence verified —
@@ -256,7 +259,10 @@ class Walker:
                 edge_type="premise_lookup",
                 source=trace.root,
                 target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
-                metadata={"source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted"},
+                metadata={
+                    "source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted",
+                    "tier_u_row_id": flipped_result.rows[0]["id"] if flipped_result.rows else None,
+                },
             ))
             return "contradicted", "tier_u", 0
 
@@ -317,7 +323,11 @@ class Walker:
                     edge_type="predicate_equivalence",
                     source=TraceNode("claim", {"predicate": node.predicate}),
                     target=TraceNode("claim", {"predicate": meta.aedos_predicate}),
-                    metadata={"kb_property": meta.kb_property},
+                    metadata={
+                        "kb_property": meta.kb_property,
+                        "polarity": node.polarity,
+                        "predicate_translation_row_id": meta.id,
+                    },
                 ))
                 expanded.append(new_node)
         except Exception:
