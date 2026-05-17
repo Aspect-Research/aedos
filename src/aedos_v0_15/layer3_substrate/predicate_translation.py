@@ -52,6 +52,17 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
                 "type": ["object", "null"],
                 "description": "JSON mapping Aedos slot names to KB qualifier P-numbers.",
             },
+            "single_valued": {
+                "type": "integer",
+                "enum": [0, 1],
+                "description": (
+                    "1 if the predicate is functional/single-valued — a subject "
+                    "has at most one true object (e.g. place_of_birth, date_of_death). "
+                    "0 if multi-valued (e.g. position_held, occupation, award_received). "
+                    "Only a functional predicate licenses a KB contradiction from a "
+                    "non-matching value."
+                ),
+            },
             "reason": {
                 "type": "string",
                 "description": "1-2 sentence justification for the routing and mapping choices.",
@@ -79,6 +90,11 @@ routing_hint options:
 
 When in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are
 confident the predicate maps to a real Wikidata property.
+
+single_valued: set 1 only for functional predicates where a subject has at most one
+true object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates
+(position_held, occupation, award_received, member_of). When unsure, choose 0 — a wrong
+single_valued=1 produces a false contradiction.
 """
 
 
@@ -99,6 +115,7 @@ class PredicateMetadata:
     used_count: int = 0
     retracted_at: Optional[str] = None
     retraction_reason: Optional[str] = None
+    single_valued: bool = False  # functional predicate: licenses KB contradiction
 
 
 class PredicateTranslationError(Exception):
@@ -232,11 +249,13 @@ class PredicateTranslation:
 
         # INSERT OR REPLACE handles the case where a retracted row exists for the same
         # (predicate, namespace) key — SQLite deletes the old row and inserts the new one.
+        single_valued = int(raw.get("single_valued", 0) or 0)
         self._db.execute(
             """INSERT OR REPLACE INTO predicate_translation
                (aedos_predicate, object_type, user_subject_required, distinct_slots,
-                routing_hint, kb_namespace, kb_property, slot_to_qualifier, reason, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                routing_hint, kb_namespace, kb_property, slot_to_qualifier,
+                single_valued, reason, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 aedos_predicate,
                 raw["object_type"],
@@ -246,6 +265,7 @@ class PredicateTranslation:
                 effective_kb_namespace,
                 raw.get("kb_property"),
                 json.dumps(slot_to_qualifier_raw) if slot_to_qualifier_raw else None,
+                single_valued,
                 raw["reason"],
                 now,
             ),
@@ -277,6 +297,7 @@ class PredicateTranslation:
             slot_to_qualifier=slot_to_qualifier_raw,
             reason=raw["reason"],
             created_at=now,
+            single_valued=bool(single_valued),
         )
 
     @staticmethod
@@ -305,4 +326,5 @@ class PredicateTranslation:
             used_count=row["used_count"],
             retracted_at=row["retracted_at"],
             retraction_reason=row["retraction_reason"],
+            single_valued=bool(row["single_valued"]),
         )

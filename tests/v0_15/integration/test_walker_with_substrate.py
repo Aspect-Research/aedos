@@ -24,7 +24,14 @@ from src.aedos_v0_15.llm.client import LLMClient
 # Helpers
 # ---------------------------------------------------------------------------
 
+_RESOLUTIONS = {"Obama": "Q76", "President": "Q11696", "Honolulu": "Q18094"}
+
+
 class MockTransport:
+    def __init__(self, kb_property="P39", single_valued=0):
+        self._prop = kb_property
+        self._single_valued = single_valued
+
     def extract_with_tool(self, *a, purpose=None, **kw):
         if purpose == "distribution_generation":
             return {"verdict": "neither", "reason": "test"}
@@ -36,8 +43,9 @@ class MockTransport:
             "distinct_slots": None,
             "routing_hint": "kb_resolvable",
             "kb_namespace": "wikidata",
-            "kb_property": "P39",
+            "kb_property": self._prop,
             "slot_to_qualifier": None,
+            "single_valued": self._single_valued,
             "reason": "test",
         }
     def chat(self, *a, **kw): return ""
@@ -46,14 +54,16 @@ class MockTransport:
 class MockKB:
     def __init__(self, stmts=None):
         self._stmts = stmts or []
-    def resolve_entity(self, r, lc): return [ResolutionCandidate("Q76", score=0.9)]
+    def resolve_entity(self, r, lc):
+        qid = _RESOLUTIONS.get(r)
+        return [ResolutionCandidate(qid, score=0.9)] if qid else []
     def lookup_statements(self, e, p): return list(self._stmts)
     def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
 
 
-def _make_full_system(kb_stmts=None):
+def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0):
     db = open_memory_db()
-    client = LLMClient(_transport=MockTransport())
+    client = LLMClient(_transport=MockTransport(kb_property, single_valued))
     kb = MockKB(kb_stmts)
     pt = PredicateTranslation(db=db, llm_client=client)
     resolver = EntityResolver(kb_protocol=kb, db=db)
@@ -114,13 +124,15 @@ class TestWalkerKBPath:
     def test_kb_match_verified(self):
         stmts = [Statement(value="Q11696", value_type="entity")]
         walker, _, _ = _make_full_system(kb_stmts=stmts)
-        result = walker.walk(_claim(), _ctx())
+        result = walker.walk(_claim(object_val="President"), _ctx())
         assert result.verdict == "verified"
 
     def test_kb_contradiction_returns_contradicted(self):
-        stmts = [Statement(value="Q99999", value_type="entity")]
-        walker, _, _ = _make_full_system(kb_stmts=stmts)
-        result = walker.walk(_claim(), _ctx())
+        # A functional predicate (born_in) with a non-matching KB statement
+        # genuinely contradicts the claim and the verdict flows to the walker.
+        stmts = [Statement(value="Q11696", value_type="entity")]
+        walker, _, _ = _make_full_system(kb_stmts=stmts, kb_property="P19", single_valued=1)
+        result = walker.walk(_claim(predicate="born_in", object_val="Honolulu"), _ctx())
         assert result.verdict == "contradicted"
 
 

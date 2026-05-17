@@ -51,12 +51,16 @@ class MockTransport:
         return ""
 
 
+_RESOLUTIONS = {"Obama": "Q76", "President": "Q11696"}
+
+
 class MockKB:
     def __init__(self, stmts=None):
         self._stmts = stmts or []
 
     def resolve_entity(self, r, lc):
-        return [ResolutionCandidate("Q76", score=0.9)]
+        qid = _RESOLUTIONS.get(r)
+        return [ResolutionCandidate(qid, score=0.9)] if qid else []
 
     def lookup_statements(self, e, p):
         return list(self._stmts)
@@ -85,7 +89,7 @@ def _make_pipeline(kb_stmts=None):
     return walker, tier_u, aggregator, consistency, propagator, tracer, db
 
 
-def _claim(claim_id: str = "c1", subject: str = "Obama", predicate: str = "holds_role", object_val: str = "Q11696") -> Claim:
+def _claim(claim_id: str = "c1", subject: str = "Obama", predicate: str = "holds_role", object_val: str = "President") -> Claim:
     return Claim(
         claim_id=claim_id,
         subject=subject,
