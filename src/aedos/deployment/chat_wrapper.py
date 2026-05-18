@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
+from ..layer1_extraction.extractor import ExtractionContext
 from ..layer1_extraction.triage import TriageDecision
 from ..layer4_sources.walker import VerificationContext
 from ..layer5_result.aggregator import VerificationResult
@@ -90,14 +91,23 @@ class ChatWrapper:
         )
 
         # 2. Extract claims
+        #
+        # The extraction call is deliberately NOT wrapped in a broad
+        # `except Exception`. A prior `except Exception: claims = []` here
+        # silently swallowed a `TypeError` from a stale `extract` signature for
+        # two release candidates, leaving `/chat` verification-inert. Letting an
+        # unexpected extraction failure propagate is the honest behaviour: the
+        # next such bug surfaces immediately instead of degrading silently.
         claims = []
         if self._extractor is not None and draft:
-            try:
-                claims = self._extractor.extract(draft, asserting_party=asserting_party)
-                # Only keep VERIFY-triaged claims for verification
-                claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
-            except Exception:
-                claims = []
+            extraction_context = ExtractionContext(
+                asserting_party=asserting_party,
+                context_type="chat_user",
+                turn_id=ctx_dict.get("conversation_id"),
+            )
+            claims = self._extractor.extract(draft, extraction_context)
+            # Only keep VERIFY-triaged claims for verification
+            claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
 
         # 3. Verify each claim
         verification_context = VerificationContext(
