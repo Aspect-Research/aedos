@@ -24,7 +24,7 @@ pip install -e .
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | Yes (for live LLM) | — | API key for the LLM client |
-| `AEDOS_DB_PATH` | No | `aedos_v0_15.db` | Path to the SQLite database file |
+| `AEDOS_DB_PATH` | No | `aedos.db` | Path to the SQLite database file |
 | `AEDOS_LLM_MODEL` | No | `claude-sonnet-4-6` | LLM model ID |
 | `AEDOS_WALKER_MAX_DEPTH` | No | `4` | Maximum BFS depth for the derivation walker |
 | `AEDOS_WALKER_MAX_LLM_CALLS` | No | `8` | LLM call budget per claim walk |
@@ -35,13 +35,13 @@ pip install -e .
 The database is initialized automatically on first startup. To initialize manually:
 
 ```bash
-python -c "from src.aedos_v0_15.database import open_db; open_db('aedos_v0_15.db')"
+python -c "from aedos.database import open_db; open_db('aedos.db')"
 ```
 
 ## Starting the server
 
 ```bash
-uvicorn src.aedos_v0_15.app:app --host 0.0.0.0 --port 8000
+uvicorn aedos.app:app --host 0.0.0.0 --port 8000
 ```
 
 Verify the server is running:
@@ -62,10 +62,10 @@ A zero-seed deployment starts with an empty `predicate_translation` table. The s
 - Zero false verifieds: the system abstains rather than guesses if translation fails.
 
 **Verification of zero-seed correctness:**
-The test scaffolding at `tests/v0_15/cold_start/test_zero_seed_correctness.py` verifies structural correctness. For live acceptance testing:
+The test scaffolding at `tests/cold_start/test_zero_seed_correctness.py` verifies structural correctness. For live acceptance testing:
 
 ```bash
-RUN_LIVE_TESTS=1 RUN_LIVE_KB=1 pytest tests/v0_15/cold_start/test_zero_seed_correctness.py -v
+RUN_LIVE_TESTS=1 RUN_LIVE_KB=1 pytest tests/cold_start/test_zero_seed_correctness.py -v
 ```
 
 Expected results: all 10 cases produce expected verdicts. First-claim latency ≤ 30s. Tenth-claim latency ≤ 5s.
@@ -77,7 +77,7 @@ The optional seed pack pre-populates 65 common predicate translation rows, cover
 **Loading seeds:**
 
 ```bash
-python seeds/v0_15/load_seeds.py --db-path aedos_v0_15.db
+python seeds/load_seeds.py --db-path aedos.db
 ```
 
 The load is idempotent (safe to run multiple times). Seeds are tagged with their generation date.
@@ -85,7 +85,7 @@ The load is idempotent (safe to run multiple times). Seeds are tagged with their
 **Trade-offs:**
 - Reduces first-use latency for the 65 covered predicates.
 - Does not constrain the system: predicates not in the seed set are still handled by inline generation.
-- Seeds may be stale if Wikidata property IDs change; check `seeds/v0_15/SEED_VERSION.txt` for the last-reviewed date.
+- Seeds may be stale if Wikidata property IDs change; check `seeds/SEED_VERSION.txt` for the last-reviewed date.
 
 ## Monitoring the audit log
 

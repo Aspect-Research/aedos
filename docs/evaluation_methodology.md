@@ -27,7 +27,7 @@ The test set is organized around six failure modes that the architecture targets
 
 ## Test set construction
 
-The test set (`tests/v0_15/evaluation/medium_bar_test_set.jsonl`) contains 122 cases distributed as follows:
+The test set (`tests/evaluation/medium_bar_test_set.jsonl`) contains 122 cases distributed as follows:
 
 | Failure mode | Count | Verified | Contradicted | Abstain |
 |---|---|---|---|---|
@@ -67,13 +67,13 @@ This baseline choice is conservative and favorable to the baseline: the LLM has 
 
 ## Execution
 
-The benchmark runner is at `tests/v0_15/evaluation/benchmark.py`. Execution requires:
+The benchmark runner is at `tests/evaluation/benchmark.py`. Execution requires:
 - `RUN_LIVE_TESTS=1`
 - `RUN_LIVE_KB=1`
 - A valid `ANTHROPIC_API_KEY`
 - Live Wikidata access
 
-**Deferred to Phase 10.5.** Results will be documented in `docs/v0_15/evaluation_results.md` once Phase 10.5 completes.
+**Deferred to Phase 10.5.** Results will be documented in `docs/evaluation_results.md` once Phase 10.5 completes.
 
 ## Limitations
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from tests.calibration.test_corpus_runner import THRESHOLDS
 
-_RUNBOOK = Path(__file__).parents[2] / "docs" / "v0_15" / "phase_10_5_runbook.md"
+_RUNBOOK = Path(__file__).parents[2] / "docs" / "phase_10_5_runbook.md"
 
 # A threshold-table row:  | `corpus_name` | NN% | plan bar |
 _ROW = re.compile(r"^\|\s*`([a-z_]+)`\s*\|\s*(\d+)%\s*\|", re.MULTILINE)

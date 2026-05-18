@@ -127,3 +127,12 @@ This file records one entry per phase of the unattended overnight build.
 - One-sentence summary: Implemented the optional predicate translation seed pack (65 entries spanning 7 category groups, idempotent load_seeds.py with NULL-namespace fix), cold-start zero-seed test scaffolding (10 representative claims across all routing paths, deferred live execution), audit-log query endpoint tests (23 new integration tests confirming all four /audit/* endpoints return correct event types and respect limit parameter), medium-bar evaluation scaffolding (122-case test set across six failure modes, benchmark.py with AedosRunner/BaselineRunner/MetricsComputer/generate_report, structural self-test confirming harness wiring), and all three Phase 10.5 handoff documents (cold_start.md, evaluation_methodology.md, phase_10_5_runbook.md), with 71 new passing tests.
 
 
+## Release Preparation — Minor Fixes (R1/R2/R3), Restructure, README
+
+- Commits: `fixup-3.5: R1/R2/R3`; `Remove v0.14 code and tests`; `Promote aedos_v0_15 to aedos; restructure tests and seeds`; `Restructure docs; archive build history; write README`
+- Tag: v0.15.0-rc.1 (release candidate; `v0.15.0` reserved for after Phase 10.5 passes its thresholds)
+- Test count: 699 passed, 1 skipped, 11 deselected (+3 over the fixup-3 baseline of 696 — two R1 walker-trace tests, one R3 polarity test)
+- Blockers: none
+- One-sentence summary: Resolved the three Minor findings from the second re-audit — R1 (the walker now copies the D19 `lookup_inverted` flag onto the KB trace edge so the result-level trace records inverted lookups), R2 (the KB verifier's direction-ambiguous trace fields renamed to `value_resolved` / `value_entity` / `lookup_subject_unresolved` / `value_unresolved`), R3 (added a polarity×inverted-predicate test) — then deleted the v0.14 codebase and tests, promoted `src/aedos_v0_15/` to the primary `src/aedos/` package with all imports updated and `pythonpath` configured, promoted `tests/v0_15/` and `seeds/v0_15/` up one level, bumped the package version to `0.15.0rc1`, archived the v0.15 build history (phase plans, audit/fix-up/re-audit reports, run log, implementation plan) under `docs/v0.15_build_log/` while promoting the forward-looking docs and the architecture to `docs/`, wrote a repository README for cold readers, and tagged `v0.15.0-rc.1` as the pre-calibration release candidate.
+
+
