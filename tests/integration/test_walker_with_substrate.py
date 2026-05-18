@@ -319,6 +319,74 @@ class TestWalkerPolarityVerdicts:
         assert all(p == 1 for p in result.trace.polarity_trace)
 
 
+class TestWalkerObjectConflictVerdicts:
+    """B2 / D16: object-conflict belief revision. A functional (single_valued)
+    predicate admits at most one object value per subject, so a Tier U row
+    asserting a different value contradicts a positive claim. Multi-valued
+    predicates do not — a different value is a parallel assertion."""
+
+    def test_functional_object_conflict_is_contradicted(self):
+        # Tier U holds (Asa, lives_in, NYC); single_valued=1 makes lives_in
+        # functional, so a claimed different residence is contradicted.
+        walker, tier_u, _ = _make_full_system(single_valued=1)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="NYC", polarity=1))
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Boston", polarity=1)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "contradicted"
+        markers = [e.metadata.get("belief_revision") for e in result.trace.edges]
+        assert "object_conflict" in markers
+
+    def test_multi_valued_object_difference_is_not_contradicted(self):
+        # occupation is multi-valued (single_valued=0): a person may hold
+        # several, so a different occupation does not fire the object-conflict
+        # path — it abstains rather than contradicting.
+        walker, tier_u, _ = _make_full_system(single_valued=0)
+        tier_u.write(_claim(subject="Asa", predicate="occupation", object_val="teacher", polarity=1))
+        goal = _claim(subject="Asa", predicate="occupation", object_val="lawyer", polarity=1)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "no_grounding_found"
+        markers = [e.metadata.get("belief_revision") for e in result.trace.edges]
+        assert "object_conflict" not in markers
+
+    def test_polarity_conflict_records_trace_marker(self):
+        # Regression: the polarity-flip path still contradicts, and now tags its
+        # trace edge so Phase 10.5 can tell polarity revision from object
+        # conflict.
+        walker, tier_u, _ = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="holds_role", object_val="student", polarity=1))
+        goal = _claim(subject="Asa", predicate="holds_role", object_val="student", polarity=0)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "contradicted"
+        markers = [e.metadata.get("belief_revision") for e in result.trace.edges]
+        assert "polarity_conflict" in markers
+
+    def test_negated_claim_against_functional_prior_abstains(self):
+        # Decision 1 (conservative): Tier U holds (Asa, lives_in, NYC); a
+        # negated claim about a DIFFERENT residence is logically implied by the
+        # functional prior, but Phase B does not verify it — the negated-claim
+        # direction falls through to abstain rather than firing belief revision.
+        walker, tier_u, _ = _make_full_system(single_valued=1)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="NYC", polarity=1))
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Boston", polarity=0)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "no_grounding_found"
+        markers = [e.metadata.get("belief_revision") for e in result.trace.edges]
+        assert "object_conflict" not in markers
+
+    def test_both_negative_object_difference_is_not_contradicted(self):
+        # Polarity guard: two negative assertions about different objects of a
+        # functional predicate are consistent ("not in NYC" and "not in Boston"
+        # can both hold). The object-conflict path must not fire — it is
+        # guarded to positive claims.
+        walker, tier_u, _ = _make_full_system(single_valued=1)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="NYC", polarity=0))
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Boston", polarity=0)
+        result = walker.walk(goal, _ctx())
+        assert result.verdict != "contradicted"
+        markers = [e.metadata.get("belief_revision") for e in result.trace.edges]
+        assert "object_conflict" not in markers
+
+
 class TestWalkerMultiChainConflict:
     """M3b: the multi-chain conflict-detection branch was unreachable because
     the walker broke on the first `verified`."""

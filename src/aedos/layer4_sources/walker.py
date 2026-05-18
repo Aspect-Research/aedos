@@ -262,9 +262,37 @@ class Walker:
                 metadata={
                     "source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted",
                     "tier_u_row_id": flipped_result.rows[0]["id"] if flipped_result.rows else None,
+                    "belief_revision": "polarity_conflict",
                 },
             ))
             return "contradicted", "tier_u", 0
+
+        # Object-conflict belief revision (D16): a functional (single_valued)
+        # predicate admits at most one object value per subject. A
+        # currently-valid Tier U row positively asserting a DIFFERENT object for
+        # the same (party, subject, predicate) therefore contradicts a positive
+        # claim — the asserting party already stipulated another value.
+        # Multi-valued predicates do not fire this path (a different value is a
+        # parallel assertion). Negated claims do not fire it either: Phase B
+        # keeps the negated-claim direction conservative (fall through to
+        # abstain) rather than deriving the negation from the functional prior.
+        if node.polarity == 1:
+            oc_result = self._tier_u.lookup_object_conflict(
+                node, current_time=context.current_time
+            )
+            if oc_result.found and self._predicate_is_functional(node.predicate):
+                trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
+                trace.edges.append(TraceEdge(
+                    edge_type="premise_lookup",
+                    source=trace.root,
+                    target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
+                    metadata={
+                        "source": "tier_u", "polarity": node.polarity, "verdict": "contradicted",
+                        "tier_u_row_id": oc_result.rows[0]["id"] if oc_result.rows else None,
+                        "belief_revision": "object_conflict",
+                    },
+                ))
+                return "contradicted", "tier_u", 0
 
         # KB verification
         if self._kb_verifier is not None:
@@ -312,6 +340,23 @@ class Walker:
                 return py_result.verdict, "python", 0
 
         return None, "", 0
+
+    def _predicate_is_functional(self, predicate: str) -> bool:
+        """Whether `predicate` is functional (single_valued) per predicate
+        translation.
+
+        In the assembled pipeline Layer 2 routing has already consulted the
+        oracle for this predicate, so this `consult` is a cache hit (no LLM
+        call) — `_direct_lookup` keeps reporting llm_delta=0, consistent with
+        the KB-verifier path which also consults the oracle internally. A
+        consult failure is treated as non-functional: a wrong 0 costs only a
+        false abstain, a wrong 1 a false contradiction (architecture 5.2).
+        """
+        try:
+            meta = self._substrate.predicate_translation.consult(predicate)
+            return bool(meta.single_valued)
+        except Exception:
+            return False
 
     def _expand_via_substrate(
         self, node: Claim, trace: JustificationTrace, depth: int
