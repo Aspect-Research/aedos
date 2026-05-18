@@ -19,7 +19,7 @@ class WriteResult:
     row_id: int
     was_idempotent: bool = False
     contradiction_closed: bool = False
-    closed_row_id: Optional[int] = None
+    closed_row_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -34,17 +34,35 @@ class TierU:
     def __init__(
         self,
         db: sqlite3.Connection,
-        audit_log=None,
         entity_resolver=None,  # stub in Phase 3; wired in Phase 4
         predicate_translation: Optional[PredicateTranslation] = None,
     ) -> None:
+        # `db` is required; audit events are written via log_event(db, ...)
+        # unconditionally — the vestigial `audit_log` flag (a D8 leftover that
+        # build_pipeline never set) was removed in Phase B (B3), matching the
+        # A4 cleanup of consistency.py / retraction.py / contradiction_tracer.py.
         self._db = db
-        self._audit = audit_log
         self._resolver = entity_resolver
         self._oracle = predicate_translation
 
     def write(self, claim: Claim, source_context: Optional[dict] = None) -> WriteResult:
-        """Write claim to Tier U. Idempotent on matching content; closes contradictions."""
+        """Write claim to Tier U.
+
+        Idempotent on matching content. A prior row is *closed* (its
+        `valid_until` set to now) only when the new claim genuinely contradicts
+        it (D16) — one of:
+
+          (a) same object, opposite polarity — a direct negation; closes the
+              prior regardless of the predicate's cardinality;
+          (b) different object, both positive polarity, and the predicate is
+              functional (single_valued) — the asserting party revised a
+              single-valued slot.
+
+        A different object on a *multi-valued* predicate is a parallel
+        assertion — the prior stays open (e.g. two occupations, two hobbies).
+        A different object at a different polarity (the contrastive-correction
+        shape "X, not Y") is likewise compatible: the prior stays open.
+        """
         now = _NOW()
         source_ctx_json = json.dumps(source_context) if source_context else None
 
@@ -60,26 +78,41 @@ class TierU:
         if existing is not None:
             return WriteResult(row_id=existing["id"], was_idempotent=True)
 
-        # Contradiction check: same (asserting_party, subject, predicate) but conflicting content
-        conflict = self._db.execute(
-            """SELECT id, asserted_at FROM tier_u
-               WHERE asserting_party=? AND subject=? AND predicate=?
-               AND (object != ? OR polarity != ?) AND retracted_at IS NULL
-               ORDER BY id LIMIT 1""",
-            (claim.asserting_party, claim.subject, claim.predicate,
-             claim.object, claim.polarity),
-        ).fetchone()
+        closed_row_ids: list[int] = []
+        parallel_assertion = False
 
-        contradiction_closed = False
-        closed_row_id: Optional[int] = None
-        if conflict is not None:
-            # Close the contradicted row by setting valid_until to now
+        # (a) Direct negation: a prior row with the SAME object at the opposite
+        #     polarity. Closed regardless of predicate cardinality.
+        negation_rows = self._db.execute(
+            """SELECT id FROM tier_u
+               WHERE asserting_party=? AND subject=? AND predicate=?
+               AND object=? AND polarity=? AND retracted_at IS NULL""",
+            (claim.asserting_party, claim.subject, claim.predicate,
+             claim.object, 1 - claim.polarity),
+        ).fetchall()
+        closed_row_ids.extend(r["id"] for r in negation_rows)
+
+        # (b) Functional object revision: prior positive rows asserting a
+        #     DIFFERENT object. Only fires for a positive new claim and a
+        #     functional predicate; on a multi-valued predicate the prior rows
+        #     stay open as parallel assertions.
+        if claim.polarity == 1:
+            other_object_rows = self._db.execute(
+                """SELECT id FROM tier_u
+                   WHERE asserting_party=? AND subject=? AND predicate=?
+                   AND object!=? AND polarity=1 AND retracted_at IS NULL""",
+                (claim.asserting_party, claim.subject, claim.predicate, claim.object),
+            ).fetchall()
+            if other_object_rows:
+                if self._predicate_is_functional(claim.predicate):
+                    closed_row_ids.extend(r["id"] for r in other_object_rows)
+                else:
+                    parallel_assertion = True
+
+        for closed_id in closed_row_ids:
             self._db.execute(
-                "UPDATE tier_u SET valid_until=? WHERE id=?",
-                (now, conflict["id"]),
+                "UPDATE tier_u SET valid_until=? WHERE id=?", (now, closed_id)
             )
-            contradiction_closed = True
-            closed_row_id = conflict["id"]
 
         self._db.execute(
             """INSERT INTO tier_u
@@ -104,15 +137,38 @@ class TierU:
         self._db.commit()
         row_id: int = self._db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        if self._audit is not None:
+        contradiction_closed = bool(closed_row_ids)
+        log_event(
+            self._db,
+            event_type="row_created",
+            event_subject=f"tier_u:{row_id}",
+            event_data={
+                "asserting_party": claim.asserting_party,
+                "predicate": claim.predicate,
+                "contradiction_closed": contradiction_closed,
+            },
+        )
+        # Audit which case fired, so Phase 10.5 can tell a belief revision
+        # (a closed prior) from a parallel assertion (a multi-valued addition).
+        for closed_id in closed_row_ids:
             log_event(
                 self._db,
-                event_type="row_created",
+                event_type="tier_u_row_closed",
+                event_subject=f"tier_u:{closed_id}",
+                event_data={
+                    "closed_by_row_id": row_id,
+                    "asserting_party": claim.asserting_party,
+                    "predicate": claim.predicate,
+                },
+            )
+        if parallel_assertion:
+            log_event(
+                self._db,
+                event_type="tier_u_parallel_assertion",
                 event_subject=f"tier_u:{row_id}",
                 event_data={
                     "asserting_party": claim.asserting_party,
                     "predicate": claim.predicate,
-                    "contradiction_closed": contradiction_closed,
                 },
             )
 
@@ -120,7 +176,7 @@ class TierU:
             row_id=row_id,
             was_idempotent=False,
             contradiction_closed=contradiction_closed,
-            closed_row_id=closed_row_id,
+            closed_row_ids=closed_row_ids,
         )
 
     def lookup(
@@ -196,17 +252,33 @@ class TierU:
             (now, reason, row_id),
         )
         self._db.commit()
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_retracted",
-                event_subject=f"tier_u:{row_id}",
-                event_data={"reason": reason},
-            )
+        log_event(
+            self._db,
+            event_type="row_retracted",
+            event_subject=f"tier_u:{row_id}",
+            event_data={"reason": reason},
+        )
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _predicate_is_functional(self, predicate: str) -> bool:
+        """Whether `predicate` is functional (single_valued) per the predicate
+        translation oracle.
+
+        Treated as multi-valued — the architecture 5.2 conservative default —
+        when no oracle is wired or the consult fails: a wrong 0 keeps a
+        parallel row open (a false abstain at worst), whereas a wrong 1 would
+        wrongly close a live row. In the assembled pipeline the predicate has
+        already been routed by Layer 2, so this consult is a cache hit.
+        """
+        if self._oracle is None:
+            return False
+        try:
+            return bool(self._oracle.consult(predicate).single_valued)
+        except Exception:
+            return False
 
     def _stage1(self, claim: Claim, current_time: str) -> LookupResult:
         rows = self._query_current(

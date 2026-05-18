@@ -134,22 +134,28 @@ class TestKBResolvableRoute:
 # ---------------------------------------------------------------------------
 
 class TestContradictionFlow:
+    # B3/D16: a *different object* on the multi-valued `prefers` predicate is a
+    # parallel assertion, not a contradiction (a user may prefer several
+    # things). The genuine contradiction this flow exercises is a polarity flip
+    # — the same object asserted, then negated — which closes the prior row
+    # regardless of predicate cardinality. The functional-vs-multi-valued
+    # object-difference closure rule is covered in test_tier_u.py.
     def test_contradicting_claim_closes_prior(self):
         router, tier_u, db = _make_system("user_authoritative")
-        tier_u.write(_claim(object_val="Coffee"))
-        result2 = tier_u.write(_claim(object_val="Tea"))
+        tier_u.write(_claim(object_val="Coffee", polarity=1))
+        result2 = tier_u.write(_claim(object_val="Coffee", polarity=0))
         assert result2.contradiction_closed is True
 
     def test_after_contradiction_lookup_finds_new(self):
         router, tier_u, _ = _make_system("user_authoritative")
-        tier_u.write(_claim(object_val="Coffee"))
-        tier_u.write(_claim(object_val="Tea"))
-        result = tier_u.lookup(_claim(object_val="Tea"))
+        tier_u.write(_claim(object_val="Coffee", polarity=1))
+        tier_u.write(_claim(object_val="Coffee", polarity=0))
+        result = tier_u.lookup(_claim(object_val="Coffee", polarity=0))
         assert result.found is True
 
     def test_after_contradiction_old_not_found(self):
         router, tier_u, _ = _make_system("user_authoritative")
-        tier_u.write(_claim(object_val="Coffee"))
-        tier_u.write(_claim(object_val="Tea"))
-        result = tier_u.lookup(_claim(object_val="Coffee"))
+        tier_u.write(_claim(object_val="Coffee", polarity=1))
+        tier_u.write(_claim(object_val="Coffee", polarity=0))
+        result = tier_u.lookup(_claim(object_val="Coffee", polarity=1))
         assert result.found is False
