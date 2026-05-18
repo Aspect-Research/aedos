@@ -10,7 +10,7 @@ run them, with expected runtimes and acceptance thresholds.
 - `ANTHROPIC_API_KEY` is set.
 - Wikidata internet access is available.
 - Python 3.11+ is installed.
-- All mocked tests pass: `py -m pytest tests/v0_15/ -q` (no `RUN_LIVE_TESTS`).
+- All mocked tests pass: `py -m pytest tests/ -q` (no `RUN_LIVE_TESTS`).
 
 ---
 
@@ -19,7 +19,7 @@ run them, with expected runtimes and acceptance thresholds.
 **Purpose:** Verify the build + fix-up are intact before live calibration.
 
 ```bash
-py -m pytest tests/v0_15/ -q
+py -m pytest tests/ -q
 ```
 
 **Expected:** All tests pass — 664 passing, 1 gated skip (the cold-start test,
@@ -59,8 +59,8 @@ export AEDOS_DB_PATH=aedos_phase10_5.db
 **Purpose:** Start with a clean substrate for calibration.
 
 ```bash
-py -c "from src.aedos_v0_15.database import open_db; open_db('aedos_phase10_5.db')"
-py seeds/v0_15/load_seeds.py --db-path aedos_phase10_5.db
+py -c "from aedos.database import open_db; open_db('aedos_phase10_5.db')"
+py seeds/load_seeds.py --db-path aedos_phase10_5.db
 ```
 
 **Expected output:**
@@ -86,9 +86,9 @@ Insert them directly before running the benchmark.
 
 ```python
 # Run this Python snippet (or adapt to your deployment harness):
-from src.aedos_v0_15.database import open_db
-from src.aedos_v0_15.layer4_sources.tier_u import TierU
-from src.aedos_v0_15.layer3_substrate.predicate_translation import PredicateTranslation
+from aedos.database import open_db
+from aedos.layer4_sources.tier_u import TierU
+from aedos.layer3_substrate.predicate_translation import PredicateTranslation
 
 db = open_db("aedos_phase10_5.db")
 # NOTE: these assertions use routing_hint=user_authoritative; seeded directly.
@@ -119,7 +119,7 @@ print("Tier U assertions seeded.")
 
 ## Step 4 — Run calibration corpora
 
-The calibration runner is `tests/v0_15/calibration/test_corpus_runner.py`. It
+The calibration runner is `tests/calibration/test_corpus_runner.py`. It
 loads each corpus, runs every case through the responsible component, computes
 per-corpus accuracy, and asserts it against the threshold below — the runner
 fails the test if accuracy is under threshold, so no manual grading is needed.
@@ -138,8 +138,8 @@ implementation plan's "Calibration deferral policy" table.
 
 **Threshold summary.** This table is the canonical runbook copy of the
 calibration thresholds. It is kept in lock-step with the runner's `THRESHOLDS`
-dict (`tests/v0_15/calibration/test_corpus_runner.py` — the single source of
-truth) by `tests/v0_15/unit/test_runbook_thresholds.py`, which fails CI if the
+dict (`tests/calibration/test_corpus_runner.py` — the single source of
+truth) by `tests/unit/test_runbook_thresholds.py`, which fails CI if the
 two diverge. The per-Phase sub-sections below restate the same thresholds as
 operator narrative.
 
@@ -160,7 +160,7 @@ operator narrative.
 ### Phase 1 — Extraction corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "extraction_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "extraction_corpus"
 ```
 
 **Expected runtime:** 10-30 minutes (LLM calls for 57 cases).
@@ -170,7 +170,7 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 ### Phase 2 — Predicate metadata corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "predicate_metadata_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "predicate_metadata_corpus"
 ```
 
 **Expected runtime:** 15-45 minutes (LLM calls for 80 cases).
@@ -180,7 +180,7 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 ### Phase 3 — Temporal scope corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "temporal_scope_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "temporal_scope_corpus"
 ```
 
 **Expected runtime:** 5-15 minutes (40 cases).
@@ -192,7 +192,7 @@ mocked unit suite.)
 ### Phase 4 — Entity resolution + KB mapping corpora
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "entity_resolution_corpus or kb_mapping_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "entity_resolution_corpus or kb_mapping_corpus"
 ```
 
 **Expected runtime:** 20-60 minutes (90 cases; Wikidata API calls).
@@ -204,7 +204,7 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 ### Phase 5 — Subsumption + predicate distribution corpora
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "subsumption_corpus or predicate_distribution_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "subsumption_corpus or predicate_distribution_corpus"
 ```
 
 **Expected runtime:** 20-45 minutes (110 cases).
@@ -218,7 +218,7 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 ### Phase 6 — Derivation corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "derivation_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "derivation_corpus"
 ```
 
 **Expected runtime:** 30-90 minutes (50 cases; multi-hop walks).
@@ -228,7 +228,7 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 ### Phase 7 — Python verification corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "python_verification_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "python_verification_corpus"
 ```
 
 **Expected runtime:** 10-20 minutes (30 cases).
@@ -238,7 +238,7 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 ### Phase 8 — Consistency check corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "consistency_check_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "consistency_check_corpus"
 ```
 
 **Note:** detection is deterministic; the runner evaluates the
@@ -252,7 +252,7 @@ involves live LLM regeneration and is inspected separately.
 ### Phase 9 — Intervention corpus
 
 ```bash
-py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration -k "intervention_corpus"
+py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "intervention_corpus"
 ```
 
 **Expected runtime:** 20-45 minutes (30 cases; full pipeline).
@@ -267,8 +267,8 @@ py -m pytest tests/v0_15/calibration/test_corpus_runner.py -q --run-calibration 
 
 ```bash
 # Initialize a separate zero-seed database
-py -c "from src.aedos_v0_15.database import open_db; open_db('aedos_zero_seed.db')"
-AEDOS_DB_PATH=aedos_zero_seed.db py -m pytest tests/v0_15/cold_start/ -v
+py -c "from aedos.database import open_db; open_db('aedos_zero_seed.db')"
+AEDOS_DB_PATH=aedos_zero_seed.db py -m pytest tests/cold_start/ -v
 ```
 
 **Expected runtime:** 5-15 minutes (10 claims; first-claim cold-start is expensive).
@@ -289,7 +289,7 @@ curated test set. `benchmark.py`'s live runner is implemented (fix-up 2).
 spending on live calls —
 
 ```bash
-py -m tests.v0_15.evaluation.benchmark --validate-harness
+py -m tests.evaluation.benchmark --validate-harness
 ```
 
 Expected: `Harness validation: PASS`.
@@ -300,15 +300,15 @@ falls back to mocks. It evaluates against the seeded `$AEDOS_DB_PATH` database
 from Step 2.
 
 ```bash
-py -m tests.v0_15.evaluation.benchmark \
-    --test-set tests/v0_15/evaluation/medium_bar_test_set.jsonl \
-    --output docs/v0_15/evaluation_results.md
+py -m tests.evaluation.benchmark \
+    --test-set tests/evaluation/medium_bar_test_set.jsonl \
+    --output docs/evaluation_results.md
 ```
 
 **Expected runtime:** 60-120 minutes (122 cases × Aedos pipeline + baseline LLM calls).
 
 **Expected output:** the report is printed and written to the `--output` path,
-ending with `Results written to docs/v0_15/evaluation_results.md`.
+ending with `Results written to docs/evaluation_results.md`.
 
 **Acceptance thresholds** (the runner's report prints PASS/FAIL for each):
 1. Aedos false-verified rate ≤ 5%.
@@ -317,7 +317,7 @@ ending with `Results written to docs/v0_15/evaluation_results.md`.
 4. Aedos accuracy ≥ baseline + 20pp on at least 4 of 6 failure modes — the
    runbook's operationalization of the plan's "significantly higher".
 
-Results written to `docs/v0_15/evaluation_results.md`.
+Results written to `docs/evaluation_results.md`.
 
 Run 3 times and report median to account for LLM non-determinism. `--baseline-only`
 and `--aedos-only` re-run a single runner during development.
@@ -329,7 +329,7 @@ and `--aedos-only` re-run a single runner during development.
 If all Phase 10.5 acceptance thresholds pass:
 
 ```bash
-git add docs/v0_15/evaluation_results.md
+git add docs/evaluation_results.md
 git commit -m "v0.15 Phase 10.5: calibration pass + evaluation results"
 git tag v0.15.0
 ```
@@ -358,7 +358,7 @@ Budget one business day. Wikidata API rate limits are the main variable.
 ## Troubleshooting
 
 **Circuit breaker fires during calibration:** A predicate is generating conflicting
-translations. Add a hand-curated entry to `seeds/v0_15/predicate_translation.json`
+translations. Add a hand-curated entry to `seeds/predicate_translation.json`
 for that predicate, reload seeds, and re-run the failing corpus sub-category.
 
 **Entity resolver returns no candidates:** Wikidata API may be throttling. Add a
