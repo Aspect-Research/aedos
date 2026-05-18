@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from ..audit.log import log_event
+
 _DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 3
 
 
@@ -57,12 +59,10 @@ class ConsistencyChecker:
     def __init__(
         self,
         db,
-        audit_log=None,
         retraction_propagator=None,
         config: Optional[dict] = None,
     ) -> None:
         self._db = db
-        self._audit = audit_log
         self._retraction_propagator = retraction_propagator
         cfg = config or {}
         self._threshold = cfg.get("circuit_breaker_threshold", _DEFAULT_CIRCUIT_BREAKER_THRESHOLD)
@@ -115,17 +115,17 @@ class ConsistencyChecker:
         sig = self._question_signature(conflict)
         self._increment_circuit_breaker(sig, now)
 
-        if self._audit:
-            self._audit.log(
-                event_type="consistency_violation",
-                event_subject=sig,
-                event_data=json.dumps({
-                    "table": conflict.table,
-                    "inconsistency_class": conflict.inconsistency_class,
-                    "row_a_id": conflict.row_a_id,
-                    "row_b_id": conflict.row_b_id,
-                }),
-            )
+        log_event(
+            self._db,
+            event_type="consistency_violation",
+            event_subject=sig,
+            event_data={
+                "table": conflict.table,
+                "inconsistency_class": conflict.inconsistency_class,
+                "row_a_id": conflict.row_a_id,
+                "row_b_id": conflict.row_b_id,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Check per table
@@ -319,11 +319,12 @@ class ConsistencyChecker:
             )
             self._db.commit()
 
-            if unresolvable and self._audit:
-                self._audit.log(
+            if unresolvable:
+                log_event(
+                    self._db,
                     event_type="circuit_breaker_triggered",
                     event_subject=signature,
-                    event_data=json.dumps({"cycle_count": new_count, "threshold": self._threshold}),
+                    event_data={"cycle_count": new_count, "threshold": self._threshold},
                 )
 
     def is_unresolvable(self, conflict: ConsistencyResult) -> bool:
