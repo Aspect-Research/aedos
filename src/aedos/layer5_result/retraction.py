@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
+
+from ..audit.log import log_event
 
 
 @dataclass
@@ -23,9 +24,8 @@ class RetractionPropagator:
     audit_log is Phase 10 work.
     """
 
-    def __init__(self, db=None, audit_log=None) -> None:
+    def __init__(self, db=None) -> None:
         self._db = db
-        self._audit = audit_log
         # claim_id → list of (table, row_id) tuples
         self._trace_index: dict[str, list[tuple[str, int]]] = {}
         # claim_id → last known verdict
@@ -53,15 +53,16 @@ class RetractionPropagator:
                 )
                 retracted.append(retraction)
 
-                if self._audit:
-                    self._audit.log(
+                if self._db is not None:
+                    log_event(
+                        self._db,
                         event_type="verdict_retracted",
                         event_subject=claim_id,
-                        event_data=json.dumps({
+                        event_data={
                             "verdict": verdict,
                             "retracted_row_id": row_id,
                             "retracted_table": table,
-                        }),
+                        },
                     )
 
         return retracted

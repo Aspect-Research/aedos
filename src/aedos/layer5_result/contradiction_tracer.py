@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Optional
 
+from ..audit.log import log_event
 from .retraction import RetractionPropagator, VerdictRetraction
 
 # Tables that carry a retracted_at column and may hold a verdict's premises.
@@ -26,12 +26,10 @@ class ContradictionTracer:
     def __init__(
         self,
         db=None,
-        audit_log=None,
         retraction_propagator: Optional[RetractionPropagator] = None,
     ) -> None:
         self._db = db
-        self._audit = audit_log
-        self._propagator = retraction_propagator or RetractionPropagator(db=db, audit_log=audit_log)
+        self._propagator = retraction_propagator or RetractionPropagator(db=db)
 
     def trace_contradiction(
         self,
@@ -65,15 +63,16 @@ class ContradictionTracer:
             retracted = self._propagator.propagate_retraction(table, row_id)
             all_retracted.extend(retracted)
 
-            if self._audit:
-                self._audit.log(
+            if self._db is not None:
+                log_event(
+                    self._db,
                     event_type="contradiction_traced",
                     event_subject=contradicted_claim_id,
-                    event_data=json.dumps({
+                    event_data={
                         "contradicting_premise": contradicting_premise,
                         "retracted_table": table,
                         "retracted_row_id": row_id,
-                    }),
+                    },
                 )
 
         return all_retracted
