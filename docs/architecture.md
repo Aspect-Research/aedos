@@ -303,7 +303,8 @@ predicate_translation (
   routing_hint TEXT NOT NULL,               -- user_authoritative | python | kb_resolvable | abstain
   kb_namespace TEXT,                        -- nullable; e.g., "wikidata"
   kb_property TEXT,                         -- nullable; e.g., "P39"
-  slot_to_qualifier TEXT,                   -- nullable; JSON when kb-mappable
+  slot_to_qualifier TEXT,                   -- nullable; JSON; subject/object keys govern KB lookup direction
+  single_valued INTEGER NOT NULL DEFAULT 0, -- 1 = functional / single-valued, 0 = multi-valued
   reason TEXT NOT NULL,                     -- LLM-generated justification for metadata + mapping
   created_at TEXT NOT NULL,
   last_consulted_at TEXT,                   -- observability
@@ -315,6 +316,10 @@ predicate_translation (
 ```
 
 The predicate translation row carries every piece of metadata the system needs to route, validate, and translate the predicate. Inline generation produces all fields in a single LLM call when a predicate is first encountered. Predicates with no KB mapping leave the KB fields null.
+
+**`single_valued`.** The `single_valued` field marks whether the predicate is functional — whether a subject has at most one value for it. `1` means single-valued (e.g., `born_in`, `head_of_state`): a KB value that differs from the claimed value *contradicts* the claim. `0` means multi-valued (e.g., `holds_role`, `received_award`): the KB simply holds *other* values and the claimed value may also be true, so a value mismatch yields `no_match`, not `contradicted`. The default is `0`, which is conservative by design: a wrong `1` produces false *contradictions*, whereas a wrong `0` produces only false *abstains* — the accepted §3.2 cost. The seed-file format (§9.2) carries `single_valued` as a per-entry field. The per-predicate functional/multi-valued classification for the reference seed pack — including borderline cases such as `country_of` and `mother_of`, which are multi-valued despite a superficially functional reading — is seed-pack content, not architecture; see `docs/v0.15_build_log/fixup2_report.md` for the rationale.
+
+**`slot_to_qualifier` and lookup direction.** When the predicate is KB-mappable, `slot_to_qualifier` is a JSON map whose `subject` and `object` keys indicate which Aedos slot corresponds to the KB statement's subject and which to the KB statement's value. For most predicates the Aedos subject maps to the KB statement subject; for inverse predicates (e.g., `capital_of` against P36, where the KB stores the statement on the country, not the city) the Aedos subject maps to the KB statement *value* and the Aedos object maps to the KB statement subject. The KB lookup is keyed accordingly — see §6.2.
 
 **Row schema — subsumption resolution.**
 
@@ -383,7 +388,7 @@ What the architecture does not commit to: catching every error immediately. A wr
 
 The substrate may contain inconsistent rows. Three classes of inconsistency are detectable:
 
-- **Transitive equivalence violation.** Predicate translation rows imply incompatible KB mappings (predicate A maps to wikidata:P1 and to wikidata:P2 in different rows; or two predicates A and B are mapped to the same KB property but to different slot-to-qualifier structures).
+- **Transitive equivalence violation.** Predicate translation rows imply incompatible KB mappings (predicate A maps to wikidata:P1 and to wikidata:P2 in different rows; or two predicates A and B are mapped to the same KB property but to incompatible slot-to-qualifier structures). One form of slot-to-qualifier divergence is *exempt*: two predicates mapping to the same KB property with `slot_to_qualifier` maps that are exact subject/object inversions of each other (the `capital_of` / `has_capital` pattern, both on P36) are *not* a conflict — they are inverse predicates of the same KB relation, and the divergence is the inversion itself. Any other form of `slot_to_qualifier` divergence on the same KB property remains a conflict.
 - **Contradicting subsumption verdicts.** Two subsumption rows give different verdicts for the same entity pair and relation type. Should be precluded by the UNIQUE constraint, but possible if rows are migrated or operator-edited; included for completeness.
 - **Conflicting distribution judgments.** Two predicate distribution rows for the same (predicate, polarity, relation_type) tuple give different verdicts. Again precluded by UNIQUE; defensive.
 
@@ -455,6 +460,8 @@ Three operations.
 **Operation 1: `resolve_entity(reference, local_context) → ranked_candidates_with_provenance`.** Described in 5.1.
 
 **Operation 2: `lookup_statements(entity, predicate) → statements`.** Given a KB entity identifier and a KB property identifier, return the statements the KB holds for the pair.
+
+The `entity` passed to this operation is *not* unconditionally the claim's subject. It is whichever Aedos slot maps to the KB statement's subject under the predicate's `slot_to_qualifier` (§5.2) — the claim's subject for a normal predicate, the claim's *object* for an inverse predicate (e.g., `capital_of`, where P36 keys the statement on the country). The verifier resolves that slot to a KB identifier, keys the lookup on it, and compares the returned statement value against the other slot. An uninterpretable `slot_to_qualifier` makes the KB route unavailable rather than guessing a direction.
 
 Each statement contains:
 - Statement value (entity identifier, literal, date, quantity, etc.).
