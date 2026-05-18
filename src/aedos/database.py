@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     kb_namespace TEXT,
     kb_property TEXT,
     slot_to_qualifier TEXT,
-    single_valued INTEGER DEFAULT 0,
+    single_valued INTEGER NOT NULL DEFAULT 0,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
