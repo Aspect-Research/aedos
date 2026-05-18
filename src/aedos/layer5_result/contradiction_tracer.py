@@ -29,7 +29,16 @@ class ContradictionTracer:
         retraction_propagator: Optional[RetractionPropagator] = None,
     ) -> None:
         self._db = db
-        self._propagator = retraction_propagator or RetractionPropagator(db=db)
+        if retraction_propagator is not None:
+            self._propagator = retraction_propagator
+        else:
+            # D6: a self-constructed propagator must replay persisted
+            # verdict_recorded events, else trace_contradiction is blind to
+            # verdicts recorded by earlier processes. A propagator passed in is
+            # the caller's responsibility (build_pipeline replays the one it
+            # wires).
+            self._propagator = RetractionPropagator(db=db)
+            self._propagator.replay()
 
     def trace_contradiction(
         self,
