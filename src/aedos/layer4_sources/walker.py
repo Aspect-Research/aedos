@@ -316,30 +316,16 @@ class Walker:
     def _expand_via_substrate(
         self, node: Claim, trace: JustificationTrace, depth: int
     ) -> tuple[list[Claim], int]:
-        """Expand node into equivalent/subsumed claims. Returns (new_nodes, llm_calls)."""
+        """Expand node into subsumed claims. Returns (new_nodes, llm_calls).
+
+        The walker does not emit a predicate-equivalence expansion edge: an
+        equivalent predicate shares the same `kb_property`, so its KB lookup is
+        identical to the original's, and `TierU.lookup` stage 3 already
+        broadens by the same `predicate_translation` oracle. The edge was
+        redundant (D7); only distribution-gated subsumption traversal remains.
+        """
         expanded: list[Claim] = []
         llm_delta = 0
-
-        # Predicate-equivalence substitution via predicate_translation neighbors
-        try:
-            neighbors = self._substrate.predicate_translation.query_neighbors(node.predicate)
-            for meta in neighbors:
-                if meta.retracted_at is not None:
-                    continue
-                new_node = _claim_from_parts(node, predicate=meta.aedos_predicate)
-                trace.edges.append(TraceEdge(
-                    edge_type="predicate_equivalence",
-                    source=TraceNode("claim", {"predicate": node.predicate}),
-                    target=TraceNode("claim", {"predicate": meta.aedos_predicate}),
-                    metadata={
-                        "kb_property": meta.kb_property,
-                        "polarity": node.polarity,
-                        "predicate_translation_row_id": meta.id,
-                    },
-                ))
-                expanded.append(new_node)
-        except Exception:
-            pass
 
         # Distribution-gated subsumption traversal.
         # For goal claim P(E): consult predicate_distribution to learn whether
