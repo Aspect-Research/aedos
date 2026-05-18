@@ -71,6 +71,9 @@ def build_pipeline(db, llm_client: Optional[LLMClient] = None, kb=None) -> Pipel
     kb = kb if kb is not None else WikidataAdapter()
 
     propagator = RetractionPropagator(db=db)
+    # D6: rehydrate the verdict-trace index from persisted verdict_recorded
+    # events so retraction propagation survives process restarts (arch 7.3).
+    propagator.replay()
     consistency = ConsistencyChecker(db=db, retraction_propagator=propagator)
 
     pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=consistency)
