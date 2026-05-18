@@ -47,6 +47,41 @@ def _tier_u():
     return TierU(db=db), db
 
 
+class _NoLLMTransport:
+    """Fails loudly if invoked. The single_valued write tests seed every
+    predicate_translation row, so consult() must be a pure cache hit."""
+
+    def extract_with_tool(self, *a, **kw):
+        raise AssertionError("unexpected LLM call: predicate_translation row not seeded")
+
+    def chat(self, *a, **kw):
+        return ""
+
+
+def _seed_predicate(db, predicate, single_valued):
+    db.execute(
+        """INSERT INTO predicate_translation
+           (aedos_predicate, object_type, routing_hint, single_valued, reason, created_at)
+           VALUES (?, 'entity', 'user_authoritative', ?, 'seeded test row', '2026-01-01T00:00:00')""",
+        (predicate, single_valued),
+    )
+    db.commit()
+
+
+def _tier_u_with_oracle():
+    """TierU wired with a predicate_translation oracle so the write path can
+    consult single_valued. `born_in` is seeded functional (single_valued=1),
+    `occupation` multi-valued (0) — matching the reference seed pack."""
+    from aedos.layer3_substrate.predicate_translation import PredicateTranslation
+    from aedos.llm.client import LLMClient
+
+    db = open_memory_db()
+    oracle = PredicateTranslation(db=db, llm_client=LLMClient(_transport=_NoLLMTransport()))
+    _seed_predicate(db, "born_in", 1)
+    _seed_predicate(db, "occupation", 0)
+    return TierU(db=db, predicate_translation=oracle), db
+
+
 _PAST = "2020-01-01T00:00:00+00:00"
 _NOW_STR = datetime.now(timezone.utc).isoformat()
 _FUTURE = "2099-01-01T00:00:00+00:00"
@@ -62,7 +97,7 @@ class TestWriteResult:
         assert wr.row_id == 1
         assert wr.was_idempotent is False
         assert wr.contradiction_closed is False
-        assert wr.closed_row_id is None
+        assert wr.closed_row_ids == []
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +129,20 @@ class TestTierUWrite:
         count = db.execute("SELECT count(*) FROM tier_u").fetchone()[0]
         assert count == 1
 
-    def test_write_different_object_closes_prior(self):
+    def test_write_different_object_no_oracle_keeps_both(self):
+        # With no predicate_translation oracle wired, TierU cannot consult
+        # single_valued and defaults to multi-valued (the architecture 5.2
+        # conservative default): a different-object write is a parallel
+        # assertion, not a contradiction — the prior row stays open.
         tu, db = _tier_u()
         r1 = tu.write(_claim(object_val="Minister"))
         r2 = tu.write(_claim(object_val="President"))
-        assert r2.contradiction_closed is True
-        assert r2.closed_row_id == r1.row_id
-        # Prior row now has valid_until set
+        assert r2.contradiction_closed is False
+        assert r2.closed_row_ids == []
+        count = db.execute("SELECT count(*) FROM tier_u").fetchone()[0]
+        assert count == 2
         row = db.execute("SELECT valid_until FROM tier_u WHERE id=?", (r1.row_id,)).fetchone()
-        assert row["valid_until"] is not None
+        assert row["valid_until"] is None
 
     def test_write_different_polarity_closes_prior(self):
         tu, db = _tier_u()
@@ -132,6 +172,91 @@ class TestTierUWrite:
         tu.write(_claim(valid_from="2020"))
         row = db.execute("SELECT valid_from FROM tier_u LIMIT 1").fetchone()
         assert row["valid_from"] == "2020"
+
+
+# ---------------------------------------------------------------------------
+# TestTierUWriteSingleValued — B3 / D16: the write path consults single_valued
+# ---------------------------------------------------------------------------
+
+class TestTierUWriteSingleValued:
+    """The write path closes a prior row only on a genuine contradiction:
+    same object + opposite polarity, or a functional predicate's different
+    object at the same positive polarity. Multi-valued differences and
+    contrastive corrections are parallel assertions."""
+
+    def test_functional_object_conflict_closes_prior(self):
+        # born_in is functional: a second birthplace revises the first.
+        tu, db = _tier_u_with_oracle()
+        r1 = tu.write(_claim(predicate="born_in", object_val="NYC"))
+        r2 = tu.write(_claim(predicate="born_in", object_val="Boston"))
+        assert r2.contradiction_closed is True
+        assert r1.row_id in r2.closed_row_ids
+        row = db.execute("SELECT valid_until FROM tier_u WHERE id=?", (r1.row_id,)).fetchone()
+        assert row["valid_until"] is not None
+
+    def test_multi_valued_object_difference_keeps_both(self):
+        # occupation is multi-valued: a person may hold several — both rows
+        # stay open, nothing is closed.
+        tu, db = _tier_u_with_oracle()
+        tu.write(_claim(predicate="occupation", object_val="teacher"))
+        r2 = tu.write(_claim(predicate="occupation", object_val="lawyer"))
+        assert r2.contradiction_closed is False
+        assert r2.closed_row_ids == []
+        open_count = db.execute(
+            "SELECT count(*) FROM tier_u WHERE valid_until IS NULL AND retracted_at IS NULL"
+        ).fetchone()[0]
+        assert open_count == 2
+
+    def test_functional_idempotent_write_no_new_row(self):
+        # An exact re-write of a functional claim is idempotent: the
+        # idempotency check short-circuits before the closure logic.
+        tu, db = _tier_u_with_oracle()
+        r1 = tu.write(_claim(predicate="born_in", object_val="NYC"))
+        r2 = tu.write(_claim(predicate="born_in", object_val="NYC"))
+        assert r2.was_idempotent is True
+        assert r2.row_id == r1.row_id
+        count = db.execute("SELECT count(*) FROM tier_u").fetchone()[0]
+        assert count == 1
+
+    def test_contrastive_correction_keeps_both_rows(self):
+        # "Born in NYC, not Boston" extracts (born_in, NYC, 1) and
+        # (born_in, Boston, 0). The negated half must not close the positive
+        # half — different object at a different polarity is compatible even
+        # for a functional predicate.
+        tu, db = _tier_u_with_oracle()
+        r1 = tu.write(_claim(predicate="born_in", object_val="NYC", polarity=1))
+        r2 = tu.write(_claim(predicate="born_in", object_val="Boston", polarity=0))
+        assert r2.contradiction_closed is False
+        row = db.execute("SELECT valid_until FROM tier_u WHERE id=?", (r1.row_id,)).fetchone()
+        assert row["valid_until"] is None
+
+    def test_both_negative_object_difference_keeps_both(self):
+        # Two negative assertions about different objects of a functional
+        # predicate are consistent ("not born in NYC" and "not born in
+        # Boston"). The closure rule is guarded to positive claims.
+        tu, db = _tier_u_with_oracle()
+        r1 = tu.write(_claim(predicate="born_in", object_val="NYC", polarity=0))
+        r2 = tu.write(_claim(predicate="born_in", object_val="Boston", polarity=0))
+        assert r2.contradiction_closed is False
+        row = db.execute("SELECT valid_until FROM tier_u WHERE id=?", (r1.row_id,)).fetchone()
+        assert row["valid_until"] is None
+
+    def test_row_closed_emits_audit_event(self):
+        from aedos.audit.log import query_events
+        tu, db = _tier_u_with_oracle()
+        r1 = tu.write(_claim(predicate="born_in", object_val="NYC"))
+        tu.write(_claim(predicate="born_in", object_val="Boston"))
+        events = query_events(db, event_type="tier_u_row_closed")
+        assert len(events) == 1
+        assert events[0]["event_subject"] == f"tier_u:{r1.row_id}"
+
+    def test_parallel_assertion_emits_audit_event(self):
+        from aedos.audit.log import query_events
+        tu, db = _tier_u_with_oracle()
+        tu.write(_claim(predicate="occupation", object_val="teacher"))
+        tu.write(_claim(predicate="occupation", object_val="lawyer"))
+        events = query_events(db, event_type="tier_u_parallel_assertion")
+        assert len(events) == 1
 
 
 # ---------------------------------------------------------------------------
