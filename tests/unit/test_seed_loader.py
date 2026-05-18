@@ -25,8 +25,8 @@ _REQUIRED_FIELDS = {
 _VALID_ROUTING_HINTS = {"user_authoritative", "kb_resolvable", "python", "abstain"}
 
 # The functional (single-valued) predicates in the seed pack — a subject has at
-# most one true object (M4 backfill). See docs/v0_15/fixup2_report.md for the
-# per-predicate reasoning.
+# most one true object (M4 backfill). See docs/v0.15_build_log/fixup2_report.md
+# for the per-predicate reasoning.
 _FUNCTIONAL_PREDICATES = {
     "born_in", "died_in", "born_on", "died_on", "capital_of", "has_capital",
     "continent_of", "founded_in_year", "head_of_government", "head_of_state",
