@@ -66,6 +66,11 @@ class MockTierU:
     def lookup(self, claim, current_time=None):
         return LookupResult(found=self._found, historical_only=self._historical)
 
+    def lookup_object_conflict(self, claim, current_time=None):
+        # No object conflict in these unit fixtures; the walker's
+        # object-conflict path (B2/D16) falls through to KB/Python.
+        return LookupResult(found=False)
+
     def write(self, *a, **kw):
         pass
 

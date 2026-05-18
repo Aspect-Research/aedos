@@ -156,6 +156,38 @@ class TierU:
 
         return LookupResult(found=False)
 
+    def lookup_object_conflict(
+        self,
+        claim: Claim,
+        current_time: Optional[str] = None,
+    ) -> LookupResult:
+        """Find currently-valid, non-retracted, *positive* Tier U rows for the
+        same (asserting_party, subject, predicate) whose object differs from the
+        claim's.
+
+        For a functional (single_valued) predicate such a row contradicts a
+        positive claim — the asserting party already stipulated a different
+        value for the slot. This is the object-conflict half of belief revision
+        (D16); the caller (the walker) consults `single_valued` and decides.
+        Multi-valued predicates do not conflict on an object difference.
+
+        Only positive (polarity=1) rows are returned: a negative Tier U row
+        `¬(S P O′)` about a different object O′ does not bear on a claim about
+        O. Literal match only — no entity/predicate broadening.
+        """
+        if current_time is None:
+            current_time = _NOW()
+        rows = self._db.execute(
+            """SELECT * FROM tier_u
+               WHERE asserting_party=? AND subject=? AND predicate=?
+               AND object != ? AND polarity=1 AND retracted_at IS NULL
+               AND (valid_until IS NULL OR (valid_until != ? AND valid_until > ?))""",
+            (claim.asserting_party, claim.subject, claim.predicate,
+             claim.object, BEFORE_PRESENT, current_time),
+        ).fetchall()
+        rows = [dict(r) for r in rows]
+        return LookupResult(found=bool(rows), rows=rows, stage=1)
+
     def retract(self, row_id: int, reason: str) -> None:
         """Retract a Tier U row."""
         now = _NOW()
