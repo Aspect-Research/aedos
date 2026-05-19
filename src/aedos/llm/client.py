@@ -2,10 +2,16 @@
 
 Lifted from v0.14 src/llm_client.py with these changes:
 - Cost tracking replaced with a lightweight call counter (used by walker budget).
-- Model defaults updated for v0.15 (Haiku 4.5 for chat, gpt-4.1-mini for substrate
-  oracle calls, gpt-4.1 for extraction).
+- Model defaults updated for v0.15.
 - Added `complete` as an alias for `chat`.
 - Removed dependency on src.cost.
+
+Phase E1 — per-purpose, per-provider routing. `DEFAULT_MODEL_BY_PURPOSE` is a
+dict of dicts: each purpose carries a `model`, a `base_url` (None → the native
+Anthropic SDK; a URL → the OpenAI-compatible SDK pointed at that endpoint —
+OpenAI itself, or OpenRouter, or any OpenAI-API-compatible host), and an
+`api_key_env_var`. Provider routing is now explicit (the `base_url`), not
+inferred from the model-name prefix.
 """
 
 from __future__ import annotations
@@ -22,16 +28,28 @@ _log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 
-DEFAULT_MODEL_BY_PURPOSE: dict[str, str] = {
-    "chat": "claude-haiku-4-5",
-    "extractor:user": "gpt-4.1-mini",
-    "extractor:assistant": "gpt-4.1",
-    "substrate:predicate_translation": "gpt-4.1-mini",
-    "substrate:subsumption": "gpt-4.1-mini",
-    "substrate:predicate_distribution": "gpt-4.1-mini",
-    "substrate:entity_resolution": "gpt-4.1-mini",
-    "python_verifier": "gpt-4.1-mini",
-    "walker": "gpt-4.1-mini",
+# Endpoint shorthands. A purpose's `base_url` of None routes to the native
+# Anthropic SDK; a URL routes to the OpenAI-compatible SDK.
+_ANTHROPIC = {"base_url": None, "api_key_env_var": "ANTHROPIC_API_KEY"}
+_OPENAI = {"base_url": "https://api.openai.com/v1", "api_key_env_var": "OPENAI_API_KEY"}
+# OpenRouter (OpenAI-API-compatible) — used by the Phase E comparison and, after
+# Phase E5, by whichever purposes the operator migrates to open-weight models.
+_OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "OPENROUTER_API_KEY"}
+
+# Per-purpose routing. Each value is {"model", "base_url", "api_key_env_var"}.
+# Phase E1 keeps the v0.15 model assignments unchanged — only the config *shape*
+# and the routing *mechanism* change here; the open-weight migration of the
+# model values is Phase E5, after the comparison.
+DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
+    "chat":                             {"model": "claude-haiku-4-5", **_ANTHROPIC},
+    "extractor:user":                   {"model": "gpt-4.1-mini", **_OPENAI},
+    "extractor:assistant":              {"model": "gpt-4.1", **_OPENAI},
+    "substrate:predicate_translation":  {"model": "gpt-4.1-mini", **_OPENAI},
+    "substrate:subsumption":            {"model": "gpt-4.1-mini", **_OPENAI},
+    "substrate:predicate_distribution": {"model": "gpt-4.1-mini", **_OPENAI},
+    "substrate:entity_resolution":      {"model": "gpt-4.1-mini", **_OPENAI},
+    "python_verifier":                  {"model": "gpt-4.1-mini", **_OPENAI},
+    "walker":                           {"model": "gpt-4.1-mini", **_OPENAI},
 }
 
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
@@ -52,18 +70,37 @@ class ChatMessage:
     content: str
 
 
-def _resolve_purpose_model(purpose: Optional[str], fallback: str) -> str:
-    if purpose:
-        env = os.getenv(f"AEDOS_MODEL_{purpose}")
-        if env:
-            return env
-        if purpose in DEFAULT_MODEL_BY_PURPOSE:
-            return DEFAULT_MODEL_BY_PURPOSE[purpose]
-    return fallback
-
-
 def is_openai_model(model: str) -> bool:
+    """Heuristic: does this model string name an OpenAI model? Used only for
+    provider inference on the legacy single-variable overrides (`AEDOS_MODEL_*`,
+    `AEDOS_CHAT_MODEL`, `rewrite(model=...)`). Default and full-override routing
+    is explicit via `base_url` and does not consult this."""
     return model.startswith(("gpt-", "o1-", "o3-", "o4-"))
+
+
+def _config_for_model(model: str) -> dict:
+    """Provider-inferred routing config for a bare model string. Used for the
+    legacy single-variable overrides, which name a model but no endpoint."""
+    endpoint = _OPENAI if is_openai_model(model) else _ANTHROPIC
+    return {"model": model, **endpoint}
+
+
+def _resolve_purpose_config(purpose: Optional[str], fallback_model: str) -> dict:
+    """Resolve a purpose to a full routing config: `AEDOS_MODEL_<purpose>` (a
+    model-only override, provider inferred) → the built-in per-purpose default
+    → a provider-inferred config for `fallback_model`."""
+    if purpose:
+        env_model = os.getenv(f"AEDOS_MODEL_{purpose}")
+        if env_model:
+            return _config_for_model(env_model)
+        if purpose in DEFAULT_MODEL_BY_PURPOSE:
+            return dict(DEFAULT_MODEL_BY_PURPOSE[purpose])
+    return _config_for_model(fallback_model)
+
+
+def _resolve_purpose_model(purpose: Optional[str], fallback: str) -> str:
+    """Backward-compatible model-string resolver — returns just the model id."""
+    return _resolve_purpose_config(purpose, fallback)["model"]
 
 
 def _model_accepts_temperature(model: str) -> bool:
@@ -90,10 +127,12 @@ class LLMClient:
         self.model = model or os.getenv("AEDOS_CHAT_MODEL") or DEFAULT_MODEL
         self._call_records: list[CallRecord] = []
         self._transport = _transport
+        self._constructor_openai_key = openai_api_key
+        # OpenAI-compatible clients, cached per base_url (OpenAI, OpenRouter, …).
+        self._openai_clients: dict[str, Any] = {}
 
         if _transport is not None:
             self._anthropic_client: Any = None
-            self._openai_raw: Any = None
             return
 
         api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
@@ -102,20 +141,47 @@ class LLMClient:
         else:
             self._anthropic_client = None
 
-        oai_key = openai_api_key or os.getenv("OPENAI_API_KEY")
-        self._openai_raw = oai_key
-        self._openai_client: Any = None
+    # ------------------------------------------------------------------
+    # Routing
+    # ------------------------------------------------------------------
 
-    @property
-    def openai(self) -> Any:
-        if self._openai_client is None:
+    def _cfg(self, purpose: Optional[str]) -> dict:
+        """Routing config for a call. The chat slot (and an untagged call)
+        follows `self.model` (constructor / `AEDOS_CHAT_MODEL` / default), with
+        the provider inferred; every other purpose resolves via the per-purpose
+        table."""
+        if purpose in (None, "chat"):
+            return _config_for_model(self.model)
+        return _resolve_purpose_config(purpose, self.model)
+
+    def _openai_client(self, base_url: Optional[str], api_key_env_var: str) -> Any:
+        """Return (cached) an OpenAI-compatible client for the given endpoint.
+        Raises a clear error if the endpoint's API key env var is unset."""
+        cache_key = base_url or "openai-default"
+        client = self._openai_clients.get(cache_key)
+        if client is None:
             try:
                 import openai as _openai
-                key = self._openai_raw or os.getenv("OPENAI_API_KEY")
-                self._openai_client = _openai.OpenAI(api_key=key)
             except ImportError:
-                raise RuntimeError("openai package not installed; cannot route to OpenAI models")
-        return self._openai_client
+                raise RuntimeError(
+                    "openai package not installed; cannot route to an "
+                    "OpenAI-compatible endpoint"
+                )
+            key = os.getenv(api_key_env_var)
+            if not key and api_key_env_var == "OPENAI_API_KEY":
+                key = self._constructor_openai_key
+            if not key:
+                raise RuntimeError(
+                    f"LLMClient: API key env var {api_key_env_var!r} is not set "
+                    f"(required to reach {base_url or 'the OpenAI API'})"
+                )
+            client = _openai.OpenAI(api_key=key, base_url=base_url)
+            self._openai_clients[cache_key] = client
+        return client
+
+    # ------------------------------------------------------------------
+    # Call records
+    # ------------------------------------------------------------------
 
     def pop_call_records(self) -> list[CallRecord]:
         out = self._call_records
@@ -139,6 +205,10 @@ class LLMClient:
             ))
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Anthropic / OpenAI-compatible primitives
+    # ------------------------------------------------------------------
 
     def _anthropic_chat(
         self,
@@ -166,24 +236,30 @@ class LLMClient:
         self,
         system: str,
         messages: Iterable[ChatMessage],
-        model: str,
+        cfg: dict,
         max_tokens: int,
         purpose: Optional[str],
     ) -> str:
         if self._transport is not None:
-            return self._transport.chat(system, list(messages), model=model, purpose=purpose)
+            return self._transport.chat(system, list(messages), model=cfg["model"], purpose=purpose)
+        client = self._openai_client(cfg["base_url"], cfg["api_key_env_var"])
         msgs = [{"role": "system", "content": system}]
         msgs += [{"role": m.role, "content": m.content} for m in messages]
         t0 = time.monotonic()
-        resp = self.openai.chat.completions.create(model=model, messages=msgs, max_tokens=max_tokens)
+        resp = client.chat.completions.create(
+            model=cfg["model"], messages=msgs, max_tokens=max_tokens,
+        )
         duration_ms = (time.monotonic() - t0) * 1000
         text = resp.choices[0].message.content or ""
-        # fake usage object for recording
         class _U:
             input_tokens = getattr(resp.usage, "prompt_tokens", 0)
             output_tokens = getattr(resp.usage, "completion_tokens", 0)
-        self._record(purpose, model, type("_R", (), {"usage": _U()})(), duration_ms)
+        self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
         return text
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def chat(
         self,
@@ -192,10 +268,10 @@ class LLMClient:
         max_tokens: int = 4096,
         purpose: Optional[str] = "chat",
     ) -> str:
-        target = self.model if purpose == "chat" else _resolve_purpose_model(purpose, self.model)
-        if is_openai_model(target):
-            return self._openai_chat(system, messages, target, max_tokens, purpose)
-        return self._anthropic_chat(system, messages, target, max_tokens, purpose)
+        cfg = self._cfg(purpose)
+        if cfg["base_url"] is not None:
+            return self._openai_chat(system, messages, cfg, max_tokens, purpose)
+        return self._anthropic_chat(system, messages, cfg["model"], max_tokens, purpose)
 
     def complete(
         self,
@@ -214,13 +290,13 @@ class LLMClient:
         max_tokens: int = 4096,
         purpose: Optional[str] = "chat",
     ) -> str:
-        target = self.model if purpose == "chat" else _resolve_purpose_model(purpose, self.model)
+        cfg = self._cfg(purpose)
         if self._transport is not None:
-            text = self._transport.chat(system, list(messages), model=target, purpose=purpose)
+            text = self._transport.chat(system, list(messages), model=cfg["model"], purpose=purpose)
             on_token(text)
             return text
-        if is_openai_model(target):
-            text = self._openai_chat(system, messages, target, max_tokens, purpose)
+        if cfg["base_url"] is not None:
+            text = self._openai_chat(system, messages, cfg, max_tokens, purpose)
             on_token(text)
             return text
         if self._anthropic_client is None:
@@ -228,7 +304,7 @@ class LLMClient:
         t0 = time.monotonic()
         parts: list[str] = []
         with self._anthropic_client.messages.stream(
-            model=target,
+            model=cfg["model"],
             max_tokens=max_tokens,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": m.role, "content": m.content} for m in messages],
@@ -240,7 +316,7 @@ class LLMClient:
                 except Exception:
                     pass
             final = stream.get_final_message()
-        self._record(purpose, target, final, (time.monotonic() - t0) * 1000)
+        self._record(purpose, cfg["model"], final, (time.monotonic() - t0) * 1000)
         return "".join(parts)
 
     def extract_with_tool(
@@ -251,13 +327,14 @@ class LLMClient:
         max_tokens: int = 2048,
         purpose: Optional[str] = None,
     ) -> dict[str, Any]:
-        target = _resolve_purpose_model(purpose, self.model)
+        cfg = self._cfg(purpose)
         if self._transport is not None:
             return self._transport.extract_with_tool(
-                system, user_message, tool, model=target, purpose=purpose
+                system, user_message, tool, model=cfg["model"], purpose=purpose
             )
-        if is_openai_model(target):
-            # OpenAI function-calling path
+        if cfg["base_url"] is not None:
+            # OpenAI-compatible function-calling path (OpenAI, OpenRouter, …).
+            client = self._openai_client(cfg["base_url"], cfg["api_key_env_var"])
             fn = {
                 "type": "function",
                 "function": {
@@ -271,8 +348,8 @@ class LLMClient:
                 {"role": "user", "content": user_message},
             ]
             t0 = time.monotonic()
-            resp = self.openai.chat.completions.create(
-                model=target,
+            resp = client.chat.completions.create(
+                model=cfg["model"],
                 messages=msgs,
                 tools=[fn],
                 tool_choice={"type": "function", "function": {"name": tool["name"]}},
@@ -282,24 +359,24 @@ class LLMClient:
             class _U:
                 input_tokens = getattr(resp.usage, "prompt_tokens", 0)
                 output_tokens = getattr(resp.usage, "completion_tokens", 0)
-            self._record(purpose, target, type("_R", (), {"usage": _U()})(), duration_ms)
+            self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
             import json as _json
             tc = resp.choices[0].message.tool_calls
             if tc:
                 return _json.loads(tc[0].function.arguments)
-            raise RuntimeError(f"extract_with_tool: no tool call in OpenAI response")
+            raise RuntimeError("extract_with_tool: no tool call in OpenAI-compatible response")
         if self._anthropic_client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         t0 = time.monotonic()
         response = self._anthropic_client.messages.create(
-            model=target,
+            model=cfg["model"],
             max_tokens=max_tokens,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
         )
-        self._record(purpose, target, response, (time.monotonic() - t0) * 1000)
+        self._record(purpose, cfg["model"], response, (time.monotonic() - t0) * 1000)
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == tool["name"]:
                 return dict(block.input)
@@ -317,36 +394,35 @@ class LLMClient:
         model: Optional[str] = None,
         purpose: Optional[str] = None,
     ) -> str:
-        target = model or _resolve_purpose_model(purpose, self.model)
+        cfg = _config_for_model(model) if model else self._cfg(purpose)
         if self._transport is not None:
             return self._transport.chat(
                 system,
                 [ChatMessage(role="user", content=user_message)],
-                model=target,
+                model=cfg["model"],
                 purpose=purpose,
             )
-        if is_openai_model(target):
+        if cfg["base_url"] is not None:
             return self._openai_chat(
-                system,
-                [ChatMessage(role="user", content=user_message)],
-                target,
-                max_tokens,
-                purpose,
+                system, [ChatMessage(role="user", content=user_message)], cfg, max_tokens, purpose,
             )
         if self._anthropic_client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         kwargs: dict[str, Any] = {
-            "model": target,
+            "model": cfg["model"],
             "max_tokens": max_tokens,
             "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": user_message}],
         }
         if temperature is not None:
-            if _model_accepts_temperature(target):
+            if _model_accepts_temperature(cfg["model"]):
                 kwargs["temperature"] = temperature
             else:
-                _log.warning("rewrite: dropping temperature=%s — model %s deprecated it", temperature, target)
+                _log.warning(
+                    "rewrite: dropping temperature=%s — model %s deprecated it",
+                    temperature, cfg["model"],
+                )
         t0 = time.monotonic()
         response = self._anthropic_client.messages.create(**kwargs)
-        self._record(purpose, target, response, (time.monotonic() - t0) * 1000)
+        self._record(purpose, cfg["model"], response, (time.monotonic() - t0) * 1000)
         return _first_text(response)
