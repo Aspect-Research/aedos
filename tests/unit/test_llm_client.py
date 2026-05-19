@@ -49,8 +49,10 @@ class TestModelResolution:
         assert not is_openai_model("claude-sonnet-4-6")
 
     def test_resolve_chat_uses_default(self):
+        # DEFAULT_MODEL_BY_PURPOSE is a dict of routing configs (Phase E1);
+        # _resolve_purpose_model still returns just the model string.
         model = _resolve_purpose_model("chat", DEFAULT_MODEL)
-        assert model == DEFAULT_MODEL_BY_PURPOSE["chat"]
+        assert model == DEFAULT_MODEL_BY_PURPOSE["chat"]["model"]
 
     def test_resolve_unknown_purpose_uses_fallback(self):
         model = _resolve_purpose_model("unknown_purpose_xyz", "fallback-model")
@@ -58,7 +60,7 @@ class TestModelResolution:
 
     def test_resolve_substrate_predicate_translation(self):
         model = _resolve_purpose_model("substrate:predicate_translation", DEFAULT_MODEL)
-        assert model == DEFAULT_MODEL_BY_PURPOSE["substrate:predicate_translation"]
+        assert model == DEFAULT_MODEL_BY_PURPOSE["substrate:predicate_translation"]["model"]
 
 
 class TestChat:
