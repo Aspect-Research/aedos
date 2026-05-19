@@ -398,3 +398,97 @@ structured-output layer, and the bug is in that layer, not the model.
 
 Both the parameter-shape variant rule-out and the no-extra-body rerun
 question are surfaced; this addendum does not invoke either.
+
+---
+
+## Phase 4 — no-payload experiment (locating responsibility)
+
+Targeted rerun of just the 11 cases that errored in Phase 3, with the
+`extra_body: {reasoning: {enabled: false}}` payload removed
+(`_CANDIDATES["deepseek-v4-flash"]["disable_thinking"] = False` for the
+duration). Same model, same prompts, same cases, only the reasoning-control
+payload was dropped.
+
+```json
+{"candidate": "deepseek-v4-flash", "corpus": "extraction_corpus",
+ "total_cases": 11, "passed": 5, "failed": 6, "runner_errors": 0,
+ "total_calls": 11, "total_input_tokens": 8121, "total_output_tokens": 1048,
+ "total_cost_usd": 0.001142, "elapsed_seconds": 63.3,
+ "pricing_verification": {"ok": true}}
+```
+
+Output: `docs/phase_E/results/no_payload/deepseek-v4-flash__extraction_corpus.json`
+(+ `.transcript.json`).
+
+### 0 of 11 errored. Per the operator's framework: payload-was-trigger confirmed.
+
+The 11 cases that triggered the Morph grammar-compile assertion in Phase 3
+all completed structurally clean in this run (5 correct, 6 accuracy-fail,
+0 runner_error). The same model, same harness, same case texts — only the
+`extra_body` payload differs.
+
+### Caveat — n=11 sample size
+
+The qualitative shift from ~19% (Phase 3, with payload) to 0% (Phase 4, no
+payload) is what the operator's criterion calls. A statistical note worth
+recording so the decision isn't read as airtight:
+
+- P(0 errors | n=11, p=0.19) ≈ 0.81¹¹ ≈ **9.7%** — getting zero by chance
+  alone if the underlying rate were unchanged is not negligible.
+- The 9-case rerun in Phase 2 also produced 0/9 *with the payload on* —
+  which by itself shows the failure isn't fully deterministic on input
+  even with the payload (some stochasticity is genuine).
+
+The fully airtight discriminator would be a full-corpus rerun without the
+payload (~$0.005, expected ~10–11 errors if the rate is upstream-stochastic;
+expected ~0 errors if the payload is the trigger). The operator's
+experiment design was the 11-case targeted shape and a $0.001 budget, so
+this addendum reports the result against that design. The full-corpus
+no-payload run is not invoked here; it's available if the operator wants
+the airtight version.
+
+### Mechanistic plausibility
+
+That the payload would alter what the provider's grammar compiler sees is
+plausible: OpenRouter's request shape with `extra_body: {reasoning: {...}}`
+is rewritten through Morph's structured-output enforcement layer, and that
+rewrite likely adds reasoning-related grammar terms to the compiled output
+grammar. The Morph error names "1th element of sequence format is
+unlimited" — if `reasoning: {enabled: false}` causes the grammar to be
+constructed as `[unlimited reasoning section | claims array | …]` rather
+than just `[claims array]`, the 1th-position-unlimited assertion fits.
+Speculative on the exact mechanism, but consistent with the data.
+
+### Operative reading per the operator's framework
+
+> If the 11 previously-erroring cases succeed without
+> `extra_body: {reasoning: {enabled: false}}`, the payload was the trigger.
+> DeepSeek V4-Pro and V4-Flash stay in the comparison with the payload
+> removed for those candidates specifically.
+
+11/11 succeeded structurally → **payload was the trigger** per the
+operator's binary criterion. The follow-up actions called for (but not yet
+invoked, awaiting operator confirmation):
+
+- Set `disable_thinking: False` for both `deepseek-v4-flash` and
+  `deepseek-v4-pro` in `_CANDIDATES`, with notes citing this addendum.
+- Proceed with V4-Flash on `predicate_metadata` and `derivation`, then
+  V4-Pro on its three corpora, both with reasoning *on*.
+- E4 synthesis acknowledges the resulting asymmetry: all six candidates
+  now run with reasoning on (DeepSeek's `disable_thinking: True` was
+  flipped not because we *want* reasoning on but because the alternative
+  was an unworkable rate of provider grammar-compile failures).
+- The cause of those failures (Morph's structured-output grammar compiler
+  rejecting the schema that includes a reasoning-disabled directive) is
+  itself a finding worth carrying forward — V4-Flash and V4-Pro are
+  effectively unusable on OpenRouter when one needs structured output AND
+  reasoning disabled, which is a real production constraint regardless of
+  this comparison's outcome.
+
+### Files
+
+- Phase 3 full corpus: `docs/phase_E/results/rerun_full/deepseek-v4-flash__extraction_corpus.json`
+  / `.transcript.json` — 11 structural errors, all with `choices: null` +
+  Morph grammar-compile error.
+- Phase 4 no-payload: `docs/phase_E/results/no_payload/deepseek-v4-flash__extraction_corpus.json`
+  / `.transcript.json` — 0 structural errors on the same 11 case ids.
