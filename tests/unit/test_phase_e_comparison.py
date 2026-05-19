@@ -105,10 +105,11 @@ class TestRunComparisonOffline:
         assert os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE") == before
 
     def test_unfilled_candidate_without_transport_is_refused(self):
-        # Every candidate ships with model=None — a live run must be refused
-        # until the operator fills the exact OpenRouter model ID.
+        # devstral-small-2 has no OpenRouter match (E3 prep), so its model stays
+        # None — a live run on it must be refused with a clear error.
         with pytest.raises(ValueError, match="exact OpenRouter model ID"):
-            pec.run_comparison("kimi-k2.6", "extraction_corpus", load_env=False, write=False)
+            pec.run_comparison("devstral-small-2", "python_verification_corpus",
+                               load_env=False, write=False)
 
     def test_unknown_candidate_and_corpus_rejected(self):
         with pytest.raises(KeyError):
