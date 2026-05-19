@@ -7,6 +7,8 @@ the Anthropic path via its missing-key error, and config resolution directly.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from aedos.llm.client import (
@@ -17,6 +19,14 @@ from aedos.llm.client import (
     _config_for_model,
     _resolve_purpose_config,
 )
+
+_OVERRIDE = {
+    "*": {
+        "model": "vendor/candidate-x",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_env_var": "OPENROUTER_API_KEY",
+    }
+}
 
 
 # --------------------------------------------------------------------------
@@ -92,6 +102,27 @@ class TestProviderDispatch:
 # --------------------------------------------------------------------------
 # Missing-key errors are clear, not silent
 # --------------------------------------------------------------------------
+
+class TestWholeRunOverride:
+    """AEDOS_OVERRIDE_MODEL_BY_PURPOSE — the Phase E comparison hook."""
+
+    def test_wildcard_override_applies_to_internal_purpose(self, monkeypatch):
+        monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", json.dumps(_OVERRIDE))
+        cfg = _resolve_purpose_config("substrate:predicate_translation", DEFAULT_MODEL)
+        assert cfg["model"] == "vendor/candidate-x"
+        assert cfg["base_url"] == "https://openrouter.ai/api/v1"
+        assert cfg["api_key_env_var"] == "OPENROUTER_API_KEY"
+
+    def test_wildcard_override_does_not_touch_chat(self, monkeypatch):
+        monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", json.dumps(_OVERRIDE))
+        cfg = _resolve_purpose_config("chat", DEFAULT_MODEL)
+        assert cfg["base_url"] is None  # the chat slot is never overridden
+
+    def test_malformed_override_is_ignored(self, monkeypatch):
+        monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", "not json{")
+        cfg = _resolve_purpose_config("walker", DEFAULT_MODEL)
+        assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["walker"]["model"]
+
 
 class TestMissingKeyError:
     def test_missing_openrouter_key_raises_named_error(self, monkeypatch):
