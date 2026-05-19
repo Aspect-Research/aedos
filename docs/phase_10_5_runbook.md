@@ -5,8 +5,11 @@ the operator needs to run for Phase 10.5 (calibration pass), in the order to
 run them, with expected runtimes and acceptance thresholds.
 
 **Prerequisites before starting Phase 10.5:**
-- The post-audit fix-up is tagged `v0.15-phase-10-complete-fixup-1` (this is the
-  baseline Phase 10.5 runs against, not the original `v0.15-phase-10-complete`).
+- The Phase 10.5 baseline is tagged `v0.15.0-rc.4`. Phases A, B, and C landed
+  after the original Phase 10 build (belief-revision and audit-log changes in
+  A/B; documentation and audit-logging hygiene in C — see `docs/phase_C_report.md`).
+  `v0.15.0-rc.4` is the start point; the fallback for a calibration anomaly that
+  traces past D16/D6 is `v0.15.0-rc.2`.
 - `ANTHROPIC_API_KEY` is set.
 - Wikidata internet access is available.
 - Python 3.11+ is installed.
@@ -22,7 +25,7 @@ run them, with expected runtimes and acceptance thresholds.
 py -m pytest tests/ -q
 ```
 
-**Expected:** All tests pass — 664 passing, 1 gated skip (the cold-start test,
+**Expected:** All tests pass — 720 passing, 1 gated skip (the cold-start test,
 deferred to Step 5). The 11 calibration corpus tests are deselected here; they
 run in Step 4 under `--run-calibration`.
 
