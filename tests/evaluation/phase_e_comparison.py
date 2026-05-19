@@ -48,21 +48,26 @@ _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "O
 # the runs will actually pay. A candidate whose `model` is still None is
 # refused by run_comparison with a clear error.
 # `disable_thinking`: when True the harness routes the candidate with
-# _DISABLE_THINKING_EXTRA_BODY so OpenRouter turns reasoning off. Set True only
-# for the two DeepSeek V4 variants — the vllm #41132 structured-output bug is
-# DeepSeek-specific. Kimi K2.6, GLM-5.1 and Qwen3.6-35B-A3B *also* expose a
-# `reasoning` toggle, but have no known structured-output bug; disabling their
-# thinking would handicap them in a same-prompt comparison, so they stay False.
-# The field is explicit per candidate — flip a bool to change the policy.
+# _DISABLE_THINKING_EXTRA_BODY so OpenRouter turns reasoning off. All six
+# candidates are False — Kimi/GLM/Qwen/Devstral because they have no known
+# structured-output bug that would warrant disabling thinking, and DeepSeek V4
+# (Flash and Pro) because sending the `reasoning` payload to them triggers an
+# upstream Morph grammar-compile failure at ~19% rate (see the Phase E
+# diagnostic at docs/phase_E/deepseek_v4_flash_structural_errors.md). The
+# DeepSeek runs therefore measure model behaviour with reasoning ON — not a
+# measurement choice, a provider-bug workaround. The field is explicit per
+# candidate so the policy is one bool flip away if circumstances change.
 _CANDIDATES: dict[str, dict] = {
     "deepseek-v4-flash": {
         "model": "deepseek/deepseek-v4-flash",
         "price_in_per_m": 0.112, "price_out_per_m": 0.224, **_OPENROUTER,
-        "disable_thinking": True,
+        "disable_thinking": False,
         "notes": "Paid variant. A `deepseek/deepseek-v4-flash:free` exists at $0 "
                  "but its supported_parameters omit structured_outputs/"
-                 "response_format. Thinking disabled via OpenRouter `reasoning` "
-                 "(vllm #41132 structured-output mitigation).",
+                 "response_format. **Runs with reasoning ON, not by choice**: "
+                 "the OpenRouter `reasoning:{enabled:false}` payload triggered "
+                 "an upstream Morph grammar-compile failure at ~19% rate on "
+                 "this model. See docs/phase_E/deepseek_v4_flash_structural_errors.md.",
     },
     "devstral-small-2": {
         "model": "mistralai/devstral-small",
@@ -87,9 +92,11 @@ _CANDIDATES: dict[str, dict] = {
     "deepseek-v4-pro": {
         "model": "deepseek/deepseek-v4-pro",
         "price_in_per_m": 0.435, "price_out_per_m": 0.87, **_OPENROUTER,
-        "disable_thinking": True,
-        "notes": "1.6T MoE / 49B active, 1M ctx. Thinking disabled via OpenRouter "
-                 "`reasoning` (vllm #41132 structured-output mitigation).",
+        "disable_thinking": False,
+        "notes": "1.6T MoE / 49B active, 1M ctx. **Runs with reasoning ON, not "
+                 "by choice**: same Morph grammar-compile constraint as V4-Flash "
+                 "(class-wide for the DeepSeek V4 family on OpenRouter). See "
+                 "docs/phase_E/deepseek_v4_flash_structural_errors.md.",
     },
     "glm-5.1": {
         "model": "z-ai/glm-5.1",

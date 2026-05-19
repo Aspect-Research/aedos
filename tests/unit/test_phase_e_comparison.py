@@ -191,11 +191,20 @@ class TestRunComparisonOffline:
         on_disk = json.loads(result_file.read_text(encoding="utf-8"))
         assert on_disk["total_cases"] == 57
 
-    def test_disable_thinking_candidate_routes_with_reasoning_off(self):
-        # deepseek-v4-flash has disable_thinking=True → the run's model override
-        # must carry extra_body that turns OpenRouter reasoning off (#41132).
+    def test_disable_thinking_candidate_routes_with_reasoning_off(self, monkeypatch):
+        # No real candidate currently has disable_thinking=True (DeepSeek V4
+        # was flipped to False after the Morph grammar-compile finding — see
+        # docs/phase_E/deepseek_v4_flash_structural_errors.md). Synthesize an
+        # entry to keep coverage of the True branch — the wiring still matters
+        # for any future candidate that needs the disable-thinking payload.
+        monkeypatch.setitem(pec._CANDIDATES, "_disable_test", {
+            "model": "test/x", "price_in_per_m": 0.1, "price_out_per_m": 0.1,
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env_var": "OPENROUTER_API_KEY",
+            "disable_thinking": True,
+        })
         transport = _OverrideCapturingTransport()
-        pec.run_comparison("deepseek-v4-flash", "extraction_corpus",
+        pec.run_comparison("_disable_test", "extraction_corpus",
                            load_env=False, write=False, transport=transport)
         assert transport.seen_override["*"]["extra_body"] == {"reasoning": {"enabled": False}}
 
