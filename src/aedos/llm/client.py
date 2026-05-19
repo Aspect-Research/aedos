@@ -159,6 +159,21 @@ def _first_text(response: Any) -> str:
     )
 
 
+def _attach_raw_response(exc: BaseException, resp: Any) -> None:
+    """Attach the raw SDK response (best-effort serialized) to an exception
+    raised while parsing it. The Phase E diagnostic transcript wrapper reads
+    `_raw_response` so the response shape is captured for failed calls."""
+    if resp is None or hasattr(exc, "_raw_response"):
+        return
+    try:
+        if hasattr(resp, "model_dump"):
+            exc._raw_response = resp.model_dump()  # pydantic v2
+        else:
+            exc._raw_response = repr(resp)
+    except Exception:
+        exc._raw_response = repr(resp)
+
+
 class LLMClient:
     def __init__(
         self,
@@ -293,15 +308,20 @@ class LLMClient:
         }
         if cfg.get("extra_body"):
             create_kwargs["extra_body"] = cfg["extra_body"]
-        t0 = time.monotonic()
-        resp = client.chat.completions.create(**create_kwargs)
-        duration_ms = (time.monotonic() - t0) * 1000
-        text = resp.choices[0].message.content or ""
-        class _U:
-            input_tokens = getattr(resp.usage, "prompt_tokens", 0)
-            output_tokens = getattr(resp.usage, "completion_tokens", 0)
-        self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
-        return text
+        resp = None
+        try:
+            t0 = time.monotonic()
+            resp = client.chat.completions.create(**create_kwargs)
+            duration_ms = (time.monotonic() - t0) * 1000
+            text = resp.choices[0].message.content or ""
+            class _U:
+                input_tokens = getattr(resp.usage, "prompt_tokens", 0)
+                output_tokens = getattr(resp.usage, "completion_tokens", 0)
+            self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
+            return text
+        except Exception as exc:
+            _attach_raw_response(exc, resp)
+            raise
 
     # ------------------------------------------------------------------
     # Public API
@@ -402,17 +422,22 @@ class LLMClient:
             }
             if cfg.get("extra_body"):
                 create_kwargs["extra_body"] = cfg["extra_body"]
-            t0 = time.monotonic()
-            resp = client.chat.completions.create(**create_kwargs)
-            duration_ms = (time.monotonic() - t0) * 1000
-            class _U:
-                input_tokens = getattr(resp.usage, "prompt_tokens", 0)
-                output_tokens = getattr(resp.usage, "completion_tokens", 0)
-            self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
-            tc = resp.choices[0].message.tool_calls
-            if tc:
-                return json.loads(tc[0].function.arguments)
-            raise RuntimeError("extract_with_tool: no tool call in OpenAI-compatible response")
+            resp = None
+            try:
+                t0 = time.monotonic()
+                resp = client.chat.completions.create(**create_kwargs)
+                duration_ms = (time.monotonic() - t0) * 1000
+                class _U:
+                    input_tokens = getattr(resp.usage, "prompt_tokens", 0)
+                    output_tokens = getattr(resp.usage, "completion_tokens", 0)
+                self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
+                tc = resp.choices[0].message.tool_calls
+                if tc:
+                    return json.loads(tc[0].function.arguments)
+                raise RuntimeError("extract_with_tool: no tool call in OpenAI-compatible response")
+            except Exception as exc:
+                _attach_raw_response(exc, resp)
+                raise
         if self._anthropic_client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         t0 = time.monotonic()

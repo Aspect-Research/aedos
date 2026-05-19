@@ -144,6 +144,48 @@ class TestWholeRunOverride:
         assert cfg["extra_body"] == {"reasoning": {"enabled": False}}
 
 
+class _BrokenChatCompletions:
+    """Returns a malformed response with `choices = None` and a populated
+    `usage` — mimics OpenRouter's bad-response shape (the V4-Flash failure
+    mode: `_record` runs, then `resp.choices[0]` raises 'NoneType' is not
+    subscriptable)."""
+
+    def create(self, model, messages, max_tokens, **kw):
+        usage = type("U", (), {"prompt_tokens": 5, "completion_tokens": 0})()
+        class _R:
+            def model_dump(self):
+                return {"choices": None, "usage": {"prompt_tokens": 5, "completion_tokens": 0}}
+        r = _R()
+        r.choices = None
+        r.usage = usage
+        return r
+
+
+class _BrokenOpenAIClient:
+    def __init__(self):
+        self.chat = type("C", (), {"completions": _BrokenChatCompletions()})()
+
+
+class TestRawResponseAttachedOnFailure:
+    """When a malformed response makes downstream parsing raise, the raised
+    exception should carry the raw response on `._raw_response` so the
+    diagnostic transcript can record what the model actually returned."""
+
+    def test_extract_with_tool_attaches_raw_response_on_parse_failure(self, monkeypatch):
+        client = LLMClient()
+        monkeypatch.setattr(client, "_openai_client", lambda b, e: _BrokenOpenAIClient())
+        with pytest.raises(TypeError) as exc_info:
+            client.extract_with_tool(
+                "sys", "msg",
+                {"name": "extract_claims", "description": "x", "input_schema": {}},
+                purpose="extractor:user",
+            )
+        raw = getattr(exc_info.value, "_raw_response", None)
+        assert raw is not None
+        # model_dump path preferred → a dict; otherwise repr string
+        assert isinstance(raw, (dict, str))
+
+
 class TestMissingKeyError:
     def test_missing_openrouter_key_raises_named_error(self, monkeypatch):
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
