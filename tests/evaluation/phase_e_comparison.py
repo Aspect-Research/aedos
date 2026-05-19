@@ -62,12 +62,16 @@ _CANDIDATES: dict[str, dict] = {
         "model": "deepseek/deepseek-v4-flash",
         "price_in_per_m": 0.112, "price_out_per_m": 0.224, **_OPENROUTER,
         "disable_thinking": False,
+        "disabled": ("Disqualified by 10.5% baseline structural-error rate "
+                     "(4 Morph grammar-compile failures + 2 empty-message "
+                     "failures across 57 cases). Provider-side issues "
+                     "documented in "
+                     "docs/phase_E/deepseek_v4_flash_structural_errors.md."),
         "notes": "Paid variant. A `deepseek/deepseek-v4-flash:free` exists at $0 "
                  "but its supported_parameters omit structured_outputs/"
-                 "response_format. **Runs with reasoning ON, not by choice**: "
-                 "the OpenRouter `reasoning:{enabled:false}` payload triggered "
-                 "an upstream Morph grammar-compile failure at ~19% rate on "
-                 "this model. See docs/phase_E/deepseek_v4_flash_structural_errors.md.",
+                 "response_format. Dropped from the Phase E comparison after "
+                 "the post-fix run still showed ~10% structural errors — see "
+                 "the `disabled` reason above.",
     },
     "devstral-small-2": {
         "model": "mistralai/devstral-small",
@@ -93,10 +97,16 @@ _CANDIDATES: dict[str, dict] = {
         "model": "deepseek/deepseek-v4-pro",
         "price_in_per_m": 0.435, "price_out_per_m": 0.87, **_OPENROUTER,
         "disable_thinking": False,
-        "notes": "1.6T MoE / 49B active, 1M ctx. **Runs with reasoning ON, not "
-                 "by choice**: same Morph grammar-compile constraint as V4-Flash "
-                 "(class-wide for the DeepSeek V4 family on OpenRouter). See "
-                 "docs/phase_E/deepseek_v4_flash_structural_errors.md.",
+        "disabled": ("Disqualified by the class-wide DeepSeek V4 issues "
+                     "established empirically on V4-Flash (10.5% baseline "
+                     "structural-error rate post-fix; 4 Morph grammar-compile "
+                     "+ 2 empty-message). Same provider stack on OpenRouter "
+                     "(Morph) implies the same failure modes apply. Not "
+                     "separately tested. See "
+                     "docs/phase_E/deepseek_v4_flash_structural_errors.md."),
+        "notes": "1.6T MoE / 49B active, 1M ctx. Dropped from the Phase E "
+                 "comparison without separate testing — see the `disabled` "
+                 "reason above.",
     },
     "glm-5.1": {
         "model": "z-ai/glm-5.1",
@@ -464,6 +474,10 @@ def run_comparison(
     if corpus_name not in _ALL_CORPORA:
         raise KeyError(f"unknown corpus {corpus_name!r}; known: {list(_ALL_CORPORA)}")
     cand = _CANDIDATES[candidate]
+    if cand.get("disabled") and transport is None:
+        raise RuntimeError(
+            f"candidate {candidate!r} is disabled: {cand['disabled']}"
+        )
     if cand["model"] is None and transport is None:
         raise ValueError(
             f"candidate {candidate!r}: _CANDIDATES[{candidate!r}]['model'] is None — "
@@ -552,7 +566,11 @@ def main(argv: list[str]) -> int:
     if argv[0] == "--list":
         print("Candidates (run order, cheapest first):")
         for name, c in _CANDIDATES.items():
-            state = c["model"] or "OPERATOR MUST FILL OpenRouter model ID"
+            if c.get("disabled"):
+                reason = c["disabled"]
+                state = "DISABLED — " + (reason[:60] + "…" if len(reason) > 60 else reason)
+            else:
+                state = c["model"] or "OPERATOR MUST FILL OpenRouter model ID"
             print(f"  {name:20s} {state}")
         print("Corpora:", ", ".join(_ALL_CORPORA))
         return 0

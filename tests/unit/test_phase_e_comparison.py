@@ -233,6 +233,23 @@ class TestRunComparisonOffline:
         )
         assert os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE") == before
 
+    def test_disabled_candidate_without_transport_is_refused(self):
+        # Both DeepSeek V4 variants are disabled after the Phase E diagnostic;
+        # a live run on either must be refused with the disabled reason.
+        with pytest.raises(RuntimeError, match="is disabled"):
+            pec.run_comparison("deepseek-v4-flash", "extraction_corpus",
+                               load_env=False, write=False)
+
+    def test_disabled_candidate_runs_with_transport(self):
+        # The disabled refusal is gated on `transport is None`, so harness
+        # unit tests can still exercise the wiring against disabled entries.
+        result = pec.run_comparison(
+            "deepseek-v4-flash", "extraction_corpus",
+            case_ids=["norm_001"], load_env=False, write=False,
+            transport=_FakeTransport(),
+        )
+        assert result["total_cases"] == 1
+
     def test_unfilled_candidate_without_transport_is_refused(self, monkeypatch):
         # All six real candidates now have model IDs; inject a synthetic
         # unfilled one to confirm a live run on a model-less candidate is
