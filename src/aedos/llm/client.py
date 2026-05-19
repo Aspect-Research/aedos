@@ -16,6 +16,7 @@ inferred from the model-name prefix.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -85,10 +86,48 @@ def _config_for_model(model: str) -> dict:
     return {"model": model, **endpoint}
 
 
+def _purpose_override(purpose: Optional[str]) -> Optional[dict]:
+    """A whole-run routing override from the `AEDOS_OVERRIDE_MODEL_BY_PURPOSE`
+    env var (JSON: purpose → config). The Phase E comparison harness uses this
+    to drive every internal purpose with one candidate model. A `"*"` key
+    applies to every purpose except `chat` (the chat slot is never overridden).
+    An entry may be a full `{model, base_url, api_key_env_var}` config or a bare
+    model string (provider then inferred)."""
+    raw = os.getenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE")
+    if not raw or not purpose:
+        return None
+    try:
+        overrides = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(overrides, dict):
+        return None
+    entry = overrides.get(purpose)
+    if entry is None and purpose != "chat":
+        entry = overrides.get("*")
+    if entry is None:
+        return None
+    if isinstance(entry, str):
+        return _config_for_model(entry)
+    if isinstance(entry, dict) and entry.get("model"):
+        if "base_url" not in entry:  # model only → infer provider
+            return _config_for_model(entry["model"])
+        return {
+            "model": entry["model"],
+            "base_url": entry["base_url"],
+            "api_key_env_var": entry.get("api_key_env_var", "OPENROUTER_API_KEY"),
+        }
+    return None
+
+
 def _resolve_purpose_config(purpose: Optional[str], fallback_model: str) -> dict:
-    """Resolve a purpose to a full routing config: `AEDOS_MODEL_<purpose>` (a
-    model-only override, provider inferred) → the built-in per-purpose default
-    → a provider-inferred config for `fallback_model`."""
+    """Resolve a purpose to a full routing config: the
+    `AEDOS_OVERRIDE_MODEL_BY_PURPOSE` whole-run override → `AEDOS_MODEL_<purpose>`
+    (a model-only override, provider inferred) → the built-in per-purpose
+    default → a provider-inferred config for `fallback_model`."""
+    override = _purpose_override(purpose)
+    if override is not None:
+        return override
     if purpose:
         env_model = os.getenv(f"AEDOS_MODEL_{purpose}")
         if env_model:
@@ -360,10 +399,9 @@ class LLMClient:
                 input_tokens = getattr(resp.usage, "prompt_tokens", 0)
                 output_tokens = getattr(resp.usage, "completion_tokens", 0)
             self._record(purpose, cfg["model"], type("_R", (), {"usage": _U()})(), duration_ms)
-            import json as _json
             tc = resp.choices[0].message.tool_calls
             if tc:
-                return _json.loads(tc[0].function.arguments)
+                return json.loads(tc[0].function.arguments)
             raise RuntimeError("extract_with_tool: no tool call in OpenAI-compatible response")
         if self._anthropic_client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
