@@ -34,6 +34,14 @@ class _FakeTransport:
         return ""
 
 
+class _FailingTransport(_FakeTransport):
+    """Transport that raises on every extract_with_tool — every case should
+    surface as a runner_error AND produce a transcript entry."""
+
+    def extract_with_tool(self, *a, **k):
+        raise RuntimeError("synthetic provider failure")
+
+
 class _OverrideCapturingTransport(_FakeTransport):
     """Captures the AEDOS_OVERRIDE_MODEL_BY_PURPOSE the harness set for the run."""
 
@@ -78,6 +86,58 @@ class TestCost:
 
     def test_cost_is_none_when_pricing_absent(self):
         assert pec._cost(1000, 1000, {"price_in_per_m": None, "price_out_per_m": None}) is None
+
+
+class TestErrorCapture:
+    """Failure transcripts — the load-bearing fix after the V4-Flash diagnostic
+    found 15 errored cases with zero transcript data."""
+
+    def test_failed_call_writes_transcript_entry(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pec, "_RESULTS_DIR", tmp_path)
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=True, transport=_FailingTransport(),
+        )
+        # Every case errors at the LLM call → all are runner_error.
+        assert result["runner_errors"] == result["total_cases"]
+        transcript = json.loads(
+            (tmp_path / "kimi-k2.6__extraction_corpus.transcript.json").read_text(encoding="utf-8")
+        )
+        all_calls = [c for entry in transcript for c in entry["calls"]]
+        assert len(all_calls) == result["total_cases"]
+        assert all(c["error"] is not None for c in all_calls)
+        assert all(c["response"] is None for c in all_calls)
+        assert all("synthetic provider failure" in c["error"] for c in all_calls)
+        # Transport path bypasses the SDK, so raw_response stays None.
+        assert all(c["raw_response"] is None for c in all_calls)
+
+    def test_successful_call_has_no_error_field_set(self):
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FakeTransport(),
+            case_ids=["norm_001"],
+        )
+        assert result["runner_errors"] == 0
+
+
+class TestCaseIdsFilter:
+    def test_runs_only_selected_cases(self):
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FakeTransport(),
+            case_ids=["norm_001", "norm_002", "temporal_001"],
+        )
+        assert result["total_cases"] == 3
+        assert {o["case_id"] for o in result["per_case_outcomes"]} == {
+            "norm_001", "norm_002", "temporal_001"}
+
+    def test_unknown_case_ids_raises(self):
+        with pytest.raises(ValueError, match="no cases matched"):
+            pec.run_comparison(
+                "kimi-k2.6", "extraction_corpus",
+                load_env=False, write=False, transport=_FakeTransport(),
+                case_ids=["does_not_exist"],
+            )
 
 
 class TestPricingReverification:

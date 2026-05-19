@@ -31,7 +31,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from tests.calibration.test_corpus_runner import _Harness
 
@@ -259,19 +259,39 @@ def _summarize_request(method: str, args: tuple, kwargs: dict) -> dict:
 
 
 def _install_transcript(client: Any, transcript: list) -> None:
-    """Wrap the client instance's call methods to record full request/response.
+    """Wrap the client instance's call methods to record full request/response
+    for every call — success AND failure. On failure the entry carries the
+    exception's class+message and (if `LLMClient` got that far before the
+    failure) the raw SDK response via `exc._raw_response`. Different failure
+    modes — provider 503, malformed response, parser raise — all produce a
+    transcript entry, so the diagnostic data is comprehensive.
+
     Instance-level wrapping — no production class is touched."""
     for method in ("extract_with_tool", "chat"):
         orig = getattr(client, method)
 
         def make(orig, method):
             def wrapped(*args, **kwargs):
-                result = orig(*args, **kwargs)
+                request = _summarize_request(method, args, kwargs)
+                try:
+                    result = orig(*args, **kwargs)
+                except Exception as exc:
+                    transcript.append({
+                        "method": method,
+                        "purpose": kwargs.get("purpose"),
+                        "request": request,
+                        "response": None,
+                        "error": "%s: %s" % (type(exc).__name__, str(exc)[:2000]),
+                        "raw_response": getattr(exc, "_raw_response", None),
+                    })
+                    raise
                 transcript.append({
                     "method": method,
                     "purpose": kwargs.get("purpose"),
-                    "request": _summarize_request(method, args, kwargs),
+                    "request": request,
                     "response": result if isinstance(result, (dict, str)) else repr(result),
+                    "error": None,
+                    "raw_response": None,
                 })
                 return result
             return wrapped
@@ -392,10 +412,13 @@ def _write_result(result: dict, outcomes: list[dict]) -> Path:
     _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     stem = f"{result['candidate']}__{result['corpus']}"
     out_path = _RESULTS_DIR / f"{stem}.json"
-    out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    # `default=str` is insurance against a non-JSON-serializable value sneaking
+    # into a raw response model_dump (e.g. a datetime); the diagnostic is more
+    # useful with a stringified field than with a write that crashes.
+    out_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     transcript = [{"case_id": o["case_id"], "calls": o["_transcript"]} for o in outcomes]
     (_RESULTS_DIR / f"{stem}.transcript.json").write_text(
-        json.dumps(transcript, indent=2), encoding="utf-8")
+        json.dumps(transcript, indent=2, default=str), encoding="utf-8")
     return out_path
 
 
@@ -411,6 +434,7 @@ def run_comparison(
     write: bool = True,
     transport: Optional[Any] = None,
     verify_pricing: bool = True,
+    case_ids: Optional[Iterable[str]] = None,
 ) -> dict:
     """Run `candidate` against `corpus_name`; return the structured result and
     (by default) write it to `docs/phase_E/results/`.
@@ -422,6 +446,10 @@ def run_comparison(
     candidate before the run and raises if it no longer matches `_CANDIDATES`,
     so a changed price (e.g. GLM-5.1's suspected promo ending) is caught before
     any spend rather than after.
+
+    `case_ids` filters the corpus to just those case ids — used for diagnostic
+    reruns of a small subset (e.g. previously-erroring cases) without spending
+    on the whole corpus.
     """
     _ensure_aedos_importable()
     if candidate not in _CANDIDATES:
@@ -451,6 +479,11 @@ def run_comparison(
 
     from tests.calibration.test_corpus_runner import _RUNNERS, _load_corpus
     cases = _load_corpus(corpus_name)
+    if case_ids is not None:
+        wanted = set(case_ids)
+        cases = [c for c in cases if c.get("id") in wanted]
+        if not cases:
+            raise ValueError("no cases matched case_ids=%r" % sorted(wanted))
     runner = _RUNNERS[corpus_name]
 
     # Whole-run override: every internal purpose → the candidate (chat excepted).
