@@ -150,3 +150,120 @@ remain open; the diagnostic data above informs the choice:
 
 The 3 InternalServerError 503s are independent of all of this and would
 disappear on retry; they should not factor into the decision.
+
+---
+
+## Phase 2 — diagnostic rerun (harness fix applied)
+
+The harness's failure-capture fix landed (commit `d4f894d`: `try/finally` around
+the wrapped call writes a transcript entry on failure, and the LLMClient
+attaches the raw SDK response to any exception raised after the SDK call
+returns). The 9 TypeError case ids were rerun against the same model:
+
+```json
+{"candidate": "deepseek-v4-flash", "corpus": "extraction_corpus",
+ "total_cases": 9, "passed": 7, "failed": 2, "runner_errors": 0,
+ "total_calls": 9, "total_input_tokens": 6631, "total_output_tokens": 504,
+ "total_cost_usd": 0.000855, "elapsed_seconds": 35.6,
+ "pricing_verification": {"ok": true, "message": "pricing unchanged"}}
+```
+
+Output: `docs/phase_E/results/rerun/deepseek-v4-flash__extraction_corpus.json`
+(+ `.transcript.json`).
+
+### The result is itself a finding: 0 of 9 reproduced
+
+Every case that errored in run 1 succeeded in run 2 — same inputs, same model,
+same `reasoning: {enabled: false}` payload. No `runner_error`, no transcript
+entry with `error` populated. **The TypeError failures are non-deterministic on
+the same input.**
+
+The 2 "failed" rerun cases are *accuracy* failures, not structural:
+
+- `norm_003` ("Asa works at Google", expects `employed_by`) — model returned
+  `{"claims": []}`. Refused to extract.
+- `hardclaim_001` ("Asa works at Google", with context mentioning Bob) —
+  model returned a single tool call with `participants: ["Asa", "Google"]` and
+  `event_type: "employment"`, causing the extractor's `decompose_event` to
+  reify an event with Asa/Google as has_participant edges. The resulting
+  claim subjects are the synthetic event id, so `"Asa" in subjects` fails the
+  hard_claim check. Inappropriate event-decomposition by the model on a clearly
+  binary claim, not a structured-output bug.
+
+Both completed cleanly through the SDK and the harness; neither errored.
+
+### What this changes about hypothesis (a) vs (b)
+
+The rerun was designed to capture raw failure responses so we could read
+`message.reasoning` and discriminate (a) from (b). It produced no failures,
+so we still have no raw response from a failed case. **But the
+non-reproducibility itself is evidence:**
+
+- **(a) thinking-still-enabled is weakened.** If the disable payload were
+  being ignored outright, thinking would be on for every call on this model,
+  and the structured-output bug would fire deterministically on the same
+  input. Same input succeeding on retry is inconsistent with that.
+- **(b) structured-output unreliability is mildly strengthened.** The original
+  run's 9/57 (16%) TypeError rate plus this run's 0/9 (within sampling
+  variance for p ≈ 0.16: P(0 fails | 9 trials) ≈ 21%) is consistent with a
+  stochastic ~10–20% failure rate independent of input content.
+- A third reading — **partial honouring of the disable payload, or
+  thinking-residue effects that are stochastic** — fits both data points and
+  cannot be ruled out without a captured failure.
+
+### Independent of (a) vs (b): the baseline rate is the operative number
+
+Whatever the cause, the original run's evidence is:
+
+- **~16% structural-error rate** on the easiest LLM-only corpus, at the
+  cheapest per-call price tier the comparison includes.
+- That rate is **not a per-input issue** (reruns succeed), so it isn't
+  fixable by changing which cases the comparison sees.
+- The OpenRouter `reasoning` toggle, in its current `{enabled: false}` shape,
+  is at best partially effective on V4-Flash for this concern.
+
+A 16% rate of unusable responses is disqualifying for Aedos's soundness-
+critical roles regardless of whether the cause is hypothesis (a) or (b). The
+verification pipeline cannot tolerate one-in-six calls returning an unparseable
+response on a corpus this easy; the cascade on derivation (multi-call walks)
+would be much worse.
+
+### Refined options after the rerun
+
+The same four follow-up options remain, but their expected value has shifted:
+
+1. **Different disable-thinking parameter shape** — expected value reduced.
+   Non-reproducibility argues against (a); a shape-tweak primarily helps if
+   (a) is the cause. Could still be worth one cheap try if the operator wants
+   conclusive (a)-rule-out, but the baseline-rate evidence makes the
+   shape-tweak's downstream usefulness limited.
+
+2. **Capture-and-rerun a larger slice** — now achievable thanks to the
+   harness fix. A full-corpus rerun (~$0.005) would, in expectation, produce
+   ~9 fresh failures, each with raw-response capture, giving the discriminator
+   we couldn't get this round. The cost is trivial; the data would be
+   definitive. **Recommended next step if the operator wants the (a) vs (b)
+   answer on the record.**
+
+3. **Drop V4-Flash and V4-Pro from soundness-critical roles** — this is
+   what the evidence already supports. The ~16% baseline structural-error
+   rate on extraction is independent of cause and is disqualifying. Whether
+   confirmed as (b) or only inferred from the baseline rate, the operational
+   conclusion is the same. (V4-Pro shares the suspected pathology per
+   the original Phase E prompt; #41132 is named for both.)
+
+4. **Investigate harness brittleness further** — ruled out by the original
+   error-localisation (`choices = None` and missing tool calls aren't parser-
+   recoverable). No new evidence to revisit.
+
+### Recommended path
+
+Option 3 (drop V4-Flash and V4-Pro for soundness-critical roles) is the
+disciplined call on the evidence in hand. If the operator wants the
+discriminating data on the record before doing that, option 2 (one cheap
+full-corpus rerun under the fixed harness) gets it. Either path means the
+remaining four candidates (Devstral, Qwen, GLM-5.1, Kimi K2.6) proceed — they
+are not affected by #41132 and would benefit from the harness fix being in
+place for their own runs.
+
+This document does not invoke either path. The decision is the operator's.
