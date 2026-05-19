@@ -57,12 +57,14 @@ _CANDIDATES: dict[str, dict] = {
                  "disable thinking when calling; harness change, not done here).",
     },
     "devstral-small-2": {
-        "model": None,  # NO EXACT MATCH — see openrouter_match_report.md
-        "price_in_per_m": None, "price_out_per_m": None, **_OPENROUTER,
-        "notes": "No 'Devstral Small 2' on OpenRouter. Present: devstral-small "
-                 "(= Devstral Small 1.1, 24B, an earlier version); devstral-2512 "
-                 "(= 'Devstral 2', but 123B dense — not the 24B Small class); "
-                 "devstral-medium. Operator must choose; left unfilled.",
+        "model": "mistralai/devstral-small",
+        "price_in_per_m": 0.1, "price_out_per_m": 0.3, **_OPENROUTER,
+        "notes": "OpenRouter has no 'Devstral Small 2'; mistralai/devstral-small "
+                 "is Devstral Small 1.1 (24B). Filled per operator decision — the "
+                 "24B size class is what makes this the code-specialist mid-size "
+                 "candidate; Small 1.1 vs Small 2 is a version, not a category, "
+                 "difference. If it wins for python_verifier the recommendation "
+                 "generalizes to the Devstral Small line.",
     },
     "qwen-3.6-35b-a3b": {
         "model": "qwen/qwen3.6-35b-a3b",

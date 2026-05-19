@@ -31,7 +31,7 @@ directed call completed cleanly.
 | DeepSeek V4-Flash | `deepseek/deepseek-v4-flash` | 0.112 | 0.224 | exact (paid) |
 | GLM-5.1 | `z-ai/glm-5.1` | 0.00 | 0.00 | exact ID — ⚠ $0 pricing |
 | Qwen 3.6 35B-A3B | `qwen/qwen3.6-35b-a3b` | 0.15 | 1.00 | exact |
-| Devstral Small 2 | — | — | — | **NO MATCH — unfilled** |
+| Devstral Small 2 | `mistralai/devstral-small` | 0.10 | 0.30 | Small 1.1 — operator-chosen (see below) |
 
 Pricing is OpenRouter's live `pricing.prompt` / `pricing.completion` × 1e6
 (USD per million tokens) — authoritative, and superseding the planning-doc
@@ -73,28 +73,26 @@ exactly as specified. Distinct catalogue entries `qwen/qwen3.6-27b` (dense
 27B), `qwen/qwen3.6-plus` (API-only), `qwen/qwen3.6-flash`, and
 `qwen/qwen3.6-max-preview` were correctly **not** selected.
 
-### Devstral Small 2 — no clean match, left unfilled
+### Devstral Small 2 — no exact match; operator chose Devstral Small 1.1
 
 `mistralai/` lists three Devstral models; **none is "Devstral Small 2"**:
 
 - `mistralai/devstral-small` — name on OpenRouter is **"Devstral Small 1.1"**
-  (24B, finetuned from Mistral Small 3.1). This is the right *size class* but
-  an **earlier version**, not "Small 2".
-- `mistralai/devstral-2512` — name **"Devstral 2 2512"**. This *is* a
-  "Devstral 2", but its description states **123B-parameter dense** — the
-  large model, **not** the 24B "Small" class the candidate calls for.
+  (24B, finetuned from Mistral Small 3.1). The right *size class* but an
+  **earlier version**, not "Small 2".
+- `mistralai/devstral-2512` — name **"Devstral 2 2512"**. A "Devstral 2", but
+  its description states **123B-parameter dense** — the large model, **not**
+  the 24B "Small" class the candidate calls for.
 - `mistralai/devstral-medium` — "Devstral Medium", a different tier.
 
-Per the task's instruction ("if a candidate has no exact match … report which
-one and stop … don't substitute a similar model unilaterally"),
-`devstral-small-2` is left with `model: None`. `--list` continues to show
-"OPERATOR MUST FILL" for it, and `run_comparison` refuses a live run on it.
-
-**Operator decision needed.** The plausible substitutes are `devstral-small`
-(Devstral Small 1.1 — same 24B size, prior version) or `devstral-2512`
-(Devstral 2 — current generation, but 123B dense, a different size class). Both
-are deliberate trade-offs, not a unilateral pick — so this prep step does not
-make the choice.
+The prep step surfaced this rather than substituting unilaterally. **Operator
+decision:** fill `devstral-small-2` with `mistralai/devstral-small` (Devstral
+Small 1.1, $0.10/$0.30 per M). Rationale: the 24B size class is what makes the
+candidate role-relevant as the code-specialist mid-size model; Small 1.1 vs
+Small 2 is a version, not a category, difference. The candidate is therefore
+tested as the **"code-specialist mid-size"** model — if it wins for
+python_verifier, the recommendation generalises to the Devstral Small line
+rather than pinning to the 1.1 point release.
 
 ## Thinking toggle — DeepSeek V4-Pro and V4-Flash
 
@@ -123,11 +121,13 @@ not change. The values filled are the same per-million-USD figures.
 
 ## Result
 
-`py -m tests.evaluation.phase_e_comparison --list` now shows concrete IDs and
-pricing for 5 of 6 candidates; `devstral-small-2` shows "OPERATOR MUST FILL"
-pending the operator's variant choice. `pytest tests/ -q`: 744 passed
-(`test_unfilled_candidate_without_transport_is_refused` was repointed from
-`kimi-k2.6`, now filled, to `devstral-small-2`, still unfilled).
+`py -m tests.evaluation.phase_e_comparison --list` shows concrete IDs and
+pricing for all six candidates. `pytest tests/ -q`: 744 passed
+(`test_unfilled_candidate_without_transport_is_refused` was repointed off
+`kimi-k2.6`, now filled; it uses a deliberately-unfilled fixture instead).
 
-E3 cannot start its full 16-run plan until `devstral-small-2` is resolved and
-GLM-5.1 pricing is re-confirmed.
+Follow-up commits after this match report: `devstral-small-2` filled with
+`mistralai/devstral-small`; OpenRouter's `reasoning` toggle wired so the
+DeepSeek runs disable thinking (vllm #41132 mitigation); and a run-time
+pricing re-verification so a changed GLM-5.1 price surfaces before any billed
+run rather than being spent silently.
