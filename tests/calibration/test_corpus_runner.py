@@ -269,8 +269,18 @@ def _run_entity_resolution(h: _Harness, case: dict) -> bool:
 
 
 def _run_kb_mapping(h: _Harness, case: dict) -> bool:
+    """`qualifier_mapping` cases (10 of 40) also pin `slot_to_qualifier`; the
+    pre-D2 runner compared only `kb_property`, leaving the qualifier dimension
+    untested. PredicateTranslation stores a falsy (empty) `slot_to_qualifier`
+    as NULL, so both sides are normalized `… or {}` before comparison — see
+    docs/phase_D_plan.md, D2b."""
     meta = h.predicate_translation.consult(case["predicate"])
-    return meta.kb_property == case["expected_output"].get("kb_property")
+    expected = case["expected_output"]
+    if meta.kb_property != expected.get("kb_property"):
+        return False
+    if case.get("category") == "qualifier_mapping":
+        return (meta.slot_to_qualifier or {}) == (expected.get("slot_to_qualifier") or {})
+    return True
 
 
 def _run_subsumption(h: _Harness, case: dict) -> bool:
@@ -387,7 +397,34 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
     expected_verdict = expected.get("verdict")
     if expected_verdict in ("verified", "contradicted", "no_grounding_found"):
         return result.verdict == expected_verdict
-    return True  # non-standard expected verdicts (e.g. "needs_tier_u_or_kb"): lenient
+
+    # Non-standard expected verdicts. The pre-D2 blanket `return True`
+    # auto-passed every one of these regardless of walker output (4 of 50
+    # cases) — see docs/phase_D_plan.md, D2c Issue 1.
+    if expected_verdict == "verified_with_correct_entity":
+        # Walker must verify AND have resolved the intended entity. The intended
+        # Q-number lives in the case's free-text `disambiguation_note`; pinned
+        # here per case id (der_disambiguation_001 → Q76, _006 → Q3783).
+        intended = {"der_disambiguation_001": "Q76", "der_disambiguation_006": "Q3783"}
+        wanted = intended.get(case["id"])
+        if wanted is None:
+            return True  # unrecognized verified_with_correct_entity case: lenient
+        trace_entities = {
+            e.target.content.get("entity")
+            for e in result.trace.edges
+            if e.target.node_type == "kb_statement"
+        }
+        return result.verdict == "verified" and wanted in trace_entities
+    if expected_verdict == "needs_tier_u_or_kb":
+        # der_predicate_translation_007: the runner seeds no Tier U and the
+        # subject has no KB statement, so with neither premise present the
+        # walker abstains.
+        return result.verdict == "no_grounding_found"
+
+    # der_disambiguation_005 carries no `verdict` key — the corpus pins no
+    # answer (note: "may abstain or need context"). Kept an explicit auto-pass
+    # by the Phase D check-in (docs/phase_D_plan.md, Q3).
+    return True
 
 
 _RUNNERS = {
