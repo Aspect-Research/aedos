@@ -46,7 +46,9 @@ cross-check** against the corpus schema (documented per sub-category below),
 not by watching the dry-run change. The dry-run was still run at D3 to confirm
 the corpora load and parse; `pytest tests/ -q` to confirm the suite is
 unaffected. The harness was **not** modified to make the dry-run exercise
-runners — out of scope this session; folded into the D24 process-delta.
+runners during the rc.5 clusters — out of scope then; folded into the D24
+process-delta. *(It was modified immediately afterward — see the Phase D
+follow-up section below, which landed that fix and tagged `v0.15.0-rc.6`.)*
 
 ---
 
@@ -321,3 +323,121 @@ unchanged: **`v0.15.0-rc.2`** if an anomaly traces past D16/D6.
 After Phase D, both halves of the Phase 10.5 precondition hold: the system
 produces correct verdicts (the audit chain), and every runner can score every
 case of its corpus (Phase D). The Phase 10.5 numbers will mean what they say.
+
+---
+
+# Phase D follow-up (`fixup-1`) — the dry-run now invokes runners
+
+Phase D proper (rc.5) verified the runner fixes by static cross-check because
+the dry-run could not exercise runners. This follow-up fixes that: it makes the
+dry-run a real gate, so a broken runner is caught for free instead of
+discovered only under a paid live run. One commit, `v0.15.0-rc.5` →
+`v0.15.0-rc.6`.
+
+## The dry-run now invokes every runner against every case
+
+`test_corpus_calibration`'s `not RUN_CALIBRATION` branch no longer skips after
+merely loading the corpus. It now invokes the corpus's runner against every
+case through a **stubbed harness** and fails if any case raises a structural
+exception:
+
+- **`_StubLLM`** — returns structurally-valid responses so the real
+  (lightweight) `Extractor` and `PythonVerifier` run to completion: for the
+  extraction tool, one claim whose subject is the input text verbatim (so it
+  survives the extractor's hard-claim check and the runner sees a non-empty
+  claim list); for the python tool, empty code (so `PythonVerifier` returns
+  `no_terminal_result` without touching the sandbox).
+- **`_Stub`** — a universal structural stub (attribute access and calls return
+  another `_Stub`, iteration yields nothing) standing in for the heavy
+  components: predicate translation, resolver, substrate, walker, Tier U, KB.
+  Every chained access a runner makes resolves without raising.
+- **`_DryRunHarness`** — `_Harness` with the stub LLM and stub components, but
+  the **real in-memory DB** (cheap; `_run_consistency_check` and
+  `_run_derivation` need a real schema). No LLM or KB call is made.
+
+The component outputs are deliberately uncalibrated and unused — the dry-run
+checks only that each runner *completes* (no `KeyError` / `AttributeError` /
+…). A clean corpus still `skip`s (no real evaluation ran), but the skip is now
+earned by invoking the runner, not by parsing JSON. A corpus with a structural
+error **fails** the dry-run, with the count and first offenders in the message.
+This is option (a) of the D24 process-delta — landed now, not deferred.
+
+## It immediately found a third broken runner
+
+The Phase D inventory classed `consistency_check` a clean runner. The enhanced
+dry-run failed it: **3/25 cases raised structural errors.**
+
+- **cc_conflict_008, cc_conflict_009** — `KeyError: 'aedos_predicate'`.
+  `_run_consistency_check` hard-coded a `predicate_translation` INSERT and read
+  `row["aedos_predicate"]` for *every* `seeded_conflict_detection` case,
+  ignoring `input.table`. cc_conflict_008's table is `predicate_distribution`,
+  cc_conflict_009's is `subsumption`; those rows carry no `aedos_predicate`.
+- **cc_conflict_006** — `IntegrityError: UNIQUE constraint failed`. The runner
+  inserted with a plain `INSERT` into a DB shared across all cases of the
+  corpus; `holds_role` was already inserted by cc_conflict_001. This collides
+  in **live mode too** (live shares one harness/DB per corpus) — a real runner
+  bug, latent only because live calibration had never been run.
+
+This is the failure mode the original Phase D prompt named — "one runner fix
+surfaces another runner's latent issue not in the inventory." Fixing it was
+authorized as an explicit scope expansion of this follow-up.
+
+## The `_run_consistency_check` fix
+
+The runner was rewritten (per the corpus's 10 `seeded_conflict_detection`
+cases — 8 `predicate_translation`, 1 `predicate_distribution`, 1 `subsumption`):
+
+- **Fresh in-memory DB per case.** A consistency case is a self-contained
+  two-row scenario; a shared DB both collides on the `predicate_translation`
+  UNIQUE key *and* cross-contaminates checks keyed on `(kb_namespace,
+  kb_property)` (cc_conflict_001 and _006 both use P39). `_run_consistency_check`
+  no longer uses the harness DB at all.
+- **Table-type dispatch.** `_insert_consistency_row` inserts into the table
+  named by `input.table` with that table's column schema (`subsumption`'s
+  `entity_a` "ns:id" string is split into namespace/identifier).
+- **Synthetic `ConsistencyResult` for subsumption/predicate_distribution.** A
+  conflicting second row for these tables shares the table's UNIQUE key, so the
+  write is rejected by the constraint — that rejection *is* the consistency
+  enforcement for these tables (the `_check_*_row` logic is a defensive second
+  line that the constraint makes unreachable in practice). The runner inserts
+  row_a, attempts row_b; on `IntegrityError` with differing verdicts it
+  synthesizes `ConsistencyResult(status="conflict", inconsistency_class=…)`
+  (`contradicting_subsumption` / `conflicting_distribution`). If the second row
+  instead coexists (a distinct key), the checker scores it normally.
+
+Post-fix, `_run_consistency_check` scores all 10 seeded cases without a
+structural error, and **9 of 10 correctly**. cc_conflict_007 scores as a
+failure — and that is correct runner behavior, not a bug: the corpus expects
+*no* conflict for `works_at` / `employed_by` on P108 with `null` vs
+`{start: P580}` slot_to_qualifier, but the checker's
+`transitive_equivalence_violation` rule flags any differing map, and
+cc_conflict_002 (`null` vs `{degree: P512}` on P69) is structurally identical
+yet expects a conflict. This is a **checker-vs-corpus discrepancy** recorded
+for v0.16 / Phase 10.5 triage (v0.16_planning.md D24, observation 3), not a
+runner defect. The 15 non-`seeded_conflict_detection` cases remain
+`return True` (unscored) — recorded as the same observation; scoring them is a
+runner-capability addition, out of this follow-up's authorized scope.
+
+## Verification — pre-fix and post-fix
+
+The enhanced dry-run is the discriminator the rc.5 session lacked:
+
+- **Post-fix** (`pytest --run-calibration -q` at rc.6): **720 passed, 12
+  skipped, 0 errors** — all 11 runners invoke every case cleanly.
+- **Pre-fix** — the rc.6 commit cherry-picked onto `v0.15.0-rc.4` (pre-D1/D2
+  runners + the enhanced dry-run): `extraction_corpus` fails with **42/57**
+  cases raising structural errors, `temporal_scope_corpus` with **5/40** — the
+  exact hard-blocker shape Phase D's D1 fixed. `consistency_check` is clean
+  there (the rc.6 commit also carries the `_run_consistency_check` fix).
+
+`pytest tests/ -q` (the default, non-calibration run) is unchanged — **720
+passed, 1 skipped, 11 deselected** — the calibration test is deselected without
+`--run-calibration`, and the dry-run change adds no test.
+
+## Tag and Phase 10.5 start point
+
+The follow-up commit is tagged **`v0.15.0-rc.6`**. Phase 10.5 begins from rc.6,
+where the dry-run reports clean *because every runner was invoked against every
+case*, not because it skipped. The follow-up changes only calibration-runner
+and harness (scoring) code — no verdict-producing code — so the fallback start
+point for a Phase 10.5 calibration anomaly is unchanged: **`v0.15.0-rc.2`**.

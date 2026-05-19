@@ -314,24 +314,100 @@ def _run_python_verification(h: _Harness, case: dict) -> bool:
     return verdict.verdict == case["expected_output"]["verdict"]
 
 
-def _run_consistency_check(h: _Harness, case: dict) -> bool:
-    from aedos.layer3_substrate.consistency import ConsistencyChecker
-    if case.get("category") != "seeded_conflict_detection":
-        return True  # regeneration / circuit-breaker categories: not pure detection
-    inp, expected = case["input"], case["expected_output"]
-    db = h.db
-    ids = []
-    for row in (inp["row_a"], inp["row_b"]):
-        cur = db.execute(
+_CONSISTENCY_CONFLICT_CLASS = {
+    "subsumption": "contradicting_subsumption",
+    "predicate_distribution": "conflicting_distribution",
+}
+
+
+def _insert_consistency_row(db, table: str, row: dict) -> None:
+    """Insert one seeded substrate row for a consistency-check case. Raises
+    sqlite3.IntegrityError if the row collides with an existing UNIQUE key."""
+    if table == "predicate_translation":
+        db.execute(
             "INSERT INTO predicate_translation "
             "(aedos_predicate, object_type, routing_hint, kb_namespace, kb_property, "
             "slot_to_qualifier, reason, created_at) "
             "VALUES (?, 'entity', 'kb_resolvable', 'wikidata', ?, ?, 'calib', '2026-01-01')",
             (row["aedos_predicate"], row["kb_property"], row.get("slot_to_qualifier")),
         )
-        ids.append(cur.lastrowid)
-    db.commit()
-    result = ConsistencyChecker(db).check_on_write(inp["table"], ids[1])
+    elif table == "subsumption":
+        a_ns, a_id = row["entity_a"].split(":", 1)
+        b_ns, b_id = row["entity_b"].split(":", 1)
+        db.execute(
+            "INSERT INTO subsumption "
+            "(entity_a_namespace, entity_a_identifier, entity_b_namespace, "
+            "entity_b_identifier, relation_type, verdict, source, reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'calib', 'seed', '2026-01-01')",
+            (a_ns, a_id, b_ns, b_id, row["relation_type"], row["verdict"]),
+        )
+    elif table == "predicate_distribution":
+        db.execute(
+            "INSERT INTO predicate_distribution "
+            "(aedos_predicate, polarity, relation_type, verdict, reason, created_at) "
+            "VALUES (?, ?, ?, ?, 'calib', '2026-01-01')",
+            (row["predicate"], row["polarity"], row["relation_type"], row["verdict"]),
+        )
+    else:
+        raise KeyError(f"unknown consistency table: {table}")
+
+
+def _run_consistency_check(h: _Harness, case: dict) -> bool:
+    """Seed two rows and ask the consistency checker. Each case gets a *fresh*
+    in-memory DB: a case is a self-contained two-row scenario, and a shared DB
+    both cross-contaminates checks keyed on (kb_namespace, kb_property) and
+    collides on the predicate_translation UNIQUE key. The runner dispatches on
+    `input.table` — its three table types carry different row schemas. See
+    docs/phase_D_report.md, Phase D follow-up."""
+    import sqlite3
+
+    from aedos.database import open_memory_db
+    from aedos.layer3_substrate.consistency import ConsistencyChecker, ConsistencyResult
+
+    if case.get("category") != "seeded_conflict_detection":
+        return True  # retract_and_regenerate / circuit_breaker_trigger: not scored here
+    inp, expected = case["input"], case["expected_output"]
+    table = inp["table"]
+    db = open_memory_db()
+    checker = ConsistencyChecker(db)
+
+    if table == "predicate_translation":
+        # The two rows are distinct predicates mapped to one KB property — they
+        # coexist; the checker compares their slot_to_qualifier maps.
+        _insert_consistency_row(db, table, inp["row_a"])
+        _insert_consistency_row(db, table, inp["row_b"])
+        db.commit()
+        row_b_id = db.execute(
+            "SELECT id FROM predicate_translation ORDER BY id DESC LIMIT 1"
+        ).fetchone()["id"]
+        result = checker.check_on_write(table, row_b_id)
+    else:
+        # subsumption / predicate_distribution: a conflicting second row shares
+        # the table's UNIQUE key, so the write is rejected by the constraint —
+        # that rejection is the consistency enforcement for these tables. The
+        # synthetic ConsistencyResult records the prevented conflict (the
+        # corpus notes call for this). If the second row instead coexists
+        # (a distinct key), the checker scores it normally.
+        _insert_consistency_row(db, table, inp["row_a"])
+        db.commit()
+        try:
+            _insert_consistency_row(db, table, inp["row_b"])
+            db.commit()
+        except sqlite3.IntegrityError:
+            if inp["row_a"].get("verdict") != inp["row_b"].get("verdict"):
+                result = ConsistencyResult(
+                    status="conflict",
+                    inconsistency_class=_CONSISTENCY_CONFLICT_CLASS[table],
+                    table=table,
+                )
+            else:
+                result = ConsistencyResult(status="pass")  # pure duplicate
+        else:
+            row_b_id = db.execute(
+                f"SELECT id FROM {table} ORDER BY id DESC LIMIT 1"
+            ).fetchone()["id"]
+            result = checker.check_on_write(table, row_b_id)
+
     detected = result.status == "conflict"
     if detected != expected["conflict_detected"]:
         return False
@@ -443,6 +519,100 @@ _RUNNERS = {
 
 
 # ---------------------------------------------------------------------------
+# Dry-run stubs (Phase D follow-up). The dry-run path used to skip after merely
+# loading the corpus — it never invoked the runners, so a runner that KeyError'd
+# on most of its corpus (the Phase D hard blockers) passed the dry-run green.
+# These stubs let every runner's case-reading and comparison code run to
+# completion with no LLM/KB cost: a stub LLM returns structurally-valid-but-
+# uncalibrated responses, the heavy components are universal structural stubs,
+# and the DB is the real in-memory one. The component outputs are deliberately
+# uncalibrated and unused — the dry-run checks only that the runner completes
+# without a structural exception (KeyError, AttributeError, …).
+# ---------------------------------------------------------------------------
+
+class _Stub:
+    """Universal structural stub: attribute access and calls return another
+    _Stub, iteration yields nothing. Stands in for the dry-run's heavy
+    components (predicate translation, resolver, substrate, walker, Tier U, KB)
+    so every chained access a runner makes resolves without raising."""
+
+    def __getattr__(self, name):
+        return _Stub()
+
+    def __call__(self, *args, **kwargs):
+        return _Stub()
+
+    def __iter__(self):
+        return iter(())
+
+
+class _StubLLM:
+    """Minimal LLM stub for the dry-run. Returns structurally-valid responses
+    so the real (lightweight) Extractor and PythonVerifier run to completion."""
+
+    def extract_with_tool(self, system=None, user_message=None, tool=None, **kwargs):
+        name = (tool or {}).get("name")
+        if name == "extract_claims":
+            # One claim whose subject is the input text verbatim, so it survives
+            # the extractor's hard-claim check (subject must appear in the text)
+            # and the runner sees a non-empty claim list.
+            return {"claims": [{
+                "subject": user_message or "calib_subject",
+                "predicate": "calib_predicate",
+                "object": "calib_object",
+                "polarity": 1,
+                "source_text": user_message or "",
+                "verb_tense": "present",
+            }]}
+        if name == "generate_python_verify":
+            # Empty code → PythonVerifier returns no_terminal_result without
+            # touching the sandbox.
+            return {"code": "", "reasoning": "dry-run stub"}
+        return {  # predicate-metadata or any other tool
+            "object_type": "entity",
+            "user_subject_required": 0,
+            "routing_hint": "abstain",
+            "reason": "dry-run stub",
+        }
+
+    def chat(self, system=None, messages=None, purpose=None, **kwargs):
+        return ""
+
+
+class _DryRunHarness(_Harness):
+    """`_Harness` with a stub LLM and stub heavy components, but the real
+    in-memory DB (cheap, and `_run_consistency_check` / `_run_derivation` need
+    a real schema). No LLM or KB call is made."""
+
+    def __init__(self):
+        super().__init__()
+        self._stub_llm = _StubLLM()
+
+    @property
+    def client(self):
+        return self._stub_llm
+
+    @property
+    def kb(self):
+        return _Stub()
+
+    @property
+    def predicate_translation(self):
+        return _Stub()
+
+    @property
+    def resolver(self):
+        return _Stub()
+
+    @property
+    def substrate(self):
+        return _Stub()
+
+    def walker(self):
+        return _Stub(), _Stub()
+
+
+# ---------------------------------------------------------------------------
 # The corpus test
 # ---------------------------------------------------------------------------
 
@@ -455,10 +625,33 @@ def test_corpus_calibration(corpus: str):
     assert cases, f"{corpus}: corpus is empty or missing"
 
     if not RUN_CALIBRATION:
+        # Harness dry-run: invoke the runner against every case with a stubbed
+        # harness (no LLM/KB cost). The runner outputs are uncalibrated and
+        # unused — what is checked is that every case completes without a
+        # structural exception (a KeyError on a missing case key being the
+        # Phase D hard-blocker shape). A runner that cannot score a case fails
+        # the dry-run here, rather than passing it silently and surfacing only
+        # under a paid live run.
+        runner = _RUNNERS[corpus]
+        harness = _DryRunHarness()
+        errors: list[tuple[str, str, str]] = []
+        for case in cases:
+            try:
+                runner(harness, case)
+            except Exception as exc:
+                errors.append((case.get("id", "?"), type(exc).__name__, str(exc)))
+        if errors:
+            sample = "; ".join(f"{cid} {etype}: {emsg}" for cid, etype, emsg in errors[:5])
+            pytest.fail(
+                f"{corpus}: {len(errors)}/{len(cases)} cases raised a structural "
+                f"error in the harness dry-run — the runner cannot score them. "
+                f"First {min(5, len(errors))}: {sample}"
+            )
         pytest.skip(
-            f"{corpus}: {len(cases)} cases load and parse OK (harness dry-run). "
-            f"Set RUN_CALIBRATION=1 (with RUN_LIVE_KB=1, RUN_LIVE_TESTS=1) for "
-            f"live evaluation against the {THRESHOLDS[corpus]:.0%} threshold."
+            f"{corpus}: {len(cases)} cases invoked through the runner with no "
+            f"structural error (harness dry-run, stubbed components). Set "
+            f"RUN_CALIBRATION=1 (with RUN_LIVE_KB=1, RUN_LIVE_TESTS=1) for live "
+            f"evaluation against the {THRESHOLDS[corpus]:.0%} threshold."
         )
 
     runner = _RUNNERS[corpus]
