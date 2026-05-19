@@ -155,11 +155,70 @@ class _Harness:
 # ---------------------------------------------------------------------------
 
 def _run_extraction(h: _Harness, case: dict) -> bool:
+    """Dispatch on `case["category"]`: the extraction corpus has five
+    sub-categories and each pins a different thing about the produced claims.
+    A single comparison path (the pre-D1 code) read `case["expected_predicate"]`
+    and `case["input"]` unconditionally and KeyError'd on the 42 non-`normalization`
+    cases — see docs/phase_D_plan.md, Cluster D1."""
     from aedos.layer1_extraction.extractor import Extractor, ExtractionContext
     extractor = Extractor(llm_client=h.client)
-    ctx = ExtractionContext(asserting_party="calibration", context_type="document")
-    claims = extractor.extract(case["input"], ctx)
-    return any(c.predicate == case["expected_predicate"] for c in claims)
+    category = case["category"]
+
+    if category == "normalization":
+        ctx = ExtractionContext(asserting_party="calibration", context_type="document")
+        claims = extractor.extract(case["input"], ctx)
+        return any(c.predicate == case["expected_predicate"] for c in claims)
+
+    if category == "temporal":
+        ctx = ExtractionContext(asserting_party="calibration", context_type="document")
+        claims = extractor.extract(case["input"], ctx)
+        expected = case["expected_scope"]
+        if expected.get("is_future"):
+            return not claims  # future-tense claims are dropped at extraction
+        if not claims:
+            return False
+        claim = claims[0]
+        return all(
+            getattr(claim, field) == expected.get(field)
+            for field in ("valid_from", "valid_until", "valid_during_ref")
+        )
+
+    if category == "decomposition":
+        ctx = ExtractionContext(asserting_party="calibration", context_type="document")
+        claims = extractor.extract(case["input"], ctx)
+        if "expected_claim_count" in case and len(claims) != case["expected_claim_count"]:
+            return False
+        if case.get("expected_shared_event_id"):
+            ids = [c.reified_event_id for c in claims]
+            if not ids or any(i is None or i != ids[0] for i in ids):
+                return False
+        return True
+
+    if category == "first_person":
+        # The case's own asserting_party must drive canonicalization so that
+        # first-person subjects (I/me/my/we) resolve to it.
+        ctx = ExtractionContext(
+            asserting_party=case["asserting_party"], context_type="chat_user")
+        claims = extractor.extract(case["input"], ctx)
+        return any(c.subject == case["expected_subject"] for c in claims)
+
+    if category == "hard_claim":
+        # hard_claim cases carry `text` (not `input`); hardclaim_002's text is
+        # first-person, so asserting_party must be user_test.
+        ctx = ExtractionContext(asserting_party="user_test", context_type="chat_user")
+        claims = extractor.extract(case["text"], ctx)
+        subjects = {c.subject for c in claims}
+        for subj in case.get("expected_subjects_in_output", []):
+            if subj not in subjects:
+                return False
+        for subj in case.get("expected_subjects_not_in_output", []):
+            if subj in subjects:
+                return False
+        if "source_text_check" in case:
+            return any(c.source_text == case["source_text_check"] for c in claims)
+        return True
+
+    raise KeyError(f"unknown extraction category: {category}")
 
 
 def _run_predicate_metadata(h: _Harness, case: dict) -> bool:
@@ -173,13 +232,22 @@ def _run_predicate_metadata(h: _Harness, case: dict) -> bool:
 
 
 def _run_temporal_scope(h: _Harness, case: dict) -> bool:
+    """Sub-category dispatch on `case["category"]`. The 5 `future_rejection`
+    cases store their expected answer under `expected` (the bare string
+    "rejected"), not `expected_scope` — reading `case["expected_scope"]`
+    KeyError'd on them; see docs/phase_D_plan.md, Cluster D1."""
     from aedos.layer1_extraction.extractor import Extractor, ExtractionContext
     extractor = Extractor(llm_client=h.client)
     ctx = ExtractionContext(asserting_party="calibration", context_type="document")
     claims = extractor.extract(case["text"], ctx)
+
+    if case.get("category") == "future_rejection":
+        # Future-tense claims are dropped at extraction → rejection == no claims.
+        return not claims
+
     expected = case["expected_scope"]
     if not claims:
-        return expected.get("rejected") is True  # future-tense cases extract nothing
+        return False  # a non-future case that produced no claim has failed
     claim = claims[0]
     return (claim.valid_from == expected.get("valid_from")
             and claim.valid_until == expected.get("valid_until"))
