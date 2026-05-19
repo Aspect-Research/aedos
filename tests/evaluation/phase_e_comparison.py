@@ -47,52 +47,76 @@ _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "O
 # — `price_in_per_m` / `price_out_per_m` are USD per million tokens, the rates
 # the runs will actually pay. A candidate whose `model` is still None is
 # refused by run_comparison with a clear error.
+# `disable_thinking`: when True the harness routes the candidate with
+# _DISABLE_THINKING_EXTRA_BODY so OpenRouter turns reasoning off. Set True only
+# for the two DeepSeek V4 variants — the vllm #41132 structured-output bug is
+# DeepSeek-specific. Kimi K2.6, GLM-5.1 and Qwen3.6-35B-A3B *also* expose a
+# `reasoning` toggle, but have no known structured-output bug; disabling their
+# thinking would handicap them in a same-prompt comparison, so they stay False.
+# The field is explicit per candidate — flip a bool to change the policy.
 _CANDIDATES: dict[str, dict] = {
     "deepseek-v4-flash": {
         "model": "deepseek/deepseek-v4-flash",
         "price_in_per_m": 0.112, "price_out_per_m": 0.224, **_OPENROUTER,
+        "disable_thinking": True,
         "notes": "Paid variant. A `deepseek/deepseek-v4-flash:free` exists at $0 "
                  "but its supported_parameters omit structured_outputs/"
-                 "response_format. `reasoning` toggle is exposed (vllm #41132 — "
-                 "disable thinking when calling; harness change, not done here).",
+                 "response_format. Thinking disabled via OpenRouter `reasoning` "
+                 "(vllm #41132 structured-output mitigation).",
     },
     "devstral-small-2": {
         "model": "mistralai/devstral-small",
         "price_in_per_m": 0.1, "price_out_per_m": 0.3, **_OPENROUTER,
+        "disable_thinking": False,
         "notes": "OpenRouter has no 'Devstral Small 2'; mistralai/devstral-small "
                  "is Devstral Small 1.1 (24B). Filled per operator decision — the "
                  "24B size class is what makes this the code-specialist mid-size "
                  "candidate; Small 1.1 vs Small 2 is a version, not a category, "
                  "difference. If it wins for python_verifier the recommendation "
-                 "generalizes to the Devstral Small line.",
+                 "generalizes to the Devstral Small line. No `reasoning` toggle "
+                 "exposed.",
     },
     "qwen-3.6-35b-a3b": {
         "model": "qwen/qwen3.6-35b-a3b",
         "price_in_per_m": 0.15, "price_out_per_m": 1.0, **_OPENROUTER,
+        "disable_thinking": False,
         "notes": "35B total / 3B active MoE — distinct from qwen3.6-27b (dense) "
-                 "and qwen3.6-plus (API-only).",
+                 "and qwen3.6-plus (API-only). Exposes `reasoning`; left enabled "
+                 "(no known structured-output bug).",
     },
     "deepseek-v4-pro": {
         "model": "deepseek/deepseek-v4-pro",
         "price_in_per_m": 0.435, "price_out_per_m": 0.87, **_OPENROUTER,
-        "notes": "1.6T MoE / 49B active, 1M ctx. `reasoning` toggle exposed "
-                 "(vllm #41132 — disable thinking when calling).",
+        "disable_thinking": True,
+        "notes": "1.6T MoE / 49B active, 1M ctx. Thinking disabled via OpenRouter "
+                 "`reasoning` (vllm #41132 structured-output mitigation).",
     },
     "glm-5.1": {
         "model": "z-ai/glm-5.1",
         "price_in_per_m": 0.0, "price_out_per_m": 0.0, **_OPENROUTER,
+        "disable_thinking": False,
         "notes": "OpenRouter lists pricing {prompt:'0', completion:'0'} — an "
                  "explicit $0, not a :free model and with full parameter "
-                 "support. Likely a launch promotion; operator MUST re-confirm "
-                 "pricing at E3 run time before relying on a $0 cost.",
+                 "support. Likely a launch promotion; pricing is re-verified at "
+                 "run time. Exposes `reasoning`; left enabled.",
     },
     "kimi-k2.6": {
         "model": "moonshotai/kimi-k2.6",
         "price_in_per_m": 0.73, "price_out_per_m": 3.49, **_OPENROUTER,
+        "disable_thinking": False,
         "notes": "Paid instruct; no separate :free or thinking K2.6 variant on "
-                 "OpenRouter (kimi-k2.5 and kimi-k2-thinking are different models).",
+                 "OpenRouter (kimi-k2.5 and kimi-k2-thinking are different "
+                 "models). Exposes `reasoning`; left enabled.",
     },
 }
+
+# Mitigation for vllm bug #41132 — structured output breaks when a model's
+# thinking mode is enabled. For a `disable_thinking` candidate the harness
+# routes with this as the call's extra_body, so OpenRouter turns reasoning off.
+# `{"enabled": False}` disables reasoning outright; this is deliberately NOT
+# `{"exclude": True}`, which only hides reasoning tokens from the response
+# while the model still reasons — and so would not fix #41132.
+_DISABLE_THINKING_EXTRA_BODY = {"reasoning": {"enabled": False}}
 
 _ALL_CORPORA = (
     "extraction_corpus", "predicate_metadata_corpus",
@@ -368,6 +392,8 @@ def run_comparison(
         "base_url": cand["base_url"],
         "api_key_env_var": cand["api_key_env_var"],
     }
+    if cand.get("disable_thinking"):
+        purpose_cfg["extra_body"] = _DISABLE_THINKING_EXTRA_BODY
     prev = os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE")
     os.environ["AEDOS_OVERRIDE_MODEL_BY_PURPOSE"] = json.dumps({"*": purpose_cfg})
 
