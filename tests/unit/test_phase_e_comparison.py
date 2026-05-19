@@ -104,11 +104,17 @@ class TestRunComparisonOffline:
         )
         assert os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE") == before
 
-    def test_unfilled_candidate_without_transport_is_refused(self):
-        # devstral-small-2 has no OpenRouter match (E3 prep), so its model stays
-        # None — a live run on it must be refused with a clear error.
+    def test_unfilled_candidate_without_transport_is_refused(self, monkeypatch):
+        # All six real candidates now have model IDs; inject a synthetic
+        # unfilled one to confirm a live run on a model-less candidate is
+        # refused with a clear error.
+        monkeypatch.setitem(pec._CANDIDATES, "_unfilled_test", {
+            "model": None, "price_in_per_m": None, "price_out_per_m": None,
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env_var": "OPENROUTER_API_KEY",
+        })
         with pytest.raises(ValueError, match="exact OpenRouter model ID"):
-            pec.run_comparison("devstral-small-2", "python_verification_corpus",
+            pec.run_comparison("_unfilled_test", "extraction_corpus",
                                load_env=False, write=False)
 
     def test_unknown_candidate_and_corpus_rejected(self):
