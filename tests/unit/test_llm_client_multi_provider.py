@@ -38,7 +38,7 @@ class _FakeChatCompletions:
         self._sink = sink
 
     def create(self, model, messages, max_tokens, **kw):
-        self._sink.append(model)
+        self._sink.append({"model": model, "extra_body": kw.get("extra_body")})
         usage = type("U", (), {"prompt_tokens": 1, "completion_tokens": 1})()
         msg = type("M", (), {"content": "fake-reply", "tool_calls": None})()
         choice = type("C", (), {"message": msg})()
@@ -90,13 +90,27 @@ class TestPurposeRouting:
 
 class TestProviderDispatch:
     def test_openai_purpose_dispatches_to_openai_path(self, monkeypatch):
-        sink: list[str] = []
+        sink: list[dict] = []
         client = LLMClient()
         monkeypatch.setattr(client, "_openai_client", lambda base_url, env: _FakeOpenAIClient(sink))
         out = client.chat("sys", [ChatMessage("user", "hi")], purpose="extractor:user")
         assert out == "fake-reply"
         # routed to the OpenAI-compatible path with the purpose's configured model
-        assert sink == [DEFAULT_MODEL_BY_PURPOSE["extractor:user"]["model"]]
+        assert sink[0]["model"] == DEFAULT_MODEL_BY_PURPOSE["extractor:user"]["model"]
+        assert sink[0]["extra_body"] is None  # no override → no extra_body
+
+    def test_extra_body_from_override_reaches_create(self, monkeypatch):
+        override = {"*": {
+            "model": "vendor/x", "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env_var": "OPENROUTER_API_KEY",
+            "extra_body": {"reasoning": {"enabled": False}},
+        }}
+        monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", json.dumps(override))
+        sink: list[dict] = []
+        client = LLMClient()
+        monkeypatch.setattr(client, "_openai_client", lambda base_url, env: _FakeOpenAIClient(sink))
+        client.chat("sys", [ChatMessage("user", "hi")], purpose="walker")
+        assert sink[0]["extra_body"] == {"reasoning": {"enabled": False}}
 
 
 # --------------------------------------------------------------------------
@@ -122,6 +136,12 @@ class TestWholeRunOverride:
         monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", "not json{")
         cfg = _resolve_purpose_config("walker", DEFAULT_MODEL)
         assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["walker"]["model"]
+
+    def test_override_carries_extra_body(self, monkeypatch):
+        override = {"*": dict(_OVERRIDE["*"], extra_body={"reasoning": {"enabled": False}})}
+        monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", json.dumps(override))
+        cfg = _resolve_purpose_config("walker", DEFAULT_MODEL)
+        assert cfg["extra_body"] == {"reasoning": {"enabled": False}}
 
 
 class TestMissingKeyError:

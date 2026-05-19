@@ -34,6 +34,20 @@ class _FakeTransport:
         return ""
 
 
+class _OverrideCapturingTransport(_FakeTransport):
+    """Captures the AEDOS_OVERRIDE_MODEL_BY_PURPOSE the harness set for the run."""
+
+    def __init__(self):
+        self.seen_override = None
+
+    def extract_with_tool(self, *a, **k):
+        if self.seen_override is None:
+            import os
+            raw = os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE")
+            self.seen_override = json.loads(raw) if raw else {}
+        return super().extract_with_tool(*a, **k)
+
+
 class TestClassify:
     def test_verdict_corpus_false_verified(self):
         assert pec._classify("derivation_corpus", False, "verified", None) == "false_verified"
@@ -94,6 +108,21 @@ class TestRunComparisonOffline:
         assert result_file.exists() and transcript_file.exists()
         on_disk = json.loads(result_file.read_text(encoding="utf-8"))
         assert on_disk["total_cases"] == 57
+
+    def test_disable_thinking_candidate_routes_with_reasoning_off(self):
+        # deepseek-v4-flash has disable_thinking=True → the run's model override
+        # must carry extra_body that turns OpenRouter reasoning off (#41132).
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison("deepseek-v4-flash", "extraction_corpus",
+                           load_env=False, write=False, transport=transport)
+        assert transport.seen_override["*"]["extra_body"] == {"reasoning": {"enabled": False}}
+
+    def test_thinking_enabled_candidate_has_no_extra_body(self):
+        # kimi-k2.6 has disable_thinking=False → no extra_body in the override.
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison("kimi-k2.6", "extraction_corpus",
+                           load_env=False, write=False, transport=transport)
+        assert "extra_body" not in transport.seen_override["*"]
 
     def test_override_env_var_is_restored_after_run(self):
         import os

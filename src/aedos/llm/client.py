@@ -116,6 +116,10 @@ def _purpose_override(purpose: Optional[str]) -> Optional[dict]:
             "model": entry["model"],
             "base_url": entry["base_url"],
             "api_key_env_var": entry.get("api_key_env_var", "OPENROUTER_API_KEY"),
+            # extra_body: provider-specific request fields passed straight
+            # through to the OpenAI-compatible call (e.g. OpenRouter's
+            # `reasoning` toggle). Optional; None for ordinary configs.
+            "extra_body": entry.get("extra_body"),
         }
     return None
 
@@ -284,10 +288,13 @@ class LLMClient:
         client = self._openai_client(cfg["base_url"], cfg["api_key_env_var"])
         msgs = [{"role": "system", "content": system}]
         msgs += [{"role": m.role, "content": m.content} for m in messages]
+        create_kwargs: dict[str, Any] = {
+            "model": cfg["model"], "messages": msgs, "max_tokens": max_tokens,
+        }
+        if cfg.get("extra_body"):
+            create_kwargs["extra_body"] = cfg["extra_body"]
         t0 = time.monotonic()
-        resp = client.chat.completions.create(
-            model=cfg["model"], messages=msgs, max_tokens=max_tokens,
-        )
+        resp = client.chat.completions.create(**create_kwargs)
         duration_ms = (time.monotonic() - t0) * 1000
         text = resp.choices[0].message.content or ""
         class _U:
@@ -386,14 +393,17 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_message},
             ]
+            create_kwargs: dict[str, Any] = {
+                "model": cfg["model"],
+                "messages": msgs,
+                "tools": [fn],
+                "tool_choice": {"type": "function", "function": {"name": tool["name"]}},
+                "max_tokens": max_tokens,
+            }
+            if cfg.get("extra_body"):
+                create_kwargs["extra_body"] = cfg["extra_body"]
             t0 = time.monotonic()
-            resp = client.chat.completions.create(
-                model=cfg["model"],
-                messages=msgs,
-                tools=[fn],
-                tool_choice={"type": "function", "function": {"name": tool["name"]}},
-                max_tokens=max_tokens,
-            )
+            resp = client.chat.completions.create(**create_kwargs)
             duration_ms = (time.monotonic() - t0) * 1000
             class _U:
                 input_tokens = getattr(resp.usage, "prompt_tokens", 0)
