@@ -41,21 +41,55 @@ _RESULTS_DIR = _REPO_ROOT / "docs" / "phase_E" / "results"
 # Routing endpoint shared by the open-weight candidates.
 _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "OPENROUTER_API_KEY"}
 
-# Candidate table — run order is cheapest-first (E3 operational note 1).
-#
-# OPERATOR ACTION REQUIRED before E3: fill `model` with the EXACT OpenRouter
-# model ID for each candidate (a marketing name will not resolve), and confirm
-# `price_in_per_m` / `price_out_per_m` against OpenRouter's live pricing. The
-# prices below are the planning-doc figures and may be stale. A candidate whose
-# `model` is still None is refused by run_comparison with a clear error; prices
-# left None → cost is reported as null (the run is not blocked).
+# Candidate table — `model` IDs and pricing filled from OpenRouter's live
+# /models endpoint on 2026-05-19 (Phase E3 prep; see
+# docs/phase_E/openrouter_match_report.md). OpenRouter pricing is authoritative
+# — `price_in_per_m` / `price_out_per_m` are USD per million tokens, the rates
+# the runs will actually pay. A candidate whose `model` is still None is
+# refused by run_comparison with a clear error.
 _CANDIDATES: dict[str, dict] = {
-    "deepseek-v4-flash": {"model": None, "price_in_per_m": 0.14, "price_out_per_m": 0.14, **_OPENROUTER},
-    "devstral-small-2":  {"model": None, "price_in_per_m": None, "price_out_per_m": None, **_OPENROUTER},
-    "qwen-3.6-35b-a3b":  {"model": None, "price_in_per_m": None, "price_out_per_m": None, **_OPENROUTER},
-    "deepseek-v4-pro":   {"model": None, "price_in_per_m": 0.43, "price_out_per_m": 0.87, **_OPENROUTER},
-    "glm-5.1":           {"model": None, "price_in_per_m": 1.05, "price_out_per_m": 3.50, **_OPENROUTER},
-    "kimi-k2.6":         {"model": None, "price_in_per_m": 0.95, "price_out_per_m": 0.95, **_OPENROUTER},
+    "deepseek-v4-flash": {
+        "model": "deepseek/deepseek-v4-flash",
+        "price_in_per_m": 0.112, "price_out_per_m": 0.224, **_OPENROUTER,
+        "notes": "Paid variant. A `deepseek/deepseek-v4-flash:free` exists at $0 "
+                 "but its supported_parameters omit structured_outputs/"
+                 "response_format. `reasoning` toggle is exposed (vllm #41132 — "
+                 "disable thinking when calling; harness change, not done here).",
+    },
+    "devstral-small-2": {
+        "model": None,  # NO EXACT MATCH — see openrouter_match_report.md
+        "price_in_per_m": None, "price_out_per_m": None, **_OPENROUTER,
+        "notes": "No 'Devstral Small 2' on OpenRouter. Present: devstral-small "
+                 "(= Devstral Small 1.1, 24B, an earlier version); devstral-2512 "
+                 "(= 'Devstral 2', but 123B dense — not the 24B Small class); "
+                 "devstral-medium. Operator must choose; left unfilled.",
+    },
+    "qwen-3.6-35b-a3b": {
+        "model": "qwen/qwen3.6-35b-a3b",
+        "price_in_per_m": 0.15, "price_out_per_m": 1.0, **_OPENROUTER,
+        "notes": "35B total / 3B active MoE — distinct from qwen3.6-27b (dense) "
+                 "and qwen3.6-plus (API-only).",
+    },
+    "deepseek-v4-pro": {
+        "model": "deepseek/deepseek-v4-pro",
+        "price_in_per_m": 0.435, "price_out_per_m": 0.87, **_OPENROUTER,
+        "notes": "1.6T MoE / 49B active, 1M ctx. `reasoning` toggle exposed "
+                 "(vllm #41132 — disable thinking when calling).",
+    },
+    "glm-5.1": {
+        "model": "z-ai/glm-5.1",
+        "price_in_per_m": 0.0, "price_out_per_m": 0.0, **_OPENROUTER,
+        "notes": "OpenRouter lists pricing {prompt:'0', completion:'0'} — an "
+                 "explicit $0, not a :free model and with full parameter "
+                 "support. Likely a launch promotion; operator MUST re-confirm "
+                 "pricing at E3 run time before relying on a $0 cost.",
+    },
+    "kimi-k2.6": {
+        "model": "moonshotai/kimi-k2.6",
+        "price_in_per_m": 0.73, "price_out_per_m": 3.49, **_OPENROUTER,
+        "notes": "Paid instruct; no separate :free or thinking K2.6 variant on "
+                 "OpenRouter (kimi-k2.5 and kimi-k2-thinking are different models).",
+    },
 }
 
 _ALL_CORPORA = (
