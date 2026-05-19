@@ -267,3 +267,134 @@ are not affected by #41132 and would benefit from the harness fix being in
 place for their own runs.
 
 This document does not invoke either path. The decision is the operator's.
+
+---
+
+## Phase 3 — full-corpus rerun (harness fix verified, cause identified)
+
+Full `deepseek-v4-flash × extraction_corpus` rerun under the fixed harness:
+
+```json
+{"candidate": "deepseek-v4-flash", "corpus": "extraction_corpus",
+ "total_cases": 57, "passed": 19, "failed": 27, "runner_errors": 11,
+ "total_calls": 57, "total_input_tokens": 33902, "total_output_tokens": 3026,
+ "total_cost_usd": 0.004476, "elapsed_seconds": 249.5,
+ "pricing_verification": {"ok": true}}
+```
+
+Output: `docs/phase_E/results/rerun_full/deepseek-v4-flash__extraction_corpus.json`
+(+ `.transcript.json`).
+
+### Harness fix verified
+
+**11 of 11 errored cases produced a transcript entry with `error` and
+`raw_response` populated.** No gap. The failure-capture fix is doing what it
+was meant to.
+
+### Error rate held: 11/57 ≈ 19%
+
+Comparable to run 1's 15/57 ≈ 26% (run 1 had 3 transient 503s; net model-output
+rate ~21%). This rerun saw 0 provider 503s and 0 RuntimeError "no tool call"
+— **all 11 errors were TypeErrors of identical shape**. The same baseline rate
+shows on a fresh sample; it isn't a per-input issue.
+
+### Hypothesis discrimination — neither (a) nor (b) as framed
+
+Every one of the 11 `raw_response` objects has:
+
+```json
+{"id": null, "choices": null, "created": null, "model": null,
+ "object": null, "service_tier": null, "system_fingerprint": null,
+ "usage": null,
+ "error": {"message": "Upstream error from Morph: Failed to compile
+                       structural_tag grammar: … Invalid structural tag
+                       error: Only the last element in a sequence can be
+                       unlimited, but the 1th element of sequence format
+                       is unlimited",
+           "code": 502}}
+```
+
+And a recursive scan for any `reasoning` field with non-empty content across
+all 11 raw responses returns `NONE`. The model never reasoned, never produced
+content, never produced a tool call. **It never ran.**
+
+- **(a) thinking-still-enabled — DEFINITIVELY RULED OUT.** No reasoning
+  content anywhere in any of the 11 raw responses. The disable-thinking
+  payload's effectiveness is not the question because the failure happens
+  before the model would have reasoned.
+- **(b) "V4-Flash structured-output unreliability independent of thinking"
+  — close, but mischaracterised.** The failure isn't the model producing a
+  bad completion. It's the **provider's structured-output enforcement
+  layer ("Morph", apparently DeepSeek's hosting / vllm-with-grammar-tagging)
+  failing to *compile* the grammar OpenRouter hands it from our `tools` /
+  `tool_choice` request.** A C++ grammar-compiler assertion fails
+  (`grammar_compiler.cc:1037`) because the schema has an unlimited-size
+  element not in the last position of a sequence — almost certainly the
+  `claims: { type: "array", items: {…} }` field in the `EXTRACTION_TOOL`
+  schema. The error is **upstream of the model**.
+
+This is the operator's "Other (novel signature)" branch.
+
+### What this means for the proposed parameter-shape variants
+
+The operator's instruction was that if (a) is confirmed we try
+`{effort: "low"}` and `{max_tokens: 0}`. **(a) is ruled out.** Both variants
+control reasoning-step behaviour *inside the model* — neither can affect a
+grammar-compile error that fires before the model is invoked. The variant
+runs would not be informative for this failure mode. **Do not run them on
+the (a)-route reasoning.**
+
+There is one related question worth surfacing: could the `extra_body:
+{reasoning: {enabled: false}}` payload itself be *causing* the grammar
+compile to fail (by altering the schema the provider hands to its grammar
+compiler)? Plausible but speculative — the error message names "sequence
+format … 1th element … unlimited," which sounds like the `claims` array
+in the tool schema, not anything reasoning-related. A clean rerun without
+the `extra_body` would test this; arguably it is the only follow-up rerun
+left whose outcome would change the recommendation. **Not doing it without
+the operator's call.**
+
+### Distribution of errors across sub-categories
+
+| sub-category | run 1 | rerun (this) |
+|---|---|---|
+| normalization (15) | 5 | 0 |
+| decomposition (10) | 2 | 3 |
+| temporal (15) | 2 | 5 |
+| hardclaim (7) | 3 | 2 |
+| first_person (10) | 3 | 1 |
+
+No category is immune; which cases happen to error shifts between runs. The
+~19% rate is essentially "fraction of calls that get routed to a backend
+where the grammar compile fails," not a per-input property.
+
+### Confirmation: cause is class-wide for the DeepSeek V4 family on OpenRouter
+
+The structural error is in the upstream provider's grammar-tagging
+infrastructure, not the model weights. V4-Pro almost certainly shares the
+same provider stack and the same grammar-compile failure mode. The original
+Phase E prompt's framing — "the vllm bug affected both" — turns out to
+match: both DeepSeek V4 variants on OpenRouter ride the same broken
+structured-output layer, and the bug is in that layer, not the model.
+
+### Refined recommendation
+
+**Operator decision warranted; novel signature ≠ either pre-framed path.**
+
+- The recommended "if (b) confirmed: drop both" path is operationally still
+  the right call — the failure rate is real, persistent, provider-side,
+  and class-wide for the DeepSeek V4 family on OpenRouter. Aedos's
+  verification pipeline cannot accept ~19% provider grammar-compile errors
+  on the easiest corpus.
+- Before dropping, one final cheap experiment would conclusively test
+  whether our `extra_body: {reasoning: {enabled: false}}` payload is the
+  trigger: rerun without it. Cost ~$0.005. If error rate drops to ~0%,
+  V4-Flash/V4-Pro could be in the comparison with the disable-thinking
+  payload removed (a different harness configuration, with the operator's
+  earlier note that "two run with reasoning off, four with reasoning on"
+  asymmetry then becoming "all six with reasoning on" — cleaner). If the
+  rate stays at ~19%, V4-Flash/V4-Pro are out for soundness-critical roles
+  regardless of payload.
+
+Both the parameter-shape variant rule-out and the no-extra-body rerun
+question are surfaced; this addendum does not invoke either.
