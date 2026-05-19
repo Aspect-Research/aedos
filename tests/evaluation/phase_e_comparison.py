@@ -153,6 +153,55 @@ def _load_env() -> None:
 
 
 # ---------------------------------------------------------------------------
+# OpenRouter pricing re-verification — a candidate's price in _CANDIDATES is a
+# point-in-time snapshot (GLM-5.1's $0 is suspected promotional). Before a
+# billed run, re-fetch /models and confirm the price still matches, so a
+# changed price surfaces as a finding rather than being spent silently.
+# ---------------------------------------------------------------------------
+
+def _fetch_openrouter_models() -> list[dict]:
+    """Fetch OpenRouter's /models metadata (no inference cost)."""
+    import urllib.request
+    key = os.getenv("OPENROUTER_API_KEY")
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY not set — cannot re-verify pricing")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/models",
+        headers={"Authorization": "Bearer " + key, "User-Agent": "aedos-phase-e/0.15"},
+    )
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        return json.loads(resp.read()).get("data", [])
+
+
+def _reverify_pricing(candidate: str, cand: dict, *, models: Optional[list] = None) -> dict:
+    """Compare `cand`'s recorded pricing to OpenRouter's live pricing. Returns
+    {ok, message, live_in, live_out, recorded_in, recorded_out}. `models` may be
+    injected for offline testing; otherwise it is fetched live."""
+    if models is None:
+        models = _fetch_openrouter_models()
+    rec_in, rec_out = cand.get("price_in_per_m"), cand.get("price_out_per_m")
+    entry = next((m for m in models if m.get("id") == cand["model"]), None)
+    if entry is None:
+        return {"ok": False, "live_in": None, "live_out": None,
+                "recorded_in": rec_in, "recorded_out": rec_out,
+                "message": "%r is no longer listed on OpenRouter" % cand["model"]}
+    pr = entry.get("pricing", {})
+    live_in = round(float(pr.get("prompt", 0)) * 1e6, 6)
+    live_out = round(float(pr.get("completion", 0)) * 1e6, 6)
+    changed = (rec_in is None or rec_out is None
+               or round(live_in, 4) != round(rec_in, 4)
+               or round(live_out, 4) != round(rec_out, 4))
+    return {
+        "ok": not changed,
+        "live_in": live_in, "live_out": live_out,
+        "recorded_in": rec_in, "recorded_out": rec_out,
+        "message": ("pricing unchanged" if not changed else
+                    "pricing CHANGED — recorded $%s/$%s per M, live $%s/$%s per M; "
+                    "update _CANDIDATES" % (rec_in, rec_out, live_in, live_out)),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Verdict capture — derivation/python_verification produce a verdict the runner
 # only folds into a pass/fail bool. To classify false-verified vs
 # false-abstention without modifying the runner, observe Walker.walk and
@@ -361,12 +410,18 @@ def run_comparison(
     load_env: bool = True,
     write: bool = True,
     transport: Optional[Any] = None,
+    verify_pricing: bool = True,
 ) -> dict:
     """Run `candidate` against `corpus_name`; return the structured result and
     (by default) write it to `docs/phase_E/results/`.
 
     `transport` injects a fake LLM transport for offline testing — no network,
     no key, no cost. With `transport=None` the run is live and billed.
+
+    `verify_pricing` (live runs only) re-fetches OpenRouter's pricing for the
+    candidate before the run and raises if it no longer matches `_CANDIDATES`,
+    so a changed price (e.g. GLM-5.1's suspected promo ending) is caught before
+    any spend rather than after.
     """
     _ensure_aedos_importable()
     if candidate not in _CANDIDATES:
@@ -381,6 +436,18 @@ def run_comparison(
         )
     if load_env:
         _load_env()
+
+    # Re-verify pricing before any spend (live runs only — transport runs are
+    # free and offline). A changed price aborts the run as a surfaced finding.
+    pricing_check = None
+    if verify_pricing and transport is None:
+        pricing_check = _reverify_pricing(candidate, cand)
+        if not pricing_check["ok"]:
+            raise RuntimeError(
+                "%s: OpenRouter pricing re-verification failed — %s. Update "
+                "_CANDIDATES and re-run, or pass verify_pricing=False to override."
+                % (candidate, pricing_check["message"])
+            )
 
     from tests.calibration.test_corpus_runner import _RUNNERS, _load_corpus
     cases = _load_corpus(corpus_name)
@@ -428,6 +495,7 @@ def run_comparison(
             os.environ["AEDOS_OVERRIDE_MODEL_BY_PURPOSE"] = prev
 
     result = _aggregate(candidate, cand, corpus_name, outcomes, time.monotonic() - started)
+    result["pricing_verification"] = pricing_check
     if write:
         _write_result(result, outcomes)
     return result

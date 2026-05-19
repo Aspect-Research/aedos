@@ -80,6 +80,28 @@ class TestCost:
         assert pec._cost(1000, 1000, {"price_in_per_m": None, "price_out_per_m": None}) is None
 
 
+class TestPricingReverification:
+    _GLM = {"model": "z-ai/glm-5.1", "price_in_per_m": 0.0, "price_out_per_m": 0.0}
+
+    def test_detects_changed_pricing(self):
+        models = [{"id": "z-ai/glm-5.1",
+                   "pricing": {"prompt": "0.000001", "completion": "0.000002"}}]
+        r = pec._reverify_pricing("glm-5.1", self._GLM, models=models)
+        assert r["ok"] is False
+        assert r["live_in"] == 1.0 and r["live_out"] == 2.0
+        assert "CHANGED" in r["message"]
+
+    def test_accepts_unchanged_pricing(self):
+        models = [{"id": "z-ai/glm-5.1", "pricing": {"prompt": "0", "completion": "0"}}]
+        r = pec._reverify_pricing("glm-5.1", self._GLM, models=models)
+        assert r["ok"] is True
+
+    def test_model_delisted_fails_verification(self):
+        r = pec._reverify_pricing("glm-5.1", self._GLM, models=[])
+        assert r["ok"] is False
+        assert "no longer listed" in r["message"]
+
+
 class TestRunComparisonOffline:
     def test_extraction_run_with_fake_transport(self):
         result = pec.run_comparison(
@@ -123,6 +145,15 @@ class TestRunComparisonOffline:
         pec.run_comparison("kimi-k2.6", "extraction_corpus",
                            load_env=False, write=False, transport=transport)
         assert "extra_body" not in transport.seen_override["*"]
+
+    def test_transport_run_skips_pricing_verification(self):
+        # Pricing re-verification is a live-run guard; a transport run is free
+        # and offline, so it is skipped and recorded as None.
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FakeTransport(),
+        )
+        assert result["pricing_verification"] is None
 
     def test_override_env_var_is_restored_after_run(self):
         import os
