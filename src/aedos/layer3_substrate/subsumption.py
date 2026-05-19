@@ -85,13 +85,11 @@ class SubsumptionOracle:
         db: sqlite3.Connection,
         llm_client: LLMClient,
         kb_protocol=None,
-        audit_log=None,
         consistency_checker=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
         self._kb = kb_protocol
-        self._audit = audit_log
         self._consistency = consistency_checker
 
     def consult(
@@ -133,13 +131,12 @@ class SubsumptionOracle:
             (now, reason, row_id),
         )
         self._db.commit()
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_retracted",
-                event_subject=f"subsumption:{row_id}",
-                event_data={"reason": reason},
-            )
+        log_event(
+            self._db,
+            event_type="row_retracted",
+            event_subject=f"subsumption:{row_id}",
+            event_data={"reason": reason},
+        )
 
     def query_neighbors(
         self, entity_a: EntityRef, relation_type: str
@@ -263,17 +260,16 @@ class SubsumptionOracle:
         self._db.commit()
         row_id: int = self._db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_created",
-                event_subject=f"subsumption:{row_id}",
-                event_data={
-                    "entity_a": f"{entity_a.namespace}:{entity_a.identifier}",
-                    "entity_b": f"{entity_b.namespace}:{entity_b.identifier}",
-                    "verdict": verdict_str,
-                },
-            )
+        log_event(
+            self._db,
+            event_type="row_created",
+            event_subject=f"subsumption:{row_id}",
+            event_data={
+                "entity_a": f"{entity_a.namespace}:{entity_a.identifier}",
+                "entity_b": f"{entity_b.namespace}:{entity_b.identifier}",
+                "verdict": verdict_str,
+            },
+        )
 
         # Substrate-internal consistency check on write (architecture 5.4).
         if self._consistency is not None:

@@ -45,8 +45,7 @@ def _extract_source_rows(trace: JustificationTrace) -> list[tuple[str, int]]:
 
 
 class Aggregator:
-    def __init__(self, audit_log=None, retraction_propagator=None, db=None) -> None:
-        self._audit = audit_log
+    def __init__(self, retraction_propagator=None, db=None) -> None:
         self._propagator = retraction_propagator
         self._db = db
 

@@ -131,12 +131,10 @@ class PredicateTranslation:
         self,
         db: sqlite3.Connection,
         llm_client: LLMClient,
-        audit_log=None,
         consistency_checker=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
-        self._audit = audit_log
         self._consistency = consistency_checker
 
     def consult(
@@ -162,13 +160,12 @@ class PredicateTranslation:
             (now, reason, row_id),
         )
         self._db.commit()
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_retracted",
-                event_subject=f"predicate_translation:{row_id}",
-                event_data={"reason": reason},
-            )
+        log_event(
+            self._db,
+            event_type="row_retracted",
+            event_subject=f"predicate_translation:{row_id}",
+            event_data={"reason": reason},
+        )
 
     def query_neighbors(self, aedos_predicate: str) -> list[PredicateMetadata]:
         """Return rows whose kb_property matches the given predicate's kb_property."""
@@ -217,13 +214,12 @@ class PredicateTranslation:
                 purpose="substrate:predicate_translation",
             )
         except Exception as exc:
-            if self._audit is not None:
-                log_event(
-                    self._db,
-                    event_type="row_generation_failed",
-                    event_subject=f"predicate_translation:{aedos_predicate}",
-                    event_data={"error": str(exc)},
-                )
+            log_event(
+                self._db,
+                event_type="row_generation_failed",
+                event_subject=f"predicate_translation:{aedos_predicate}",
+                event_data={"error": str(exc)},
+            )
             raise PredicateTranslationError(
                 aedos_predicate, "llm_call_failed", str(exc)
             ) from exc
@@ -231,13 +227,12 @@ class PredicateTranslation:
         # Validate required fields
         for required in ("object_type", "routing_hint", "reason"):
             if not raw.get(required):
-                if self._audit is not None:
-                    log_event(
-                        self._db,
-                        event_type="row_generation_failed",
-                        event_subject=f"predicate_translation:{aedos_predicate}",
-                        event_data={"error": f"missing field: {required}"},
-                    )
+                log_event(
+                    self._db,
+                    event_type="row_generation_failed",
+                    event_subject=f"predicate_translation:{aedos_predicate}",
+                    event_data={"error": f"missing field: {required}"},
+                )
                 raise PredicateTranslationError(
                     aedos_predicate,
                     "malformed_response",
@@ -275,17 +270,16 @@ class PredicateTranslation:
         self._db.commit()
         row_id = self._db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_created",
-                event_subject=f"predicate_translation:{row_id}",
-                event_data={
-                    "aedos_predicate": aedos_predicate,
-                    "routing_hint": raw["routing_hint"],
-                    "kb_property": raw.get("kb_property"),
-                },
-            )
+        log_event(
+            self._db,
+            event_type="row_created",
+            event_subject=f"predicate_translation:{row_id}",
+            event_data={
+                "aedos_predicate": aedos_predicate,
+                "routing_hint": raw["routing_hint"],
+                "kb_property": raw.get("kb_property"),
+            },
+        )
 
         # Substrate-internal consistency check on write (architecture 5.4).
         if self._consistency is not None:

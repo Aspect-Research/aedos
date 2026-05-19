@@ -323,8 +323,7 @@ class TestAuditLog:
         db = open_memory_db()
         transport = MockTransport()
         client = LLMClient(_transport=transport)
-        from aedos.audit import log as audit_log
-        oracle = PredicateTranslation(db=db, llm_client=client, audit_log=audit_log)
+        oracle = PredicateTranslation(db=db, llm_client=client)
         oracle.consult("holds_role")
         events = db.execute(
             "SELECT * FROM audit_log WHERE event_type='row_created'"
@@ -335,8 +334,7 @@ class TestAuditLog:
         db = open_memory_db()
         transport = MockTransport()
         client = LLMClient(_transport=transport)
-        from aedos.audit import log as audit_log
-        oracle = PredicateTranslation(db=db, llm_client=client, audit_log=audit_log)
+        oracle = PredicateTranslation(db=db, llm_client=client)
         meta = oracle.consult("holds_role")
         oracle.retract(meta.id, "test")
         events = db.execute(
@@ -348,8 +346,7 @@ class TestAuditLog:
         db = open_memory_db()
         transport = MockTransport()
         client = LLMClient(_transport=transport)
-        from aedos.audit import log as audit_log
-        oracle = PredicateTranslation(db=db, llm_client=client, audit_log=audit_log)
+        oracle = PredicateTranslation(db=db, llm_client=client)
         oracle.consult("holds_role")
         event = db.execute(
             "SELECT event_data FROM audit_log WHERE event_type='row_created'"
@@ -391,12 +388,11 @@ class TestErrorHandling:
         with pytest.raises(PredicateTranslationError):
             oracle.consult("holds_role")
 
-    def test_error_logged_when_audit_present(self):
+    def test_error_logged(self):
         db = open_memory_db()
         transport = MockTransport(raise_on_call=RuntimeError("error"))
         client = LLMClient(_transport=transport)
-        from aedos.audit import log as audit_log
-        oracle = PredicateTranslation(db=db, llm_client=client, audit_log=audit_log)
+        oracle = PredicateTranslation(db=db, llm_client=client)
         with pytest.raises(PredicateTranslationError):
             oracle.consult("holds_role")
         events = db.execute(
