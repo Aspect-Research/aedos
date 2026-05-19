@@ -103,14 +103,12 @@ class Walker:
         kb_verifier,
         python_verifier,
         substrate: Substrate,
-        audit_log=None,
         config: Optional[dict] = None,
     ) -> None:
         self._tier_u = tier_u
         self._kb_verifier = kb_verifier
         self._python_verifier = python_verifier
         self._substrate = substrate
-        self._audit = audit_log
         self._config = config or {}
         self._max_depth = self._config.get("max_depth", _DEFAULT_MAX_DEPTH)
 

@@ -35,12 +35,10 @@ class KBVerifier:
         kb_protocol: KBProtocol,
         entity_resolver: EntityResolver,
         predicate_translation: PredicateTranslation,
-        audit_log=None,
     ) -> None:
         self._kb = kb_protocol
         self._resolver = entity_resolver
         self._pt = predicate_translation
-        self._audit = audit_log
 
     def verify(self, claim: Claim, current_time: Optional[str] = None) -> KBVerdict:
         """Full KB verification: translate → map slots → resolve → lookup → compare.

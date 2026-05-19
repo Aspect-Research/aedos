@@ -64,12 +64,10 @@ class PredicateDistributionOracle:
         self,
         db: sqlite3.Connection,
         llm_client: LLMClient,
-        audit_log=None,
         consistency_checker=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
-        self._audit = audit_log
         self._consistency = consistency_checker
 
     def consult(
@@ -94,13 +92,12 @@ class PredicateDistributionOracle:
             (now, reason, row_id),
         )
         self._db.commit()
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_retracted",
-                event_subject=f"predicate_distribution:{row_id}",
-                event_data={"reason": reason},
-            )
+        log_event(
+            self._db,
+            event_type="row_retracted",
+            event_subject=f"predicate_distribution:{row_id}",
+            event_data={"reason": reason},
+        )
 
     def query_neighbors(
         self, predicate: str, relation_type: str
@@ -180,18 +177,17 @@ class PredicateDistributionOracle:
         self._db.commit()
         row_id: int = self._db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        if self._audit is not None:
-            log_event(
-                self._db,
-                event_type="row_created",
-                event_subject=f"predicate_distribution:{row_id}",
-                event_data={
-                    "predicate": predicate,
-                    "polarity": polarity,
-                    "relation_type": relation_type,
-                    "verdict": verdict_str,
-                },
-            )
+        log_event(
+            self._db,
+            event_type="row_created",
+            event_subject=f"predicate_distribution:{row_id}",
+            event_data={
+                "predicate": predicate,
+                "polarity": polarity,
+                "relation_type": relation_type,
+                "verdict": verdict_str,
+            },
+        )
 
         # Substrate-internal consistency check on write (architecture 5.4).
         if self._consistency is not None:

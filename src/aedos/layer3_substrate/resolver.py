@@ -23,10 +23,9 @@ class EntityResolverError(Exception):
 
 
 class EntityResolver:
-    def __init__(self, kb_protocol, db: sqlite3.Connection, audit_log=None, llm_client=None) -> None:
+    def __init__(self, kb_protocol, db: sqlite3.Connection, llm_client=None) -> None:
         self._kb = kb_protocol
         self._db = db
-        self._audit = audit_log
         self._llm = llm_client
 
     def resolve(self, reference: str, local_context: LocalContext) -> list[ResolutionCandidate]:

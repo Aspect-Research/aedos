@@ -62,10 +62,9 @@ def _extract_code_block(text: str) -> str:
 
 
 class PythonVerifier:
-    def __init__(self, sandbox=None, llm_client=None, audit_log=None) -> None:
+    def __init__(self, sandbox=None, llm_client=None) -> None:
         self._sandbox = sandbox  # unused — module-level run_code() used instead
         self._llm = llm_client
-        self._audit = audit_log
 
     def verify(self, claim: Claim) -> PythonVerdict:
         inputs = {

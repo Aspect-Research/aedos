@@ -65,14 +65,12 @@ class WikidataAdapter:
         http_cache=None,
         llm_client=None,
         db=None,
-        audit_log=None,
         config=None,
         fixture_dir: Optional[Path] = None,
     ) -> None:
         self._http = http_cache
         self._llm = llm_client
         self._db = db
-        self._audit = audit_log
         self._config = config or {}
         self._fixture_dir = fixture_dir or _FIXTURE_DIR
         self._live = os.environ.get("RUN_LIVE_KB") == "1"

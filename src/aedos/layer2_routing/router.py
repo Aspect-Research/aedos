@@ -21,11 +21,9 @@ class Router:
         self,
         predicate_translation: PredicateTranslation,
         validator: Validator,
-        audit_log=None,
     ) -> None:
         self._oracle = predicate_translation
         self._validator = validator
-        self._audit = audit_log
 
     def route(self, claim: Claim) -> RoutingDecision:
         """Determine the verification route for a claim."""
