@@ -11,8 +11,19 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": []
-        }
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "employed by",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa is employed by Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -31,24 +42,74 @@
           "claims": [
             {
               "subject": "Asa",
-              "predicate": "was employed by",
+              "predicate": "employed by",
               "object": "Google",
               "polarity": 1,
               "source_text": "Asa was employed by Google",
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "norm_003",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa works at Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "works_at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa works at Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "norm_004",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "graduated from",
+              "object": "Williams College",
+              "polarity": 1,
+              "source_text": "Asa graduated from Williams College",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "norm_005",
@@ -65,18 +126,16 @@
           "claims": [
             {
               "subject": "Asa",
-              "predicate": "born_in",
+              "predicate": "was born in",
               "object": "Massachusetts",
               "polarity": 1,
               "source_text": "Asa was born in Massachusetts",
-              "verb_tense": "past",
-              "participants": [
-                "Asa",
-                "Massachusetts"
-              ]
+              "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -98,11 +157,13 @@
               "predicate": "was born",
               "object": "",
               "polarity": 1,
-              "source_text": "Asa was born",
+              "source_text": "was born",
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -118,17 +179,10 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": [
-            {
-              "subject": "Obama",
-              "predicate": "served as",
-              "object": "President",
-              "polarity": 1,
-              "source_text": "Obama served as President",
-              "verb_tense": "past"
-            }
-          ]
-        }
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -143,28 +197,80 @@
           "user_message": "Curie was awarded the Nobel Prize",
           "tool": "extract_claims"
         },
-        "response": {
-          "claims": [
-            {
-              "subject": "Curie",
-              "predicate": "was awarded",
-              "object": "the Nobel Prize",
-              "polarity": 1,
-              "source_text": "Curie was awarded the Nobel Prize",
-              "verb_tense": "past"
-            }
-          ]
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:21] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
         }
       }
     ]
   },
   {
     "case_id": "norm_009",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Einstein won the prize",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Einstein",
+              "predicate": "won",
+              "object": "the prize",
+              "polarity": 1,
+              "source_text": "Einstein won the prize",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "norm_010",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is located in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Williams College",
+              "predicate": "located in",
+              "object": "Massachusetts",
+              "polarity": 1,
+              "source_text": "Williams College is located in Massachusetts",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "norm_011",
@@ -188,13 +294,39 @@
               "verb_tense": "present"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "norm_012",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is part of the research team",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "is part of",
+              "object": "the research team",
+              "polarity": 1,
+              "source_text": "Asa is part of the research team",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "norm_013",
@@ -218,7 +350,9 @@
               "verb_tense": "present"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -234,8 +368,19 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": []
-        }
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "co-founded",
+              "object": "the company",
+              "polarity": 1,
+              "source_text": "Asa co-founded the company",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -261,7 +406,9 @@
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -277,22 +424,10 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": [
-            {
-              "subject": "Asa",
-              "predicate": "co-founded",
-              "object": "Acme",
-              "polarity": 1,
-              "source_text": "Asa and Mike co-founded Acme",
-              "verb_tense": "past",
-              "participants": [
-                "Asa",
-                "Mike"
-              ],
-              "event_type": "co-founded"
-            }
-          ]
-        }
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -307,30 +442,52 @@
           "user_message": "Alice Bob and Carol attended the summit",
           "tool": "extract_claims"
         },
-        "response": {
-          "claims": [
-            {
-              "subject": "Alice",
-              "predicate": "attended",
-              "object": "the summit",
-              "polarity": 1,
-              "source_text": "Alice Bob and Carol attended the summit",
-              "verb_tense": "past",
-              "participants": [
-                "Alice",
-                "Bob",
-                "Carol"
-              ],
-              "event_type": "attendance"
-            }
-          ]
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:52] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
         }
       }
     ]
   },
   {
     "case_id": "decomp_003",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa and Bob are friends",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "is friend of",
+              "object": "Bob",
+              "polarity": 1,
+              "source_text": "Asa and Bob are friends",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "decomp_004",
@@ -346,9 +503,22 @@
         "response": {
           "claims": [
             {
-              "subject": "the deal",
-              "predicate": "signed by",
-              "object": "France and Germany",
+              "subject": "France",
+              "predicate": "signed",
+              "object": "deal",
+              "polarity": 1,
+              "source_text": "The deal was signed by France and Germany",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany"
+              ],
+              "event_type": "signing"
+            },
+            {
+              "subject": "Germany",
+              "predicate": "signed",
+              "object": "deal",
               "polarity": 1,
               "source_text": "The deal was signed by France and Germany",
               "verb_tense": "past",
@@ -359,13 +529,44 @@
               "event_type": "signing"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "decomp_005",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa married Pat",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "married",
+              "object": "Pat",
+              "polarity": 1,
+              "source_text": "Asa married Pat",
+              "verb_tense": "past",
+              "participants": [
+                "Asa",
+                "Pat"
+              ],
+              "event_type": "marriage"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "decomp_006",
@@ -380,7 +581,9 @@
         },
         "response": {
           "claims": []
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -404,25 +607,13 @@
               "polarity": 1,
               "source_text": "Apple and IBM both released products",
               "verb_tense": "past",
-              "participants": [
-                "Apple"
-              ],
-              "event_type": "release"
-            },
-            {
-              "subject": "IBM",
-              "predicate": "released",
-              "object": "products",
-              "polarity": 1,
-              "source_text": "Apple and IBM both released products",
-              "verb_tense": "past",
-              "participants": [
-                "IBM"
-              ],
+              "participants": [],
               "event_type": "release"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -445,15 +636,12 @@
               "object": "reified_event_id",
               "polarity": 1,
               "source_text": "all decomposed claims share reified_event_id",
-              "verb_tense": "present",
-              "participants": [
-                "all decomposed claims",
-                "reified_event_id"
-              ],
-              "event_type": "sharing"
+              "verb_tense": "present"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -470,7 +658,9 @@
         },
         "response": {
           "claims": []
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -500,9 +690,39 @@
                 "Italy"
               ],
               "event_type": "signing"
+            },
+            {
+              "subject": "Germany",
+              "predicate": "signed",
+              "object": "the accord",
+              "polarity": 1,
+              "source_text": "France Germany and Italy signed the accord",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany",
+                "Italy"
+              ],
+              "event_type": "signing"
+            },
+            {
+              "subject": "Italy",
+              "predicate": "signed",
+              "object": "the accord",
+              "polarity": 1,
+              "source_text": "France Germany and Italy signed the accord",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany",
+                "Italy"
+              ],
+              "event_type": "signing"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -521,14 +741,16 @@
           "claims": [
             {
               "subject": "Obama",
-              "predicate": "was President",
-              "object": "from 2008 to 2016",
+              "predicate": "was President from",
+              "object": "2008 to 2016",
               "polarity": 1,
               "source_text": "Obama was President from 2008 to 2016",
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -554,7 +776,9 @@
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -570,17 +794,10 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": [
-            {
-              "subject": "Williams College",
-              "predicate": "is_in",
-              "object": "Massachusetts",
-              "polarity": 1,
-              "source_text": "Williams College is in Massachusetts",
-              "verb_tense": "present"
-            }
-          ]
-        }
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -595,8 +812,35 @@
           "user_message": "Asa will be President",
           "tool": "extract_claims"
         },
-        "response": {
-          "claims": []
+        "response": null,
+        "error": "RuntimeError: extract_with_tool: no tool call in OpenAI-compatible response",
+        "raw_response": {
+          "id": "gen-1779228552-0y6fnrzyFAlclMNueQ7L",
+          "choices": [
+            {
+              "finish_reason": null,
+              "index": 0,
+              "logprobs": null,
+              "message": {
+                "content": null,
+                "refusal": null,
+                "role": "assistant",
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "tool_calls": null,
+                "reasoning": null
+              },
+              "native_finish_reason": null
+            }
+          ],
+          "created": 1779228552,
+          "model": "deepseek/deepseek-v4-flash-20260423",
+          "object": "chat.completion",
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "provider": "Morph"
         }
       }
     ]
@@ -613,17 +857,10 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": [
-            {
-              "subject": "Asa",
-              "predicate": "was present when",
-              "object": "Obama was President",
-              "polarity": 1,
-              "source_text": "Asa was there when Obama was President",
-              "verb_tense": "past"
-            }
-          ]
-        }
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -642,14 +879,16 @@
           "claims": [
             {
               "subject": "Apple",
-              "predicate": "founded_in",
+              "predicate": "was founded in",
               "object": "1976",
               "polarity": 1,
               "source_text": "Apple was founded in 1976",
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -665,23 +904,45 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": [
-            {
-              "subject": "The war",
-              "predicate": "ended in",
-              "object": "1945",
-              "polarity": 1,
-              "source_text": "The war ended in 1945",
-              "verb_tense": "past"
-            }
-          ]
-        }
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "temporal_008",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France joined the EU in 1958",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "France",
+              "predicate": "joined",
+              "object": "EU",
+              "polarity": 1,
+              "source_text": "France joined the EU",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "EU"
+              ],
+              "event_type": "join"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "temporal_009",
@@ -695,8 +956,19 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": []
-        }
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "employed at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa is currently employed at Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -715,16 +987,17 @@
           "claims": [
             {
               "subject": "the policy",
-              "predicate": "was in effect from",
+              "predicate": "be in effect from",
               "object": "2010 to 2020",
               "polarity": 1,
               "source_text": "The policy was in effect from 2010 to 2020",
               "verb_tense": "past",
-              "participants": [],
               "event_type": null
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -743,18 +1016,29 @@
           "claims": [
             {
               "subject": "He",
-              "predicate": "was present at",
-              "object": "the wall falling",
+              "predicate": "was at",
+              "object": "the wall",
               "polarity": 1,
               "source_text": "He was there when the wall fell",
               "verb_tense": "past",
               "participants": [
                 "He"
               ],
-              "event_type": "witnessing"
+              "event_type": "presence"
+            },
+            {
+              "subject": "the wall",
+              "predicate": "fell",
+              "object": "exists",
+              "polarity": 1,
+              "source_text": "He was there when the wall fell",
+              "verb_tense": "past",
+              "event_type": "collapse"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -778,26 +1062,43 @@
               "polarity": 1,
               "source_text": "Asa lives in Boston since 2018",
               "verb_tense": "present",
+              "participants": [],
               "event_type": null
-            },
-            {
-              "subject": "Asa",
-              "predicate": "moved to",
-              "object": "Boston",
-              "polarity": 1,
-              "valid_from": "2018",
-              "source_text": "Asa lives in Boston since 2018",
-              "verb_tense": "past",
-              "event_type": "move"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "temporal_013",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The treaty will expire in 2030",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "The treaty",
+              "predicate": "will expire in",
+              "object": "2030",
+              "polarity": 1,
+              "source_text": "The treaty will expire in 2030",
+              "verb_tense": "future"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "temporal_014",
@@ -817,23 +1118,25 @@
               "predicate": "served as",
               "object": "Minister",
               "polarity": 1,
-              "source_text": "She served as Minister",
+              "source_text": "served as Minister",
               "verb_tense": "past",
-              "participants": [],
-              "event_type": null
+              "participants": [
+                "She"
+              ],
+              "event_type": "role"
             },
             {
               "subject": "She",
-              "predicate": "served as Minister for",
+              "predicate": "served for duration",
               "object": "three years",
               "polarity": 1,
               "source_text": "served as Minister for three years",
-              "verb_tense": "past",
-              "participants": [],
-              "event_type": null
+              "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -848,28 +1151,66 @@
           "user_message": "Obama was president when Osama was killed",
           "tool": "extract_claims"
         },
-        "response": {
-          "claims": [
+        "response": null,
+        "error": "RuntimeError: extract_with_tool: no tool call in OpenAI-compatible response",
+        "raw_response": {
+          "id": "gen-1779228600-PAWlnfxhS7qKHxmlpXqk",
+          "choices": [
             {
-              "subject": "Obama",
-              "predicate": "was president when",
-              "object": "Osama was killed",
-              "polarity": 1,
-              "source_text": "Obama was president when Osama was killed",
-              "verb_tense": "past",
-              "participants": [
-                "Obama"
-              ],
-              "event_type": null
+              "finish_reason": null,
+              "index": 0,
+              "logprobs": null,
+              "message": {
+                "content": null,
+                "refusal": null,
+                "role": "assistant",
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "tool_calls": null,
+                "reasoning": null
+              },
+              "native_finish_reason": null
             }
-          ]
+          ],
+          "created": 1779228600,
+          "model": "deepseek/deepseek-v4-flash-20260423",
+          "object": "chat.completion",
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "provider": "Morph"
         }
       }
     ]
   },
   {
     "case_id": "hardclaim_001",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa works at Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "works at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa works at Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "hardclaim_002",
@@ -893,7 +1234,9 @@
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -919,7 +1262,9 @@
               "verb_tense": "present"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -938,20 +1283,46 @@
           "claims": [
             {
               "subject": "France",
-              "predicate": "has GDP",
+              "predicate": "has GDP of",
               "object": "3 trillion",
               "polarity": 1,
               "source_text": "The GDP of France is 3 trillion",
               "verb_tense": "present"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "hardclaim_005",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "born in",
+              "object": "Massachusetts",
+              "polarity": 1,
+              "source_text": "Asa was born in Massachusetts",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "hardclaim_006",
@@ -968,21 +1339,51 @@
           "claims": [
             {
               "subject": "Asa",
-              "predicate": "graduated_from",
+              "predicate": "graduated from",
               "object": "Williams College",
               "polarity": 1,
               "source_text": "Asa graduated from Williams College",
-              "verb_tense": "past",
-              "event_type": "graduation"
+              "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "hardclaim_007",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "She said he was the founder",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "she",
+              "predicate": "said",
+              "object": "he was the founder",
+              "polarity": 1,
+              "source_text": "She said he was the founder",
+              "verb_tense": "past",
+              "participants": [
+                "she",
+                "he"
+              ],
+              "event_type": "statement"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "firstperson_001",
@@ -996,8 +1397,19 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": []
-        }
+          "claims": [
+            {
+              "subject": "I",
+              "predicate": "graduated from",
+              "object": "Williams College",
+              "polarity": 1,
+              "source_text": "I graduated from Williams College",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -1015,33 +1427,49 @@
         "response": {
           "claims": [
             {
-              "subject": "aspirin",
-              "predicate": "reduces",
-              "object": "fever",
-              "polarity": 1,
-              "source_text": "aspirin reduces fever",
-              "verb_tense": "present"
-            },
-            {
-              "subject": "we",
-              "predicate": "found in study that",
+              "subject": "Our study",
+              "predicate": "found that",
               "object": "aspirin reduces fever",
               "polarity": 1,
               "source_text": "We found in our study that aspirin reduces fever",
-              "verb_tense": "past",
-              "participants": [
-                "we"
-              ],
-              "event_type": "research_finding"
+              "verb_tense": "present"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "firstperson_003",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "My alma mater is Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:52] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
+        }
+      }
+    ]
   },
   {
     "case_id": "firstperson_004",
@@ -1058,22 +1486,17 @@
           "claims": [
             {
               "subject": "he",
-              "predicate": "say",
-              "object": "I be the president",
+              "predicate": "said",
+              "object": "I am the president",
               "polarity": 1,
               "source_text": "He said I am the president",
-              "verb_tense": "past"
-            },
-            {
-              "subject": "I",
-              "predicate": "be",
-              "object": "the president",
-              "polarity": 1,
-              "source_text": "I am the president",
-              "verb_tense": "present"
+              "verb_tense": "past",
+              "event_type": "statement"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -1096,20 +1519,121 @@
               "object": "I won the election",
               "polarity": 1,
               "source_text": "Obama said I won the election",
-              "verb_tense": "past"
+              "verb_tense": "past",
+              "participants": [
+                "Obama",
+                "I"
+              ],
+              "event_type": "speech_act"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
   {
     "case_id": "firstperson_006",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama is the 44th president",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:52] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
+        }
+      }
+    ]
   },
   {
     "case_id": "firstperson_007",
-    "calls": []
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I have been working at Google since 2020",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "I",
+              "predicate": "working at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "past",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment"
+            },
+            {
+              "subject": "I",
+              "predicate": "started working at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "past",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment_start"
+            },
+            {
+              "subject": "I",
+              "predicate": "works at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "present",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment"
+            },
+            {
+              "subject": "I",
+              "predicate": "has tenure at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "present",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
   },
   {
     "case_id": "firstperson_008",
@@ -1123,22 +1647,10 @@
           "tool": "extract_claims"
         },
         "response": {
-          "claims": [
-            {
-              "subject": "me",
-              "predicate": "went to",
-              "object": "MIT",
-              "polarity": 1,
-              "source_text": "me and Alice went to MIT",
-              "verb_tense": "past",
-              "participants": [
-                "me",
-                "Alice"
-              ],
-              "event_type": "movement"
-            }
-          ]
-        }
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -1156,7 +1668,7 @@
         "response": {
           "claims": [
             {
-              "subject": "the company",
+              "subject": "The company",
               "predicate": "hired",
               "object": "me",
               "polarity": 1,
@@ -1164,7 +1676,9 @@
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   },
@@ -1190,7 +1704,9 @@
               "verb_tense": "past"
             }
           ]
-        }
+        },
+        "error": null,
+        "raw_response": null
       }
     ]
   }
