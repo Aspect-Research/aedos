@@ -441,7 +441,16 @@ The `pattern` field present in v0.14's facts table is gone; all claims are relat
 
 **Asserting party.** Tier U distinguishes premises by asserting party. The chat-wrapper deployment has one asserting party per verification context. Document verification may have one per document. Deployment configuration may inject deployment-level premises with `asserting_party = "deployment_config:<id>"`. The asserting party is treated as an identifier; the architecture does not impose a hierarchy among asserting parties in v0.15. Conflicts across asserting parties are reported in the verification result; the deployment decides resolution.
 
-**Write path.** Claims classified by Layer 2 as user-authoritative are written to Tier U with the asserting party from `context`. Idempotent on same-context-same-content. Different-context-same-content from the same asserting party updates source_context history without duplicating. Contradictions (asserting party previously asserted X, now asserts not-X) close the prior row by setting `valid_until = now()` and write a new row.
+**Write path.** Claims classified by Layer 2 as user-authoritative are written to Tier U with the asserting party from `context`. The write is idempotent on an exact match of `(asserting_party, subject, predicate, object, polarity)` against a non-retracted row: the existing row is returned and no new row is written.
+
+A new claim *closes* a prior row — sets its `valid_until = now()` — only when it genuinely contradicts that row. Closure has two cases:
+
+- **Direct negation.** A prior row asserts the *same* `object` at the *opposite* `polarity`. The prior is closed regardless of the predicate's cardinality: a claim and its direct negation cannot both currently hold.
+- **Functional object revision.** A positive claim names a *different* `object` than a prior positive row for the same `(asserting_party, subject, predicate)`, and the predicate is functional (`single_valued = 1`). A functional predicate admits at most one object per subject, so the asserting party has revised the slot; the prior is closed.
+
+Every other difference is a *parallel assertion* — the new row is written and the prior stays open. A different `object` on a *multi-valued* predicate (two occupations, two hobbies) is not a contradiction: the architecture lets the asserting party hold several values for the slot at once. A different `object` at the opposite polarity — the contrastive-correction shape "I live in X, not Y", which §4.1 extracts as `(X, positive)` and `(Y, negated)` — is likewise compatible: negating Y does not contradict asserting X.
+
+`single_valued` is read through the predicate-translation oracle. When no oracle is wired, or the consultation fails, the predicate is treated as multi-valued — the §5.2 conservative default — so a missing classification produces a parallel write, never a false closure.
 
 **Read path.** Three stages.
 
@@ -518,6 +527,13 @@ The walker is Aedos's inference engine.
 **Cycle detection.** Canonical state key (subject + predicate + object + polarity, normalized). Visited keys are tracked per walk and re-visits are pruned.
 
 **Polarity tracking.** Each edge carries a polarity transformation. Equivalence substitutions preserve polarity. Contradictory predicate translations flip polarity. Subsumption traversals preserve polarity (the walker's gating decision incorporates polarity).
+
+**Belief revision.** A premise lookup against Tier U can return `contradicted`, not only `verified`, when the asserting party's own stored premises contradict the claim. There are two paths, both confined to Tier U — the asserting party is authoritative over its own premises:
+
+- *Polarity belief revision.* The claim's exact negation — the same `(subject, predicate, object)` at the opposite polarity — is a currently-valid, non-retracted Tier U row. The claim is `contradicted`; the trace edge records `belief_revision: polarity_conflict`. This fires for either polarity: a positive claim against a stored negation, or a negated claim against a stored positive assertion.
+- *Object-conflict belief revision.* The claim is positive, its predicate is functional (`single_valued = 1`), and Tier U holds a currently-valid positive row for the same `(asserting_party, subject, predicate)` with a *different* `object`. A functional predicate admits at most one object per subject, so the stored value contradicts the claimed one: the claim is `contradicted` and the trace edge records `belief_revision: object_conflict`. This path is new in v0.15.
+
+Object-conflict belief revision fires *only* for functional predicates. A multi-valued predicate holding a different Tier U value is not a contradiction — the asserting party may hold several parallel beliefs — so that case falls through to abstention rather than `contradicted`. The path is also asymmetric: a *negated* claim against a Tier U positive assertion with a different value does not produce a verified verdict by `single_valued` entailment in v0.15. A functional prior `S P O′` does logically imply `¬(S P O)` for every `O ≠ O′`, but deriving a verified negation that way was deliberately left out — the conservative abstention is the accepted §3.2 false-abstain cost, and the negation-entailment direction is a v0.16 candidate.
 
 **Predicate distribution gating.** Every subsumption traversal consults the predicate distribution oracle. The traversal is allowed only if the oracle's verdict permits the implied distribution.
 
