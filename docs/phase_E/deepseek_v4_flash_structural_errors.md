@@ -492,3 +492,88 @@ invoked, awaiting operator confirmation):
   Morph grammar-compile error.
 - Phase 4 no-payload: `docs/phase_E/results/no_payload/deepseek-v4-flash__extraction_corpus.json`
   / `.transcript.json` — 0 structural errors on the same 11 case ids.
+
+---
+
+## Phase 5 — final classification (V4-Flash and V4-Pro dropped)
+
+The Phase 4 result called "payload was the trigger" under the operator's
+binary criterion (0/11 errored). The operator then authorised continuing E3
+with `disable_thinking: False` for both DeepSeek V4 entries, starting with a
+post-fix V4-Flash × extraction_corpus run as the canonical first measurement.
+
+### Post-fix full-corpus run
+
+```json
+{"candidate": "deepseek-v4-flash", "corpus": "extraction_corpus",
+ "total_cases": 57, "passed": 26, "failed": 25, "runner_errors": 6,
+ "accuracy": 0.4561, "total_calls": 57,
+ "total_input_tokens": 37585, "total_output_tokens": 3904,
+ "total_cost_usd": 0.005083, "elapsed_seconds": 274.4,
+ "pricing_verification": {"ok": true}}
+```
+
+Output: `docs/phase_E/results/deepseek-v4-flash__extraction_corpus.json`
+(+ `.transcript.json`).
+
+**The fix held only partially.** 6 of 57 (~10.5%) still errored with the
+payload removed — down from ~19% in run 1, but not the 0% suggested by the
+small-sample Phase 4 experiment. Statistically, P(0 errors | n=11, p=0.10) ≈
+31% — the 11-case test was always consistent with a true post-fix rate around
+10%; we landed on the favourable side of the variance, which the operator's
+binary criterion read as a clean elimination.
+
+### The 6 remaining errors split into two distinct signatures
+
+| Cases | Signature | Diagnosis |
+|---|---|---|
+| `norm_008` · `decomp_002` · `firstperson_003` · `firstperson_006` (**4**) | TypeError, `choices: None`, **same Morph grammar-compile error** as before | The Morph bug is reachable *without* the `reasoning` payload. Removing the payload made it less frequent (~7% baseline) but not unreachable. Some other internal request element (perhaps the tool schema's array field independently of the payload) still trips the "1th-element-unlimited" assertion sometimes. |
+| `temporal_004` · `temporal_015` (**2**) | RuntimeError "no tool call", `choices: [{message: {tool_calls: null, content: null, reasoning: null}}]` | Model returned an assistant message with **everything null** — no tool call, no content, no reasoning. The model just gave up. A distinct failure mode (~3.5%) that didn't appear in the with-payload runs at all. |
+
+### Final classification
+
+- **Hypothesis (a) thinking-still-enabled — ruled out.** Confirmed in Phase 3
+  (no reasoning content anywhere in any failed response) and the post-fix
+  rerun does not introduce reasoning content either.
+- **Hypothesis (b) family-level structured-output reliability — confirmed
+  at ~10% residual rate.** Two distinct failure modes both present:
+  - The Morph grammar-compile bug is genuinely class-wide for DeepSeek V4
+    on OpenRouter and is reachable from multiple request shapes, not just
+    when the `reasoning` payload is present.
+  - V4-Flash additionally sometimes returns empty assistant messages — a
+    failure mode that didn't appear with the payload on, because most calls
+    failed earlier at grammar compile before they reached generation.
+- **The Phase 4 "payload-was-trigger" reading was directionally correct
+  but quantitatively wrong.** The payload doubled the rate from ~10% to
+  ~19%; removing it didn't eliminate the failure mode. The small-n
+  experiment had insufficient power to detect the residual ~10%.
+
+### Operator decision
+
+**Drop both `deepseek-v4-flash` and `deepseek-v4-pro` from the comparison.**
+~10% baseline structural-error rate on the easiest LLM-only corpus is
+disqualifying for soundness-critical roles, irrespective of cause. V4-Pro was
+not separately tested — the disqualification is inferred from the class-wide
+nature of the Morph bug (same provider stack, same expected failure modes).
+
+`_CANDIDATES` updated: both entries carry a `disabled` field whose value is
+the disqualification reason; `run_comparison` refuses to invoke a disabled
+candidate on a live run (transport-injected unit tests still exercise the
+wiring). `--list` now shows both as "DISABLED — …".
+
+The Phase E comparison proceeds with the four remaining candidates: Devstral
+Small 1.1 (specialty), Qwen 3.6 35B-A3B, GLM-5.1, Kimi K2.6. The total
+remaining run count is **10** (Devstral × python_verification + the other
+three × {extraction, predicate_metadata, derivation}).
+
+### Files for the V4-Flash diagnostic record
+
+- Phase 1 (initial with-payload, summarised here): committed at `1356afb`,
+  later overwritten at the top level by the post-fix run; the same
+  payload-on data is preserved in `rerun_full/` with raw responses.
+- Phase 2: 9-case rerun with payload, `docs/phase_E/results/rerun/`.
+- Phase 3: full-corpus rerun with payload + raw-response capture,
+  `docs/phase_E/results/rerun_full/`.
+- Phase 4: 11-case no-payload, `docs/phase_E/results/no_payload/`.
+- Phase 5: post-fix full corpus, `docs/phase_E/results/deepseek-v4-flash__extraction_corpus.json`
+  (committed at `ec37e68`).
