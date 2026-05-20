@@ -101,15 +101,21 @@ $env:RUN_LIVE_KB = "1"
 $env:RUN_CALIBRATION = "1"
 $env:ANTHROPIC_API_KEY = "<your-key>"
 $env:OPENAI_API_KEY = "<your-key>"
-$env:AEDOS_DB_PATH = "aedos_phase_f2_validation.db"
 
-# Fresh DB + seeds (Phase 10.5 Steps 2-3 minimal subset)
-py -c "from aedos.database import open_db; open_db('aedos_phase_f2_validation.db')"
-py seeds/load_seeds.py --db-path aedos_phase_f2_validation.db
-
-# The derivation corpus only (skips other Phase 10.5 corpora)
+# The derivation corpus only (skips other Phase 10.5 corpora).
 py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "derivation_corpus"
 ```
+
+**Substrate note (per F-041, captured during F2 follow-up).** The
+calibration corpus runs against an unseeded in-memory database by
+design — calibration measures the LLM's *cold-start* substrate-row
+generation. Seeds are loaded separately for the Step 6 medium-bar
+benchmark (and `AEDOS_DB_PATH` is consumed there), **not** for the
+Step 4 calibration corpora. The seeded path used for the F2-internal
+single-case sanity check (below) was a deliberate departure from the
+calibration default to exercise F2's KB wiring end-to-end; the operator-
+facing acceptance run follows the Phase 10.5 convention (unseeded).
+See `docs/phase_10_5_runbook.md` Step 1 — "What `AEDOS_DB_PATH` affects".
 
 ### Acceptance criteria
 
