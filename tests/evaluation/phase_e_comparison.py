@@ -160,13 +160,12 @@ def _ensure_aedos_importable() -> None:
 
 
 def _load_env() -> None:
-    """Load `.env` into the process environment (the project keeps API keys
-    there; nothing else on the calibration path loads it)."""
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        return
-    load_dotenv(_REPO_ROOT / ".env")
+    """Load `.env` into the process environment (the project keeps API
+    keys there). F3 §6 / F-013 introduced `aedos.utils.env.load_dotenv_if_present`
+    as the shared utility; this wrapper preserves the local function name
+    for back-compat with existing call sites."""
+    from aedos.utils.env import load_dotenv_if_present
+    load_dotenv_if_present(_REPO_ROOT / ".env")
 
 
 # ---------------------------------------------------------------------------
