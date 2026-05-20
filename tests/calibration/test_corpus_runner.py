@@ -100,8 +100,15 @@ class _Harness:
     @property
     def kb(self):
         if self._kb is None:
-            from aedos.layer4_sources.kb_wikidata import WikidataAdapter
-            self._kb = WikidataAdapter()
+            # F-039: use the shared adapter-construction helper so the
+            # calibration harness's WikidataAdapter is wired the same way
+            # build_pipeline wires it (http_cache + config + llm_client + db).
+            # Pre-fix this constructed `WikidataAdapter()` with no args,
+            # which under RUN_LIVE_KB=1 hit the live methods' wiring-gap
+            # RuntimeError — the second sibling-finding of F-004.
+            from aedos.config import Config
+            from aedos.pipeline import build_default_kb
+            self._kb = build_default_kb(self.db, self.client, Config.from_env())
         return self._kb
 
     @property

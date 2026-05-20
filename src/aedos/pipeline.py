@@ -56,6 +56,35 @@ class Pipeline:
     aggregator: Aggregator
 
 
+def build_default_kb(db, llm_client: LLMClient, config: Config) -> WikidataAdapter:
+    """Construct a fully-wired `WikidataAdapter` against `db`, `llm_client`,
+    `config`. Used by `build_pipeline` for the default adapter and by the
+    calibration harness (`tests/calibration/test_corpus_runner.py`) for its
+    own pipeline construction.
+
+    Extracted in the Phase F2 follow-up (F-039) — the calibration harness
+    was originally constructing `WikidataAdapter()` with no arguments,
+    bypassing the F2 wiring fix and hitting the live-methods' wiring-gap
+    `RuntimeError` under `RUN_LIVE_KB=1`. Centralizing the construction
+    here prevents *new* call sites from reintroducing the same defect.
+    """
+    lru_cache = LRUHTTPCache(
+        max_size=config.http_cache_lru_size,
+        default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+    )
+    http_client = CachingHTTPClient(
+        cache=lru_cache,
+        default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+        headers={"User-Agent": config.user_agent},
+    )
+    return WikidataAdapter(
+        http_cache=http_client,
+        llm_client=llm_client,
+        db=db,
+        config=config,
+    )
+
+
 def build_pipeline(
     db,
     llm_client: Optional[LLMClient] = None,
@@ -89,21 +118,7 @@ def build_pipeline(
         # F-004 closure: construct the live-ready Wikidata adapter with
         # HTTP cache and configuration. Adapter still runs in fixture mode
         # when RUN_LIVE_KB != 1 — only the wiring shape changes here.
-        lru_cache = LRUHTTPCache(
-            max_size=config.http_cache_lru_size,
-            default_ttl_seconds=config.http_cache_entity_ttl_seconds,
-        )
-        http_client = CachingHTTPClient(
-            cache=lru_cache,
-            default_ttl_seconds=config.http_cache_entity_ttl_seconds,
-            headers={"User-Agent": config.user_agent},
-        )
-        kb = WikidataAdapter(
-            http_cache=http_client,
-            llm_client=client,
-            db=db,
-            config=config,
-        )
+        kb = build_default_kb(db, client, config)
 
     propagator = RetractionPropagator(db=db)
     # D6: rehydrate the verdict-trace index from persisted verdict_recorded

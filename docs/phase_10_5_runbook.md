@@ -55,6 +55,48 @@ export ANTHROPIC_API_KEY=<your-key>
 export AEDOS_DB_PATH=aedos_phase10_5.db
 ```
 
+### Sourcing `.env` into the shell
+
+If the API keys and `RUN_LIVE_*` flags are already in the project's
+`.env` file (the standard convention; `.env.example` documents the
+expected keys), source `.env` into the shell **before** invoking the
+calibration runner — the runner reads `os.environ` directly and does
+not call `load_dotenv` (D35 v0.16 candidate). The shell-built-in
+approach is portable:
+
+```bash
+# Unix/macOS (bash/zsh)
+set -a; source .env; set +a
+```
+
+`set -a` makes every subsequently-assigned variable exported; `source
+.env` reads the file (interpreting `KEY=value` lines as assignments);
+`set +a` restores normal scoping for the rest of the shell session.
+
+```powershell
+# Windows PowerShell
+Get-Content .env | Where-Object { $_ -match '^[^#].*=' } | ForEach-Object {
+    $name, $value = $_ -split '=', 2
+    [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+}
+```
+
+Verify the keys are loaded:
+
+```bash
+# Unix/macOS
+[ -n "$ANTHROPIC_API_KEY" ] && echo "ANTHROPIC_API_KEY: set" || echo "unset"
+```
+
+```powershell
+# Windows PowerShell
+if ($env:ANTHROPIC_API_KEY) { "ANTHROPIC_API_KEY: set" } else { "unset" }
+```
+
+If your shell session already had the variables set (via the explicit
+`export` / `$env:` commands above), this section is unnecessary — those
+take precedence over `.env` values for the current session.
+
 ---
 
 ## Step 2 — Initialize fresh database and load seed pack
