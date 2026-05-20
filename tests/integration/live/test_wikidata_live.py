@@ -1,0 +1,161 @@
+"""Live tests for WikidataAdapter — exercises the real Wikidata API.
+
+Gated by `RUN_LIVE_KB=1` (the existing convention; see
+docs/phase_10_5_runbook.md and tests/cold_start/test_zero_seed_correctness.py).
+
+Tests cover Phase F2's `_live_resolve` (commit 1). `_live_lookup` and
+`_live_subsumption` tests land with their respective implementation
+commits.
+"""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from aedos.config import Config
+from aedos.database import open_memory_db
+from aedos.layer4_sources.kb_protocol import LocalContext
+from aedos.layer4_sources.kb_wikidata import WikidataAdapter
+from aedos.utils.http_cache import CachingHTTPClient, LRUHTTPCache
+
+
+_RUN_LIVE = os.environ.get("RUN_LIVE_KB") == "1"
+pytestmark = pytest.mark.skipif(
+    not _RUN_LIVE,
+    reason="Live Wikidata tests require RUN_LIVE_KB=1",
+)
+
+
+@pytest.fixture
+def live_adapter():
+    """A WikidataAdapter wired against the real Wikidata API.
+
+    Uses an in-memory DB so audit events are captured but the test does
+    not leave state on disk. The User-Agent comes from `Config.user_agent`
+    — the same configuration the deployed pipeline uses, so live tests
+    exercise the same headers Wikimedia sees in production."""
+    db = open_memory_db()
+    config = Config()
+    cache = LRUHTTPCache(
+        max_size=config.http_cache_lru_size,
+        default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+    )
+    http_client = CachingHTTPClient(
+        cache=cache,
+        default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+        headers={"User-Agent": config.user_agent},
+    )
+    adapter = WikidataAdapter(
+        http_cache=http_client,
+        db=db,
+        config=config,
+    )
+    yield adapter
+    db.close()
+
+
+class TestLiveResolve:
+    def test_resolve_returns_ranked_candidates(self, live_adapter):
+        """Protocol shape: a query that has matches returns a non-empty
+        list of `ResolutionCandidate`, each with kb_identifier, score,
+        and provenance, scores monotone-decreasing (rank-based)."""
+        lc = LocalContext(predicate="holds_role", slot_position="subject")
+        candidates = live_adapter.resolve_entity("Obama", lc)
+        assert len(candidates) > 0
+        # Score formula is 1/(rank+1) → monotone decreasing
+        scores = [c.kb_identifier and c.score for c in candidates]
+        assert scores == sorted(scores, reverse=True)
+        # Each candidate has the expected provenance keys
+        for c in candidates:
+            assert c.kb_identifier.startswith("Q")
+            assert "search_rank" in c.provenance
+            assert "label" in c.provenance
+
+    def test_obama_disambiguation_returns_multiple(self, live_adapter):
+        """`wbsearchentities` returns multiple candidates for "Obama" —
+        downstream `EntityResolver.select` is responsible for picking
+        between them. F2's _live_resolve just ranks; this test confirms
+        ranking returns >1 candidate when the query is ambiguous."""
+        lc = LocalContext(predicate="holds_role", slot_position="subject")
+        candidates = live_adapter.resolve_entity("Obama", lc)
+        assert len(candidates) >= 2
+
+    def test_unknown_entity_returns_empty(self, live_adapter):
+        """Sentinel reference unlikely to exist in Wikidata — confirms
+        the empty-candidates abstention path (architecture §9.4)."""
+        lc = LocalContext(predicate="holds_role", slot_position="subject")
+        # Same sentinel used by the fixture-mode test (search_no_match.json).
+        candidates = live_adapter.resolve_entity(
+            "xyzzy_nonexistent_entity_42_aedos_test", lc
+        )
+        assert candidates == []
+
+    def test_resolve_emits_audit_event(self, live_adapter):
+        """Wiring verification (F1 acceptance criterion): a live resolve
+        produces a `kb_live_resolve` audit event so F4's end-to-end
+        trace can confirm live calls happened."""
+        from aedos.audit.log import query_events
+        lc = LocalContext(predicate="located_in", slot_position="subject")
+        live_adapter.resolve_entity("Williams College", lc)
+        events = query_events(
+            live_adapter._db, event_type="kb_live_resolve", limit=10
+        )
+        assert len(events) >= 1
+        assert events[0]["event_subject"] == "Williams College"
+        assert "candidate_count" in events[0]["event_data"]
+        assert "duration_ms" in events[0]["event_data"]
+
+
+class TestD33CanonicalEntityReachability:
+    """xfail tests that act as runtime documentation of D33's finding —
+    fixture-encoded canonical entities currently unreachable in live
+    top-10. Marked `strict=False` so an xpass (the live API improves
+    or the canonical entity climbs the rankings) reports as a notice
+    rather than a failure. See `docs/v0.16_planning.md` D33."""
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "D33: Q76 (Barack Obama) not in wbsearchentities top-10 for "
+            "query 'Obama' as of 2026-05-20; canonical entity unreachable "
+            "via default search."
+        ),
+    )
+    def test_obama_canonical_q76_currently_unreachable(self, live_adapter):
+        # As of 2026-05-20, live wbsearchentities returns these
+        # candidates for "Obama", in rank order:
+        #   Q41773, Q18355807, Q124706956, Q122348649, Q59661289,
+        #   Q5280414, Q1414593, Q26446735, Q25095673, Q7074605
+        # Q76 (Barack Obama — the canonical entity Phase E expects) is
+        # not present. This test xfails until Wikidata's ranking changes
+        # or until Aedos's resolution path includes type filtering
+        # (deferred Ambiguity A, v0.16 D33 work item 1).
+        lc = LocalContext(predicate="holds_role", slot_position="subject")
+        candidates = live_adapter.resolve_entity("Obama", lc)
+        ids = [c.kb_identifier for c in candidates]
+        assert "Q76" in ids
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "D33: Q49112 (Williams College, MA) not in wbsearchentities "
+            "top-10 for query 'Williams College' as of 2026-05-20; "
+            "canonical entity unreachable via default search."
+        ),
+    )
+    def test_williams_college_canonical_q49112_currently_unreachable(self, live_adapter):
+        # As of 2026-05-20, live wbsearchentities returns these
+        # candidates for "Williams College", in rank order:
+        #   Q49166, Q12072937, Q8021012, Q61782737, Q23018410, Q7989431,
+        #   Q116718410, Q117012255, Q91769454, Q72585582
+        # Q49112 (Williams College, Williamstown, MA — the institution
+        # Phase E expects) is not present. This test xfails until
+        # Wikidata's ranking changes or until Aedos's resolution path
+        # includes type filtering (deferred Ambiguity A, v0.16 D33
+        # work item 1).
+        lc = LocalContext(predicate="located_in", slot_position="subject")
+        candidates = live_adapter.resolve_entity("Williams College", lc)
+        ids = [c.kb_identifier for c in candidates]
+        assert "Q49112" in ids

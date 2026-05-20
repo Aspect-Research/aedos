@@ -3,9 +3,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
+from ..audit.log import log_event
+from ..utils.rate_limit import RateLimiter
 from .kb_protocol import (
     KBEntityID,
     KBPropertyID,
@@ -17,6 +22,17 @@ from .kb_protocol import (
 
 _FIXTURE_DIR = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "wikidata"
 _DEPRECATED_RANK = "http://wikiba.se/ontology#DeprecatedRank"
+
+# Defaults used when no Config is wired (test paths that construct
+# WikidataAdapter directly without a Config object). Production paths
+# come through build_pipeline which passes a Config.
+_DEFAULT_SEARCH_ENDPOINT = "https://www.wikidata.org/w/api.php"
+_DEFAULT_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
+_DEFAULT_CANDIDATE_POOL_SIZE = 10
+_DEFAULT_SPARQL_RATE = 5.0
+_DEFAULT_SEARCH_RATE = 50.0
+_DEFAULT_ENTITY_TTL_SECONDS = 3600
+_RETRY_BACKOFF_SECONDS = 1.0
 
 
 class FixtureNotFoundError(Exception):
@@ -71,9 +87,27 @@ class WikidataAdapter:
         self._http = http_cache
         self._llm = llm_client
         self._db = db
-        self._config = config or {}
+        self._config = config
         self._fixture_dir = fixture_dir or _FIXTURE_DIR
         self._live = os.environ.get("RUN_LIVE_KB") == "1"
+
+        # Rate limiters live as instance attributes (per F2 design Q3:
+        # owning the state here keeps future lock-protection a small
+        # change rather than a refactor of where the state lives).
+        override_ms_raw = os.getenv("AEDOS_KB_REQUEST_DELAY_MS")
+        override_ms = int(override_ms_raw) if override_ms_raw else None
+        search_rate = self._cfg_value("wikidata_search_rate_per_second", _DEFAULT_SEARCH_RATE)
+        sparql_rate = self._cfg_value("wikidata_sparql_rate_per_second", _DEFAULT_SPARQL_RATE)
+        self._search_limiter = RateLimiter(search_rate, override_delay_ms=override_ms)
+        self._sparql_limiter = RateLimiter(sparql_rate, override_delay_ms=override_ms)
+
+    def _cfg_value(self, attr: str, default):
+        """Read a Config field by name, falling back to a default. The
+        adapter accepts either a dataclass Config or None — fixture-only
+        tests construct it without one."""
+        if self._config is None:
+            return default
+        return getattr(self._config, attr, default)
 
     # ------------------------------------------------------------------
     # KBProtocol implementation
@@ -207,8 +241,120 @@ class WikidataAdapter:
 
     def _live_resolve(
         self, reference: str, local_context: LocalContext
-    ) -> list[ResolutionCandidate]:  # pragma: no cover
-        raise NotImplementedError("Live KB calls require RUN_LIVE_KB=1 and a real HTTP client")
+    ) -> list[ResolutionCandidate]:
+        """Resolve a natural-language reference to ranked Wikidata candidates
+        via the `wbsearchentities` API.
+
+        Honors the F2 design contract (§4):
+          - Returns search-ranked candidates with scores 1/(rank+1) so
+            consumer behavior is identical to fixture mode.
+          - Caches at the HTTP layer via the injected CachingHTTPClient
+            (TTL = Config.http_cache_entity_ttl_seconds).
+          - Rate-limited via `self._search_limiter` (50/s default; the
+            runbook's `AEDOS_KB_REQUEST_DELAY_MS` overrides).
+          - Single retry on transient network failure (`httpx.TimeoutException`
+            / `httpx.NetworkError`); thereafter returns `[]` per
+            architecture §9.4 ("Entity not found → empty candidates →
+            abstention"). Never raises.
+          - One audit-log event per call (`event_type="kb_live_resolve"`).
+
+        `local_context` is accepted for protocol parity with the fixture
+        path; `wbsearchentities` itself takes no local-context input.
+        Disambiguation that depends on local context happens downstream
+        in `EntityResolver.select`.
+        """
+        if self._http is None:
+            # Wiring-gap defence: a live resolve was attempted without an
+            # HTTP cache. Surface honestly (architecture §3.1) rather than
+            # silently returning empty candidates.
+            raise RuntimeError(
+                "WikidataAdapter._live_resolve requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        url = self._cfg_value("wikidata_search_endpoint", _DEFAULT_SEARCH_ENDPOINT)
+        params = {
+            "action": "wbsearchentities",
+            "search": reference,
+            "language": "en",
+            "type": "item",
+            "limit": self._cfg_value(
+                "wikidata_candidate_pool_size", _DEFAULT_CANDIDATE_POOL_SIZE
+            ),
+            "format": "json",
+        }
+        ttl = self._cfg_value("http_cache_entity_ttl_seconds", _DEFAULT_ENTITY_TTL_SECONDS)
+
+        start = time.monotonic()
+        candidates: list[ResolutionCandidate] = []
+        retries = 0
+        last_error: Optional[str] = None
+
+        for attempt in range(2):
+            self._search_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                # 4xx/5xx from raise_for_status, JSON parse errors,
+                # anything else: log and return empty (architecture §9.4).
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+
+            # Successful response: parse and return.
+            results = data.get("search", []) if isinstance(data, dict) else []
+            for rank, item in enumerate(results):
+                if not isinstance(item, dict) or "id" not in item:
+                    continue
+                candidates.append(
+                    ResolutionCandidate(
+                        kb_identifier=item["id"],
+                        provenance={
+                            "search_rank": rank,
+                            "label": item.get("label"),
+                            "description": item.get("description"),
+                        },
+                        score=1.0 / (rank + 1),
+                    )
+                )
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_live_resolve",
+            event_subject=reference,
+            event_data={
+                "candidate_count": len(candidates),
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return candidates
+
+    def _log_audit_event(self, event_type: str, event_subject: str, event_data: dict) -> None:
+        """Best-effort audit logging. No-ops when no db is wired (test
+        constructions that don't pass one)."""
+        if self._db is None:
+            return
+        try:
+            log_event(
+                self._db,
+                event_type=event_type,
+                event_subject=event_subject,
+                event_data=event_data,
+            )
+        except Exception:
+            # Audit logging is observability, not correctness; never
+            # let a logging failure break the verification path.
+            pass
 
     def _live_lookup(
         self, entity: KBEntityID, predicate: KBPropertyID
