@@ -1,0 +1,120 @@
+{
+  "case_id": "der_disambiguation_002",
+  "case_text": "Paris is the capital of France",
+  "expected_verdict": "verified",
+  "extractor_output": [
+    {
+      "subject": "Paris",
+      "predicate": "capital_of",
+      "object": "France",
+      "polarity": 1,
+      "source_text": "Paris is the capital of France",
+      "triage": "verify"
+    }
+  ],
+  "walker_verdicts": [
+    {
+      "verdict": "verified",
+      "abstention_reason": null,
+      "llm_calls": 0,
+      "depth_reached": 0,
+      "source_breakdown": {
+        "tier_u": 0,
+        "kb": 1,
+        "python": 0
+      },
+      "edges": [
+        {
+          "type": "premise_lookup",
+          "metadata": {
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": "True"
+          }
+        }
+      ]
+    }
+  ],
+  "aggregate_metadata": {
+    "claim_count": 1,
+    "verified": 1,
+    "contradicted": 0,
+    "abstained": 0,
+    "total_llm_calls": 0,
+    "max_depth_reached": 0,
+    "source_breakdown": {
+      "tier_u": 0,
+      "kb": 1,
+      "python": 0
+    },
+    "budget_exceedances": 0
+  },
+  "audit_log_summary": {
+    "kb_live_resolve": [
+      {
+        "id": 2,
+        "event_type": "kb_live_resolve",
+        "event_subject": "Paris",
+        "event_data": {
+          "candidate_count": 10,
+          "duration_ms": 500.0,
+          "retry_count": 0,
+          "error": null
+        },
+        "occurred_at": "2026-05-20T11:20:24.480537+00:00",
+        "verification_context": null
+      },
+      {
+        "id": 1,
+        "event_type": "kb_live_resolve",
+        "event_subject": "France",
+        "event_data": {
+          "candidate_count": 10,
+          "duration_ms": 500.0,
+          "retry_count": 0,
+          "error": null
+        },
+        "occurred_at": "2026-05-20T11:20:23.973677+00:00",
+        "verification_context": null
+      }
+    ],
+    "kb_live_lookup": [
+      {
+        "id": 3,
+        "event_type": "kb_live_lookup",
+        "event_subject": "Q142:P36",
+        "event_data": {
+          "statement_count": 10,
+          "duration_ms": 469.0,
+          "retry_count": 0,
+          "error": null
+        },
+        "occurred_at": "2026-05-20T11:20:24.966247+00:00",
+        "verification_context": null
+      }
+    ],
+    "kb_live_subsumption": [],
+    "row_created": [],
+    "row_generation_failed": [],
+    "verdict_recorded": [
+      {
+        "id": 4,
+        "event_type": "verdict_recorded",
+        "event_subject": "claim:478de86b-5f1b-4502-9705-6adb39f094e0",
+        "event_data": {
+          "verdict": "verified",
+          "source_rows": []
+        },
+        "occurred_at": "2026-05-20T11:20:24.970252+00:00",
+        "verification_context": null
+      }
+    ],
+    "consistency_violation": [],
+    "circuit_breaker_triggered": [],
+    "tier_u_row_closed": [],
+    "tier_u_parallel_assertion": []
+  },
+  "final_verdict": "verified",
+  "elapsed_extract": 2.6569999999919673,
+  "elapsed_walk": 1.5
+}
