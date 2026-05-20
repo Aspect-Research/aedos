@@ -109,8 +109,10 @@ async def chat(request: ChatRequest) -> JSONResponse:
         # build_pipeline assembles the full verification pipeline with the
         # correctness mechanisms wired in (architecture 5.4 / 7.3). It is shared
         # with the medium-bar benchmark so app and benchmark have one wiring
-        # definition rather than two drifting copies.
-        pipeline = build_pipeline(_db)
+        # definition rather than two drifting copies. Phase F2 threads `_config`
+        # through so the deployed pipeline reaches Wikidata with the configured
+        # endpoints, HTTP cache, and User-Agent (F-004/F-005/F-006/F-007).
+        pipeline = build_pipeline(_db, config=_config)
         _chat_wrapper = ChatWrapper(
             extractor=pipeline.extractor,
             walker=pipeline.walker,
