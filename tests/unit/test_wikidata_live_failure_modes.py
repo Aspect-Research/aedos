@@ -154,3 +154,118 @@ class TestLiveResolveFailureModes:
         lc = LocalContext(predicate="holds_role", slot_position="subject")
         with pytest.raises(RuntimeError, match="http_cache"):
             adapter._live_resolve("Obama", lc)
+
+
+class TestLiveLookupFailureModes:
+    """Mocked failure-mode tests for `_live_lookup` (F2 commit #2)."""
+
+    def test_retries_on_timeout_then_succeeds(self):
+        """First SPARQL attempt times out, second succeeds — adapter
+        returns the parsed statements and audit event records retry_count=1."""
+        adapter, db = _make_adapter()
+
+        timeout_exc = httpx.TimeoutException("simulated timeout")
+        success_body = (
+            b'{"results": {"bindings": [{'
+            b'"value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q11696"},'
+            b'"valueType": {"value": "entity"},'
+            b'"rank": {"value": "http://wikiba.se/ontology#NormalRank"},'
+            b'"qual_P580": {"value": "+2009-01-20T00:00:00Z", "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"}'
+            b"}]}}"
+        )
+        success_resp = _make_response(success_body)
+
+        call_count = {"n": 0}
+
+        def fake_get(url, params=None, headers=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise timeout_exc
+            return success_resp
+
+        inner = MagicMock()
+        inner.get.side_effect = fake_get
+        cm = MagicMock()
+        cm.__enter__.return_value = inner
+        cm.__exit__.return_value = False
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                statements = adapter._live_lookup("Q76", "P39")
+
+        assert len(statements) == 1
+        assert statements[0].value == "Q11696"
+        assert statements[0].qualifiers["P580"] == "2009-01-20"
+        assert call_count["n"] == 2
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_lookup")
+        assert events[0]["event_data"]["retry_count"] == 1
+        assert events[0]["event_data"]["statement_count"] == 1
+
+    def test_retries_on_timeout_then_gives_up_with_empty(self):
+        """Both SPARQL attempts time out — adapter returns [] honestly,
+        not by raising. Matches architecture §9.4: timeout → retry → abstain."""
+        adapter, db = _make_adapter()
+
+        timeout_exc = httpx.TimeoutException("simulated timeout")
+        cm, _ = _make_httpx_cm(timeout_exc)
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                statements = adapter._live_lookup("Q76", "P39")
+
+        assert statements == []
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_lookup")
+        assert events[0]["event_data"]["retry_count"] == 1
+        assert events[0]["event_data"]["statement_count"] == 0
+
+    def test_filters_deprecated_rank(self):
+        """SPARQL response containing a deprecated-rank statement must be
+        filtered by the parser even if the FILTER clause was somehow bypassed.
+        Defense-in-depth — protects against malformed live responses or
+        future query-construction bugs that leak deprecated rows."""
+        adapter, db = _make_adapter()
+
+        # Two bindings: one normal, one deprecated. Parser should keep only the normal.
+        mixed_body = (
+            b'{"results": {"bindings": ['
+            b'{"value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q11696"},'
+            b'"valueType": {"value": "entity"},'
+            b'"rank": {"value": "http://wikiba.se/ontology#NormalRank"}},'
+            b'{"value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q99999"},'
+            b'"valueType": {"value": "entity"},'
+            b'"rank": {"value": "http://wikiba.se/ontology#DeprecatedRank"}}'
+            b"]}}"
+        )
+        resp = _make_response(mixed_body)
+        cm, _ = _make_httpx_cm(resp)
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            statements = adapter._live_lookup("Q76", "P39")
+
+        assert len(statements) == 1
+        assert statements[0].value == "Q11696"
+
+    def test_lookup_raises_on_invalid_entity_id(self):
+        """Malformed Q-id from a caller — defense-in-depth against
+        SPARQL injection. The Q-id pattern is `Q\\d+`; anything else
+        (a stray label, a SPARQL fragment) raises ValueError honestly
+        rather than silently producing a wrong query."""
+        adapter, _ = _make_adapter()
+        with pytest.raises(ValueError, match="entity"):
+            adapter._live_lookup("not-a-qid", "P39")
+
+    def test_lookup_raises_on_invalid_property_id(self):
+        """Same defense for the property ID."""
+        adapter, _ = _make_adapter()
+        with pytest.raises(ValueError, match="property"):
+            adapter._live_lookup("Q76", "not-a-pid")
+
+    def test_lookup_raises_when_no_http_cache_wired(self):
+        """Wiring-gap defence — parallel to the resolve case."""
+        adapter = WikidataAdapter()
+        with pytest.raises(RuntimeError, match="http_cache"):
+            adapter._live_lookup("Q76", "P39")
