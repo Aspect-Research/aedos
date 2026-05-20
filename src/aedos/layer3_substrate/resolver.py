@@ -99,7 +99,7 @@ class EntityResolver:
                     "reference": local_context.predicate,
                     "candidates": [{"id": c.kb_identifier, "prov": c.provenance} for c in sorted_c[:3]],
                 })}],
-                purpose="entity_selection",
+                purpose="substrate:entity_resolution",
             )
             if selected_id and selected_id.strip():
                 return selected_id.strip()

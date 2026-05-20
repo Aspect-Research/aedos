@@ -25,16 +25,16 @@ from aedos.llm.client import LLMClient
 # ---------------------------------------------------------------------------
 
 class MockTransport:
-    """Routes by purpose= kwarg; python_code_generation returns canned code."""
+    """Routes by purpose= kwarg; python_verifier returns canned code."""
     def __init__(self, python_code: str = "def verify(s, p, o): return True"):
         self._py_code = python_code
 
     def extract_with_tool(self, *a, purpose=None, **kw):
-        if purpose == "python_code_generation":
+        if purpose == "python_verifier":
             return {"code": self._py_code, "reasoning": "test"}
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": "neither", "reason": "test"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "unrelated", "reason": "test"}
         return {
             "object_type": "entity",

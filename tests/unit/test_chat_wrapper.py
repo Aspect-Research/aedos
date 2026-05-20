@@ -63,9 +63,9 @@ class MockTransport:
         return "Obama was the 44th President of the United States."
 
     def extract_with_tool(self, *a, purpose=None, **kw):
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": "neither", "reason": "test"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "unrelated", "reason": "test"}
         return {
             "claims": [],

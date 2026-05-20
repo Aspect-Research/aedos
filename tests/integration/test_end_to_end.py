@@ -30,11 +30,11 @@ from aedos.llm.client import LLMClient
 
 class MockTransport:
     def extract_with_tool(self, *a, purpose=None, **kw):
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": "neither", "reason": "test"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "unrelated", "reason": "test"}
-        if purpose == "python_code_generation":
+        if purpose == "python_verifier":
             return {"code": "def verify(s, p, o): return True", "reasoning": "test"}
         return {
             "object_type": "entity",

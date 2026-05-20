@@ -41,6 +41,19 @@ _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "O
 # Phase E1 keeps the v0.15 model assignments unchanged — only the config *shape*
 # and the routing *mechanism* change here; the open-weight migration of the
 # model values is Phase E5, after the comparison.
+#
+# Phase F2 (F-009 closure): the substrate / verifier call-site purpose strings
+# now match the keys in this table. Before F2 the call sites used names like
+# `subsumption_generation` / `python_code_generation` that did not match the
+# table, so four call types fell through to the chat-default model in
+# deployment — see docs/phase_F/deployment_readiness_audit.md F-009 for the
+# project-level account.
+#
+# `extractor:assistant` is architecturally distinct from `extractor:user`
+# for asserting-party reasons (the asserting party for an assistant-extracted
+# claim is the assistant / deployment, not the user; see architecture §4.1).
+# Pinned here even though no call site currently uses it, so the architectural
+# distinction is preserved in configuration.
 DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
     "chat":                             {"model": "claude-haiku-4-5", **_ANTHROPIC},
     "extractor:user":                   {"model": "gpt-4.1-mini", **_OPENAI},
@@ -50,7 +63,6 @@ DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
     "substrate:predicate_distribution": {"model": "gpt-4.1-mini", **_OPENAI},
     "substrate:entity_resolution":      {"model": "gpt-4.1-mini", **_OPENAI},
     "python_verifier":                  {"model": "gpt-4.1-mini", **_OPENAI},
-    "walker":                           {"model": "gpt-4.1-mini", **_OPENAI},
 }
 
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)

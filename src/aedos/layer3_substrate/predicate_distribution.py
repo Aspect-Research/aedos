@@ -159,7 +159,7 @@ class PredicateDistributionOracle:
                 system="You are a knowledge-base reasoning assistant specializing in predicate logic.",
                 user_message=prompt,
                 tool=PREDICATE_DISTRIBUTION_TOOL,
-                purpose="distribution_generation",
+                purpose="substrate:predicate_distribution",
             )
         except Exception as exc:
             raise PredicateDistributionError(f"LLM generation failed: {exc}") from exc

@@ -74,8 +74,8 @@ class TestPurposeRouting:
     def test_aedos_model_override_infers_provider(self, monkeypatch):
         # A claude-* override of a normally-OpenAI purpose flips it to Anthropic
         # (.env.example's pure-Anthropic deployment recipe).
-        monkeypatch.setenv("AEDOS_MODEL_walker", "claude-haiku-4-5")
-        cfg = _resolve_purpose_config("walker", DEFAULT_MODEL)
+        monkeypatch.setenv("AEDOS_MODEL_python_verifier", "claude-haiku-4-5")
+        cfg = _resolve_purpose_config("python_verifier", DEFAULT_MODEL)
         assert cfg["model"] == "claude-haiku-4-5"
         assert cfg["base_url"] is None
 
@@ -109,7 +109,7 @@ class TestProviderDispatch:
         sink: list[dict] = []
         client = LLMClient()
         monkeypatch.setattr(client, "_openai_client", lambda base_url, env: _FakeOpenAIClient(sink))
-        client.chat("sys", [ChatMessage("user", "hi")], purpose="walker")
+        client.chat("sys", [ChatMessage("user", "hi")], purpose="python_verifier")
         assert sink[0]["extra_body"] == {"reasoning": {"enabled": False}}
 
 
@@ -134,13 +134,13 @@ class TestWholeRunOverride:
 
     def test_malformed_override_is_ignored(self, monkeypatch):
         monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", "not json{")
-        cfg = _resolve_purpose_config("walker", DEFAULT_MODEL)
-        assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["walker"]["model"]
+        cfg = _resolve_purpose_config("python_verifier", DEFAULT_MODEL)
+        assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["python_verifier"]["model"]
 
     def test_override_carries_extra_body(self, monkeypatch):
         override = {"*": dict(_OVERRIDE["*"], extra_body={"reasoning": {"enabled": False}})}
         monkeypatch.setenv("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", json.dumps(override))
-        cfg = _resolve_purpose_config("walker", DEFAULT_MODEL)
+        cfg = _resolve_purpose_config("python_verifier", DEFAULT_MODEL)
         assert cfg["extra_body"] == {"reasoning": {"enabled": False}}
 
 

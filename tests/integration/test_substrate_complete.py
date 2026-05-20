@@ -20,9 +20,9 @@ from aedos.llm.client import LLMClient
 
 class MockTransport:
     def extract_with_tool(self, *a, purpose=None, **kw):
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": "distributes_up", "reason": "test distribution"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "a_subsumed_by_b", "reason": "test subsumption"}
         return {
             "object_type": "entity",

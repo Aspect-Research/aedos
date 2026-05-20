@@ -87,7 +87,7 @@ class PythonVerifier:
                 user_msg,
                 PYTHON_VERIFY_TOOL,
                 max_tokens=1024,
-                purpose="python_code_generation",
+                purpose="python_verifier",
             )
         except Exception as exc:
             return PythonVerdict(

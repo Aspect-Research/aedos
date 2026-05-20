@@ -240,7 +240,7 @@ class SubsumptionOracle:
                 system="You are a knowledge-base reasoning assistant.",
                 user_message=prompt,
                 tool=SUBSUMPTION_TOOL,
-                purpose="subsumption_generation",
+                purpose="substrate:subsumption",
             )
         except Exception as exc:
             raise SubsumptionOracleError(f"LLM generation failed: {exc}") from exc
