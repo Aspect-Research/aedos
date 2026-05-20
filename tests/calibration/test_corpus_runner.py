@@ -222,13 +222,38 @@ def _run_extraction(h: _Harness, case: dict) -> bool:
 
 
 def _run_predicate_metadata(h: _Harness, case: dict) -> bool:
+    """Compare PredicateMetadata fields against `expected_metadata`. Two corpus
+    shapes don't map 1:1 to PredicateMetadata attributes and need dispatch:
+
+    - ``routing_hint_options: [list]`` (`pred_ambig_*`, 5 cases) — the corpus
+      expresses "this ambiguous predicate has multiple acceptable routings";
+      the produced `routing_hint` must be in the list.
+    - ``distinct_slots_required: bool`` (`pred_kb_008`, 1 case) — the produced
+      `distinct_slots` must be populated (or unset, on False).
+
+    Pre-Phase-E-followup the runner did ``getattr(meta, field)`` for every
+    field; the 5 `pred_ambig_*` cases raised AttributeError on every run
+    (`distinct_slots_required` was latent — only fires once earlier fields all
+    match). Fourth runner-corpus mismatch in the v0.15 audit lineage (after
+    extraction, temporal_scope, consistency_check); see v0.16 D24."""
     meta = h.predicate_translation.consult(case["aedos_predicate"])
     expected = case["expected_metadata"]
-    return all(
-        getattr(meta, field) == value or
-        (field == "user_subject_required" and bool(getattr(meta, field)) == bool(value))
-        for field, value in expected.items()
-    )
+    for field, value in expected.items():
+        if field == "routing_hint_options":
+            if meta.routing_hint not in value:
+                return False
+            continue
+        if field == "distinct_slots_required":
+            if bool(meta.distinct_slots) != bool(value):
+                return False
+            continue
+        produced = getattr(meta, field)
+        if produced == value:
+            continue
+        if field == "user_subject_required" and bool(produced) == bool(value):
+            continue
+        return False
+    return True
 
 
 def _run_temporal_scope(h: _Harness, case: dict) -> bool:
