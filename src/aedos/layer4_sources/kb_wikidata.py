@@ -32,7 +32,108 @@ _DEFAULT_CANDIDATE_POOL_SIZE = 10
 _DEFAULT_SPARQL_RATE = 5.0
 _DEFAULT_SEARCH_RATE = 50.0
 _DEFAULT_ENTITY_TTL_SECONDS = 3600
+_DEFAULT_STATEMENT_TTL_SECONDS = 86400
 _RETRY_BACKOFF_SECONDS = 1.0
+
+# Wikidata identifier patterns. Used to validate inputs to SPARQL query
+# construction — defense-in-depth against injection via Q/P-id parameters.
+# All upstream sources (predicate translation oracle, entity resolver) produce
+# canonical IDs, but validating at the SPARQL boundary prevents a future
+# careless caller from constructing a malformed query.
+_ENTITY_ID_PATTERN = re.compile(r"^Q\d+$")
+_PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
+
+# Default qualifier set requested in every _live_lookup SPARQL query.
+# Per F2 design §5: P580 (start time) and P582 (end time) are required for
+# universal scope checking; P642 (of) appears in the most-common seed
+# (holds_role / P39). Other qualifiers referenced by less-common predicates'
+# slot_to_qualifier maps are not collected here — v0.16 D32 captures the
+# dynamic-discovery follow-up.
+_DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
+
+
+def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
+    """Build a SPARQL query for `lookup_statements`.
+
+    Returns SELECT bindings whose shape matches what `_parse_statement_bindings`
+    consumes — value, valueType (synthesized via BIND), rank, and the default
+    qualifier projection. Deprecated-rank statements are filtered server-side
+    (the parser also defense-skips them).
+    """
+    if not _ENTITY_ID_PATTERN.match(entity):
+        raise ValueError(f"Invalid Wikidata entity ID: {entity!r}")
+    if not _PROPERTY_ID_PATTERN.match(predicate):
+        raise ValueError(f"Invalid Wikidata property ID: {predicate!r}")
+
+    qual_select = " ".join(f"?qual_{p}" for p in _DEFAULT_QUALIFIER_PROPS)
+    qual_optional = "\n  ".join(
+        f"OPTIONAL {{ ?statement pq:{p} ?qual_{p} . }}"
+        for p in _DEFAULT_QUALIFIER_PROPS
+    )
+    return (
+        f"SELECT ?value ?valueType ?rank {qual_select}\n"
+        f"WHERE {{\n"
+        f"  wd:{entity} p:{predicate} ?statement .\n"
+        f"  ?statement ps:{predicate} ?value .\n"
+        f"  ?statement wikibase:rank ?rank .\n"
+        f"  FILTER (?rank != wikibase:DeprecatedRank)\n"
+        f"  {qual_optional}\n"
+        f'  BIND(IF(isURI(?value), "entity", "literal") AS ?valueType)\n'
+        f"}}"
+    )
+
+
+def _parse_statement_bindings(
+    bindings: list, entity: KBEntityID, predicate: KBPropertyID, provenance: dict
+) -> list[Statement]:
+    """Parse SPARQL JSON bindings into Aedos `Statement` objects.
+
+    Shared between fixture and live paths. The `provenance` dict is attached
+    to each emitted Statement — typically `{"fixture": name, ...}` for the
+    fixture path or `{"source": "live", ...}` for the live path.
+
+    Deprecated-rank rows are skipped (defense-in-depth — the live SPARQL
+    query also FILTERs them, and the fixture data may omit the filter).
+    """
+    statements: list[Statement] = []
+    for row in bindings:
+        rank_raw = row.get("rank", {}).get("value", "")
+        if _DEPRECATED_RANK in rank_raw:
+            continue
+        rank = _rank_label(rank_raw)
+
+        value_node = row.get("value", {})
+        raw_value = value_node.get("value", "")
+        value_type = row.get("valueType", {}).get("value", "entity")
+
+        # For entity URIs, extract the Q-number
+        if value_type == "entity" and raw_value.startswith("http://www.wikidata.org/entity/"):
+            value = _extract_entity_id(raw_value)
+        else:
+            value = raw_value
+
+        # Collect qualifiers (any key starting with "qual_")
+        qualifiers: dict = {}
+        for key, node in row.items():
+            if key.startswith("qual_"):
+                prop = key[5:]  # strip "qual_" prefix
+                raw = node.get("value", "")
+                # Convert time values
+                if "dateTime" in node.get("datatype", "") or re.match(r"\+?\d{4}-\d{2}-\d{2}", raw):
+                    qualifiers[prop] = _parse_time_value(raw)
+                else:
+                    qualifiers[prop] = raw
+
+        statements.append(
+            Statement(
+                value=value,
+                value_type=value_type,
+                qualifiers=qualifiers,
+                rank=rank,
+                provenance=provenance,
+            )
+        )
+    return statements
 
 
 class FixtureNotFoundError(Exception):
@@ -169,45 +270,12 @@ class WikidataAdapter:
         except FixtureNotFoundError:
             return []
         bindings = data.get("results", {}).get("bindings", [])
-        statements = []
-        for row in bindings:
-            rank_raw = row.get("rank", {}).get("value", "")
-            if _DEPRECATED_RANK in rank_raw:
-                continue
-            rank = _rank_label(rank_raw)
-
-            value_node = row.get("value", {})
-            raw_value = value_node.get("value", "")
-            value_type = row.get("valueType", {}).get("value", "entity")
-
-            # For entity URIs, extract the Q-number
-            if value_type == "entity" and raw_value.startswith("http://www.wikidata.org/entity/"):
-                value = _extract_entity_id(raw_value)
-            else:
-                value = raw_value
-
-            # Collect qualifiers (any key starting with "qual_")
-            qualifiers: dict = {}
-            for key, node in row.items():
-                if key.startswith("qual_"):
-                    prop = key[5:]  # strip "qual_" prefix
-                    raw = node.get("value", "")
-                    # Convert time values
-                    if "dateTime" in node.get("datatype", "") or re.match(r"\+?\d{4}-\d{2}-\d{2}", raw):
-                        qualifiers[prop] = _parse_time_value(raw)
-                    else:
-                        qualifiers[prop] = raw
-
-            statements.append(
-                Statement(
-                    value=value,
-                    value_type=value_type,
-                    qualifiers=qualifiers,
-                    rank=rank,
-                    provenance={"fixture": fixture_name, "entity": entity, "predicate": predicate},
-                )
-            )
-        return statements
+        return _parse_statement_bindings(
+            bindings,
+            entity,
+            predicate,
+            provenance={"fixture": fixture_name, "entity": entity, "predicate": predicate},
+        )
 
     def _fixture_subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
@@ -358,8 +426,104 @@ class WikidataAdapter:
 
     def _live_lookup(
         self, entity: KBEntityID, predicate: KBPropertyID
-    ) -> list[Statement]:  # pragma: no cover
-        raise NotImplementedError("Live KB calls require RUN_LIVE_KB=1 and a real HTTP client")
+    ) -> list[Statement]:
+        """Look up statements for (entity, predicate) via SPARQL against WDQS.
+
+        Honors the F2 design contract (§5):
+          - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
+            (default `https://query.wikidata.org/sparql`).
+          - Returns `Statement` objects with rank, qualifiers (default set
+            P580/P582/P642 per F2 §5), and provenance.
+          - Direction-neutral: looks up whatever entity/predicate it is
+            given. `KBVerifier` is responsible for swapping the lookup
+            direction for inverse predicates (D19, fixup-3 resolution).
+          - Polarity-neutral: returns positive statements only; polarity
+            handling lives in `KBVerifier._apply_polarity`.
+          - HTTP-layer caching with statement TTL
+            (`Config.http_cache_statement_ttl_seconds`, default 86400s).
+          - Rate-limited via `self._sparql_limiter` (5/s default).
+          - Single retry on transient network failure; thereafter
+            returns `[]` per architecture §9.4. Never raises (except
+            on the wiring-gap defence below).
+          - One audit-log event per call (`event_type="kb_live_lookup"`).
+        """
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_lookup requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        try:
+            query = _build_lookup_query(entity, predicate)
+        except ValueError as exc:
+            # Malformed Q/P-id from a caller — surface honestly. Architecture
+            # §3.1 / §9.4: abstain on no-grounding, but a malformed lookup is
+            # a programming error, not an abstention.
+            self._log_audit_event(
+                event_type="kb_live_lookup",
+                event_subject=f"{entity}:{predicate}",
+                event_data={"statement_count": 0, "error": str(exc)},
+            )
+            raise
+
+        # WDQS supports `format=json` as a URL parameter; cleaner than
+        # negotiating via Accept headers through the CachingHTTPClient layer.
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        start = time.monotonic()
+        statements: list[Statement] = []
+        retries = 0
+        last_error: Optional[str] = None
+
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+
+            bindings = (
+                data.get("results", {}).get("bindings", [])
+                if isinstance(data, dict)
+                else []
+            )
+            statements = _parse_statement_bindings(
+                bindings,
+                entity,
+                predicate,
+                provenance={
+                    "source": "live",
+                    "entity": entity,
+                    "predicate": predicate,
+                },
+            )
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_live_lookup",
+            event_subject=f"{entity}:{predicate}",
+            event_data={
+                "statement_count": len(statements),
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return statements
 
     def _live_subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str

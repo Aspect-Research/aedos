@@ -159,3 +159,83 @@ class TestD33CanonicalEntityReachability:
         candidates = live_adapter.resolve_entity("Williams College", lc)
         ids = [c.kb_identifier for c in candidates]
         assert "Q49112" in ids
+
+
+class TestLiveLookup:
+    """Live tests for `_live_lookup` (F2 commit #2).
+
+    Per D33/D34 discipline: tests verify the implementation reaches
+    expected load-bearing data (specific entity values that anchor
+    verifier-relevant semantics) without over-specifying fixture-frozen
+    state (no exact statement counts, no exact qualifier values that
+    aren't load-bearing, no preferred-vs-normal-rank assumptions).
+    """
+
+    def test_obama_p39_includes_president(self, live_adapter):
+        """Q76 (Barack Obama) holds_role (P39) — the position-held
+        predicate should return multiple positions including Q11696
+        (President of the United States). The Phase E `der_disambiguation_*`
+        cases exercise this lookup; this test confirms the live path
+        returns the canonical role assertion."""
+        statements = live_adapter.lookup_statements("Q76", "P39")
+        assert len(statements) > 0
+        values = [s.value for s in statements]
+        assert "Q11696" in values, (
+            f"Q11696 (US President) should be among Q76's P39 statements; "
+            f"got {values[:10]}"
+        )
+
+    def test_obama_p39_president_has_temporal_qualifiers(self, live_adapter):
+        """The President-of-US position (Q11696) has P580/P582 qualifiers
+        (2009-01-20 / 2017-01-20). The walker's scope check (`KBVerifier._scope_compatible`)
+        depends on these — this is a load-bearing protocol assertion."""
+        statements = live_adapter.lookup_statements("Q76", "P39")
+        president_stmts = [s for s in statements if s.value == "Q11696"]
+        assert len(president_stmts) >= 1
+        # At least one of the President statements has temporal qualifiers.
+        # Do NOT assert exact dates — Wikidata is the source of truth and the
+        # implementation just reflects it. The presence of P580/P582 is the
+        # load-bearing signal.
+        any_with_scope = any(
+            "P580" in s.qualifiers and "P582" in s.qualifiers
+            for s in president_stmts
+        )
+        assert any_with_scope, (
+            "At least one Q11696 (US President) statement should carry "
+            "P580/P582 temporal qualifiers"
+        )
+
+    def test_us_capital_inverse_direction_returns_dc(self, live_adapter):
+        """Q30 (United States) capital (P36) → Q61 (Washington, D.C.).
+        This is the inverse-predicate direction (D19, fixup-3): for
+        `capital_of`, the KB statement is keyed on the *country*, not the
+        city. KBVerifier swaps the lookup direction via slot_to_qualifier;
+        this test exercises the swapped path's live read."""
+        statements = live_adapter.lookup_statements("Q30", "P36")
+        assert len(statements) > 0
+        values = [s.value for s in statements]
+        assert "Q61" in values, (
+            f"Q61 (Washington, D.C.) should be Q30's P36 (capital); "
+            f"got {values}"
+        )
+
+    def test_lookup_no_such_property_returns_empty(self, live_adapter):
+        """Q76 (Obama) has no statements for an entirely-unrelated property —
+        e.g., P9999 (which is not a real Wikidata property). Should return
+        [] (architecture §9.4: no grounding found → empty, not error)."""
+        statements = live_adapter.lookup_statements("Q76", "P99999999")
+        assert statements == []
+
+    def test_lookup_emits_audit_event(self, live_adapter):
+        """Wiring verification: a live lookup produces a `kb_live_lookup`
+        audit event with statement_count and duration_ms — F4's end-to-end
+        trace inspection depends on this."""
+        from aedos.audit.log import query_events
+        live_adapter.lookup_statements("Q30", "P36")
+        events = query_events(
+            live_adapter._db, event_type="kb_live_lookup", limit=10
+        )
+        assert len(events) >= 1
+        assert events[0]["event_subject"] == "Q30:P36"
+        assert "statement_count" in events[0]["event_data"]
+        assert events[0]["event_data"]["statement_count"] >= 1
