@@ -184,6 +184,115 @@ class TestWalkerDirectLookup:
 
 
 # ---------------------------------------------------------------------------
+# TestF042RoutingGate — Python verifier is gated on routing_hint=="python"
+# ---------------------------------------------------------------------------
+
+class _AdversarialPythonVerifier:
+    """A Python verifier that mimics the live LLM-driven verifier's failure
+    mode for subjective / preference / opinion claims: when invoked, it
+    returns CONTRADICTED rather than the architecturally-correct
+    no_terminal_result.
+
+    Used to drive the walker against the kind of behavior the live verifier
+    actually exhibits — see docs/v0.16_planning.md D41 on adversarial mock
+    fixtures. If the walker properly gates on routing_hint=="python", this
+    verifier is never invoked for non-python claims and the walker abstains
+    cleanly. If the gate is missing (the F-042 bug), this verifier produces
+    contradicted for every claim the walker delegates to it.
+    """
+
+    def __init__(self):
+        self.call_count = 0
+
+    def verify(self, claim):
+        self.call_count += 1
+        from aedos.layer4_sources.python_verifier import PythonVerdict
+        return PythonVerdict(
+            verdict="contradicted",
+            generated_code="def verify(s, p, o): return False",
+            inputs={"subject": claim.subject, "predicate": claim.predicate, "object": claim.object},
+            output="FALSE",
+        )
+
+
+def _make_walker_with_py_verifier(py_verifier, routing_hint, kb_verdict=KBVerdictType.NO_MATCH):
+    """Walker fixture that takes a specific Python verifier — for F-042
+    routing-gate tests."""
+    db = open_memory_db()
+    transport = MockTransport(routing_hint=routing_hint)
+    client = LLMClient(_transport=transport)
+    pt = PredicateTranslation(db=db, llm_client=client)
+
+    class StubKB:
+        def resolve_entity(self, r, lc): return [ResolutionCandidate("Q76", score=0.9)]
+        def lookup_statements(self, e, p): return []
+        def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+
+    resolver = EntityResolver(kb_protocol=StubKB(), db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=StubKB())
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+
+    return Walker(
+        tier_u=MockTierU(found=False),
+        kb_verifier=MockKBVerifier(verdict=kb_verdict),
+        python_verifier=py_verifier,
+        substrate=substrate,
+    )
+
+
+class TestF042RoutingGate:
+    """F-042: the walker invokes the Python verifier only when the predicate's
+    routing_hint is 'python' (architecture §6.5 step 3). Before this gate,
+    the walker invoked Python for every claim that didn't get a Tier U or
+    KB verdict — producing false `contradicted` for subjective/preference/
+    opinion claims when the LLM-driven verifier wrote `return False`."""
+
+    def test_python_not_invoked_for_user_authoritative_route(self):
+        py = _AdversarialPythonVerifier()
+        walker = _make_walker_with_py_verifier(py, routing_hint="user_authoritative")
+        result = walker.walk(_claim(predicate="prefers"), _ctx())
+        # Walker must abstain, not propagate the adversarial verifier's
+        # contradiction.
+        assert result.verdict == "no_grounding_found", (
+            f"User-authoritative route should not invoke Python verifier; "
+            f"got verdict={result.verdict}"
+        )
+        assert py.call_count == 0, (
+            f"Adversarial Python verifier should not have been called; "
+            f"called {py.call_count} times"
+        )
+
+    def test_python_not_invoked_for_abstain_route(self):
+        py = _AdversarialPythonVerifier()
+        walker = _make_walker_with_py_verifier(py, routing_hint="abstain")
+        result = walker.walk(_claim(predicate="is_best"), _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert py.call_count == 0
+
+    def test_python_not_invoked_for_kb_resolvable_route(self):
+        py = _AdversarialPythonVerifier()
+        walker = _make_walker_with_py_verifier(
+            py, routing_hint="kb_resolvable", kb_verdict=KBVerdictType.NO_MATCH
+        )
+        result = walker.walk(_claim(predicate="located_in"), _ctx())
+        # KB returns NO_MATCH; walker must abstain instead of falling
+        # through to Python.
+        assert result.verdict == "no_grounding_found"
+        assert py.call_count == 0
+
+    def test_python_IS_invoked_for_python_route(self):
+        py = _AdversarialPythonVerifier()
+        walker = _make_walker_with_py_verifier(py, routing_hint="python")
+        result = walker.walk(_claim(predicate="greater_than"), _ctx())
+        # Python route is authorized; the verifier fires. Its (adversarial)
+        # output propagates — that's correct for a python-routed claim,
+        # because Python is the only premise source for that route.
+        assert py.call_count == 1
+        assert result.verdict == "contradicted"
+
+
+# ---------------------------------------------------------------------------
 # TestWalkerTrace
 # ---------------------------------------------------------------------------
 

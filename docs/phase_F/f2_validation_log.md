@@ -271,6 +271,81 @@ F3 begins next: Python sandbox hardening (operator-elevated
 unconditionally), broader Config threading for non-KB fields, optional
 `.env` loader for `app.py`.
 
+## F-042 follow-up (pre-F3 fix-up landed)
+
+The F2 validation surfaced 5 cases where the walker produced
+`contradicted` when `no_grounding_found` was architecturally correct
+(`der_multihop_009`, `der_multihop_010`, `der_predicate_translation_002`,
+`der_abstain_003`, `der_abstain_006`). Trace inspection showed all 5
+ended with `premise_lookup[python -> contradicted]`: the walker
+invoked the Python verifier for every claim that didn't get a Tier U
+or KB verdict, regardless of routing — and the live LLM-driven
+verifier wrote `return False` for subjective claims, producing false
+contradictions.
+
+**Fix.** `Walker._direct_lookup` now consults the predicate's
+`routing_hint` before invoking the Python verifier, per architecture
+§6.5 step 3 ("Python verification if the route is Python"). The
+walker still tries Tier U and KB unconditionally (architecture §6.5
+steps 1-2); only the Python step is route-gated.
+
+**Verification.** All 5 cases re-ran post-fix:
+
+| Case | Before fix | After fix | Expected |
+|---|---|---|---|
+| `der_multihop_009` | `contradicted` | `no_grounding_found` | `no_grounding_found` ✓ |
+| `der_multihop_010` | `contradicted` | `no_grounding_found` | `no_grounding_found` ✓ |
+| `der_predicate_translation_002` | `contradicted` | `no_grounding_found` | `no_grounding_found` ✓ |
+| `der_abstain_003` | `contradicted` | `no_grounding_found` | `no_grounding_found` ✓ |
+| `der_abstain_006` | `contradicted` | `no_grounding_found` | `no_grounding_found` ✓ |
+
+§3.2 soundness violation closed.
+
+**Captured.** F-042 finding + D40 (structural test invariant) + D41
+(adversarial mock fixtures discipline) in `docs/v0.16_planning.md`.
+
+## Adjacent-case impact analysis (11 cases re-run post-fix)
+
+The F-042 fix gates the Python verifier behind routing-hint authorization.
+Cases that *previously* "passed" by accident — Python returning True
+when no premise existed, or returning False matching the expected
+contradiction — change verdict after the fix. Re-ran the 4
+contradicted-expected-got-verified cases and the 7
+verified-expected-got-contradicted cases to quantify the impact:
+
+**Group 1 (4 cases, `der_revision_*`):**
+
+| Case | Pre-fix | Post-fix | Expected | Mechanism |
+|---|---|---|---|---|
+| `der_revision_001` | `verified` | `no_grounding_found` | `contradicted` | D23 (prefers single_valued question) |
+| `der_revision_002` | `verified` | `no_grounding_found` | `contradicted` | D23 (employed_by single_valued question) |
+| `der_revision_003` | `verified` | `no_grounding_found` | `contradicted` | extraction variability (LLM produces "is" predicate, doesn't match Tier U's "holds_role" for polarity-conflict belief revision) |
+| `der_revision_005` | `verified` | `no_grounding_found` | `contradicted` | D23 (status single_valued question) |
+
+**Group 2 (7 cases, multi-hop / cross-source / disambiguation):**
+
+| Case | Pre-fix | Post-fix | Expected | Mechanism |
+|---|---|---|---|---|
+| `der_multihop_002..012` (3 cases) | `contradicted` | `no_grounding_found` | `verified` | corpus-design (no actual premise; Python `return True` was rescuing) |
+| `der_cross_004/008/009` (3 cases) | `contradicted` | `no_grounding_found` | `verified` | corpus-design / extraction variability |
+| `der_disambiguation_003` | `contradicted` | `contradicted` | `verified` | D33 (Apple resolves to non-canonical entity; KB lookup returns different value) |
+
+**No additional F-042-class bugs surfaced.** The 11 cases reflect
+known v0.16 territory (D23, D33, extraction variability, corpus
+design) — diffuse mechanisms, no single fix. Captured in v0.16 deltas
+already; F2 closes without further pre-F3 fix-ups.
+
+**Phase 10.5 expectation update.** Post-fix overall accuracy is
+expected to *drop* on the derivation corpus (was 28/50 = 56% via
+Python rescue; now ~18-22/50 = 36-44% with rescue removed). The drop
+is architecturally correct — cases that were "passing" only because
+Python verifier accidentally aligned with the corpus expectation are
+now properly abstaining. Phase 10.5's 80% threshold for
+`derivation_corpus` was set against the pre-F-042 (rescued) baseline;
+post-F-042 the threshold may need recalibration once the seed pack
+addresses D23 / D39 and entity resolution addresses D33 (the v0.16
+work the F2 validation surfaced).
+
 ---
 
 *End of Phase F2 validation log.*

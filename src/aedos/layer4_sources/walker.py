@@ -321,8 +321,18 @@ class Walker:
                 ))
                 return "contradicted", "kb", 0
 
-        # Python verifier
-        if self._python_verifier is not None:
+        # Python verifier (F-042: gated on routing_hint=="python" per architecture
+        # §6.5 step 3: "Python verification if the route is Python." Before this
+        # gate, the walker invoked the Python verifier unconditionally — and for
+        # subjective / preference / opinion claims the live LLM-driven verifier
+        # cheerfully wrote `return False`, producing `contradicted` instead of
+        # `no_grounding_found`. That was a §3.2 soundness violation; see
+        # docs/v0.16_planning.md D40 for the structural-test follow-up and D41
+        # for the mock-fixture-discipline finding the bug surfaced.
+        if (
+            self._python_verifier is not None
+            and self._predicate_routing(node.predicate) == "python"
+        ):
             py_result = self._python_verifier.verify(node)
             if py_result.verdict != "no_terminal_result":
                 trace.source_breakdown["python"] = trace.source_breakdown.get("python", 0) + 1
@@ -338,6 +348,19 @@ class Walker:
                 return py_result.verdict, "python", 0
 
         return None, "", 0
+
+    def _predicate_routing(self, predicate: str) -> Optional[str]:
+        """Routing hint for `predicate` per the predicate translation oracle.
+        Returns None when the consult fails — the walker treats an unknown
+        routing as non-python (the conservative call: a wrong None costs a
+        false abstain when the predicate should have routed to Python; a
+        wrong 'python' would re-introduce F-042's false-contradiction class).
+        """
+        try:
+            meta = self._substrate.predicate_translation.consult(predicate)
+            return meta.routing_hint
+        except Exception:
+            return None
 
     def _predicate_is_functional(self, predicate: str) -> bool:
         """Whether `predicate` is functional (single_valued) per predicate
