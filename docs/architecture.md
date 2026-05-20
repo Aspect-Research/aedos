@@ -494,6 +494,11 @@ The third source of belief.
 
 **Sandbox.** Restricted Python with standard library plus an allow-list of stable deterministic packages: `datetime`, `math`, `decimal`, `fractions`, `statistics`, `re`, `unicodedata`, `string`, plus a small per-deployment-approved set. No file I/O, no network, no subprocess.
 
+**Sandbox threat model (v0.15).** The sandbox is designed against
+LLM-generated wrong code — code the LLM produces honestly but that does the wrong thing (subprocess attempts, file I/O, broken `__import__` calls, class-hierarchy traversal as a stand-in for "look up Python internals"). It is **not** designed against an active attacker crafting input to escape the sandbox. The v0.15 implementation (`aedos.utils.sandbox`) AST-blocks static imports outside the allow-list, direct references to `__import__` / `eval` / `exec` / `open` / `compile` / `__builtins__`, and attribute access on the common-escape dunders (`__class__`, `__subclasses__`, `__globals__`, `__bases__`, `__mro__`, `__dict__`). It does **not** block encoded-string bypasses (e.g. `eval(base64.b64decode(...))`) or runtime-constructed attribute lookups (e.g. `getattr(obj, chr(95)*2 + 'class' + chr(95)*2)`).
+
+For deployments handling adversarial input (public-facing chat endpoints, scenarios where prompts are unconstrained, any case where verifier output drives security-relevant decisions), upgrade to RestrictedPython or containerized execution — see `docs/phase_F/f3_design.md` §4 Options B and C.
+
 **Generation.** Single-generation per claim. The LLM is given the claim and produces Python code; the code runs in the sandbox with the claim's typed slot values as inputs.
 
 **Justification.** Each Python verification produces:

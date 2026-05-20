@@ -1,8 +1,67 @@
-"""Python sandbox for Aedos v0.15 — allow-list enforcement + subprocess execution.
+"""Python sandbox for Aedos v0.15.
 
-The sandbox enforces an explicit import allow-list before executing any code.
-Imports not in the list are rejected before execution; this is a correctness
-sandbox, not a security sandbox (the code is LLM-generated).
+Threat model
+------------
+Aedos verifies natural-language claims by generating Python code via an
+LLM and executing it. The sandbox bounds what that code can do.
+
+This sandbox is designed against **LLM-generated wrong code** — code
+that the LLM produces honestly but that does the wrong thing (writes
+False for subjective claims, attempts file I/O for unbounded
+computations, imports modules outside the allow-list). It is **not**
+designed against an active attacker crafting input to escape the
+sandbox.
+
+What the sandbox blocks
+-----------------------
+v0.15's AST-walk hardening blocks the common patterns that
+LLM-generated code might produce when prompted for verification tasks:
+
+- Static imports outside the allow-list (datetime, math, decimal,
+  fractions, statistics, re, unicodedata, string).
+- Direct invocations of `__import__`, `eval`, `exec`, `open`,
+  `compile` in the AST.
+- Direct references to `__builtins__` as a Name or attribute target.
+- Class-hierarchy traversal via `__class__` / `__subclasses__` /
+  `__globals__` / `__bases__` attribute access.
+- Subprocess isolation (each verification runs in a fresh Python
+  process with a minimal environment; CWD is a clean tempdir).
+- Wall-clock timeout (default 10s).
+
+What the sandbox does NOT block
+-------------------------------
+- Encoded-string bypass patterns (e.g.,
+  ``eval(base64.b64decode(...))``). The AST sees `eval`'s usage but
+  the dangerous payload is constructed at runtime from non-literal
+  sources.
+- Dynamic attribute access via ``getattr`` with computed strings
+  (``getattr(obj, chr(95)*2 + 'class' + chr(95)*2)``). The AST sees
+  the `getattr` call but not which attribute it ultimately resolves.
+- Any pattern that constructs the bypass string at runtime from
+  non-literal sources.
+- Class-hierarchy traversal via a literal value's `__class__`
+  (``''.__class__.__base__.__subclasses__()``) — the attribute chain
+  starts on a literal, not on a user-named variable; a blanket block
+  would either also block legitimate uses or miss this pattern.
+
+When v0.15 is appropriate
+-------------------------
+- Research deployments.
+- Internal tools where user input is bounded.
+- Calibration and evaluation workflows (the Phase 10.5 corpora).
+- Development and testing.
+
+When v0.15 is NOT appropriate
+------------------------------
+- Public-facing chat endpoints where user prompts are unconstrained.
+- Deployments where Aedos's verifier output is used to make
+  security-relevant decisions.
+- Any production scenario where an attacker can craft input that
+  influences what code the LLM generates.
+
+For those scenarios, upgrade to RestrictedPython (Option B in
+``docs/phase_F/f3_design.md`` §4) or containerized execution
+(Option C). v0.16 may ship one of these as the default.
 
 Allowed modules per architecture Section 6.3:
     datetime, math, decimal, fractions, statistics, re, unicodedata, string
@@ -29,6 +88,36 @@ ALLOWED_MODULES: frozenset[str] = frozenset([
     "re",
     "unicodedata",
     "string",
+])
+
+# Builtin names that are unsafe in the verifier's threat model — see the
+# module docstring's "What the sandbox blocks" section. A reference to
+# any of these (as a Name, an Attribute, or a subscript on
+# `__builtins__`) is treated as a violation. The block is AST-level only;
+# runtime-constructed bypass strings are out of scope (see "What the
+# sandbox does NOT block").
+_BLOCKED_BUILTIN_NAMES: frozenset[str] = frozenset([
+    "__import__",
+    "eval",
+    "exec",
+    "open",
+    "compile",
+    "__builtins__",
+])
+
+# Dunder attribute names whose presence in user expressions indicates an
+# escape attempt. Blocked on Attribute access regardless of the owning
+# expression. Note that legitimate verification code never needs these.
+_BLOCKED_DUNDER_ATTRS: frozenset[str] = frozenset([
+    "__class__",
+    "__subclasses__",
+    "__bases__",
+    "__base__",
+    "__mro__",
+    "__globals__",
+    "__builtins__",
+    "__import__",
+    "__dict__",
 ])
 
 _DEFAULT_TIMEOUT_SECONDS = 10
@@ -62,25 +151,58 @@ class SandboxResult:
         }
 
 
-def _check_imports(code: str) -> Optional[str]:
-    """Return a violation message if the code imports a disallowed module, else None."""
+def _check_sandbox_violations(
+    code: str, allowed_modules: frozenset[str] = ALLOWED_MODULES
+) -> Optional[str]:
+    """Return a violation message if the code violates any sandbox rule, else None.
+
+    Walks the AST and rejects:
+      - imports outside `allowed_modules` (the allow-list);
+      - direct references to blocked builtin names (``__import__``,
+        ``eval``, ``exec``, ``open``, ``compile``, ``__builtins__``);
+      - attribute access on dunder names commonly used in CPython
+        sandbox escapes (``__class__``, ``__subclasses__``,
+        ``__globals__``, ``__bases__``, ``__mro__``, ``__dict__``,
+        ``__import__``, ``__builtins__``).
+
+    See the module docstring's threat-model section for what this does
+    and does not catch. F-015 in `docs/phase_F/f3_design.md` records
+    the design choice.
+    """
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
         return f"syntax_error: {e}"
 
     for node in ast.walk(tree):
+        # Static imports outside the allow-list
         if isinstance(node, ast.Import):
             for alias in node.names:
                 top = alias.name.split(".")[0]
-                if top not in ALLOWED_MODULES:
+                if top not in allowed_modules:
                     return f"disallowed_import: {alias.name!r}"
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 top = node.module.split(".")[0]
-                if top not in ALLOWED_MODULES:
+                if top not in allowed_modules:
                     return f"disallowed_import_from: {node.module!r}"
+        # Direct references to blocked builtins (Name nodes used as
+        # expressions, function calls, etc.)
+        elif isinstance(node, ast.Name):
+            if node.id in _BLOCKED_BUILTIN_NAMES:
+                return f"disallowed_builtin: {node.id!r}"
+        # Attribute access on dunder names (class-hierarchy traversal,
+        # __globals__, __import__ off __builtins__, etc.)
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _BLOCKED_DUNDER_ATTRS:
+                return f"disallowed_dunder_attribute: {node.attr!r}"
+
     return None
+
+
+# Backwards-compatible alias — `_check_imports` was the original name;
+# callers may import it. Behavior is now the broader sandbox check.
+_check_imports = _check_sandbox_violations
 
 
 def run_code(
@@ -89,38 +211,22 @@ def run_code(
     timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS,
     extra_allowed: frozenset[str] | None = None,
 ) -> SandboxResult:
-    """Run code in a restricted subprocess after import scanning."""
+    """Run code in a restricted subprocess after sandbox-violation scanning.
+
+    See the module docstring for the threat model and the explicit list
+    of what this sandbox does and does not block. F-015 in
+    `docs/phase_F/f3_design.md` §4 records the design choice and the
+    upgrade path for deployments handling adversarial input.
+    """
     allowed = ALLOWED_MODULES if extra_allowed is None else ALLOWED_MODULES | extra_allowed
 
-    # Inline the allowed-set into the import check so extra_allowed is respected
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
+    violation = _check_sandbox_violations(code, allowed_modules=allowed)
+    if violation is not None:
         return SandboxResult(
             success=False, stdout="", stderr="", exit_code=-1,
             duration_ms=0, timed_out=False,
-            import_violation=f"syntax_error: {e}",
+            import_violation=violation,
         )
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                top = alias.name.split(".")[0]
-                if top not in allowed:
-                    return SandboxResult(
-                        success=False, stdout="", stderr="", exit_code=-1,
-                        duration_ms=0, timed_out=False,
-                        import_violation=f"disallowed_import: {alias.name!r}",
-                    )
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                top = node.module.split(".")[0]
-                if top not in allowed:
-                    return SandboxResult(
-                        success=False, stdout="", stderr="", exit_code=-1,
-                        duration_ms=0, timed_out=False,
-                        import_violation=f"disallowed_import_from: {node.module!r}",
-                    )
 
     started = time.monotonic()
     with tempfile.TemporaryDirectory() as workdir:
