@@ -124,7 +124,12 @@ def build_pipeline(
     # D6: rehydrate the verdict-trace index from persisted verdict_recorded
     # events so retraction propagation survives process restarts (arch 7.3).
     propagator.replay()
-    consistency = ConsistencyChecker(db=db, retraction_propagator=propagator)
+    consistency = ConsistencyChecker(
+        db=db,
+        retraction_propagator=propagator,
+        # F-026: thread circuit-breaker threshold through Config.
+        circuit_breaker_threshold=config.circuit_breaker_threshold,
+    )
 
     pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=consistency)
     resolver = EntityResolver(kb_protocol=kb, db=db, llm_client=client)
@@ -149,6 +154,10 @@ def build_pipeline(
         kb_verifier=kb_verifier,
         python_verifier=python_verifier,
         substrate=substrate,
+        # F-025: thread walker budgets / depth through Config.
+        walker_wall_clock_seconds=config.walker_wall_clock_seconds,
+        walker_max_llm_calls=config.walker_max_llm_calls,
+        walker_max_depth=config.walker_max_depth,
     )
     extractor = Extractor(llm_client=client)
     aggregator = Aggregator(retraction_propagator=propagator, db=db)
