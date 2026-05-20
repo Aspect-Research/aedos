@@ -97,11 +97,39 @@ If your shell session already had the variables set (via the explicit
 `export` / `$env:` commands above), this section is unnecessary — those
 take precedence over `.env` values for the current session.
 
+### What `AEDOS_DB_PATH` affects, and what it does not
+
+`AEDOS_DB_PATH` does **not** drive Step 4's calibration corpora. The
+calibration runner (`tests/calibration/test_corpus_runner.py`) uses an
+in-memory database (`open_memory_db()`) by design — calibration measures
+the LLM's *cold-start* substrate-row generation, so seeded predicate
+translations would mask the signal. `AEDOS_DB_PATH` is read by:
+
+- **Step 6 medium-bar benchmark** (`tests/evaluation/benchmark.py`) —
+  runs against the seeded database from Step 2 + Step 3.
+- **Step 5 cold-start test** — uses its own fresh DB at the path the
+  example command specifies.
+- **`scripts/reset_db.py`** and **`seeds/load_seeds.py`** — operator-
+  initiated db work.
+
+So Step 2's seed-load and Step 3's Tier U assertions feed Step 6, not
+Step 4. The runbook spells this out explicitly; do not be confused by
+the convention that "calibration" historically implied a substrate.
+
+(D37 v0.16 candidate: have the calibration runner honor `AEDOS_DB_PATH`
+optionally, or load seeds automatically when the runner detects a
+configured path — eliminates this special case. v0.15 leaves the
+runner as-is and clarifies the runbook.)
+
 ---
 
-## Step 2 — Initialize fresh database and load seed pack
+## Step 2 — Initialize benchmark database and load seed pack
 
-**Purpose:** Start with a clean substrate for calibration.
+**Purpose:** Build the substrate the **Step 6 medium-bar benchmark**
+will run against. Step 4 calibration does NOT use this database (see the
+"What `AEDOS_DB_PATH` affects" note above) — but Step 6 does, and Step 6
+needs a populated `predicate_translation` table to verify intervention-
+class claims at benchmark scale.
 
 ```bash
 py -c "from aedos.database import open_db; open_db('aedos_phase10_5.db')"
@@ -124,10 +152,12 @@ Loaded 61 predicate translation seeds into aedos_phase10_5.db
 
 ---
 
-## Step 3 — Seed user-context assertions for belief_revision test cases
+## Step 3 — Seed user-context assertions for belief_revision benchmark cases
 
-**Purpose:** The `belief_revision` benchmark cases require Tier U assertions about "Asa".
-Insert them directly before running the benchmark.
+**Purpose:** The medium-bar benchmark's `belief_revision` cases (Step 6)
+require Tier U assertions about "Asa" in the benchmark database. Insert
+them directly before running the benchmark. As with Step 2, **Step 4
+calibration does not read these rows** — they feed Step 6 only.
 
 ```python
 # Run this Python snippet (or adapt to your deployment harness):
@@ -168,6 +198,16 @@ The calibration runner is `tests/calibration/test_corpus_runner.py`. It
 loads each corpus, runs every case through the responsible component, computes
 per-corpus accuracy, and asserts it against the threshold below — the runner
 fails the test if accuracy is under threshold, so no manual grading is needed.
+
+**Substrate state.** The runner uses an in-memory database
+(`open_memory_db()`) per case-suite — **NOT** the `$AEDOS_DB_PATH`
+database populated by Steps 2 and 3. This is intentional: calibration
+measures the LLM's *cold-start* substrate-row generation quality, so
+seeded rows would mask the signal. Every predicate the corpus references
+triggers an inline `predicate_translation` LLM call; that latency is the
+"cold-start expensive" path the runbook's runtime estimates account for.
+Step 2 and Step 3's substrate populate the Step 6 benchmark, not this
+step (see "What `AEDOS_DB_PATH` affects" in Step 1).
 
 Gating:
 - The runner is collected only with `--run-calibration`.
