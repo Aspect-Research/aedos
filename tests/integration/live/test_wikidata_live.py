@@ -239,3 +239,56 @@ class TestLiveLookup:
         assert events[0]["event_subject"] == "Q30:P36"
         assert "statement_count" in events[0]["event_data"]
         assert events[0]["event_data"]["statement_count"] >= 1
+
+
+class TestLiveSubsumption:
+    """Live tests for `_live_subsumption` (F2 commit #3).
+
+    Per D33/D34 discipline: tests verify the verdict shape and
+    direction semantics, not specific establishing-property values
+    (those are observability-only and may vary with Wikidata edits).
+    """
+
+    def test_obama_is_a_human_a_subsumed_by_b(self, live_adapter):
+        """Q76 (Barack Obama) is_a Q5 (human) via P31. The directional
+        result should be `a_subsumed_by_b` (Obama is a human, not the
+        reverse). This is the most basic subsumption shape."""
+        result = live_adapter.subsumption("Q76", "Q5", "is_a")
+        assert result.verdict == "a_subsumed_by_b"
+        # Establishing property should be P31 (instance of) or P279.
+        # Don't assert which — observability-only signal.
+        assert result.establishing_property in ("P31", "P279", None)
+        # traversal_chain should be populated for non-unrelated verdicts
+        assert result.traversal_chain == ["Q76", "Q5"]
+
+    def test_nyc_part_of_ny_state_a_subsumed_by_b(self, live_adapter):
+        """Q60 (New York City) is part_of Q1384 (New York state) via P131
+        (located in administrative entity). Transitive part_of chains
+        are the architecture §3.4 example case ("Asa lives_in
+        Williamstown ... part_of Massachusetts")."""
+        result = live_adapter.subsumption("Q60", "Q1384", "part_of")
+        assert result.verdict == "a_subsumed_by_b"
+        assert result.establishing_property in ("P131", "P361", None)
+
+    def test_unrelated_pair_returns_unrelated(self, live_adapter):
+        """Q76 (Obama) is_a Q42 (Douglas Adams)? Both are humans but
+        neither is_a the other. The verdict should be `unrelated` (no
+        path in either direction)."""
+        result = live_adapter.subsumption("Q76", "Q42", "is_a")
+        assert result.verdict == "unrelated"
+        # No establishing property or chain when unrelated
+        assert result.establishing_property is None
+        assert result.traversal_chain == []
+
+    def test_subsumption_emits_audit_event(self, live_adapter):
+        """Wiring verification: live subsumption produces a
+        `kb_live_subsumption` audit event with verdict and duration_ms."""
+        from aedos.audit.log import query_events
+        live_adapter.subsumption("Q76", "Q5", "is_a")
+        events = query_events(
+            live_adapter._db, event_type="kb_live_subsumption", limit=10
+        )
+        assert len(events) >= 1
+        assert events[0]["event_subject"] == "Q76<>Q5:is_a"
+        assert events[0]["event_data"]["verdict"] == "a_subsumed_by_b"
+        assert "duration_ms" in events[0]["event_data"]

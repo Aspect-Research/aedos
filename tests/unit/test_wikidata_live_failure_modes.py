@@ -269,3 +269,107 @@ class TestLiveLookupFailureModes:
         adapter = WikidataAdapter()
         with pytest.raises(RuntimeError, match="http_cache"):
             adapter._live_lookup("Q76", "P39")
+
+
+class TestLiveSubsumptionFailureModes:
+    """Mocked failure-mode tests for `_live_subsumption` (F2 commit #3)."""
+
+    @staticmethod
+    def _make_ask_response(value: bool) -> MagicMock:
+        body = b'{"head": {}, "boolean": ' + (b"true" if value else b"false") + b"}"
+        return _make_response(body)
+
+    @staticmethod
+    def _make_select_response(prop_uri: str | None) -> MagicMock:
+        if prop_uri is None:
+            body = b'{"head": {"vars": ["prop"]}, "results": {"bindings": []}}'
+        else:
+            body = (
+                b'{"head": {"vars": ["prop"]}, "results": {"bindings": [{"prop": '
+                b'{"type": "uri", "value": "' + prop_uri.encode() + b'"}}]}}'
+            )
+        return _make_response(body)
+
+    def test_both_directions_yield_equivalent(self):
+        """Both ASKs return true → verdict is `equivalent`. The Wikidata
+        taxonomy has rare cycles where this can happen for real (typically
+        between disambiguation entities); the implementation must handle
+        the case rather than loop or fail."""
+        adapter, db = _make_adapter()
+        ask_true = self._make_ask_response(True)
+        prop_resp = self._make_select_response(
+            "http://www.wikidata.org/prop/direct/P31"
+        )
+
+        # 3 responses needed: ASK a→b, ASK b→a, follow-up establishing-property
+        inner = MagicMock()
+        inner.get.side_effect = [ask_true, ask_true, prop_resp]
+        cm = MagicMock()
+        cm.__enter__.return_value = inner
+        cm.__exit__.return_value = False
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            result = adapter._live_subsumption("Q76", "Q5", "is_a")
+
+        assert result.verdict == "equivalent"
+        assert result.establishing_property == "P31"
+        # traversal_chain populated even for equivalent (chosen as a→b direction)
+        assert result.traversal_chain == ["Q76", "Q5"]
+
+    def test_timeout_returns_unrelated(self):
+        """Both ASKs time out (retry exhausted) → verdict is `unrelated`.
+        Architecture §9.4: timeout escalates to abstention, which for
+        subsumption means no relation found."""
+        adapter, db = _make_adapter()
+        timeout_exc = httpx.TimeoutException("simulated timeout")
+        cm, _ = _make_httpx_cm(timeout_exc)
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                result = adapter._live_subsumption("Q76", "Q5", "is_a")
+
+        assert result.verdict == "unrelated"
+        assert result.traversal_chain == []
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_subsumption")
+        # Each direction retried once → total retries = 2
+        assert events[0]["event_data"]["retry_count"] == 2
+        assert "TimeoutException" in events[0]["event_data"]["error"]
+
+    def test_subsumption_raises_on_invalid_relation_type(self):
+        """`relation_type` must be one of {is_a, part_of}. Anything else
+        raises ValueError — defense-in-depth against a misconfigured
+        substrate row passing an unsupported relation."""
+        adapter, _ = _make_adapter()
+        with pytest.raises(ValueError, match="relation_type"):
+            adapter._live_subsumption("Q76", "Q5", "synonym_of")
+
+    def test_subsumption_raises_when_no_http_cache_wired(self):
+        """Wiring-gap defence — parallel to resolve and lookup cases."""
+        adapter = WikidataAdapter()
+        with pytest.raises(RuntimeError, match="http_cache"):
+            adapter._live_subsumption("Q76", "Q5", "is_a")
+
+    def test_a_subsumed_by_b_returns_chain_a_to_b(self):
+        """Verdict `a_subsumed_by_b` populates traversal_chain as [a, b]
+        (the direction of the relation), per F2 design §6."""
+        adapter, _ = _make_adapter()
+        ask_true = self._make_ask_response(True)
+        ask_false = self._make_ask_response(False)
+        prop_resp = self._make_select_response(
+            "http://www.wikidata.org/prop/direct/P31"
+        )
+
+        inner = MagicMock()
+        inner.get.side_effect = [ask_true, ask_false, prop_resp]
+        cm = MagicMock()
+        cm.__enter__.return_value = inner
+        cm.__exit__.return_value = False
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            result = adapter._live_subsumption("Q76", "Q5", "is_a")
+
+        assert result.verdict == "a_subsumed_by_b"
+        assert result.traversal_chain == ["Q76", "Q5"]
+        assert result.establishing_property == "P31"
