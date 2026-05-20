@@ -367,9 +367,15 @@ for that predicate, reload seeds, and re-run the failing corpus sub-category.
 **Entity resolver returns no candidates:** Wikidata API may be throttling. Add a
 30s sleep between entity resolution calls (`AEDOS_KB_REQUEST_DELAY_MS=30000`).
 
-**LLM returns malformed tool output:** Increase temperature slightly
-(`AEDOS_LLM_TEMPERATURE=0.1`) for the predicate translation oracle; the default
-is 0.0.
+**LLM returns malformed tool output:** Capture the raw response from the
+audit log (the `LLMClient._attach_raw_response` path preserves the SDK
+response on failed parses). If a specific model produces persistent
+malformed tool output, the model is likely incompatible with the tool
+schema — see `docs/v0.16_planning.md` D25 for the DeepSeek precedent.
+Tuning options (temperature, retry, prompt restructuring) are model-
+specific; v0.16 may add a per-purpose temperature knob if calibration
+data shows it's needed. (Phase F2 removed the prior `AEDOS_LLM_TEMPERATURE`
+reference here — the env var was never read by any code.)
 
 **Calibration accuracy below threshold:** Check the specific sub-category.
 Systematic failures in one sub-category indicate a bug in the corresponding
