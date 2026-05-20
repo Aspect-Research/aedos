@@ -91,3 +91,237 @@ class TestExecution:
     def test_duration_ms_populated(self):
         result = run_code("x = 1 + 1")
         assert result.duration_ms >= 0
+
+
+class TestF015BypassPatterns:
+    """F-015 hardening — the sandbox blocks the common bypass patterns
+    that LLM-generated code might produce when prompted for verification
+    tasks. See `aedos.utils.sandbox`'s module docstring for the threat
+    model; see `docs/phase_F/f3_design.md` §4 for the design choice
+    and Options B/C for upgrade paths against adversarial input."""
+
+    def test_blocks_dunder_import_call(self):
+        """``__import__("os")`` — direct builtin call. Pre-F-015 this
+        bypassed the static-import check entirely."""
+        result = run_code('__import__("os").system("ls")')
+        assert not result.success
+        assert result.import_violation is not None
+        assert "__import__" in result.import_violation
+
+    def test_blocks_eval(self):
+        """``eval(...)`` allows runtime code construction."""
+        result = run_code('eval("1 + 1")')
+        assert not result.success
+        assert "eval" in (result.import_violation or "")
+
+    def test_blocks_exec(self):
+        """``exec(...)`` likewise."""
+        result = run_code('exec("x = 1")')
+        assert not result.success
+        assert "exec" in (result.import_violation or "")
+
+    def test_blocks_open_call(self):
+        """``open(...)`` for file I/O — architecture §6.3 says
+        "no file I/O", which the AST-level block enforces for the
+        common pattern (builtin `open`). Bypasses via dynamic
+        attribute access are not caught — see the module docstring
+        for the boundary."""
+        result = run_code('open("/etc/passwd").read()')
+        assert not result.success
+        assert "open" in (result.import_violation or "")
+
+    def test_blocks_compile_call(self):
+        """``compile(...)`` constructs bytecode at runtime."""
+        result = run_code('compile("1+1", "<src>", "eval")')
+        assert not result.success
+        assert "compile" in (result.import_violation or "")
+
+    def test_blocks_builtins_name_reference(self):
+        """``__builtins__`` as a direct reference (e.g.,
+        ``getattr(__builtins__, "__import__")``)."""
+        result = run_code('getattr(__builtins__, "__import__")("os")')
+        assert not result.success
+        assert "__builtins__" in (result.import_violation or "")
+
+    def test_blocks_class_attribute(self):
+        """``some_var.__class__`` — used in class-hierarchy traversal."""
+        result = run_code('x = "hello"\nprint(x.__class__)')
+        assert not result.success
+        assert "__class__" in (result.import_violation or "")
+
+    def test_blocks_subclasses_attribute(self):
+        """``some_var.__subclasses__()`` — the canonical CPython
+        sandbox-escape attribute. Blocked at the attribute layer."""
+        result = run_code('object.__subclasses__()')
+        assert not result.success
+        assert "__subclasses__" in (result.import_violation or "")
+
+    def test_blocks_globals_attribute(self):
+        """``func.__globals__`` — extracts the module-level namespace."""
+        result = run_code('def f(): pass\nprint(f.__globals__)')
+        assert not result.success
+        assert "__globals__" in (result.import_violation or "")
+
+    def test_blocks_bases_attribute(self):
+        """``cls.__bases__`` / ``cls.__base__`` for hierarchy walking."""
+        result = run_code('class X: pass\nprint(X.__bases__)')
+        assert not result.success
+        assert "__bases__" in (result.import_violation or "")
+
+    def test_blocks_mro_attribute(self):
+        """``cls.__mro__`` for hierarchy walking."""
+        result = run_code('print(int.__mro__)')
+        assert not result.success
+        assert "__mro__" in (result.import_violation or "")
+
+    def test_blocks_dict_attribute(self):
+        """``obj.__dict__`` reveals object internals."""
+        result = run_code('class X: pass\nprint(X.__dict__)')
+        assert not result.success
+        assert "__dict__" in (result.import_violation or "")
+
+    def test_blocks_dunder_import_attribute(self):
+        """``obj.__import__`` attribute access (rare but covers the
+        ``builtins.__import__`` form)."""
+        result = run_code('import datetime\ndatetime.__import__')
+        assert not result.success
+        assert "__import__" in (result.import_violation or "")
+
+    def test_legitimate_verifier_code_still_works(self):
+        """A realistic verifier function using allowed modules. The
+        F-015 hardening must not over-block this — verify() functions
+        like this are the normal Python-route success case."""
+        code = """
+import re
+import datetime
+
+def verify(subject, predicate, obj):
+    if predicate == "is_year_in_range":
+        try:
+            year = int(obj)
+            return 1900 <= year <= 2100
+        except ValueError:
+            return False
+    return False
+
+print('TRUE' if verify('x', 'is_year_in_range', '2020') else 'FALSE')
+"""
+        result = run_code(code)
+        assert result.success, (
+            f"Legitimate verifier code rejected: {result.import_violation or result.stderr}"
+        )
+        assert "TRUE" in result.stdout
+
+    def test_legitimate_string_manipulation_still_works(self):
+        """String / regex / fractions verification — common patterns
+        in the Python verification corpus."""
+        code = """
+import re
+from fractions import Fraction
+
+def verify(subject, predicate, obj):
+    if predicate == "matches_pattern":
+        return bool(re.match(r'\\d{4}', obj))
+    return False
+
+print('TRUE' if verify('x', 'matches_pattern', '2026') else 'FALSE')
+"""
+        result = run_code(code)
+        assert result.success
+        assert "TRUE" in result.stdout
+
+
+    def test_blocks_literal_class_traversal(self):
+        """``''.__class__.__base__.__subclasses__()`` — the canonical
+        CPython sandbox escape, starting from a string literal. The
+        F-015 attribute check catches each dunder attribute even when
+        the base of the chain is a literal expression rather than a
+        named variable. (Initial design analysis suggested this might
+        not be catchable, but the Attribute AST node is found by
+        ``ast.walk`` regardless of where the base sits.)"""
+        code = '"".__class__.__base__.__subclasses__()'
+        result = run_code(code)
+        assert not result.success
+        # ast.walk visits attributes in tree order (outer first).
+        # Whichever dunder is hit first is enough; the cascade is moot.
+        violation = result.import_violation or ""
+        assert any(
+            d in violation
+            for d in ("__class__", "__base__", "__subclasses__")
+        ), f"Expected a dunder violation; got {violation!r}"
+
+
+class TestF015KnownBypasses:
+    """These tests document patterns the AST-walk hardening does NOT
+    catch — the v0.15 sandbox's security boundary in writing. They use
+    ``pytest.xfail(strict=False)`` so a future Option-B or Option-C
+    upgrade (RestrictedPython, containerized) can run the same test
+    suite and report xpass when the bypass is closed.
+
+    See `aedos/utils/sandbox.py`'s docstring for the complete boundary
+    statement; see `docs/phase_F/f3_design.md` §4 for the upgrade path.
+    """
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "v0.15 known boundary — full encoded-string bypass not "
+            "caught. Every dunder attribute must be built at runtime "
+            "from chr literals to evade the AST attribute check. "
+            "Upgrade to RestrictedPython (F3 §4 Option B) or "
+            "containerized execution (Option C) for adversarial input."
+        ),
+    )
+    def test_fully_encoded_dunder_chain_bypass(self):
+        """``getattr(obj, chr(95)*2 + name + chr(95)*2)`` constructs
+        each dunder name at runtime from `chr` literals. The AST sees
+        only `getattr` calls and arithmetic; no `__class__`,
+        `__base__`, or `__subclasses__` literal attribute appears in
+        the source. F3 Option A's AST-walk has no signal to block.
+
+        This is the documented v0.15 boundary — production deployments
+        handling adversarial input must upgrade. The test asserts that
+        a future stronger sandbox closes this bypass."""
+        code = '''
+def make_dunder(name):
+    return chr(95) * 2 + name + chr(95) * 2
+
+cls = getattr("", make_dunder("class"))
+base = getattr(cls, make_dunder("base"))
+subs_fn = getattr(base, make_dunder("subclasses"))
+result = subs_fn()
+print(len(result))
+'''
+        result = run_code(code)
+        # If `not result.success`, the bypass is closed → xpass.
+        # If `result.success`, the bypass is open → xfail (the
+        # documented v0.15 boundary holds).
+        assert not result.success, (
+            "Future sandbox upgrade should close encoded-dunder bypass"
+        )
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "v0.15 known boundary — eval-with-runtime-constructed-payload "
+            "is not in the AST as `eval`. Bypass via, e.g., a captured "
+            "reference assigned from a non-blocked builtin. Upgrade per "
+            "F3 §4."
+        ),
+    )
+    def test_indirect_eval_via_globals(self):
+        """``vars()['eval']`` / ``locals()['eval']`` aren't direct
+        ``eval`` Name references; the AST sees `vars`/`locals` calls
+        plus subscript access. Neither is blocked by F-015 (we don't
+        block all builtins, only the dangerous ones; ``vars`` is not
+        on the block list because legitimate code uses it benignly)."""
+        code = '''
+e = vars(__builtins__)["eval"] if hasattr(__builtins__, "eval") else None
+print(e("1 + 1") if e else "blocked")
+'''
+        result = run_code(code)
+        # `__builtins__` Name is blocked by F-015's name check, so this
+        # particular form IS caught. A future, more clever bypass would
+        # avoid `__builtins__` entirely. The xfail documents the class
+        # of attack, not this specific phrasing.
+        assert not result.success
