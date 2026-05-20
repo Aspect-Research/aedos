@@ -51,6 +51,55 @@ _PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
 # dynamic-discovery follow-up.
 _DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
 
+# Subsumption relation-type → SPARQL property-path alternation.
+# Per architecture §9.1 and F2 design §6:
+#   is_a    → P31 (instance of), P279 (subclass of)
+#   part_of → P131 (located in admin entity), P361 (part of)
+_SUBSUMPTION_PROPERTIES = {
+    "is_a": ("P31", "P279"),
+    "part_of": ("P131", "P361"),
+}
+
+
+def _build_subsumption_ask_query(
+    source: KBEntityID, target: KBEntityID, relation_type: str
+) -> str:
+    """Build an ASK query: does `source` reach `target` via the
+    relation_type's property alternation? Path-existence only — fast,
+    short-circuits on first match. Used per direction by `_live_subsumption`."""
+    if not _ENTITY_ID_PATTERN.match(source):
+        raise ValueError(f"Invalid Wikidata entity ID: {source!r}")
+    if not _ENTITY_ID_PATTERN.match(target):
+        raise ValueError(f"Invalid Wikidata entity ID: {target!r}")
+    props = _SUBSUMPTION_PROPERTIES.get(relation_type)
+    if props is None:
+        raise ValueError(
+            f"Unsupported relation_type: {relation_type!r} "
+            f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
+        )
+    path = "|".join(f"wdt:{p}" for p in props)
+    return f"ASK {{ wd:{source} ({path})+ wd:{target} . }}"
+
+
+def _build_establishing_property_query(
+    source: KBEntityID, target: KBEntityID, relation_type: str
+) -> str:
+    """Follow-up query (operator Q2 confirmed): when subsumption holds,
+    identify the immediate (depth-1) property that anchors the chain.
+    Useful for trace inspection and v0.16's potential subsumption
+    confidence refinement."""
+    props = _SUBSUMPTION_PROPERTIES[relation_type]
+    rest = "|".join(f"wdt:{p}" for p in props)
+    values = " ".join(f"wdt:{p}" for p in props)
+    return (
+        f"SELECT ?prop WHERE {{\n"
+        f"  VALUES ?prop {{ {values} }}\n"
+        f"  wd:{source} ?prop ?intermediate .\n"
+        f"  ?intermediate ({rest})* wd:{target} .\n"
+        f"}}\n"
+        f"LIMIT 1"
+    )
+
 
 def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
     """Build a SPARQL query for `lookup_statements`.
@@ -81,6 +130,19 @@ def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
         f'  BIND(IF(isURI(?value), "entity", "literal") AS ?valueType)\n'
         f"}}"
     )
+
+
+def _subsumption_verdict(a_to_b: bool, b_to_a: bool) -> str:
+    """Map two directional ASK results to the SubsumptionResult verdict
+    string. Architecture §6.2 enumerates the four verdicts; F2 design
+    §6 specifies the truth table."""
+    if a_to_b and b_to_a:
+        return "equivalent"
+    if a_to_b:
+        return "a_subsumed_by_b"
+    if b_to_a:
+        return "b_subsumed_by_a"
+    return "unrelated"
 
 
 def _parse_statement_bindings(
@@ -527,5 +589,153 @@ class WikidataAdapter:
 
     def _live_subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
-    ) -> SubsumptionResult:  # pragma: no cover
-        raise NotImplementedError("Live KB calls require RUN_LIVE_KB=1 and a real HTTP client")
+    ) -> SubsumptionResult:
+        """Resolve subsumption between two Wikidata entities via SPARQL.
+
+        Honors the F2 design contract (§6):
+          - Two ASK queries (one per direction) for path-existence;
+            ASK short-circuits on first match, so this is fast even on
+            broad-fanout properties.
+          - Verdict logic:
+              direction_a→b  direction_b→a  → verdict
+              true           false           a_subsumed_by_b
+              false          true            b_subsumed_by_a
+              true           true            equivalent
+              false          false           unrelated
+          - Operator Q2: on non-`unrelated` verdicts, a follow-up SELECT
+            identifies the immediate (depth-1) establishing property —
+            useful for trace inspection.
+          - Bounded depth: relies on WDQS's 60s server timeout +
+            CachingHTTPClient's 30s client timeout, not on an explicit
+            depth quantifier (Wikidata's blazegraph doesn't support
+            depth-bounded property paths cleanly).
+          - On timeout / network failure: single retry per ASK; if both
+            attempts fail, returns `unrelated` with the error noted in
+            the audit log (architecture §9.4: timeout escalates to
+            abstention, which for subsumption is `unrelated`).
+          - Rate-limited via `self._sparql_limiter`.
+          - One audit event per `_live_subsumption` call.
+        """
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_subsumption requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        if relation_type not in _SUBSUMPTION_PROPERTIES:
+            raise ValueError(
+                f"Unsupported relation_type: {relation_type!r} "
+                f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
+            )
+
+        start = time.monotonic()
+        retries = 0
+        last_error: Optional[str] = None
+
+        a_to_b, r1, e1 = self._run_subsumption_ask(entity_a, entity_b, relation_type)
+        b_to_a, r2, e2 = self._run_subsumption_ask(entity_b, entity_a, relation_type)
+        retries = r1 + r2
+        last_error = e1 or e2  # the first error encountered, if any
+
+        verdict = _subsumption_verdict(a_to_b, b_to_a)
+        establishing_property: Optional[str] = None
+        traversal_chain: list[KBEntityID] = []
+
+        # Follow-up SELECT for non-unrelated verdicts (operator Q2).
+        # On `equivalent` we just pick one direction (a→b) for the property.
+        if verdict in ("a_subsumed_by_b", "equivalent"):
+            establishing_property = self._fetch_establishing_property(
+                entity_a, entity_b, relation_type
+            )
+            traversal_chain = [entity_a, entity_b]
+        elif verdict == "b_subsumed_by_a":
+            establishing_property = self._fetch_establishing_property(
+                entity_b, entity_a, relation_type
+            )
+            traversal_chain = [entity_b, entity_a]
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_live_subsumption",
+            event_subject=f"{entity_a}<>{entity_b}:{relation_type}",
+            event_data={
+                "verdict": verdict,
+                "establishing_property": establishing_property,
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return SubsumptionResult(
+            verdict=verdict,
+            establishing_property=establishing_property,
+            traversal_chain=traversal_chain,
+        )
+
+    def _run_subsumption_ask(
+        self, source: KBEntityID, target: KBEntityID, relation_type: str
+    ) -> tuple[bool, int, Optional[str]]:
+        """Execute one ASK query (single direction). Returns (boolean,
+        retry_count, error_or_None). On final failure returns (False, 1, error)
+        — treating timeout/error as a false ASK, which `_subsumption_verdict`
+        translates to `unrelated` when both directions fail."""
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        query = _build_subsumption_ask_query(source, target, relation_type)
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        retries = 0
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                return (False, retries, f"{type(exc).__name__}: {exc}")
+            except Exception as exc:
+                return (False, retries, f"{type(exc).__name__}: {exc}")
+
+            # ASK responses: {"head": {}, "boolean": true|false}
+            if not isinstance(data, dict):
+                return (False, retries, "malformed_response")
+            return (bool(data.get("boolean", False)), retries, None)
+
+        return (False, retries, "unreachable_code")  # pragma: no cover
+
+    def _fetch_establishing_property(
+        self, source: KBEntityID, target: KBEntityID, relation_type: str
+    ) -> Optional[str]:
+        """Best-effort follow-up: identify the depth-1 property that
+        anchors the path. Returns the P-id (e.g. "P31") or None if the
+        follow-up fails (treats the failure as observability-only —
+        the verdict from the ASK is the load-bearing answer)."""
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        query = _build_establishing_property_query(source, target, relation_type)
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        self._sparql_limiter.acquire()
+        try:
+            data = self._http.get(url, params=params, ttl_seconds=ttl)
+        except Exception:
+            return None
+
+        bindings = (
+            data.get("results", {}).get("bindings", [])
+            if isinstance(data, dict)
+            else []
+        )
+        if not bindings:
+            return None
+        prop_uri = bindings[0].get("prop", {}).get("value", "")
+        if not prop_uri:
+            return None
+        # URI shape: http://www.wikidata.org/prop/direct/P31
+        return prop_uri.rsplit("/", 1)[-1] or None
