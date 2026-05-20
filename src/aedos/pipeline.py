@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from .config import Config
 from .layer1_extraction.extractor import Extractor
 from .layer3_substrate import Substrate
 from .layer3_substrate.consistency import ConsistencyChecker
@@ -28,6 +29,7 @@ from .layer4_sources.walker import Walker
 from .layer5_result.aggregator import Aggregator
 from .layer5_result.retraction import RetractionPropagator
 from .llm.client import LLMClient
+from .utils.http_cache import CachingHTTPClient, LRUHTTPCache
 
 
 @dataclass
@@ -54,21 +56,54 @@ class Pipeline:
     aggregator: Aggregator
 
 
-def build_pipeline(db, llm_client: Optional[LLMClient] = None, kb=None) -> Pipeline:
+def build_pipeline(
+    db,
+    llm_client: Optional[LLMClient] = None,
+    kb=None,
+    config: Optional[Config] = None,
+) -> Pipeline:
     """Assemble the full Aedos v0.15 verification pipeline against `db`.
 
-    `llm_client` and `kb` may be injected — mocks for harness validation, a
-    live `LLMClient`/`WikidataAdapter` otherwise. The correctness mechanisms
-    are wired exactly as architecture 5.4 / 7.3 require: the consistency
-    checker runs on every oracle row write and shares the retraction
-    propagator that the aggregator records verdict traces into.
+    `llm_client`, `kb`, and `config` may be injected — mocks for harness
+    validation, live instances otherwise. When `config` is None, builds a
+    `Config.from_env()` instance.
 
-    The entity resolver is wired with `llm_client` so LLM-mediated
-    disambiguation of close-scoring candidates is available — the complete
-    wiring (the calibration runner uses the same).
+    Wiring (F2): when `kb is None`, this constructor builds a
+    `CachingHTTPClient` (User-Agent + LRU cache + TTL from `config`) and
+    constructs `WikidataAdapter` with the full dependency set. That makes
+    the deployed pipeline reach the live Wikidata API with the configured
+    HTTP cache, rate limits, and identity — closing the F-004 wiring gap
+    surfaced by the F1 audit.
+
+    The correctness mechanisms are wired exactly as architecture 5.4 /
+    7.3 require: the consistency checker runs on every oracle row write
+    and shares the retraction propagator that the aggregator records
+    verdict traces into. The entity resolver is wired with `llm_client`
+    so LLM-mediated disambiguation of close-scoring candidates is
+    available.
     """
+    if config is None:
+        config = Config.from_env()
     client = llm_client if llm_client is not None else LLMClient()
-    kb = kb if kb is not None else WikidataAdapter()
+    if kb is None:
+        # F-004 closure: construct the live-ready Wikidata adapter with
+        # HTTP cache and configuration. Adapter still runs in fixture mode
+        # when RUN_LIVE_KB != 1 — only the wiring shape changes here.
+        lru_cache = LRUHTTPCache(
+            max_size=config.http_cache_lru_size,
+            default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+        )
+        http_client = CachingHTTPClient(
+            cache=lru_cache,
+            default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+            headers={"User-Agent": config.user_agent},
+        )
+        kb = WikidataAdapter(
+            http_cache=http_client,
+            llm_client=client,
+            db=db,
+            config=config,
+        )
 
     propagator = RetractionPropagator(db=db)
     # D6: rehydrate the verdict-trace index from persisted verdict_recorded
