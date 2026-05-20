@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from ..layer1_extraction.extractor import Claim
 from ..layer3_substrate import Substrate
@@ -104,13 +104,34 @@ class Walker:
         python_verifier,
         substrate: Substrate,
         config: Optional[dict] = None,
+        walker_wall_clock_seconds: Optional[float] = None,
+        walker_max_llm_calls: Optional[int] = None,
+        walker_max_depth: Optional[int] = None,
     ) -> None:
+        """Resource budgets resolve in priority order:
+
+          1. Explicit kwarg (`walker_wall_clock_seconds`, etc.) — used
+             by `build_pipeline` to thread `Config` fields through.
+          2. Legacy `config` dict (`config={"max_depth": N}`) — kept
+             for back-compat with tests that construct the walker
+             directly.
+          3. Architecture defaults (`_DEFAULT_MAX_DEPTH` etc.).
+
+        Per F3 §5.1: the kwarg path is the new wiring; the dict path
+        is preserved so existing tests don't churn.
+        """
         self._tier_u = tier_u
         self._kb_verifier = kb_verifier
         self._python_verifier = python_verifier
         self._substrate = substrate
         self._config = config or {}
-        self._max_depth = self._config.get("max_depth", _DEFAULT_MAX_DEPTH)
+        self._max_depth = (
+            walker_max_depth
+            if walker_max_depth is not None
+            else self._config.get("max_depth", _DEFAULT_MAX_DEPTH)
+        )
+        self._default_wall_clock_seconds = walker_wall_clock_seconds
+        self._default_max_llm_calls = walker_max_llm_calls
 
     def walk(
         self,
@@ -119,7 +140,15 @@ class Walker:
         budget: Optional[WalkerBudget] = None,
     ) -> WalkResult:
         if budget is None:
-            budget = WalkerBudget()
+            # Build a budget from the Walker's config-driven defaults
+            # (F3 §5.1). Each field falls back to the dataclass default
+            # if not explicitly configured.
+            kwargs: dict[str, Any] = {}
+            if self._default_wall_clock_seconds is not None:
+                kwargs["wall_clock_seconds"] = self._default_wall_clock_seconds
+            if self._default_max_llm_calls is not None:
+                kwargs["max_llm_calls"] = self._default_max_llm_calls
+            budget = WalkerBudget(**kwargs)
 
         start_time = time.monotonic()
         llm_calls = 0

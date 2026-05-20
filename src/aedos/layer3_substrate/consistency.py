@@ -61,11 +61,25 @@ class ConsistencyChecker:
         db,
         retraction_propagator=None,
         config: Optional[dict] = None,
+        circuit_breaker_threshold: Optional[int] = None,
     ) -> None:
+        """Circuit-breaker threshold resolves in priority order
+        (F3 §5.2):
+
+          1. Explicit `circuit_breaker_threshold` kwarg — used by
+             `build_pipeline` to thread `Config.circuit_breaker_threshold`.
+          2. Legacy `config={"circuit_breaker_threshold": N}` dict —
+             preserved for back-compat with tests.
+          3. Architecture default (`_DEFAULT_CIRCUIT_BREAKER_THRESHOLD`).
+        """
         self._db = db
         self._retraction_propagator = retraction_propagator
         cfg = config or {}
-        self._threshold = cfg.get("circuit_breaker_threshold", _DEFAULT_CIRCUIT_BREAKER_THRESHOLD)
+        self._threshold = (
+            circuit_breaker_threshold
+            if circuit_breaker_threshold is not None
+            else cfg.get("circuit_breaker_threshold", _DEFAULT_CIRCUIT_BREAKER_THRESHOLD)
+        )
 
     # ------------------------------------------------------------------
     # Public API

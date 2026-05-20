@@ -103,3 +103,45 @@ class TestAedosKbRequestDelayEnvVar:
         # nominal delay; the first acquire returns immediately, the second
         # blocks for ~200ms).
         assert elapsed_ms >= 180, f"Expected ≥180ms, got {elapsed_ms:.1f}ms"
+
+
+class TestF3ConfigThreading:
+    """F-025 / F-026: walker budgets and circuit-breaker threshold
+    flow from Config through build_pipeline to the consumers."""
+
+    def test_walker_max_depth_threaded(self, db):
+        """`Config.walker_max_depth` reaches `Walker._max_depth`."""
+        config = Config()
+        config.walker_max_depth = 7
+        pipeline = build_pipeline(db, config=config)
+        assert pipeline.walker._max_depth == 7
+
+    def test_walker_budgets_threaded_via_default(self, db):
+        """`Config.walker_wall_clock_seconds` and `walker_max_llm_calls`
+        reach the walker's per-walk default budget."""
+        config = Config()
+        config.walker_wall_clock_seconds = 45.0
+        config.walker_max_llm_calls = 20
+        pipeline = build_pipeline(db, config=config)
+        assert pipeline.walker._default_wall_clock_seconds == 45.0
+        assert pipeline.walker._default_max_llm_calls == 20
+
+    def test_default_walker_budgets_match_config_defaults(self, db):
+        """Default Config + default build_pipeline yields the architecture
+        defaults at the Walker layer."""
+        pipeline = build_pipeline(db)
+        assert pipeline.walker._max_depth == 4  # _DEFAULT_MAX_DEPTH
+        assert pipeline.walker._default_wall_clock_seconds == 30.0
+        assert pipeline.walker._default_max_llm_calls == 10
+
+    def test_circuit_breaker_threshold_threaded(self, db):
+        """`Config.circuit_breaker_threshold` reaches the ConsistencyChecker."""
+        config = Config()
+        config.circuit_breaker_threshold = 5
+        pipeline = build_pipeline(db, config=config)
+        assert pipeline.consistency._threshold == 5
+
+    def test_default_circuit_breaker_threshold(self, db):
+        """Default Config gives architecture-specified threshold of 3."""
+        pipeline = build_pipeline(db)
+        assert pipeline.consistency._threshold == 3
