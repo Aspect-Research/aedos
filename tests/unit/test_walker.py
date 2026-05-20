@@ -39,9 +39,9 @@ class MockTransport:
 
     def extract_with_tool(self, *a, purpose=None, **kw):
         self.call_count += 1
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": self._dist, "reason": "test"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "a_subsumed_by_b", "reason": "test"}
         return {
             "object_type": "entity",

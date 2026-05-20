@@ -137,9 +137,9 @@ def _make_mock_pipeline(db):
             return "mock response"
 
         def extract_with_tool(self, *a, purpose=None, **kw):
-            if purpose in ("distribution_generation",):
+            if purpose in ("substrate:predicate_distribution",):
                 return {"verdict": "neither", "reason": "mock"}
-            if purpose in ("subsumption_generation",):
+            if purpose in ("substrate:subsumption",):
                 return {"verdict": "unrelated", "reason": "mock"}
             return {
                 "claims": [],

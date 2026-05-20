@@ -41,9 +41,9 @@ class _Transport:
     seeds exactly the substrate rows its derivation needs."""
 
     def extract_with_tool(self, *a, purpose=None, **kw):
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": "neither", "reason": "test default"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "unrelated", "reason": "test default"}
         return {
             "object_type": "entity", "user_subject_required": 0, "distinct_slots": None,

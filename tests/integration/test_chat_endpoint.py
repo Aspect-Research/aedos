@@ -33,7 +33,7 @@ def _make_test_app():
             return "The sky is blue."
 
         def extract_with_tool(self, *a, purpose=None, **kw):
-            if purpose in ("distribution_generation", "subsumption_generation"):
+            if purpose in ("substrate:predicate_distribution", "substrate:subsumption"):
                 return {"verdict": "neither", "reason": "test"}
             return {
                 "claims": [],

@@ -35,9 +35,9 @@ class MockTransport:
         self._sq = slot_to_qualifier
 
     def extract_with_tool(self, *a, purpose=None, **kw):
-        if purpose == "distribution_generation":
+        if purpose == "substrate:predicate_distribution":
             return {"verdict": "neither", "reason": "test"}
-        if purpose == "subsumption_generation":
+        if purpose == "substrate:subsumption":
             return {"verdict": "unrelated", "reason": "test"}
         return {
             "object_type": "entity",
