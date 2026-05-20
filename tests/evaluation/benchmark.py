@@ -505,6 +505,12 @@ def _run_live(args) -> int:
 
 if __name__ == "__main__":
     import argparse
+    # F-013: load `.env` so the live-mode env checks below (and any
+    # downstream Config.from_env) pick up keys from the file without
+    # requiring shell-sourced env vars. Idempotent (F3 §6); no-op when
+    # no `.env` is present.
+    from aedos.utils.env import load_dotenv_if_present
+    load_dotenv_if_present()
     parser = argparse.ArgumentParser(description="Aedos v0.15 medium-bar evaluation")
     parser.add_argument("--test-set", type=Path, default=_TEST_SET_PATH)
     parser.add_argument("--output", type=Path, default=None)

@@ -24,6 +24,12 @@ _chat_wrapper = None  # populated lazily on first POST /chat call
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _db, _config
+    # F-013: load .env before Config.from_env() so the env-var reads
+    # in Config's default_factory pick up values from the file. Safe
+    # to call repeatedly (idempotent per F3 §6 / aedos.utils.env).
+    # No-op if the file isn't present or python-dotenv isn't installed.
+    from aedos.utils.env import load_dotenv_if_present
+    load_dotenv_if_present()
     _config = Config.from_env()
     try:
         _db = open_db(_config.db_path)

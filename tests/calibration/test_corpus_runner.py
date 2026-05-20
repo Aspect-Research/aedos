@@ -76,6 +76,18 @@ class _Harness:
     """Lazily builds a live Aedos pipeline for one corpus run."""
 
     def __init__(self):
+        # F-040 residual: an earlier F3 commit tried to load `.env` here
+        # so the operator wouldn't have to source it in shell. That
+        # broke unit tests that construct `_ComparisonHarness(_Harness)`
+        # via `pec.run_comparison(load_env=False)` — the inherited
+        # `_Harness.__init__()` loaded `.env` anyway and set RUN_LIVE_KB=1
+        # in process env, poisoning fixture-mode tests downstream. The
+        # auto-load was abandoned; the Phase 10.5 runbook's Step 1
+        # "Sourcing .env into the shell" subsection (F-041 closure) is
+        # the operator-facing fix. Production / live runs that need `.env`
+        # call `aedos.utils.env.load_dotenv_if_present()` explicitly from
+        # their entry points (app.py lifespan, benchmark.py __main__,
+        # phase_e_comparison's _load_env).
         self._db = None
         self._client = None
         self._kb = None
