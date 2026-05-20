@@ -390,7 +390,13 @@ class LLMClient:
         system: str,
         user_message: str,
         tool: dict[str, Any],
-        max_tokens: int = 2048,
+        # 8192 (vs the OpenAI-compatible 2048 default) accommodates
+        # reasoning-heavy candidates. Qwen 3.6's extraction surfaced
+        # budget-exhaustion failures at 2048 — reasoning filled the budget
+        # before the tool call was emitted on ~14% of cases. Applied
+        # uniformly so all candidates measure capability under their natural
+        # reasoning budget, not under an artificial 2048-token ceiling.
+        max_tokens: int = 8192,
         purpose: Optional[str] = None,
     ) -> dict[str, Any]:
         cfg = self._cfg(purpose)
