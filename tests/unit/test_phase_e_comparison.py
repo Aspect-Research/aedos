@@ -385,3 +385,107 @@ class TestRunComparisonOffline:
         with pytest.raises(KeyError):
             pec.run_comparison("kimi-k2.6", "nonesuch_corpus",
                                load_env=False, write=False, transport=_FakeTransport())
+
+
+class TestPerPurposeOverride:
+    """Phase E5 — the override dict shape changes when `purposes` or
+    `pin_purposes` are provided. The original `{"*": cfg}` whole-run behavior
+    is preserved when both are None."""
+
+    def test_default_writes_star_wildcard(self):
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison("kimi-k2.6", "extraction_corpus",
+                           load_env=False, write=False, transport=transport,
+                           case_ids=["norm_001"])
+        assert list(transport.seen_override.keys()) == ["*"]
+
+    def test_purposes_writes_only_named_purposes(self):
+        # `purposes=["substrate:predicate_translation"]` — no "*", just the
+        # named keys. Every unnamed purpose falls through to
+        # DEFAULT_MODEL_BY_PURPOSE (the rc.9 defaults).
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=transport,
+            case_ids=["norm_001"],
+            purposes=["substrate:predicate_translation"],
+        )
+        assert "*" not in transport.seen_override
+        assert "substrate:predicate_translation" in transport.seen_override
+        assert transport.seen_override["substrate:predicate_translation"]["model"] == (
+            "moonshotai/kimi-k2.6"
+        )
+
+    def test_pin_purposes_compose_with_primary(self):
+        # Primary candidate runs the substrate purposes; pin_purposes routes
+        # python_verifier to a different candidate (the walker × derivation
+        # matrix pattern: candidate for substrate, Devstral pinned for
+        # python_verifier).
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison(
+            "claude-haiku-4-5", "extraction_corpus",
+            load_env=False, write=False, transport=transport,
+            case_ids=["norm_001"],
+            purposes=["substrate:predicate_translation", "substrate:subsumption"],
+            pin_purposes={"python_verifier": "devstral-small-2"},
+        )
+        keys = set(transport.seen_override.keys())
+        assert keys == {
+            "substrate:predicate_translation", "substrate:subsumption",
+            "python_verifier",
+        }
+        assert transport.seen_override["substrate:predicate_translation"]["model"] == (
+            "claude-haiku-4-5"
+        )
+        assert transport.seen_override["python_verifier"]["model"] == (
+            "mistralai/devstral-small"
+        )
+
+    def test_pin_purposes_unknown_candidate_raises(self):
+        with pytest.raises(KeyError, match="unknown candidate"):
+            pec.run_comparison(
+                "kimi-k2.6", "extraction_corpus",
+                load_env=False, write=False, transport=_FakeTransport(),
+                purposes=["substrate:subsumption"],
+                pin_purposes={"python_verifier": "nonesuch-model"},
+            )
+
+    def test_pin_purposes_disabled_candidate_refused_live(self):
+        # The disabled-candidate refusal extends to pinned candidates — same
+        # find-and-surface discipline as for the primary candidate.
+        with pytest.raises(RuntimeError, match="is disabled"):
+            pec.run_comparison(
+                "kimi-k2.6", "extraction_corpus",
+                load_env=False, write=False,
+                purposes=["substrate:subsumption"],
+                pin_purposes={"python_verifier": "deepseek-v4-flash"},
+            )
+
+    def test_result_records_routing_override(self):
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FakeTransport(),
+            case_ids=["norm_001"],
+            purposes=["substrate:predicate_translation"],
+        )
+        assert result["routing_override"] == {
+            "substrate:predicate_translation": {
+                "model": "moonshotai/kimi-k2.6",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key_env_var": "OPENROUTER_API_KEY",
+                "extra_body": {"provider": {"ignore": ["WandB"]}},
+            }
+        }
+
+    def test_write_subdir_namespaces_output(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pec, "_RESULTS_DIR", tmp_path)
+        pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=True, transport=_FakeTransport(),
+            case_ids=["norm_001"],
+            write_subdir="phase_e5_per_component",
+        )
+        assert (tmp_path / "phase_e5_per_component"
+                / "kimi-k2.6__extraction_corpus.json").exists()
+        # The top-level dir should NOT carry the file too.
+        assert not (tmp_path / "kimi-k2.6__extraction_corpus.json").exists()

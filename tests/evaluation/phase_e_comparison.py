@@ -221,11 +221,17 @@ _DISABLE_THINKING_EXTRA_BODY = {"reasoning": {"enabled": False}}
 
 _ALL_CORPORA = (
     "extraction_corpus", "predicate_metadata_corpus",
+    "subsumption_corpus", "predicate_distribution_corpus",
+    "entity_resolution_corpus",
     "derivation_corpus", "python_verification_corpus",
 )
 # Corpora that produce a verified/contradicted/no_grounding verdict — only
 # these support the false_verified / false_abstention breakdown. extraction and
 # predicate_metadata have no verdict; their soundness counts are reported null.
+# subsumption/predicate_distribution oracle verdicts are categorical (a_subsumed_by_b
+# / etc., neither/forbidden/required) but not the verified/contradicted axis, so
+# they collapse to correct/failed too. entity_resolution selects a Q-id or None;
+# also not the verified/contradicted axis.
 _VERDICT_CORPORA = {"derivation_corpus", "python_verification_corpus"}
 _ABSTAIN_VERDICTS = {"no_grounding_found", "no_terminal_result"}
 
@@ -447,6 +453,28 @@ def _cost(in_tokens: int, out_tokens: int, cand: dict) -> Optional[float]:
     return round(in_tokens / 1e6 * pin + out_tokens / 1e6 * pout, 6)
 
 
+def _routing_cfg(candidate: str, cand: dict) -> dict:
+    """Build the per-purpose routing dict for `cand`. Mirrors the shape
+    `_purpose_override` in `llm/client.py` expects: model, base_url,
+    api_key_env_var, optional extra_body."""
+    cfg = {
+        "model": cand["model"] or f"stub:{candidate}",
+        "base_url": cand["base_url"],
+        "api_key_env_var": cand["api_key_env_var"],
+    }
+    # `extra_body` composes two sources: candidate-level (e.g. OpenRouter
+    # `provider.ignore` to exclude a flaky provider — see the Kimi K2.6 WandB
+    # diagnostic) and the boolean `disable_thinking` shortcut. Both can be set;
+    # the merge keeps both keys when they don't collide (the reasoning toggle
+    # and provider routing live under different keys in extra_body).
+    extra_body = dict(cand.get("extra_body") or {})
+    if cand.get("disable_thinking"):
+        extra_body.update(_DISABLE_THINKING_EXTRA_BODY)
+    if extra_body:
+        cfg["extra_body"] = extra_body
+    return cfg
+
+
 def _build_outcome(corpus, case, passed, produced, error, records, cand,
                    elapsed_ms, transcript_slice) -> dict:
     in_tok = sum(r.input_tokens for r in records)
@@ -508,16 +536,17 @@ def _aggregate(candidate, cand, corpus, outcomes, elapsed) -> dict:
     }
 
 
-def _write_result(result: dict, outcomes: list[dict]) -> Path:
-    _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+def _write_result(result: dict, outcomes: list[dict], *, subdir: Optional[str] = None) -> Path:
+    target_dir = _RESULTS_DIR / subdir if subdir else _RESULTS_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{result['candidate']}__{result['corpus']}"
-    out_path = _RESULTS_DIR / f"{stem}.json"
+    out_path = target_dir / f"{stem}.json"
     # `default=str` is insurance against a non-JSON-serializable value sneaking
     # into a raw response model_dump (e.g. a datetime); the diagnostic is more
     # useful with a stringified field than with a write that crashes.
     out_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     transcript = [{"case_id": o["case_id"], "calls": o["_transcript"]} for o in outcomes]
-    (_RESULTS_DIR / f"{stem}.transcript.json").write_text(
+    (target_dir / f"{stem}.transcript.json").write_text(
         json.dumps(transcript, indent=2, default=str), encoding="utf-8")
     return out_path
 
@@ -537,6 +566,9 @@ def run_comparison(
     case_ids: Optional[Iterable[str]] = None,
     progress: Optional[bool] = None,
     abort_after_consecutive_errors: Optional[int] = 5,
+    purposes: Optional[Iterable[str]] = None,
+    pin_purposes: Optional[dict[str, str]] = None,
+    write_subdir: Optional[str] = None,
 ) -> dict:
     """Run `candidate` against `corpus_name`; return the structured result and
     (by default) write it to `docs/phase_E/results/`.
@@ -552,6 +584,24 @@ def run_comparison(
     `case_ids` filters the corpus to just those case ids — used for diagnostic
     reruns of a small subset (e.g. previously-erroring cases) without spending
     on the whole corpus.
+
+    `purposes` and `pin_purposes` together control which `DEFAULT_MODEL_BY_PURPOSE`
+    entries the run replaces. The default (both None) preserves the original
+    Phase E whole-run behavior: `{"*": candidate_cfg}`, so every internal purpose
+    routes to `candidate`. Phase E5 added per-component selection: passing
+    `purposes=["substrate:predicate_translation"]` writes only that key, leaving
+    every other purpose on its `DEFAULT_MODEL_BY_PURPOSE` value (the rc.9
+    defaults) — this is what isolates the per-component signal. `pin_purposes`
+    maps additional purposes → other candidate names from `_CANDIDATES`, used
+    for runs that compose the candidate-under-test with a separately-committed
+    decision (e.g. derivation_corpus pins `python_verifier` to Devstral, the
+    Phase E python-verifier winner). Pinned candidates' pricing is also
+    re-verified before the run for the same find-and-surface reason.
+
+    `write_subdir` namespaces the output path: when set the result is written
+    to `docs/phase_E/results/{write_subdir}/{stem}.json` instead of the
+    top-level results dir. Used by Phase E5 to keep the per-component-overrides
+    runs separate from the original Phase E `{"*": ...}` whole-run results.
     """
     _ensure_aedos_importable()
     if candidate not in _CANDIDATES:
@@ -571,20 +621,55 @@ def run_comparison(
     if load_env:
         _load_env()
 
+    # Validate pin_purposes candidate references up front (cheap; before any
+    # spend or env-var mutation). An unknown pin name is a usage error, not a
+    # spend-able run.
+    pin_purposes = dict(pin_purposes or {})
+    for purpose, pin_name in pin_purposes.items():
+        if pin_name not in _CANDIDATES:
+            raise KeyError(
+                f"pin_purposes[{purpose!r}] = {pin_name!r}: unknown candidate; "
+                f"known: {sorted(_CANDIDATES)}"
+            )
+        pin_cand = _CANDIDATES[pin_name]
+        if pin_cand.get("disabled") and transport is None:
+            raise RuntimeError(
+                f"pin_purposes[{purpose!r}] = {pin_name!r} is disabled: "
+                f"{pin_cand['disabled']}"
+            )
+
     # Re-verify pricing before any spend (live runs only — transport runs are
     # free and offline). A changed price aborts the run as a surfaced finding.
     # Closed-weight baselines route to direct providers (not OpenRouter); their
     # pricing comes from candidate-config snapshots, not OpenRouter's /models
     # endpoint. `skip_pricing_verify: True` opts them out of the check.
+    # `pin_purposes` candidates are verified the same way as the primary
+    # candidate (same find-and-surface discipline applies to a pinned model).
     pricing_check = None
-    if verify_pricing and transport is None and not cand.get("skip_pricing_verify"):
-        pricing_check = _reverify_pricing(candidate, cand)
-        if not pricing_check["ok"]:
+    pin_pricing_checks: dict[str, dict] = {}
+
+    def _verify_one(name: str, c: dict) -> dict:
+        if c.get("skip_pricing_verify"):
+            return {"ok": True, "message": "skipped (closed-weight baseline; "
+                    "pricing not OpenRouter-routed)"}
+        check = _reverify_pricing(name, c)
+        if not check["ok"]:
             raise RuntimeError(
                 "%s: OpenRouter pricing re-verification failed — %s. Update "
                 "_CANDIDATES and re-run, or pass verify_pricing=False to override."
-                % (candidate, pricing_check["message"])
+                % (name, check["message"])
             )
+        return check
+
+    if verify_pricing and transport is None:
+        pricing_check = _verify_one(candidate, cand)
+        for purpose, pin_name in pin_purposes.items():
+            if pin_name == candidate:
+                pin_pricing_checks[pin_name] = pricing_check
+                continue
+            if pin_name in pin_pricing_checks:
+                continue
+            pin_pricing_checks[pin_name] = _verify_one(pin_name, _CANDIDATES[pin_name])
     elif cand.get("skip_pricing_verify"):
         pricing_check = {"ok": True, "message": "skipped (closed-weight baseline; "
                          "pricing not OpenRouter-routed)"}
@@ -598,24 +683,26 @@ def run_comparison(
             raise ValueError("no cases matched case_ids=%r" % sorted(wanted))
     runner = _RUNNERS[corpus_name]
 
-    # Whole-run override: every internal purpose → the candidate (chat excepted).
-    purpose_cfg = {
-        "model": cand["model"] or f"stub:{candidate}",
-        "base_url": cand["base_url"],
-        "api_key_env_var": cand["api_key_env_var"],
-    }
-    # `extra_body` composes two sources: candidate-level (e.g. OpenRouter
-    # `provider.ignore` to exclude a flaky provider — see the Kimi K2.6 WandB
-    # diagnostic) and the boolean `disable_thinking` shortcut. Both can be set;
-    # the merge keeps both keys when they don't collide (the reasoning toggle
-    # and provider routing live under different keys in extra_body).
-    extra_body = dict(cand.get("extra_body") or {})
-    if cand.get("disable_thinking"):
-        extra_body.update(_DISABLE_THINKING_EXTRA_BODY)
-    if extra_body:
-        purpose_cfg["extra_body"] = extra_body
+    # Build the AEDOS_OVERRIDE_MODEL_BY_PURPOSE dict. Three shapes:
+    #   1. Default (purposes=None, pin_purposes={}): {"*": cand_cfg} — original
+    #      Phase E whole-run behavior; every internal purpose routes to the
+    #      candidate.
+    #   2. purposes=[p1, p2, ...]: {p1: cand_cfg, p2: cand_cfg, ...} — only
+    #      those purposes are overridden, every other purpose falls through to
+    #      DEFAULT_MODEL_BY_PURPOSE in llm/client.py (the rc.9 defaults).
+    #   3. With pin_purposes={p: name}: the additional entries override `p` to
+    #      a *different* candidate's config (e.g. python_verifier → Devstral
+    #      while the primary candidate runs the substrate purposes).
+    primary_cfg = _routing_cfg(candidate, cand)
+    purpose_list = list(purposes) if purposes is not None else None
+    if purpose_list is None and not pin_purposes:
+        override_dict: dict[str, dict] = {"*": primary_cfg}
+    else:
+        override_dict = {p: primary_cfg for p in (purpose_list or ())}
+        for purpose, pin_name in pin_purposes.items():
+            override_dict[purpose] = _routing_cfg(pin_name, _CANDIDATES[pin_name])
     prev = os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE")
-    os.environ["AEDOS_OVERRIDE_MODEL_BY_PURPOSE"] = json.dumps({"*": purpose_cfg})
+    os.environ["AEDOS_OVERRIDE_MODEL_BY_PURPOSE"] = json.dumps(override_dict)
 
     # Per-case progress printing — defaults: live runs (transport=None) print
     # to stderr so the final JSON to stdout stays clean; transport runs (unit
@@ -703,10 +790,17 @@ def run_comparison(
 
     result = _aggregate(candidate, cand, corpus_name, outcomes, time.monotonic() - started)
     result["pricing_verification"] = pricing_check
+    # Record the routing override actually applied so the synthesis can read
+    # what each result file measured without re-deriving from the runner +
+    # the caller's invocation.
+    result["routing_override"] = override_dict
+    if pin_purposes:
+        result["pin_purposes"] = pin_purposes
+        result["pin_pricing_verifications"] = pin_pricing_checks
     if aborted_reason:
         result["aborted_reason"] = aborted_reason
     if write:
-        _write_result(result, outcomes)
+        _write_result(result, outcomes, subdir=write_subdir)
     return result
 
 
