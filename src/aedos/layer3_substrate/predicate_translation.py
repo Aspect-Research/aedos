@@ -119,6 +119,26 @@ single_valued: set 1 only for functional predicates where a subject has at most 
 true object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates
 (position_held, occupation, award_received, member_of). When unsure, choose 0 — a wrong
 single_valued=1 produces a false contradiction.
+
+subject_entity_types / object_entity_types: Wikidata Q-ids of the acceptable
+instance-of (P31) types for each slot. The deployed pipeline post-filters
+entity-resolution candidates by these types — a wrong-type Q-id is eliminated
+before the resolver sees it.
+
+Set these to a list of Q-ids only when the slot's type is naturally constrained
+by the predicate's meaning. Common patterns:
+  holds_role     subject=[Q5] (human),     object=[Q4164871] (position)
+  born_in        subject=[Q5] (human),     object=[Q515, Q486972] (city, settlement)
+  educated_at    subject=[Q5] (human),     object=[Q3918, Q38723] (university,
+                                                  higher-education institution)
+  has_capital    subject=[Q6256] (country), object=[Q515, Q5119] (city, capital)
+
+Return null (or omit) when the slot type is open — a slot that legitimately
+accepts many entity types (prefers, applies_to) or non-entity values (any
+predicate where object_type is quantity, time, or proposition). Over-constraining
+with a too-narrow type list will eliminate canonical candidates; under-constraining
+with an over-broad list will not help filter. When in doubt, prefer null over a
+guess — a missing filter is cheaper than a wrong one.
 """
 
 
