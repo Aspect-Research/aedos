@@ -276,3 +276,39 @@ class TestSeedLoading:
             assert by_pred[pred] == 1, f"{pred!r} loaded with single_valued={by_pred[pred]}"
         loaded_functional = {p for p, sv in by_pred.items() if sv == 1}
         assert loaded_functional == _FUNCTIONAL_PREDICATES
+
+    def test_loaded_rows_carry_entity_types(self, db_path):
+        # Phase G D33: when a seed entry carries subject_entity_types /
+        # object_entity_types, the loader persists them as JSON. born_in_year
+        # is the load-bearing example (Q5 subject, Q577 object).
+        import sqlite3
+        from seeds.load_seeds import load_seeds
+        load_seeds(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT subject_entity_types, object_entity_types "
+            "FROM predicate_translation WHERE aedos_predicate='born_in_year'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert json.loads(row["subject_entity_types"]) == ["Q5"]
+        assert json.loads(row["object_entity_types"]) == ["Q577"]
+
+    def test_seed_without_entity_types_loads_null(self, db_path):
+        # Phase G D33: entries with no entity-type fields (the 61 pre-D33
+        # entries) persist NULL — the filter no-ops for those predicates.
+        import sqlite3
+        from seeds.load_seeds import load_seeds
+        load_seeds(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        # holds_role is one of the original 61 entries without entity types
+        row = conn.execute(
+            "SELECT subject_entity_types, object_entity_types "
+            "FROM predicate_translation WHERE aedos_predicate='holds_role'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row["subject_entity_types"] is None
+        assert row["object_entity_types"] is None

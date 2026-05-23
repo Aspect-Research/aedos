@@ -30,6 +30,20 @@ class TestLocalContext:
         assert lc.asserting_party == "user"
         assert len(lc.prior_resolutions) == 1
 
+    def test_expected_entity_types_defaults_empty(self):
+        # Phase G D33: new field defaults to empty list, preserving the
+        # pre-D33 callers (the adapter no-ops the filter on empty).
+        lc = LocalContext(predicate="p", slot_position="subject")
+        assert lc.expected_entity_types == []
+
+    def test_expected_entity_types_populates(self):
+        lc = LocalContext(
+            predicate="p",
+            slot_position="subject",
+            expected_entity_types=["Q5", "Q43229"],
+        )
+        assert lc.expected_entity_types == ["Q5", "Q43229"]
+
 
 class TestResolutionCandidate:
     def test_defaults(self):

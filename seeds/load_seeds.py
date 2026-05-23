@@ -63,6 +63,17 @@ def load_seeds(db_path: str) -> int:
                 if entry["slot_to_qualifier"] is not None
                 else None
             )
+            # Phase G D33 (2026-05-23): seed pack may carry subject_entity_types
+            # / object_entity_types. Absence (or None) means no filtering for
+            # that slot; the wikidata adapter no-ops the filter when empty.
+            subject_types = entry.get("subject_entity_types")
+            object_types = entry.get("object_entity_types")
+            subject_types_json = (
+                json.dumps(subject_types) if subject_types else None
+            )
+            object_types_json = (
+                json.dumps(object_types) if object_types else None
+            )
             kb_namespace = entry.get("kb_namespace")
             # SQLite NULL != NULL in UNIQUE checks, so INSERT OR REPLACE won't
             # deduplicate rows where kb_namespace IS NULL. Delete first instead.
@@ -76,8 +87,9 @@ def load_seeds(db_path: str) -> int:
                 INSERT OR REPLACE INTO predicate_translation
                     (aedos_predicate, object_type, user_subject_required, distinct_slots,
                      routing_hint, kb_namespace, kb_property, slot_to_qualifier,
-                     single_valued, reason, created_at, used_count, last_consulted_at, retracted_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
+                     single_valued, subject_entity_types, object_entity_types,
+                     reason, created_at, used_count, last_consulted_at, retracted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
                 """,
                 (
                     entry["aedos_predicate"],
@@ -89,6 +101,8 @@ def load_seeds(db_path: str) -> int:
                     entry.get("kb_property"),
                     slot_json,
                     int(entry["single_valued"]),
+                    subject_types_json,
+                    object_types_json,
                     entry.get("reason", ""),
                     now,
                 ),

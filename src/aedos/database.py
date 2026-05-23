@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     kb_property TEXT,
     slot_to_qualifier TEXT,
     single_valued INTEGER NOT NULL DEFAULT 0,
+    subject_entity_types TEXT,
+    object_entity_types TEXT,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
@@ -134,6 +136,17 @@ def create_schema(conn: sqlite3.Connection) -> None:
         )
     except sqlite3.OperationalError:
         pass  # column already exists
+    # Phase G D33 (2026-05-23): subject_entity_types / object_entity_types
+    # columns. Same idempotent ALTER pattern as single_valued. NULL default
+    # — predicates without entity types skip the type filter, preserving
+    # current behavior.
+    for col in ("subject_entity_types", "object_entity_types"):
+        try:
+            conn.execute(
+                f"ALTER TABLE predicate_translation ADD COLUMN {col} TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
 
 

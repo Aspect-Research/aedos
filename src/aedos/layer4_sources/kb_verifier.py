@@ -94,10 +94,13 @@ class KBVerifier:
 
         # Step 3: resolve the KB lookup entity — the entity the statement is
         # keyed on (it becomes the KB statement subject).
+        # Phase G D33: pass entity types for the Aedos slot being resolved;
+        # the wikidata adapter post-filters candidates by P31 ∩ types.
         lookup_ctx = LocalContext(
             predicate=claim.predicate,
             slot_position=lookup_slot,
             asserting_party=claim.asserting_party,
+            expected_entity_types=_types_for_slot(meta, lookup_slot),
         )
         lookup_subject_id = self._resolver.select(
             self._resolver.resolve(lookup_ref, lookup_ctx), lookup_ctx
@@ -124,6 +127,7 @@ class KBVerifier:
                 predicate=claim.predicate,
                 slot_position=value_slot,
                 asserting_party=claim.asserting_party,
+                expected_entity_types=_types_for_slot(meta, value_slot),
             )
             resolved_value = self._resolver.select(
                 self._resolver.resolve(expected_ref, value_ctx), value_ctx
@@ -276,6 +280,17 @@ def _lookup_targets(claim: Claim, meta) -> Optional[tuple[str, str, bool]]:
     if subject_slot == "statement_value" and object_slot in (None, "statement_subject"):
         return (claim.object, claim.subject, True)
     return None
+
+
+def _types_for_slot(meta, slot: str) -> list[str]:
+    """Phase G D33: pick the entity-types list that corresponds to the Aedos
+    slot being resolved. Returns an empty list when no types are configured
+    for that slot (the adapter then skips its post-filter)."""
+    if slot == "subject":
+        return list(meta.subject_entity_types or [])
+    if slot == "object":
+        return list(meta.object_entity_types or [])
+    return []
 
 
 def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:

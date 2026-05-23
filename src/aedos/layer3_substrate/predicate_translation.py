@@ -63,6 +63,30 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
                     "non-matching value."
                 ),
             },
+            "subject_entity_types": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+                "description": (
+                    "Phase G D33: Wikidata Q-ids of acceptable instance-of (P31) "
+                    "types for the subject slot. Used to filter entity-resolution "
+                    "candidates by type. Example: ['Q5'] for a predicate whose "
+                    "subject must be a human (Q5). Return null (or omit) for "
+                    "open-type predicates that accept many subject types, where "
+                    "filtering would over-constrain."
+                ),
+            },
+            "object_entity_types": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+                "description": (
+                    "Phase G D33: Wikidata Q-ids of acceptable instance-of (P31) "
+                    "types for the object slot. Used to filter entity-resolution "
+                    "candidates by type. Example: ['Q3918', 'Q38723'] for an "
+                    "educational-institution slot. Return null (or omit) for "
+                    "predicates whose object types are open (e.g. prefers, "
+                    "status) or non-entity (literal-typed predicates)."
+                ),
+            },
             "reason": {
                 "type": "string",
                 "description": "1-2 sentence justification for the routing and mapping choices.",
@@ -116,6 +140,13 @@ class PredicateMetadata:
     retracted_at: Optional[str] = None
     retraction_reason: Optional[str] = None
     single_valued: bool = False  # functional predicate: licenses KB contradiction
+    # Phase G D33 (2026-05-23): Wikidata Q-ids of acceptable entity types for
+    # each slot. None means no filtering for that slot (open-type predicate or
+    # predicate not yet annotated). Surfaced from the seed pack (predicates
+    # annotated in seeds/predicate_translation.json) or from the substrate
+    # oracle's cold-start generation.
+    subject_entity_types: Optional[list[str]] = None
+    object_entity_types: Optional[list[str]] = None
 
 
 class PredicateTranslationError(Exception):
@@ -243,6 +274,8 @@ class PredicateTranslation:
         effective_kb_namespace = raw.get("kb_namespace") or kb_namespace
         distinct_slots_raw = raw.get("distinct_slots")
         slot_to_qualifier_raw = raw.get("slot_to_qualifier")
+        subject_types_raw = raw.get("subject_entity_types")
+        object_types_raw = raw.get("object_entity_types")
 
         # INSERT OR REPLACE handles the case where a retracted row exists for the same
         # (predicate, namespace) key — SQLite deletes the old row and inserts the new one.
@@ -251,8 +284,9 @@ class PredicateTranslation:
             """INSERT OR REPLACE INTO predicate_translation
                (aedos_predicate, object_type, user_subject_required, distinct_slots,
                 routing_hint, kb_namespace, kb_property, slot_to_qualifier,
-                single_valued, reason, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                single_valued, subject_entity_types, object_entity_types,
+                reason, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 aedos_predicate,
                 raw["object_type"],
@@ -263,6 +297,8 @@ class PredicateTranslation:
                 raw.get("kb_property"),
                 json.dumps(slot_to_qualifier_raw) if slot_to_qualifier_raw else None,
                 single_valued,
+                json.dumps(subject_types_raw) if subject_types_raw else None,
+                json.dumps(object_types_raw) if object_types_raw else None,
                 raw["reason"],
                 now,
             ),
@@ -300,6 +336,8 @@ class PredicateTranslation:
             reason=raw["reason"],
             created_at=now,
             single_valued=bool(single_valued),
+            subject_entity_types=subject_types_raw if subject_types_raw else None,
+            object_entity_types=object_types_raw if object_types_raw else None,
         )
 
     @staticmethod
@@ -311,6 +349,18 @@ class PredicateTranslation:
                 return json.loads(val)
             except (json.JSONDecodeError, TypeError):
                 return None
+
+        # subject_entity_types / object_entity_types are Phase G D33 additions
+        # and may be absent from older DBs. sqlite3.Row raises IndexError when
+        # the column is missing, so fall back to None defensively.
+        try:
+            subject_types = _parse_json(row["subject_entity_types"])
+        except (IndexError, KeyError):
+            subject_types = None
+        try:
+            object_types = _parse_json(row["object_entity_types"])
+        except (IndexError, KeyError):
+            object_types = None
 
         return PredicateMetadata(
             id=row["id"],
@@ -329,4 +379,6 @@ class PredicateTranslation:
             retracted_at=row["retracted_at"],
             retraction_reason=row["retraction_reason"],
             single_valued=bool(row["single_valued"]),
+            subject_entity_types=subject_types,
+            object_entity_types=object_types,
         )

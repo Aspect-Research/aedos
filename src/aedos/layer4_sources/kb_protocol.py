@@ -13,6 +13,10 @@ class LocalContext:
     slot_position: str  # 'subject' or 'object'
     asserting_party: Optional[str] = None
     prior_resolutions: list["ResolutionCandidate"] = field(default_factory=list)
+    # Phase G D33 (2026-05-23): Wikidata Q-ids of acceptable entity types for
+    # the slot being resolved. When non-empty, _live_resolve post-filters
+    # candidates whose P31 intersects this list. Empty/absent means no filter.
+    expected_entity_types: list["KBEntityID"] = field(default_factory=list)
 
 
 @dataclass
