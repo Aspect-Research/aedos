@@ -34,12 +34,76 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
 from ..audit.log import log_event
 from ..utils.rate_limit import RateLimiter
+
+# Stage 2: explicit abstention sentinel. The prompt instructs Haiku to
+# emit this literal string when no candidate clearly matches; the parser
+# treats it as "leave surface form unchanged."
+STAGE_2_ABSTAIN = "ABSTAIN"
+
+# Stage 2 tool schema — closed-set selection over candidate strings, with
+# abstention as a first-class first-option. The output is one of the
+# candidate strings or the literal "ABSTAIN", plus reasoning for the
+# audit log.
+_STAGE_2_TOOL: dict[str, Any] = {
+    "name": "select_disambiguation",
+    "description": (
+        "Pick the candidate Wikipedia article whose subject the user most "
+        "plausibly meant, based on the surrounding source text. If the text "
+        "does not provide clear evidence for one candidate, output ABSTAIN. "
+        "Abstention is the correct response when context does not determine "
+        "the answer."
+    ),
+    "input_schema": {
+        "type": "object",
+        "required": ["selection", "reasoning"],
+        "properties": {
+            "selection": {
+                "type": "string",
+                "description": (
+                    "The candidate string you selected, copied exactly from the "
+                    "`candidates` list provided, OR the literal string 'ABSTAIN' "
+                    "when no candidate clearly matches the source text."
+                ),
+            },
+            "reasoning": {
+                "type": "string",
+                "description": (
+                    "One or two sentences explaining the choice (or the "
+                    "abstention). Cite the phrase from the source text that "
+                    "supports the choice when applicable."
+                ),
+            },
+        },
+    },
+}
+
+_STAGE_2_SYSTEM_PROMPT = """\
+You disambiguate ambiguous entity references using surrounding context.
+
+The user wrote a claim whose entity reference matches multiple Wikipedia
+articles. Pick the article whose subject the user most plausibly meant,
+based on the surrounding text. If the surrounding text does not provide
+clear evidence for one candidate, output ABSTAIN.
+
+Abstention is the correct response when context does not determine the
+answer. Do NOT guess based on prior probability or what seems most likely
+in general — pick a candidate only when the source text actively supports
+the pick. A wrong selection is worse than an abstention; abstention lets
+the system honestly report it could not verify, which is the intended
+behaviour.
+
+Your selection must be either:
+  - One of the strings from the `candidates` list, copied exactly, OR
+  - the literal string ABSTAIN.
+
+Do not invent a new candidate. Do not paraphrase a candidate.
+"""
 
 # Defaults used when no Config is wired (test paths that construct the
 # normalizer directly without a Config object). Production paths come
@@ -131,14 +195,27 @@ class WikipediaNormalizer:
     ) -> NormalizationResult:
         """Normalize a single entity reference. Stage 1 + Stage 2.
 
-        Stage 2 is a no-op in D47 step 1 (this commit): when Stage 1
-        returns disambiguation_page, the surface form is returned
-        unchanged and `stage_2_invoked` stays False. Step 2 wires the
-        LLM selection.
+        Stage 1: Wikipedia redirect resolution. When the surface form
+        cleanly resolves (canonical_no_redirect or clean_redirect) the
+        normalized form is the canonical Wikipedia title and Stage 2 is
+        skipped. When it returns disambiguation_page Stage 2 invokes the
+        LLM selection; on abstention or candidate-fetch failure the
+        surface form is preserved unchanged.
+
+        not_found / api_error: surface form preserved (downstream
+        resolution behaves as it does today, likely abstaining).
         """
         start = time.monotonic()
         stage1 = self._stage_1_for_single(surface_form)
-        result = self._compose_result(stage1, surface_form, start)
+        result = self._compose_result(
+            stage1,
+            surface_form,
+            start,
+            claim_subject=claim_subject,
+            claim_predicate=claim_predicate,
+            claim_object=claim_object,
+            source_text=source_text,
+        )
         self._log_audit_event(
             result,
             claim_id=claim_id,
@@ -396,15 +473,18 @@ class WikipediaNormalizer:
         stage1: Stage1Outcome,
         surface_form: str,
         start_time: float,
+        claim_subject: Optional[str] = None,
+        claim_predicate: Optional[str] = None,
+        claim_object: Optional[str] = None,
+        source_text: Optional[str] = None,
     ) -> NormalizationResult:
-        """Compose a NormalizationResult from a Stage 1 outcome. Stage 2
-        is a no-op in D47 step 1 — when the outcome is
-        disambiguation_page the surface form is preserved unchanged.
-        Step 2 of D47 replaces this with the LLM-mediated selection.
+        """Compose a NormalizationResult from a Stage 1 outcome. When the
+        outcome is disambiguation_page, invokes Stage 2 (LLM-mediated
+        selection over the disambiguation page's candidate links). When
+        Stage 2 abstains, returns the surface form unchanged.
         """
-        duration_ms = (time.monotonic() - start_time) * 1000.0
-
         if stage1.outcome == OUTCOME_CANONICAL_NO_REDIRECT:
+            duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
                 surface_form=surface_form,
                 normalized_form=stage1.canonical_title or surface_form,
@@ -413,6 +493,7 @@ class WikipediaNormalizer:
             )
 
         if stage1.outcome == OUTCOME_CLEAN_REDIRECT:
+            duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
                 surface_form=surface_form,
                 normalized_form=stage1.canonical_title or surface_form,
@@ -422,23 +503,292 @@ class WikipediaNormalizer:
             )
 
         if stage1.outcome == OUTCOME_DISAMBIGUATION_PAGE:
-            # Step 1: Stage 2 is not yet wired; leave surface form unchanged
-            # and record the disambiguation title for the audit log.
-            return NormalizationResult(
+            return self._stage_2(
+                stage1=stage1,
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
-                duration_ms=duration_ms,
+                start_time=start_time,
+                claim_subject=claim_subject,
+                claim_predicate=claim_predicate,
+                claim_object=claim_object,
+                source_text=source_text,
             )
 
         # not_found or api_error: surface form unchanged.
+        duration_ms = (time.monotonic() - start_time) * 1000.0
         return NormalizationResult(
             surface_form=surface_form,
             normalized_form=surface_form,
             stage_1_outcome=stage1.outcome,
             duration_ms=duration_ms,
             error=stage1.error,
+        )
+
+    # ------------------------------------------------------------------
+    # Stage 2 — LLM-mediated selection
+    # ------------------------------------------------------------------
+
+    def _stage_2(
+        self,
+        stage1: Stage1Outcome,
+        surface_form: str,
+        start_time: float,
+        claim_subject: Optional[str],
+        claim_predicate: Optional[str],
+        claim_object: Optional[str],
+        source_text: Optional[str],
+    ) -> NormalizationResult:
+        """Drive Stage 2: fetch candidate links from the disambiguation
+        page, ask Haiku to pick one (or abstain), apply the selection.
+
+        Failure modes:
+          - Candidate fetch fails → record error, abstain (surface form
+            unchanged). Architecture §3.2: false-abstain is cheaper than
+            silently picking wrong.
+          - LLM call fails → record error, abstain.
+          - LLM picks something not in the candidate list → reject,
+            abstain (defence against a future model hallucinating a title).
+          - LLM emits ABSTAIN → record reasoning, abstain.
+        """
+        disambig_title = stage1.disambiguation_title or surface_form
+
+        candidates, fetch_error = self._fetch_disambiguation_candidates(disambig_title)
+        if fetch_error is not None:
+            duration_ms = (time.monotonic() - start_time) * 1000.0
+            return NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=stage1.outcome,
+                stage_1_redirect_target=stage1.disambiguation_title,
+                stage_2_invoked=False,
+                duration_ms=duration_ms,
+                error=fetch_error,
+            )
+
+        if not candidates:
+            # Empty candidate list — disambig page with no usable links.
+            # Abstain.
+            duration_ms = (time.monotonic() - start_time) * 1000.0
+            return NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=stage1.outcome,
+                stage_1_redirect_target=stage1.disambiguation_title,
+                stage_2_invoked=False,
+                duration_ms=duration_ms,
+                error="no_candidates_on_disambiguation_page",
+            )
+
+        if self._llm is None:
+            # Wiring-gap: Stage 2 requires an LLM. Abstain visibly.
+            duration_ms = (time.monotonic() - start_time) * 1000.0
+            return NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=stage1.outcome,
+                stage_1_redirect_target=stage1.disambiguation_title,
+                stage_2_invoked=False,
+                stage_2_candidates=candidates,
+                duration_ms=duration_ms,
+                error="no_llm_client_for_stage_2",
+            )
+
+        selection, reasoning, llm_error = self._stage_2_llm_select(
+            surface_form=surface_form,
+            claim_subject=claim_subject,
+            claim_predicate=claim_predicate,
+            claim_object=claim_object,
+            source_text=source_text,
+            candidates=candidates,
+        )
+
+        duration_ms = (time.monotonic() - start_time) * 1000.0
+
+        if llm_error is not None:
+            return NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=stage1.outcome,
+                stage_1_redirect_target=stage1.disambiguation_title,
+                stage_2_invoked=True,
+                stage_2_candidates=candidates,
+                stage_2_selection=None,
+                stage_2_reasoning=reasoning,
+                duration_ms=duration_ms,
+                error=llm_error,
+            )
+
+        # Abstention: empty selection or the literal ABSTAIN sentinel.
+        # Surface form preserved.
+        if not selection or selection.strip().upper() == STAGE_2_ABSTAIN:
+            return NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=stage1.outcome,
+                stage_1_redirect_target=stage1.disambiguation_title,
+                stage_2_invoked=True,
+                stage_2_candidates=candidates,
+                stage_2_selection=None,
+                stage_2_reasoning=reasoning,
+                duration_ms=duration_ms,
+            )
+
+        # Defence-in-depth: the model must pick from the closed candidate
+        # set. If it invents a title, treat as abstention so a stray
+        # hallucination cannot drive a wrong KB query downstream.
+        if selection not in candidates:
+            return NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=stage1.outcome,
+                stage_1_redirect_target=stage1.disambiguation_title,
+                stage_2_invoked=True,
+                stage_2_candidates=candidates,
+                stage_2_selection=None,
+                stage_2_reasoning=reasoning,
+                duration_ms=duration_ms,
+                error=f"selection_not_in_candidates: {selection!r}",
+            )
+
+        return NormalizationResult(
+            surface_form=surface_form,
+            normalized_form=selection,
+            stage_1_outcome=stage1.outcome,
+            stage_1_redirect_target=stage1.disambiguation_title,
+            stage_2_invoked=True,
+            stage_2_candidates=candidates,
+            stage_2_selection=selection,
+            stage_2_reasoning=reasoning,
+            duration_ms=duration_ms,
+        )
+
+    def _fetch_disambiguation_candidates(
+        self, disambig_title: str
+    ) -> tuple[list[str], Optional[str]]:
+        """Fetch the namespace-0 (article) links from a disambiguation
+        page via ``action=parse&prop=links``. Returns ``(candidates, error)``;
+        on success ``error`` is None.
+
+        Truncates to ``Config.wikipedia_stage_2_max_candidates`` (default
+        20) — Stage 2's LLM doesn't benefit from a longer list and the
+        prompt budget is finite.
+        """
+        if self._http is None:
+            return ([], "no_http_cache_for_stage_2_fetch")
+
+        url = self._cfg_value("wikipedia_api_url", _DEFAULT_API_URL)
+        params = {
+            "action": "parse",
+            "page": disambig_title,
+            "prop": "links",
+            "format": "json",
+            "formatversion": "2",
+        }
+        ttl = self._cfg_value("http_cache_entity_ttl_seconds", _DEFAULT_ENTITY_TTL_SECONDS)
+        max_candidates = self._cfg_value(
+            "wikipedia_stage_2_max_candidates", _DEFAULT_STAGE_2_MAX_CANDIDATES
+        )
+
+        data = None
+        last_error: Optional[str] = None
+        for attempt in range(2):
+            self._limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+                last_error = None
+                break
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+
+        if data is None or not isinstance(data, dict):
+            return ([], last_error or "malformed_disambiguation_response")
+
+        parse = data.get("parse", {}) if isinstance(data.get("parse"), dict) else {}
+        links = parse.get("links", []) if isinstance(parse.get("links"), list) else []
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            # formatversion=2 link shape: {"ns": 0, "title": "...", "exists": true}.
+            # ns 0 = main article namespace; skip meta-pages, files,
+            # categories, etc.
+            ns = link.get("ns")
+            title = link.get("title")
+            exists = link.get("exists", True)
+            if ns != 0 or not isinstance(title, str) or not title:
+                continue
+            if not exists:
+                continue  # red link → no article to choose
+            if title == disambig_title:
+                continue  # self-link
+            if title in seen:
+                continue
+            seen.add(title)
+            candidates.append(title)
+            if len(candidates) >= max_candidates:
+                break
+
+        return (candidates, None)
+
+    def _stage_2_llm_select(
+        self,
+        surface_form: str,
+        claim_subject: Optional[str],
+        claim_predicate: Optional[str],
+        claim_object: Optional[str],
+        source_text: Optional[str],
+        candidates: list[str],
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Invoke Haiku with the Stage 2 tool. Returns
+        ``(selection, reasoning, error)``: ``selection`` may be ``None``
+        on abstention or error.
+        """
+        candidate_lines = "\n".join(f"  - {c}" for c in candidates)
+        user_message = (
+            f"surface form : {surface_form}\n"
+            f"claim        : "
+            f"{claim_subject or '(unknown)'} → "
+            f"{claim_predicate or '(unknown)'} → "
+            f"{claim_object or '(unknown)'}\n"
+            f"source text  :\n"
+            f"---\n"
+            f"{source_text or '(no surrounding text)'}\n"
+            f"---\n"
+            f"candidates   :\n"
+            f"{candidate_lines}\n"
+            f"\n"
+            f"Output the candidate string that best matches the source text, "
+            f"OR ABSTAIN if no candidate clearly matches."
+        )
+        try:
+            raw = self._llm.extract_with_tool(
+                system=_STAGE_2_SYSTEM_PROMPT,
+                user_message=user_message,
+                tool=_STAGE_2_TOOL,
+                purpose="layer1:entity_normalization",
+            )
+        except Exception as exc:
+            return (None, None, f"{type(exc).__name__}: {exc}")
+
+        if not isinstance(raw, dict):
+            return (None, None, "malformed_tool_response")
+
+        selection = raw.get("selection")
+        reasoning = raw.get("reasoning")
+        if not isinstance(selection, str):
+            return (None, reasoning if isinstance(reasoning, str) else None, "missing_selection")
+
+        return (
+            selection.strip(),
+            reasoning if isinstance(reasoning, str) else None,
+            None,
         )
 
     def _log_audit_event(
