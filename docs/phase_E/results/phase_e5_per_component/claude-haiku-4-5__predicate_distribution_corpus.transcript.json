@@ -1,0 +1,1002 @@
+[
+  {
+    "case_id": "pd_up_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'lives_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone lives_in a location X, and that location X is part_of a larger location Y, then that person lives_in Y. For example, living in Williamstown (part_of Massachusetts) means living in Massachusetts. This is a transitive spatial containment relationship."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'located_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If X is located_in Y and Y is part_of Z, then X should be located_in Z. For example, if a building is located_in a neighborhood and the neighborhood is part_of a city, then the building is located_in the city. Location relationships transitively propagate upward through part-whole hierarchies."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'occurred_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an event occurred_in a specific location and that location is part_of a larger location, then the event also occurred_in the larger location. For example, if an event occurred_in Paris and Paris part_of France, then the event occurred_in France."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'citizen_of' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If X is a citizen_of Y and Y is part_of Z (e.g., a city is part of a country), then X should be a citizen_of Z as well, since citizenship typically extends to larger political entities that contain the specific region. However, it does not distribute down, as being a citizen of a country does not make one a citizen of every part of that country."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'works_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone works_in a location and that location is part_of a larger location, then they work_in the larger location. For example, if Alice works_in the Sales Department and the Sales Department is part_of the Company, then Alice works_in the Company."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'headquartered_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an organization is headquartered in a location that is part of a larger location, then the organization is headquartered in that larger location. For example, if Microsoft is headquartered in Redmond and Redmond is part of Washington state, then Microsoft is headquartered in Washington state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'born_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone is born_in a location and that location is part_of a larger region, then they are born_in the larger region. For example, if John is born_in Nashville and Nashville part_of Tennessee, then John is born_in Tennessee."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'died_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone died_in a specific location (e.g., died_in Williamstown) and that location is part_of a larger region (e.g., Williamstown part_of Massachusetts), it logically follows that they died_in the larger region. The death event that occurred in the specific place necessarily occurred in all larger containing regions."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'member_of' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity X is a member_of Y and Y is part_of Z, then X is a member_of Z by transitivity. Membership extends upward through the part-of hierarchy just as 'lives_in' extends through spatial containment."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'registered_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity is registered_in a location and that location is part_of a larger location, the entity would logically be registered in the larger location as well. For example, if a company is registered_in California and California is part_of the United States, then the company is registered_in the United States."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'published_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If a work is published_in a venue and that venue is part_of a larger venue or collection, then the work is published_in the larger venue. For example, if an article is published_in a conference and that conference is part_of a conference series, the article is published_in that series."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'operates_in' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity operates_in a location X, and X is part_of a larger location Y, then that entity also operates_in Y. For example, if a business operates_in a city that is part_of a state, then the business operates_in that state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'mortal' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If something is mortal (a property of a class), then any subclass or instance of that thing is also mortal. For example, if Animals is_a LivingThings and LivingThings are mortal, then Animals are mortal. Mortality distributes downward through the is_a hierarchy."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'has_nucleus' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a class Y has_nucleus (is asserted to have a nucleus), then any subclass X that is_a Y should inherit this property, since having a nucleus is a defining characteristic that applies to all instances of that class. This is a taxonomic property that flows downward from parent to child classes."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'has_dna' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a superclass has DNA (e.g., animals have DNA), then all members of that class via is_a also have DNA (e.g., specific animals have DNA). The predicate distributes downward through the is_a hierarchy based on biological inheritance of genetic material."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'taxed' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity is taxed and that entity is_a more general category, the taxed status typically applies to the more general category as well. For example, if a bicycle is taxed and a bicycle is_a vehicle, then vehicles (as a category) are taxed."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'regulated_by_sec' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity X is regulated_by_sec and X is_a Y (X is a type of Y), then Y should also be regulated_by_sec, since regulatory jurisdiction over a specific type necessarily extends to its parent category. This is analogous to how properties that apply to a category apply to all subcategories."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'biodegradable' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a general category is biodegradable, then all its specific instances or subcategories should be biodegradable. For example, if 'plastic' is_a 'material' and material is biodegradable, then plastic is biodegradable. However, the reverse does not hold: if a specific instance is biodegradable, we cannot infer that its superclass is biodegradable."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'requires_visa' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone requires a visa to enter a country X, and country X is_a member of a broader category of countries (e.g., EU countries, Schengen area), then they require a visa for that broader category. The visa requirement transfers upward through the generalization hierarchy."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'has_four_legs' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a category (e.g., Dog) has_four_legs and a specific instance (e.g., Fido) is_a Dog, then Fido has_four_legs. The property distributes from the superclass to its subclasses, making it a downward distribution."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'located_in' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity is located_in a place, and that place is_a subtype of another place, then the entity is located_in the parent place. For example, if a building is located_in a city, and that city is_a administrative_region, then the building is located_in an administrative_region."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'operates_in' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'operates_in' distributes up over 'is_a' because if a specific entity operates in a particular domain and that domain is a type of a broader domain, the entity operates in the broader domain. For example, if Company X operates_in healthcare and healthcare is_a service_sector, then Company X operates_in service_sector."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'contains' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a whole contains something (P(Y)) and a part is_a/part_of that whole (X part_of Y), then the part also contains that thing (P(X)). For example, if a book contains chapters and a chapter is_a part_of a book, then the chapter contains the content/structure that makes up the book's containment relation, following the transitive nature of parthood."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'adjacent_to' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If X is adjacent_to Y and Y is part_of Z, then X is adjacent_to Z. Adjacency to a part entails adjacency to the whole; for example, if a room is adjacent to a kitchen and the kitchen is part of a house, then the room is adjacent to the house."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'speaks_language' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a group speaks a language (e.g., \"Italians speak Italian\") and an individual is a member of that group (e.g., \"Giovanni is_a Italian\"), then that individual speaks the language. Distribution does not go up because an individual speaking a language does not imply all superordinate categories speak it."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'prefers' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'prefers' does not distribute over 'is_a' in either direction. If someone prefers a specific category (e.g., golden retrievers), they don't necessarily prefer the broader category (e.g., dogs), and vice versa\u2014preferring dogs doesn't entail preferring all dog subcategories."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'hates' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If someone hates a category of things (X is_a Y and Y is hated), it logically follows that they hate members of that category (X is hated). However, hating a specific thing does not necessarily mean hating the broader category it belongs to."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'authored' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If an entity (person or work) authored a superordinate category of work, it logically follows that they authored instances or subcategories of that work. For example, if someone authored \"novels,\" they authored \"detective novels\" (a type of novel); if \"Shakespeare\" authored \"plays,\" then Shakespeare authored \"tragedies\" (which are plays). This is a transitive property that flows downward through the is_a hierarchy."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'married_to' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The 'married_to' relation is a symmetric and typically individual-specific relationship. If X is married_to Y and X is_a Z (a type or category), it does not follow that Z is married_to Y, nor does it work in the opposite direction\u2014the marriage relationship is between specific individuals, not their types or categories."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'holds_role' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity holds a specific role and that role is a subtype of another role, the entity logically holds the more general role. For example, if Alice holds_role treasurer and treasurer is_a officer, then Alice holds_role officer."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'resembles' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "Resemblance is a specific similarity relation that does not necessarily propagate through taxonomic hierarchies. If X resembles Y and Y is_a Z, it does not follow that X resembles Z, nor does it work in the upward direction\u2014resembling a specific category does not entail resembling all its instances."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'invented' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If X invented Y and Y is_a Z, then X invented Z (a more general category). Inventions of specific instances distribute to their more general classes; for example, if someone invented the transistor and transistor is_a electronic_device, then they invented an electronic_device."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'owns' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If X owns Y and Y is_a Z, then X owns Z. For example, if someone owns a poodle and a poodle is_a dog, then that person owns a dog (a member of the more general category). The ownership relation transfers upward through the is_a hierarchy to superordinate categories."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'received_award' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If an entity receives an award and that entity is_a member of a category, then members of that category receive that award. For example, if Alice receives_award Nobel_Prize and Alice is_a Scientist, then Scientists receive_award Nobel_Prize."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'succeeded_by' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If event X is succeeded_by event Y, and event X is_a more specific instance of event Z, then the more general event Z is also succeeded_by event Y. However, the reverse does not hold: knowing that a general event is succeeded by another does not tell us what succeeds specific instances of that event."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'employed_by' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If an entity is employed_by a specific organization and that organization is_a (a type of) a more general organization, then the entity is employed by that more general category. For example, if Alice is employed_by Google and Google is_a technology_company, then Alice is employed_by a technology_company."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'educated_at' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone is educated_at a specific institution and that institution is_a type of university or school (a more general category), then it logically follows that they are educated_at that more general category. For example, if John is educated_at Harvard and Harvard is_a university, then John is educated_at a university."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'co_founded' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If person A co_founded a company and that company is_a subcategory/type of another entity, it does not follow that A co_founded the parent entity. However, if A co_founded a parent entity and a specific company is_a that parent entity type, then A co_founded that specific company (distributes down). For example, if Elon co_founded electric_vehicle_companies (parent category) and Tesla is_a electric_vehicle_company, then Elon co_founded Tesla."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'voted_for' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If someone voted_for a political party and that party is_a type of political organization, it does not follow they voted for that broader category. However, if someone voted_for Democrats and Democrats is_a political party, then they voted_for members of that category (distributes down to instances). Voting relationships typically distribute downward to more specific instances rather than upward to abstract categories."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'visited' with polarity 1 (asserted) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If X visited Y and Y is part_of Z, then X visited Z. For example, if someone visited a room and that room is part of a building, they visited the building. The visitation extends upward to encompass the larger whole."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_016",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'bought' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If someone bought a general category (e.g., \"bought a car\") and a specific type is_a that category (e.g., \"sedan is_a car\"), it follows they bought that specific type. However, if someone bought a specific item, it doesn't necessarily follow they bought its parent category."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_017",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'caused' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If event X caused event Y, and event Y is_a event Z (Y is a subtype of Z), then X caused Z. For example, if a spark caused a fire, and fire is_a combustion event, then the spark caused a combustion event."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_018",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'named' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'named' denotes a specific name assignment that typically applies to individual entities. If an entity is named X and is a kind of or instance of Y, it does not follow that the supertype Y has that same name, nor does a general class having a name mean all its instances share that name."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_019",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'born_in' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "If someone is born_in a specific location and that location is_a (a type of) a broader location, then they are born_in that broader location. For example, if John is born_in Dublin and Dublin is_a Irish_city, then John is born_in an Irish city. Birth location logically distributes upward through categorical hierarchies."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_020",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'holds_patent_on' with polarity 1 (asserted) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If an entity holds a patent on a general category and a specific type is_a (is a subtype of) that category, then the entity holds a patent on the specific type. For example, if Company X holds_patent_on 'engine' and 'diesel_engine' is_a 'engine', then Company X holds_patent_on 'diesel_engine'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_021",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'prefers' with polarity 0 (negated) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'prefers' does not distribute in either direction over 'is_a'. If someone doesn't prefer a specific category (e.g., doesn't prefer dogs), it doesn't mean they don't prefer all subcategories (they may prefer specific dog breeds); conversely, not preferring a subcategory doesn't imply not preferring the parent category."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_022",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'authored' with polarity 0 (negated) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If something did NOT author Y, and X is_a Y (i.e., X is a subtype of Y), then it's reasonable to conclude that the thing did NOT author X. For instance, if an entity did not author \"science fiction\" and \"mystery novel\" is_a \"science fiction\", then that entity did not author \"mystery novel\" specifically."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_023",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'located_in' with polarity 0 (negated) and subsumption relation_type 'part_of' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The negated predicate 'NOT located_in' distributes upward over 'part_of': if X is NOT located_in Y and Y is part_of Z, then X is NOT located_in Z. For example, if a building is not located in a city, and that city is part of a state, then the building is not located in that state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_024",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'mortal' with polarity 0 (negated) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If something is not mortal (\u00acmortal(Y)) and X is_a Y (X is a kind of Y), then X is also not mortal (\u00acmortal(X)). Negated properties distribute downward through is_a relations: if a category lacks a property, all subcategories lack it too."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_025",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "For the predicate 'holds_role' with polarity 0 (negated) and subsumption relation_type 'is_a' (is_a or part_of), determine whether it distributes up, down, both, or neither.\n\nExample: 'lives_in' distributes_up over 'part_of': if Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts.\nExample: 'prefers' distributes 'neither' over 'is_a': if Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If someone does NOT hold a role in a parent category (is_a), they logically cannot hold that role in any more specific subcategory. For example, if X does NOT hold the role of \"manager\" and Y is_a \"manager\", then X does NOT hold the role of Y. Negated role predicates distribute downward over is_a subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  }
+]

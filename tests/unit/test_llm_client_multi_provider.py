@@ -55,15 +55,42 @@ class _FakeOpenAIClient:
 # --------------------------------------------------------------------------
 
 class TestPurposeRouting:
-    def test_openai_purpose_carries_openai_endpoint(self):
-        # Phase E5 migrated extractor:* purposes to Anthropic/Haiku 4.5; this
-        # test uses python_verifier (still OpenAI-routed as of v0.15) to
-        # exercise the OpenAI-endpoint resolution path. Other substrate:*
-        # purposes are also still OpenAI-routed and would work equivalently.
+    def test_openai_endpoint_resolution_path(self, monkeypatch):
+        # Phase E5 rc.10 migrated every internal purpose off OpenAI (extractor
+        # → Anthropic Phase E3; substrate/verifier → OpenRouter Phase E5), so
+        # no production purpose tests the OpenAI-endpoint resolution path
+        # natively. Force `python_verifier` to an OpenAI model via the
+        # AEDOS_MODEL_<purpose> env override (which routes through
+        # `_config_for_model`'s OpenAI inference) to keep the OpenAI-endpoint
+        # path under test, in case a deployment routes some purpose back to
+        # OpenAI in the future.
+        monkeypatch.setenv("AEDOS_MODEL_python_verifier", "gpt-4.1-mini")
         cfg = _resolve_purpose_config("python_verifier", DEFAULT_MODEL)
         assert cfg["base_url"] == "https://api.openai.com/v1"
         assert cfg["api_key_env_var"] == "OPENAI_API_KEY"
-        assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["python_verifier"]["model"]
+        assert cfg["model"] == "gpt-4.1-mini"
+
+    def test_python_verifier_routes_to_devstral_after_phase_e5(self):
+        # Phase E5 (2026-05-23) pinned python_verifier to Devstral Small 1.1
+        # via OpenRouter after Phase E's python_verifier soundness comparison
+        # (Devstral 0 false-verifieds vs 1 for each of 5 tied candidates).
+        # This guards the migration from being silently reverted.
+        cfg = _resolve_purpose_config("python_verifier", DEFAULT_MODEL)
+        assert cfg["base_url"] == "https://openrouter.ai/api/v1"
+        assert cfg["api_key_env_var"] == "OPENROUTER_API_KEY"
+        assert cfg["model"] == "mistralai/devstral-small"
+
+    def test_substrate_purposes_route_per_phase_e5_selection(self):
+        # Phase E5 rc.10 per-component selection from docs/phase_E_v2_report.md.
+        # Haiku wins predicate_translation; Qwen 3-Next wins the other three.
+        cfg_pt = _resolve_purpose_config("substrate:predicate_translation", DEFAULT_MODEL)
+        assert cfg_pt["base_url"] is None
+        assert cfg_pt["model"] == "claude-haiku-4-5"
+        for purpose in ("substrate:subsumption", "substrate:predicate_distribution",
+                        "substrate:entity_resolution"):
+            cfg = _resolve_purpose_config(purpose, DEFAULT_MODEL)
+            assert cfg["base_url"] == "https://openrouter.ai/api/v1", purpose
+            assert cfg["model"] == "qwen/qwen3-next-80b-a3b-instruct", purpose
 
     def test_extractor_purpose_routes_to_anthropic_after_phase_e5(self):
         # Phase E5 (2026-05-23) routed extractor:user and extractor:assistant
