@@ -1,0 +1,608 @@
+[
+  {
+    "case_id": "sub_kb_001",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_002",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_003",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_004",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_005",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_006",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_007",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_008",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_009",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_010",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_011",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_012",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_013",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_014",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_015",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_016",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_017",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_018",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_019",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_020",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_021",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_022",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_023",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_024",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_025",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_026",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_027",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_028",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_029",
+    "calls": []
+  },
+  {
+    "case_id": "sub_kb_030",
+    "calls": []
+  },
+  {
+    "case_id": "sub_mixed_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'Asa' (namespace: aedos) and 'person' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "verdict": "a_subsumed_by_b",
+          "reason": "Asa is a proper name referring to a specific individual, making it an instance of the broader category 'person'. A specific person is subsumed by the general concept of personhood."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'golden_retriever' (namespace: aedos) and 'dog' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "aedos:golden_retriever",
+          "entity_b": "aedos:dog",
+          "relation_type": "is_a",
+          "verdict": "a_subsumed_by_b",
+          "reason": "A golden retriever is a specific breed of dog, making it a subtype of the more general category \"dog\"."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'warm_front' (namespace: aedos) and 'weather_system' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "warm_front",
+          "entity_b": "weather_system",
+          "relation_type": "is_a",
+          "reason": "A warm front is a type of weather system characterized by the boundary between warm and cold air masses, making it a specific instance of the broader category of weather systems.",
+          "verdict": "a_subsumed_by_b"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'New_England' (namespace: aedos) and 'United_States' (namespace: aedos) under relation_type 'part_of'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "New_England (aedos)",
+          "entity_b": "United_States (aedos)",
+          "relation_type": "part_of",
+          "verdict": "a_subsumed_by_b",
+          "reason": "New England is a geographic region that is part of the United States, making it subsumed by the larger entity under the 'part_of' relation."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'president' (namespace: aedos) and 'elected_official' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "president",
+          "entity_b": "elected_official",
+          "relation_type": "is_a",
+          "reason": "A president is a specific type of elected official, as presidents are elected to their positions of leadership. Therefore, the concept of president is subsumed under the broader category of elected official.",
+          "verdict": "a_subsumed_by_b"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'chapter' (namespace: aedos) and 'book' (namespace: aedos) under relation_type 'part_of'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "aedos:chapter",
+          "entity_b": "aedos:book",
+          "relation_type": "part_of",
+          "verdict": "a_subsumed_by_b",
+          "reason": "A chapter is a structural component that is part of a book, making it a subsumed type under the \"part_of\" relation."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'jazz' (namespace: aedos) and 'music' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "jazz (namespace: aedos)",
+          "entity_b": "music (namespace: aedos)",
+          "relation_type": "is_a",
+          "verdict": "a_subsumed_by_b",
+          "reason": "Jazz is a specific genre and style of music, making it an instance/subtype of the broader category of music."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'sprint' (namespace: aedos) and 'run' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "sprint",
+          "entity_b": "run",
+          "reason": "A sprint is a specific type of run characterized by running at high speed over a short distance, making it a subtype of the more general concept of running.",
+          "verdict": "a_subsumed_by_b"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'theorem' (namespace: aedos) and 'mathematical_statement' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "aedos:theorem",
+          "entity_b": "aedos:mathematical_statement",
+          "relation_type": "is_a",
+          "verdict": "a_subsumed_by_b",
+          "reason": "A theorem is a specific type of mathematical statement that has been proven to be true, making it a subtype of the broader category of mathematical statements."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'bicycle_wheel' (namespace: aedos) and 'bicycle' (namespace: aedos) under relation_type 'part_of'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "verdict": "a_subsumed_by_b",
+          "reason": "A bicycle wheel is a component/part of a bicycle, making it a specialized instance that is subsumed under the broader concept of bicycle when considering the \"part_of\" relation."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'lung' (namespace: aedos) and 'human_body' (namespace: aedos) under relation_type 'part_of'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "relation_type": "part_of",
+          "entity_a": "lung (aedos)",
+          "entity_b": "human_body (aedos)",
+          "reason": "A lung is a component/part of the human body, specifically part of the respiratory system. Therefore, lung is subsumed by human_body under the 'part_of' relationship.",
+          "verdict": "a_subsumed_by_b"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'sonnet' (namespace: aedos) and 'poem' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "sonnet",
+          "entity_b": "poem",
+          "relation_type": "is_a",
+          "reason": "A sonnet is a specific type of poem characterized by a fixed structure (typically 14 lines with a particular rhyme scheme), so sonnets are subsumed under the broader category of poems.",
+          "verdict": "a_subsumed_by_b"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'merger' (namespace: aedos) and 'corporate_event' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "merger (aedos)",
+          "entity_b": "corporate_event (aedos)",
+          "relation_type": "is_a",
+          "verdict": "a_subsumed_by_b",
+          "reason": "A merger is a specific type of corporate event that involves the combination of two companies, making it a specialized instance of the broader category of corporate events."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'election_day' (namespace: aedos) and 'political_event' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "aedos:election_day",
+          "entity_b": "aedos:political_event",
+          "relation_type": "is_a",
+          "verdict": "a_subsumed_by_b",
+          "reason": "An election day is a specific instance of a political event, as it is a significant occurrence in the political process where citizens participate in electoral activities."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'Asa' (namespace: aedos) and 'corporation' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "aedos:Asa",
+          "entity_b": "aedos:corporation",
+          "relation_type": "is_a",
+          "verdict": "a_subsumed_by_b",
+          "reason": "ASA (American Standards Association, now ANSI) is a type of professional organization that functions as a corporation. It is an instance of the broader category of corporations."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_016",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'apple' (namespace: aedos) and 'mineral' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "apple (aedos)",
+          "entity_b": "mineral (aedos)",
+          "relation_type": "is_a",
+          "verdict": "unrelated",
+          "reason": "An apple is a fruit produced by plants, while minerals are naturally occurring inorganic solids with crystalline structures. These represent distinct categories with no subsumption relationship between them."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_017",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'Paris' (namespace: aedos) and 'London' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "verdict": "unrelated",
+          "reason": "Paris and London are both major cities in Europe but neither is a subtype or instance of the other. They are distinct geographical entities with no subsumption relationship under the 'is_a' relation."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_018",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'theorem' (namespace: aedos) and 'proof' (namespace: aedos) under relation_type 'part_of'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "theorem",
+          "entity_b": "proof",
+          "relation_type": "part_of",
+          "reason": "A proof is a part of establishing or demonstrating a theorem, but a theorem itself is not a part of a proof. Rather, a theorem is the statement being proven, while a proof is the logical argument that supports it.",
+          "verdict": "b_subsumed_by_a"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_019",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'sprint' (namespace: aedos) and 'swim' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "entity_a": "sprint",
+          "entity_b": "swim",
+          "reason": "Sprint is a form of fast running, while swim is the act of moving through water; these are distinct types of locomotion with no hierarchical subsumption relationship between them.",
+          "verdict": "unrelated"
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_mixed_020",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:subsumption",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant.",
+          "user_message": "Determine the subsumption relationship between 'integer' (namespace: aedos) and 'string' (namespace: aedos) under relation_type 'is_a'.",
+          "tool": "generate_subsumption_verdict"
+        },
+        "response": {
+          "verdict": "unrelated",
+          "reason": "An integer is a primitive data type representing whole numbers, while a string is a primitive data type representing sequences of characters. These are fundamentally different data types with no subsumption relationship between them."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "sub_unrelated_001",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_002",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_003",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_004",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_005",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_006",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_007",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_008",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_009",
+    "calls": []
+  },
+  {
+    "case_id": "sub_unrelated_010",
+    "calls": []
+  }
+]
