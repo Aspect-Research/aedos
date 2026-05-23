@@ -112,6 +112,28 @@ class TestPredicateMetadataDataclass:
         )
         assert m.user_subject_required is True
 
+    def test_entity_types_default_none(self):
+        # Phase G D33: new fields default to None (no filter for either slot).
+        m = PredicateMetadata(
+            id=1, aedos_predicate="p", object_type="entity",
+            user_subject_required=False, distinct_slots=None,
+            routing_hint="kb_resolvable", kb_namespace="wikidata", kb_property="P39",
+            slot_to_qualifier=None, reason="r", created_at="t",
+        )
+        assert m.subject_entity_types is None
+        assert m.object_entity_types is None
+
+    def test_entity_types_populate(self):
+        m = PredicateMetadata(
+            id=1, aedos_predicate="p", object_type="entity",
+            user_subject_required=False, distinct_slots=None,
+            routing_hint="kb_resolvable", kb_namespace="wikidata", kb_property="P39",
+            slot_to_qualifier=None, reason="r", created_at="t",
+            subject_entity_types=["Q5"], object_entity_types=["Q43229"],
+        )
+        assert m.subject_entity_types == ["Q5"]
+        assert m.object_entity_types == ["Q43229"]
+
 
 # ---------------------------------------------------------------------------
 # TestConsultColdCache
@@ -446,3 +468,71 @@ class TestToolSchema:
         assert "time" in enum_vals
         assert "proposition" in enum_vals
         assert "entity_list" in enum_vals
+
+    def test_entity_type_fields_in_tool_schema(self):
+        # Phase G D33: the oracle's tool schema must accept entity-type
+        # fields so cold-start generation can emit them.
+        props = PREDICATE_METADATA_TOOL["input_schema"]["properties"]
+        assert "subject_entity_types" in props
+        assert "object_entity_types" in props
+
+
+# ---------------------------------------------------------------------------
+# TestEntityTypesRoundTrip (Phase G D33)
+# ---------------------------------------------------------------------------
+
+class TestEntityTypesRoundTrip:
+    """Phase G D33: oracle accepts entity-type fields from the LLM, persists
+    them, and surfaces them through consult()."""
+
+    def test_cold_start_persists_entity_types(self):
+        resp = _default_metadata_response(
+            subject_entity_types=["Q5"],
+            object_entity_types=["Q43229"],
+        )
+        oracle, db, _ = _make_oracle(response=resp)
+        meta = oracle.consult("holds_role")
+        assert meta.subject_entity_types == ["Q5"]
+        assert meta.object_entity_types == ["Q43229"]
+        # Verify it's actually in the DB
+        row = db.execute(
+            "SELECT subject_entity_types, object_entity_types "
+            "FROM predicate_translation WHERE aedos_predicate='holds_role'"
+        ).fetchone()
+        assert json.loads(row["subject_entity_types"]) == ["Q5"]
+        assert json.loads(row["object_entity_types"]) == ["Q43229"]
+
+    def test_warm_cache_returns_entity_types(self):
+        resp = _default_metadata_response(
+            subject_entity_types=["Q5"],
+            object_entity_types=["Q43229"],
+        )
+        oracle, _, _ = _make_oracle(response=resp)
+        oracle.consult("holds_role")
+        # Second call goes through _fetch / _row_to_metadata
+        meta = oracle.consult("holds_role")
+        assert meta.subject_entity_types == ["Q5"]
+        assert meta.object_entity_types == ["Q43229"]
+
+    def test_absent_entity_types_default_to_none(self):
+        # Cold-start LLM that doesn't return the fields → metadata has None
+        resp = _default_metadata_response()
+        oracle, _, _ = _make_oracle(response=resp)
+        meta = oracle.consult("holds_role")
+        assert meta.subject_entity_types is None
+        assert meta.object_entity_types is None
+
+    def test_null_entity_types_persist_as_null(self):
+        # Explicit None in LLM response → stored as NULL, returned as None
+        resp = _default_metadata_response(
+            subject_entity_types=None,
+            object_entity_types=None,
+        )
+        oracle, db, _ = _make_oracle(response=resp)
+        oracle.consult("holds_role")
+        row = db.execute(
+            "SELECT subject_entity_types, object_entity_types "
+            "FROM predicate_translation WHERE aedos_predicate='holds_role'"
+        ).fetchone()
+        assert row["subject_entity_types"] is None
+        assert row["object_entity_types"] is None
