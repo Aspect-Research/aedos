@@ -115,8 +115,19 @@ the codebase, and Phase 10.5 measurement should see them as decoupled.
 
 ## D47 per-case story on `derivation_corpus`
 
-Pre-D47 baseline: 18/50 = 36%. Post-D47: 19/50 = 38%. One additional
-case passing.
+Pre-D47 baseline: 18/50 = 36%. Post-D47 (official calibration run via
+`test_corpus_calibration`): 19/50 = 38%.
+
+**Run-to-run variance is non-trivial.** A separate diagnostic run with
+identical configuration produced 17/50 = 34% — a 4-percentage-point
+spread from the official run. The variance traces to non-determinism
+in the multi-LLM extraction + walker chain (Anthropic Haiku 4.5 +
+OpenRouter Qwen3-Next + Devstral) where small differences in tool-call
+output flow into different walker traversals. The headline "+2pp" is
+within the noise band; the honest statement is that derivation is in
+**~34-38%** post-D47, vs. ~36% pre-D47, and the lift D47 contributes
+is at most a 1-2 case improvement on entity-resolution-bottlenecked
+cases.
 
 The derivation corpus does exercise the full pipeline (extraction →
 walker → KB), so source text IS available to the normalizer. The lift
@@ -128,9 +139,18 @@ is bounded because:
 - The cases that DO involve bare ambiguous references mostly resolve
   via Wikipedia's clean-redirect pattern that pre-existing wbsearch
   rankings already handled adequately.
-- The specific D47 lift case is identified in the running case-by-case
-  analysis (see `derivation_d47_case_analysis.md` follow-up if Phase
-  10.5 needs the per-case detail).
+- Cases that the diagnostic run flagged as failing include the two
+  D47-flagship-shape cases (`der_disambiguation_001` "Obama holds_role
+  Senator" and `der_disambiguation_006` "Amazon is the world's largest
+  river"). These failed for downstream reasons (walker chain didn't
+  resolve to a verifying KB statement, KB returned no_match on the
+  resolved Q-id+predicate pair) — not because entity resolution
+  failed. D47 normalized the entities correctly; the walker / KB layer
+  couldn't carry the chain to a verdict. These are D5 / D16 territory.
+
+Phase 10.5 measurement should treat the derivation_corpus number as a
+range, not a point, and the dominant signal is the unchanged walker
+ceiling rather than D47's contribution.
 
 ## Audit-log evidence D47 is firing
 
