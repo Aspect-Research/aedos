@@ -164,22 +164,30 @@ class TestPricingReverification:
 
 class TestRunComparisonOffline:
     def test_extraction_run_with_fake_transport(self):
+        # Read the corpus count from the file rather than hardcoding it — the
+        # Phase E corpus cleanup pass (2026-05-23) shrank the corpus from 57
+        # to 54, and a hardcoded count would break the test every time we
+        # adjusted the corpus.
+        from tests.calibration.test_corpus_runner import _load_corpus
+        n = len(_load_corpus("extraction_corpus"))
         result = pec.run_comparison(
             "kimi-k2.6", "extraction_corpus",
             load_env=False, write=False, transport=_FakeTransport(),
         )
         assert result["corpus"] == "extraction_corpus"
         assert result["candidate"] == "kimi-k2.6"
-        assert result["total_cases"] == 57
-        assert result["passed"] + result["failed"] + result["runner_errors"] == 57
+        assert result["total_cases"] == n
+        assert result["passed"] + result["failed"] + result["runner_errors"] == n
         # extraction has no verdict → soundness counts are null, not 0
         assert result["false_verifieds"] is None
         assert result["abstentions_on_positive"] is None
-        assert len(result["per_case_outcomes"]) == 57
+        assert len(result["per_case_outcomes"]) == n
         assert {o["classification"] for o in result["per_case_outcomes"]} <= {
             "correct", "failed", "runner_error"}
 
     def test_write_emits_result_and_transcript_files(self, tmp_path, monkeypatch):
+        from tests.calibration.test_corpus_runner import _load_corpus
+        n = len(_load_corpus("extraction_corpus"))
         monkeypatch.setattr(pec, "_RESULTS_DIR", tmp_path)
         pec.run_comparison(
             "kimi-k2.6", "extraction_corpus",
@@ -189,7 +197,7 @@ class TestRunComparisonOffline:
         transcript_file = tmp_path / "kimi-k2.6__extraction_corpus.transcript.json"
         assert result_file.exists() and transcript_file.exists()
         on_disk = json.loads(result_file.read_text(encoding="utf-8"))
-        assert on_disk["total_cases"] == 57
+        assert on_disk["total_cases"] == n
 
     def test_disable_thinking_candidate_routes_with_reasoning_off(self, monkeypatch):
         # No real candidate currently has disable_thinking=True (DeepSeek V4
@@ -208,12 +216,119 @@ class TestRunComparisonOffline:
                            load_env=False, write=False, transport=transport)
         assert transport.seen_override["*"]["extra_body"] == {"reasoning": {"enabled": False}}
 
-    def test_thinking_enabled_candidate_has_no_extra_body(self):
-        # kimi-k2.6 has disable_thinking=False → no extra_body in the override.
+    def test_candidate_extra_body_propagates_without_disable_thinking(self):
+        # kimi-k2.6 carries candidate-level extra_body (provider.ignore=[WandB])
+        # after the Phase E3 diagnostic; disable_thinking is False. The harness
+        # must forward the candidate's extra_body even when disable_thinking is
+        # off — previously the extra_body slot was only set inside the
+        # disable_thinking branch.
         transport = _OverrideCapturingTransport()
         pec.run_comparison("kimi-k2.6", "extraction_corpus",
                            load_env=False, write=False, transport=transport)
+        eb = transport.seen_override["*"].get("extra_body")
+        assert eb == {"provider": {"ignore": ["WandB"]}}, eb
+
+    def test_candidate_without_extra_body_emits_none(self, monkeypatch):
+        # A candidate with neither extra_body nor disable_thinking → no
+        # extra_body in the override (covers the no-extra-body baseline).
+        monkeypatch.setitem(pec._CANDIDATES, "_plain_test", {
+            "model": "test/x", "price_in_per_m": 0.1, "price_out_per_m": 0.1,
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env_var": "OPENROUTER_API_KEY",
+            "disable_thinking": False,
+        })
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison("_plain_test", "extraction_corpus",
+                           load_env=False, write=False, transport=transport)
         assert "extra_body" not in transport.seen_override["*"]
+
+    def test_extra_body_and_disable_thinking_compose(self, monkeypatch):
+        # When a candidate has BOTH extra_body and disable_thinking, the merge
+        # keeps both keys (provider.* and reasoning.* don't collide).
+        monkeypatch.setitem(pec._CANDIDATES, "_compose_test", {
+            "model": "test/x", "price_in_per_m": 0.1, "price_out_per_m": 0.1,
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env_var": "OPENROUTER_API_KEY",
+            "disable_thinking": True,
+            "extra_body": {"provider": {"ignore": ["BadProv"]}},
+        })
+        transport = _OverrideCapturingTransport()
+        pec.run_comparison("_compose_test", "extraction_corpus",
+                           load_env=False, write=False, transport=transport)
+        eb = transport.seen_override["*"]["extra_body"]
+        assert eb == {
+            "provider": {"ignore": ["BadProv"]},
+            "reasoning": {"enabled": False},
+        }, eb
+
+    def test_progress_default_off_under_transport(self, capsys):
+        # Per-case progress lines go to stderr; transport runs (unit tests)
+        # default to no progress so the suite stays quiet. Operator-ask: see
+        # issues on the first call rather than at the end — the same default
+        # ON behavior triggers automatically when transport is None (live).
+        pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FakeTransport(),
+        )
+        captured = capsys.readouterr()
+        assert "[" not in captured.err  # no "[i/N]" progress lines
+
+    def test_progress_explicit_true_emits_per_case_stderr(self, capsys):
+        # Caller-forced progress: every case emits one stderr line tagged with
+        # the case_id, classification, and a cumulative cost field — operator
+        # ask is to surface issues + cost trajectory live, not at run end.
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FakeTransport(),
+            progress=True,
+        )
+        err = capsys.readouterr().err.splitlines()
+        # One stderr line per case
+        assert len(err) == result["total_cases"]
+        # First and last line shape: [i/N] case_id classification ...
+        first = err[0]
+        assert first.startswith("[ 1/")
+        assert "norm_001" in first
+        # Whatever the classification, the cost + total-elapsed fields anchor
+        # progress tracking and must be present on every line.
+        assert "cum=$" in first and "total_elapsed=" in first
+        # Last line is [N/N]
+        assert err[-1].startswith(f"[{result['total_cases']:>2d}/{result['total_cases']:>2d}]")
+
+    def test_abort_after_consecutive_errors_short_circuits(self, capsys):
+        # When the first N cases all error (e.g. upstream rate-limit on every
+        # call), the harness must abort rather than burn through the rest of
+        # the corpus. The aborted result still aggregates and writes; an
+        # `aborted_reason` field signals what happened.
+        result = pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FailingTransport(),
+            abort_after_consecutive_errors=3,
+            progress=True,
+        )
+        # 3 consecutive errors trigger the abort; outcomes list has exactly 3
+        # entries even though the corpus has 57 cases.
+        assert result["total_cases"] == 3
+        assert result["runner_errors"] == 3
+        assert "aborted_reason" in result
+        assert "3 consecutive" in result["aborted_reason"]
+        err_out = capsys.readouterr().err
+        assert "ABORTING:" in err_out
+
+    def test_progress_includes_error_class_tag_on_runner_error(self, capsys):
+        # When a case errors, the progress line is the visible signal the
+        # operator wants — it must carry the error class so a 503/RateLimit/
+        # tool-call failure surfaces immediately rather than at run end.
+        # Disable the consecutive-error abort here so the test exercises only
+        # the per-case progress format, not the abort behavior covered above.
+        pec.run_comparison(
+            "kimi-k2.6", "extraction_corpus",
+            load_env=False, write=False, transport=_FailingTransport(),
+            progress=True, abort_after_consecutive_errors=None,
+        )
+        err = capsys.readouterr().err.splitlines()
+        assert all("runner_error" in line for line in err)
+        assert all("err=RuntimeError" in line for line in err)
 
     def test_transport_run_skips_pricing_verification(self):
         # Pricing re-verification is a live-run guard; a transport run is free

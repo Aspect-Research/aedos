@@ -40,6 +40,11 @@ _RESULTS_DIR = _REPO_ROOT / "docs" / "phase_E" / "results"
 
 # Routing endpoint shared by the open-weight candidates.
 _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "OPENROUTER_API_KEY"}
+# Direct-provider endpoints — used by the closed-weight baseline candidates
+# (gpt-4.1-mini, claude-*-4.x) added late in Phase E to anchor the open-weight
+# numbers against the proprietary models Aedos shipped on at v0.15-rc.8.
+_OPENAI_DIRECT = {"base_url": "https://api.openai.com/v1", "api_key_env_var": "OPENAI_API_KEY"}
+_ANTHROPIC_DIRECT = {"base_url": None, "api_key_env_var": "ANTHROPIC_API_KEY"}
 
 # Candidate table — `model` IDs and pricing filled from OpenRouter's live
 # /models endpoint on 2026-05-19 (Phase E3 prep; see
@@ -85,13 +90,46 @@ _CANDIDATES: dict[str, dict] = {
                  "generalizes to the Devstral Small line. No `reasoning` toggle "
                  "exposed.",
     },
+    "qwen-3.5-35b-a3b": {
+        "model": "qwen/qwen3.5-35b-a3b",
+        "price_in_per_m": 0.139, "price_out_per_m": 1.0, **_OPENROUTER,
+        "disable_thinking": False,
+        "notes": "Previous-generation 35B-A3B MoE; substituted for the blocked "
+                 "qwen3.6-35b-a3b after Phase E3's post-F re-runs hit "
+                 "OpenRouter upstream rate limits across every healthy "
+                 "provider for the 3.6 variant on 2026-05-21. Probe "
+                 "succeeded via Parasail at 1.6s/call. Same MoE-A3B "
+                 "architecture as the original target; the BullshitBench "
+                 "abstention-behavior rationale carries over within the "
+                 "family. Exposes `reasoning`; left enabled.",
+    },
+    "qwen-3-next-80b-a3b-instruct": {
+        "model": "qwen/qwen3-next-80b-a3b-instruct",
+        "price_in_per_m": 0.09, "price_out_per_m": 1.1, **_OPENROUTER,
+        "disable_thinking": False,
+        "notes": "Qwen3 Next 80B A3B Instruct — newer MoE-A3B variant (80B "
+                 "total / 3B active), the recent-generation sibling Phase E "
+                 "ran as a substitute for the blocked qwen3.6-35b-a3b. Probe "
+                 "succeeded via DeepInfra at 1.1s/call. Bigger model class "
+                 "than the original target (80B vs 35B total), same active "
+                 "parameter footprint (3B). Pricing $0.09/$1.10 per M. "
+                 "Exposes `reasoning`; left enabled.",
+    },
     "qwen-3.6-35b-a3b": {
         "model": "qwen/qwen3.6-35b-a3b",
-        "price_in_per_m": 0.15, "price_out_per_m": 1.0, **_OPENROUTER,
+        "price_in_per_m": 0.149, "price_out_per_m": 1.0, **_OPENROUTER,
         "disable_thinking": False,
+        "extra_body": {"provider": {"ignore": ["AkashML", "Parasail"]}},
         "notes": "35B total / 3B active MoE — distinct from qwen3.6-27b (dense) "
                  "and qwen3.6-plus (API-only). Exposes `reasoning`; left enabled "
-                 "(no known structured-output bug).",
+                 "(no known structured-output bug). "
+                 "`extra_body.provider.ignore=['AkashML','Parasail']` excludes "
+                 "the two endpoints currently reporting OpenRouter status=-5 "
+                 "(deprecated/unhealthy) on 2026-05-21. The Phase E3 post-F "
+                 "extraction re-run before this exclusion hit 47/57=82% "
+                 "InternalServerError 503/502 from AkashML ('No healthy "
+                 "backends available'). Four healthy providers remain "
+                 "(DekaLLM, Ambient, AtlasCloud, WandB).",
     },
     "deepseek-v4-pro": {
         "model": "deepseek/deepseek-v4-pro",
@@ -117,13 +155,59 @@ _CANDIDATES: dict[str, dict] = {
                  "support. Likely a launch promotion; pricing is re-verified at "
                  "run time. Exposes `reasoning`; left enabled.",
     },
+    # Closed-weight baselines — added late in Phase E to anchor open-weight
+    # numbers against the proprietary models Aedos shipped on at v0.15-rc.8.
+    # These do NOT go through OpenRouter, so the `_reverify_pricing` check
+    # (which queries OpenRouter's /models endpoint) does not apply; each
+    # carries `skip_pricing_verify: True` to bypass it. Pricing fields encode
+    # the published rates at the time of these runs — they are NOT verified
+    # live and must be re-checked before any future production commit.
+    "gpt-4.1-mini": {
+        "model": "gpt-4.1-mini",
+        "price_in_per_m": 0.40, "price_out_per_m": 1.60, **_OPENAI_DIRECT,
+        "disable_thinking": False,
+        "skip_pricing_verify": True,
+        "notes": "OpenAI gpt-4.1-mini — the model shipped as Aedos v0.15's "
+                 "default substrate/extractor on rc.8 (per DEFAULT_MODEL_BY_PURPOSE "
+                 "in src/aedos/llm/client.py). Included as a baseline anchor; "
+                 "Phase E1's stated goal is migration off OpenAI. Pricing as of "
+                 "2026-05-23: $0.40/$1.60 per M (published OpenAI rates).",
+    },
+    "claude-haiku-4-5": {
+        "model": "claude-haiku-4-5",
+        "price_in_per_m": 1.00, "price_out_per_m": 5.00, **_ANTHROPIC_DIRECT,
+        "disable_thinking": False,
+        "skip_pricing_verify": True,
+        "notes": "Anthropic Claude Haiku 4.5 — Aedos v0.15's `chat` purpose "
+                 "model. Included as a baseline. Pricing $1.00/$5.00 per M "
+                 "(published Anthropic rates at 2026-05-23).",
+    },
+    "claude-sonnet-4-6": {
+        "model": "claude-sonnet-4-6",
+        "price_in_per_m": 3.00, "price_out_per_m": 15.00, **_ANTHROPIC_DIRECT,
+        "disable_thinking": False,
+        "skip_pricing_verify": True,
+        "notes": "Anthropic Claude Sonnet 4.6 — a tier above Haiku, mid-tier "
+                 "Claude. Included as a higher-capability baseline anchor. "
+                 "Pricing $3.00/$15.00 per M (published Anthropic rates at "
+                 "2026-05-23).",
+    },
     "kimi-k2.6": {
         "model": "moonshotai/kimi-k2.6",
         "price_in_per_m": 0.73, "price_out_per_m": 3.49, **_OPENROUTER,
         "disable_thinking": False,
+        "extra_body": {"provider": {"ignore": ["WandB"]}},
         "notes": "Paid instruct; no separate :free or thinking K2.6 variant on "
                  "OpenRouter (kimi-k2.5 and kimi-k2-thinking are different "
-                 "models). Exposes `reasoning`; left enabled.",
+                 "models). Exposes `reasoning`; left enabled. "
+                 "`extra_body.provider.ignore=['WandB']` pins OpenRouter away "
+                 "from the WandB provider — the canonical Kimi run hit a 42% "
+                 "(24/57) `no tool call in OpenAI-compatible response` rate, "
+                 "100% routed via WandB; a targeted rerun of those 24 case_ids "
+                 "with WandB excluded produced 0/24 structural errors. The "
+                 "model emits valid `{claims: [...]}` as `message.content` "
+                 "instead of `tool_calls` only when WandB serves the request. "
+                 "Documented in docs/phase_E/kimi_k2_6_wandb_provider_diagnostic.md.",
     },
 }
 
@@ -451,6 +535,8 @@ def run_comparison(
     transport: Optional[Any] = None,
     verify_pricing: bool = True,
     case_ids: Optional[Iterable[str]] = None,
+    progress: Optional[bool] = None,
+    abort_after_consecutive_errors: Optional[int] = 5,
 ) -> dict:
     """Run `candidate` against `corpus_name`; return the structured result and
     (by default) write it to `docs/phase_E/results/`.
@@ -487,8 +573,11 @@ def run_comparison(
 
     # Re-verify pricing before any spend (live runs only — transport runs are
     # free and offline). A changed price aborts the run as a surfaced finding.
+    # Closed-weight baselines route to direct providers (not OpenRouter); their
+    # pricing comes from candidate-config snapshots, not OpenRouter's /models
+    # endpoint. `skip_pricing_verify: True` opts them out of the check.
     pricing_check = None
-    if verify_pricing and transport is None:
+    if verify_pricing and transport is None and not cand.get("skip_pricing_verify"):
         pricing_check = _reverify_pricing(candidate, cand)
         if not pricing_check["ok"]:
             raise RuntimeError(
@@ -496,6 +585,9 @@ def run_comparison(
                 "_CANDIDATES and re-run, or pass verify_pricing=False to override."
                 % (candidate, pricing_check["message"])
             )
+    elif cand.get("skip_pricing_verify"):
+        pricing_check = {"ok": True, "message": "skipped (closed-weight baseline; "
+                         "pricing not OpenRouter-routed)"}
 
     from tests.calibration.test_corpus_runner import _RUNNERS, _load_corpus
     cases = _load_corpus(corpus_name)
@@ -512,18 +604,37 @@ def run_comparison(
         "base_url": cand["base_url"],
         "api_key_env_var": cand["api_key_env_var"],
     }
+    # `extra_body` composes two sources: candidate-level (e.g. OpenRouter
+    # `provider.ignore` to exclude a flaky provider — see the Kimi K2.6 WandB
+    # diagnostic) and the boolean `disable_thinking` shortcut. Both can be set;
+    # the merge keeps both keys when they don't collide (the reasoning toggle
+    # and provider routing live under different keys in extra_body).
+    extra_body = dict(cand.get("extra_body") or {})
     if cand.get("disable_thinking"):
-        purpose_cfg["extra_body"] = _DISABLE_THINKING_EXTRA_BODY
+        extra_body.update(_DISABLE_THINKING_EXTRA_BODY)
+    if extra_body:
+        purpose_cfg["extra_body"] = extra_body
     prev = os.environ.get("AEDOS_OVERRIDE_MODEL_BY_PURPOSE")
     os.environ["AEDOS_OVERRIDE_MODEL_BY_PURPOSE"] = json.dumps({"*": purpose_cfg})
 
+    # Per-case progress printing — defaults: live runs (transport=None) print
+    # to stderr so the final JSON to stdout stays clean; transport runs (unit
+    # tests) stay quiet unless explicitly enabled. Caller can override via the
+    # `progress` kwarg.
+    if progress is None:
+        progress = transport is None
+
     outcomes: list[dict] = []
     started = time.monotonic()
+    cum_cost = 0.0
+    n_cases = len(cases)
+    consecutive_errors = 0
+    aborted_reason: Optional[str] = None
     try:
         with _verdict_recorder() as recorded:
             harness = _ComparisonHarness(transport=transport)
             client = harness.client
-            for case in cases:
+            for idx, case in enumerate(cases, 1):
                 recorded.clear()
                 client.pop_call_records()
                 transcript_start = len(harness.transcript)
@@ -537,10 +648,53 @@ def run_comparison(
                 elapsed_ms = (time.monotonic() - case_started) * 1000
                 records = client.pop_call_records()
                 produced = recorded[-1] if recorded else None
-                outcomes.append(_build_outcome(
+                outcome = _build_outcome(
                     corpus_name, case, passed, produced, error, records, cand,
                     elapsed_ms, harness.transcript[transcript_start:],
-                ))
+                )
+                outcomes.append(outcome)
+                # Consecutive-error abort — catches "every call rate-limits
+                # upstream" / "model not deployed" / similar wholesale failure
+                # modes early so the rest of the corpus isn't spent on a model
+                # that can't serve. The threshold is N consecutive errors from
+                # the start of the slice. Per-corpus accuracy failures and
+                # transient mid-run errors don't trigger it; only a run that
+                # opens with N straight errors does.
+                if outcome["classification"] == "runner_error":
+                    consecutive_errors += 1
+                else:
+                    consecutive_errors = 0
+                if (abort_after_consecutive_errors is not None
+                        and consecutive_errors >= abort_after_consecutive_errors):
+                    aborted_reason = (
+                        "aborted after %d consecutive runner_errors at the "
+                        "start of the run" % consecutive_errors)
+                if progress:
+                    if outcome["cost_usd"] is not None:
+                        cum_cost += outcome["cost_usd"]
+                    cls = outcome["classification"]
+                    cost = outcome["cost_usd"]
+                    cost_str = ("$%.4f" % cost) if cost is not None else "$?    "
+                    elapsed_total_s = time.monotonic() - started
+                    err_tag = ""
+                    if error:
+                        # First "ClassName: message"-style chunk; truncated so a
+                        # long stack trace doesn't drown the progress line.
+                        err_tag = " err=%s" % (error.split(":", 1)[0][:40])
+                    line = (
+                        "[%2d/%2d] %-32s %-16s calls=%d in=%5d out=%5d %s "
+                        "elapsed=%5.1fs cum=$%.4f total_elapsed=%6.1fs%s"
+                        % (idx, n_cases, outcome["case_id"], cls,
+                           outcome["calls"], outcome["input_tokens"],
+                           outcome["output_tokens"], cost_str,
+                           elapsed_ms / 1000.0, cum_cost, elapsed_total_s,
+                           err_tag)
+                    )
+                    print(line, file=sys.stderr, flush=True)
+                if aborted_reason:
+                    if progress:
+                        print("ABORTING: " + aborted_reason, file=sys.stderr, flush=True)
+                    break
     finally:
         if prev is None:
             os.environ.pop("AEDOS_OVERRIDE_MODEL_BY_PURPOSE", None)
@@ -549,6 +703,8 @@ def run_comparison(
 
     result = _aggregate(candidate, cand, corpus_name, outcomes, time.monotonic() - started)
     result["pricing_verification"] = pricing_check
+    if aborted_reason:
+        result["aborted_reason"] = aborted_reason
     if write:
         _write_result(result, outcomes)
     return result

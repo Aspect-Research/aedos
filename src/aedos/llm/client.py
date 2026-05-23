@@ -56,8 +56,16 @@ _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "O
 # distinction is preserved in configuration.
 DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
     "chat":                             {"model": "claude-haiku-4-5", **_ANTHROPIC},
-    "extractor:user":                   {"model": "gpt-4.1-mini", **_OPENAI},
-    "extractor:assistant":              {"model": "gpt-4.1", **_OPENAI},
+    # Phase E5 (2026-05-23): extractor purposes migrated from gpt-4.1-mini/
+    # gpt-4.1 to claude-haiku-4-5 after Phase E3's prompt-engineering pass
+    # produced 53/53 = 100% on the cleaned extraction corpus with Haiku +
+    # the v5 prompt at src/aedos/layer1_extraction/extractor.py:_SYSTEM_PROMPT.
+    # gpt-4.1-mini on the same corpus baseline-prompted at 36/57 = 63.2%
+    # (see docs/phase_E_report.md). Substrate/walker/python_verifier purposes
+    # stay on gpt-4.1-mini pending a Phase E equivalent prompt-engineering
+    # pass on those components — Phase E3 only validated extraction.
+    "extractor:user":                   {"model": "claude-haiku-4-5", **_ANTHROPIC},
+    "extractor:assistant":              {"model": "claude-haiku-4-5", **_ANTHROPIC},
     "substrate:predicate_translation":  {"model": "gpt-4.1-mini", **_OPENAI},
     "substrate:subsumption":            {"model": "gpt-4.1-mini", **_OPENAI},
     "substrate:predicate_distribution": {"model": "gpt-4.1-mini", **_OPENAI},

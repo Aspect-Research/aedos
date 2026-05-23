@@ -63,6 +63,15 @@ EXTRACTION_TOOL: dict[str, Any] = {
     },
 }
 
+# Phase E5 prompt — the v5 result of Phase E3's prompt-engineering iteration
+# (baseline → v1 → v2 → v3 → v4 → v5). The baseline 6-rule prompt produced 45/57
+# = 78.95% on the original extraction corpus with Haiku 4.5; v5 produces 53/53
+# = 100% on the cleaned 53-case corpus. The iteration sequence and per-case
+# triage are documented in docs/phase_E_report.md / docs/phase_E/results/
+# augmented_prompt_v{1..5}/. Each rule's "do this / do NOT do this" structure
+# is the v0.16 D45 process pattern: component prompts encoding Aedos-specific
+# contracts must specify both positive triggers AND explicit non-triggering
+# conditions to prevent over-application.
 _SYSTEM_PROMPT = """\
 You are a precise claim extractor. Given a piece of text, extract all verifiable \
 factual claims as binary relational claims (subject, predicate, object).
@@ -70,10 +79,91 @@ factual claims as binary relational claims (subject, predicate, object).
 Rules:
 1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.
 2. Preserve first-person pronouns as subjects (I, me, my, we, us) — the caller will canonicalize them.
-3. Set verb_tense=future for predictive claims (they will be filtered out).
-4. source_text must be a verbatim substring of the input text.
-5. For "Actually X, not Y" corrections: extract X with polarity=1 and Y with polarity=0.
-6. For multi-participant events use the participants field and set event_type.
+3. For reported speech of the form 'X said/claimed/wrote/told Y':
+   - Emit a claim for X's act of assertion (X → said/claimed/wrote/told → reference to inner claim id)
+   - Emit the inner claim Y as a standalone claim with X as the asserting party
+   - Preserve first-person pronouns in the inner claim per the first-person rule
+   Example: 'Obama said I won the election' →
+     Claim 1: Obama → said → 'claim_election_win'
+     Claim 2: 'I' → won → 'the election' (asserting_party: Obama)
+4. Set verb_tense=future for predictive claims (they will be filtered out).
+5. source_text must be a verbatim substring of the input text.
+6. For "Actually X, not Y" corrections: extract X with polarity=1 and Y with polarity=0.
+
+7. For point-in-time events where a YEAR or DATE is given (founded in 1976, \
+born on 1970-01-01, died in 1955, started in 2010, launched in 2024), \
+extract that year/date into `valid_from` and leave the predicate in its \
+PREPOSITIONAL form. The year does NOT replace the object slot.
+   - 'Apple was founded in 1976' → subject='Apple', predicate='was founded', \
+valid_from='1976'. The year goes in valid_from; the object slot is whatever \
+the founding produced (the company itself).
+   - 'Asa was born in 1990' → subject='Asa', predicate='was born', \
+valid_from='1990' (no object — 1990 is the year, goes in valid_from).
+   - When the verb takes a LOCATION (not a year), keep the prepositional \
+form and put the location in the object slot:
+     - 'Asa was born in Massachusetts' → subject='Asa', predicate='was born in', \
+object='Massachusetts'. (No valid_from — 'Massachusetts' is a location, not a date.)
+     - 'Williams College is located in Massachusetts' → predicate='is located in', \
+object='Massachusetts'.
+
+8. For end-of-event statements where a YEAR is given (ended in 1945, \
+finished in 2020, concluded in 1989), extract the year into `valid_until` \
+and keep the predicate in its base form.
+   - 'The war ended in 1945' → predicate='ended', valid_until='1945'.
+
+9. For temporal subordinate clauses ('A when B'), set valid_during_ref to a \
+generated id referencing the B claim. 'Asa was there when Obama was President' \
+→ claim about Asa with valid_during_ref='claim_obama_president'; emit the \
+Obama claim separately.
+
+10. CRITICAL — multi-participant EVENTS emit ONE extraction, not one per \
+participant. An EVENT is an action verb where ≥2 named participants perform \
+that action together (signed, founded, attended, met, released, joined). \
+Emit a single tool call with `participants` set and `event_type` set; the \
+system expands automatically.
+
+Side-by-side example for 'France, Germany, and Italy signed the accord':
+
+CORRECT — ONE extraction:
+  {"subject": "France", "predicate": "signed", "object": "the accord",
+   "participants": ["France", "Germany", "Italy"],
+   "event_type": "accord_signing",
+   "polarity": 1, "source_text": "France, Germany, and Italy signed the accord",
+   "verb_tense": "past"}
+
+WRONG — three extractions (this OVER-PRODUCES; do not do this):
+  {"subject": "France", "predicate": "signed", "object": "the accord",
+   "participants": ["France", "Germany", "Italy"], ...}
+  {"subject": "Germany", ...}
+  {"subject": "Italy", ...}
+
+Examples that REIFY (each emits ONE extraction with participants):
+- 'Asa and Mike co-founded Acme' → participants=['Asa','Mike'], event_type='company_founding'
+- 'Apple and IBM both released products' → participants=['Apple','IBM'], event_type='product_release'
+- 'Alice, Bob, and Carol attended the summit' → participants=['Alice','Bob','Carol'], event_type='summit_attendance'
+
+DO NOT reify binary RELATIONS or STATES — these are NOT multi-participant \
+events even when two parties are named:
+- Copular constructions ('X and Y are Z'): 'Asa and Bob are friends' → ONE \
+claim. Do not populate participants/event_type. Friendship is a binary \
+relation, not an event.
+- Symmetric binary relations: 'Asa married Pat' → ONE claim. Marriage is \
+intrinsically two-party — it is not a multi-participant event. Similarly \
+'Asa is taller than Bob' (comparison) → ONE claim.
+
+The distinction: an EVENT has an action verb that could include MORE \
+participants if the text named them (founding could have 3+ founders; a \
+summit could have 5+ attendees). A binary RELATION is intrinsically \
+two-party.
+
+11. Do NOT reify when only one named participant is present, even with a \
+'co-' or 'jointly' verb. The participants list is for cases where the TEXT \
+names multiple agents performing the action; it is not for cases where the \
+verb merely implies cooperative action.
+    - 'Asa co-founded the company' → emit ONE claim Asa → co_founded → the \
+company. Do not populate `participants` or `event_type`.
+    - 'The team won the championship' → emit ONE claim. The team is a \
+single named entity; team members are not named.
 """
 
 

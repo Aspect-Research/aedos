@@ -248,9 +248,20 @@ operator narrative.
 py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "extraction_corpus"
 ```
 
-**Expected runtime:** 10-30 minutes (LLM calls for 57 cases).
+**Expected runtime:** 10-30 minutes (LLM calls for 53 cases).
 
-**Acceptance threshold:** ≥ 90%.
+**Acceptance threshold:** ≥ 90% (against the cleaned 53-case corpus).
+
+**Corpus note.** Phase E3's per-case extraction triage (2026-05-23) removed 4
+unscoreable cases from the original 57-case corpus and modified 1 input
+text; the original 57-case version is preserved at
+`tests/calibration/extraction_corpus_v0.jsonl` for historical reference.
+The cleanup rationale and the v0.16 work items the removed cases imply are
+documented in `docs/v0.16_planning.md` D44. Phase E's Haiku 4.5 + v5 prompt
+configuration achieved 53/53 = 100% on the cleaned corpus, so the ≥ 90%
+threshold expects substantial headroom; if Phase 10.5 sees < 90% the gap
+is unlikely to be the extractor and likely the LLM-routed substrate or
+runtime conditions.
 
 ### Phase 2 — Predicate metadata corpus
 
