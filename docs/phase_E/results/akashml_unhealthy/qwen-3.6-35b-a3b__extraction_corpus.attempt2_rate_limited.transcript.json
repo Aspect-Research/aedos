@@ -1,0 +1,971 @@
+[
+  {
+    "case_id": "norm_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is employed by Google",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was employed by Google",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa works at Google",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama served as President",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Curie was awarded the Nobel Prize",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Einstein won the prize",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is located in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa resides in Williamstown",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is part of the research team",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France belongs to NATO",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa co-founded the company",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa wrote the paper",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa and Mike co-founded Acme",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Alice Bob and Carol attended the summit",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa and Bob are friends",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The deal was signed by France and Germany",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa married Pat",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The group met in Paris",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Apple and IBM both released products",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "all decomposed claims share reified_event_id",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is taller than Bob",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France Germany and Italy signed the accord",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama was President from 2008 to 2016",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama was President",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa will be President",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was there when Obama was President",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Apple was founded in 1976",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The war ended in 1945",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France joined the EU in 1958",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is currently employed at Google",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The policy was in effect from 2010 to 2020",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "He was there when the wall fell",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa lives in Boston since 2018",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The treaty will expire in 2030",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "She served as Minister for three years",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama was president when Osama was killed",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa works at Google",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The GDP of France is 3 trillion",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "She said he was the founder",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "We found in our study that aspirin reduces fever",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "My alma mater is Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "He said I am the president",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama said I won the election",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama is the 44th president",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I have been working at Google since 2020",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "me and Alice went to MIT",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The company hired me",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa wrote our paper on climate",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'qwen/qwen3.6-35b-a3b is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Ambient', 'is_byok': False}}, 'user_id': 'user_3C1IqTPAjTOWIaTeflyKQOOrFFU'}",
+        "raw_response": null
+      }
+    ]
+  }
+]

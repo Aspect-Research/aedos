@@ -1,0 +1,1852 @@
+[
+  {
+    "case_id": "pred_ua_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"prefers\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": 1,
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "reason": "A preference is inherently subjective \u2014 only the asserting party can authoritatively state what they prefer. It is multi-valued because a person can prefer many things, and it cannot be resolved from a knowledge base or computed programmatically."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"believes\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "user_subject_required": 1,
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "reason": "A belief is a subjective mental state; only the subject can authoritatively assert what they believe, making this user-authoritative. The object is a proposition (the content believed), and a person can hold multiple distinct beliefs, so the predicate is multi-valued."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"wants\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'wants' expresses a subjective desire or preference of the subject toward an object. Only the subject can authoritatively assert what they want, making this user-authoritative. It is inherently multi-valued (a person can want many things) and cannot be resolved against a knowledge base since desires are private mental states.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"intends\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "\"Intends\" expresses a propositional attitude about a subject's mental state toward a future action or outcome. Intentions are inherently internal and unverifiable by external sources \u2014 even the subject's own assertion could be insincere, and third-party claims about intention are speculative. No KB property reliably captures this, and it is not computable, so abstain is appropriate.",
+          "routing_hint": "abstain",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"feels\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'feels' relates a subject to an emotional state or sensation (e.g., 'feels pain', 'feels joy'), which is best represented as an entity. It is inherently subjective\u2014only the experiencing subject can authoritatively report their own feelings\u2014so user_authoritative routing applies. It is multi-valued since a person can experience multiple emotions or sensations simultaneously.",
+          "routing_hint": "user_authoritative",
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"thinks\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "\"Thinks\" expresses a subject's internal mental state about a proposition. Only the subject can authoritatively attest to what they think, making this user-authoritative. The object is a nested claim (proposition) that the subject holds to be true.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"dislikes\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'dislikes' expresses a subjective preference or aversion held by the subject toward the object. Only the subject can authoritatively assert their own dislikes, making this user-authoritative. It is multi-valued since a person can dislike many entities.",
+          "routing_hint": "user_authoritative",
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"remembers\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "\"Remembers\" describes a subjective cognitive act of recalling a past event or fact. The asserting party is the sole authoritative source about what they remember, making this user-authoritative. The object is best modeled as a proposition (the content being recalled) rather than a bare entity.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"fears\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Fear is a subjective psychological state \u2014 only the subject can authoritatively assert what they fear. It is not verifiable via a knowledge base or deterministic computation, and a subject can fear multiple things.",
+          "routing_hint": "user_authoritative",
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"hopes\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "'Hopes' expresses a subjective desire or expectation about a future state of affairs. Only the subject themselves can authoritatively report what they hope for, making this user-authoritative and not KB-resolvable.",
+          "routing_hint": "user_authoritative",
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"experienced\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'experienced' is too broad and vague to map to any single Wikidata property \u2014 experiences range from life events to historical events to sensations, each covered by different KB properties. No deterministic computation applies, and it is not a subjective preference, so abstain is the safest routing.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"rates\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "distinct_slots": null,
+          "kb_namespace": null,
+          "kb_property": null,
+          "object_type": "quantity",
+          "reason": "The predicate 'rates' captures a subjective rating score assigned by a person or entity (e.g., 'John rates 8/10'). Ratings are inherently personal evaluations, making the asserting party authoritative about their own opinion. This is not resolvable via a knowledge base since ratings are not objective facts, and it is not reducible to computation.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"enjoys\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"Enjoys\" expresses a subjective preference or personal liking. Only the subject themselves can authoritatively claim what they enjoy, making this inherently user-authoritative. It is not verifiable via a knowledge base or computation.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"recommends\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'recommends' expresses a subjective endorsement \u2014 the asserting party is the sole authority on what they recommend. It is inherently opinion-based and cannot be verified against a knowledge base. A subject can recommend multiple objects, so it is multi-valued.",
+          "routing_hint": "user_authoritative",
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"claims\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "The 'claims' predicate asserts that a subject makes a claim (a nested proposition). Whether someone claims something is determined by their own assertion, making the subject the authoritative source \u2014 similar to 'believes' or 'prefers'. A subject can hold many claims, so it is multi-valued.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_016",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"estimates\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "The predicate 'estimates' expresses a subject's personal assessment or approximation of something, typically a nested claim (e.g., 'analyst estimates that revenue will be $5M'). The asserting party is authoritative for their own estimate, making this user-authoritative. It does not map cleanly to a Wikidata property, and is inherently subjective rather than factual.",
+          "routing_hint": "user_authoritative",
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_017",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"ranks\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "The predicate 'ranks' is highly ambiguous: it could mean a subject holds a particular ordinal position (e.g., 'X ranks 3rd'), or a subject assigns a rank to something. There is no single Wikidata property that covers the general notion of ranking across all domains (competitive sports, institutional hierarchies, subjective lists, etc.), and the source of truth varies wildly by context. With no clear, authoritative KB mapping and the inherent context-dependence, the conservative choice is abstain.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_018",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"prioritizes\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"prioritizes\" expresses a subjective preference about what a subject gives precedence or importance to. Only the asserting party is the authoritative source of what they prioritize; it cannot be objectively verified via a KB or computation.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_019",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"approves_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "This is a subjective stance: only the subject can authoritatively say whether they approve of something, making it user_authoritative. It is multi-valued because a subject can approve of many different entities. The subject and object should be distinct to avoid trivial self-approval.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ua_020",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"disagrees_with\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'disagrees_with' expresses a subjective stance \u2014 only the subject can authoritatively claim they disagree with someone or something. This is not fact-checkable against a KB; it is an opinion or attitude held by the subject, making user_authoritative the correct routing.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 1
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_greater_than\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "\"is_greater_than\" is a deterministic arithmetic comparison predicate: given two quantities, whether the subject exceeds the object can be verified by simple computation, making it suitable for python routing.",
+          "routing_hint": "python",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_less_than\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "is_less_than is a comparison predicate between two quantities that can be resolved by deterministic arithmetic evaluation (checking whether subject < object).",
+          "routing_hint": "python",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"equals\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "\"equals\" is a deterministic comparison predicate asserting that the subject value (e.g., an expression or quantity) is numerically or logically identical to the object. This is purely computational and can be resolved via deterministic evaluation (arithmetic or symbolic comparison), so it routes to python. It is single-valued because a given subject can equal at most one distinct value.",
+          "routing_hint": "python",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_divisible_by\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "is_divisible_by is a purely mathematical relationship: whether a subject number divides evenly by an object number. This is verifiable via deterministic arithmetic (modulo operation), making it python-routable. It is multi-valued since a single number can be divisible by many divisors (e.g., 12 is divisible by 2, 3, 4, 6). The subject is not an asserting party.",
+          "routing_hint": "python",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_before\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "is_before is a generic temporal ordering relation with no direct Wikidata property mapping; temporal precedence is typically inferred from date attributes rather than stored as a direct claim, making it neither cleanly KB-resolvable nor always deterministically computable without additional context about which temporal attribute is being compared.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_after\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "time",
+          "reason": "is_after is a temporal ordering relation comparing two time points; given two dates, whether one is after the other is deterministically computable, making it python-routable. There is no direct Wikidata property for general temporal comparison (P155/P156 are for direct succession, not ordering), so kb_resolvable does not apply.",
+          "routing_hint": "python",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_length_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "The predicate describes a physical length measurement (e.g., of a river, road, or object), which is a numeric value with a unit. It maps to Wikidata property P2043 (length), a well-established property used for spatial/dimensional length of entities.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_sum\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "The predicate 'has_sum' refers to the arithmetic sum of a set of numbers or mathematical expression, which is deterministically computable. It is functional (a given input has exactly one sum) and not a matter of opinion or KB lookup.",
+          "routing_hint": "python",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_multiple_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "is_multiple_of is a mathematical divisibility relationship (subject % object == 0) that can be verified by deterministic arithmetic computation, with no need for external knowledge-base lookup.",
+          "routing_hint": "python",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"duration_is\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "\"duration_is\" maps to Wikidata P2047 (duration), which records the length/duration of creative works, events, and processes as a quantity with a temporal unit. Duration is factual and verifiable from authoritative sources.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_similar_to\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Similarity is inherently subjective and context-dependent \u2014 there is no authoritative KB property for general similarity, it is not user-authoritative (not a personal stance), and it is not reducible to deterministic computation. Abstain is the only defensible routing.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_count\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "The predicate 'has_count' is too generic to map to a single Wikidata property\u2014counts depend entirely on context (population, members, items, etc.) and there is no universal P-number. It is not user-authoritative nor deterministically computable without additional specification, so it must abstain.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_between\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity_list",
+          "reason": "The predicate 'is_between' asserts that a subject lies between two entities (e.g., a city between two countries, a period between two eras). There is no direct Wikidata property for generic 'betweenness'; it is context-dependent (spatial, temporal, ordinal) and not purely computational in the general case. The object is a list of two bounding entities.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_prime\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "reason": "is_prime is a mathematical property asserting whether a number is prime. The object represents a truth-valued claim (true/false), best modeled as a proposition. Primality is deterministically computable, so the python routing hint is appropriate. A number is either prime or not, making it single-valued.",
+          "routing_hint": "python",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_py_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"chronologically_precedes\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": "0",
+          "routing_hint": "abstain",
+          "single_valued": "0",
+          "distinct_slots": [
+            "subject",
+            "object"
+          ],
+          "kb_namespace": "null",
+          "kb_property": "null",
+          "slot_to_qualifier": "null",
+          "reason": "\"chronologically_precedes\" expresses a temporal ordering between two entities or events, but there is no single Wikidata property that directly encodes this relation. Verifying it would require retrieving and comparing dates from multiple properties (e.g., start_time, date_of_birth) across two different items, which goes beyond straightforward KB resolution. Since it is neither user-authoritative nor deterministically computable without external data, abstain is the appropriate routing."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"holds_role\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "holds_role maps directly to Wikidata property P39 (position held), which records positions/roles an entity holds. It is multi-valued since a person can hold multiple roles simultaneously (e.g., CEO and board member), and is an objective fact rather than a user-subjective claim.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"born_in\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"born_in\" refers to the place of birth, which maps directly to Wikidata property P19. A person can only be born in one place (single-valued), and the object is a location entity. It is a factual, verifiable claim resolvable from a knowledge base.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"died_in\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "died_in refers to the location of a person's death, which is a factual entity (a place) that maps directly to Wikidata property P20 (place of death). It is functional because a person has at most one place of death.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_nationality\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Nationality is an objective fact about a person that maps directly to Wikidata property P27 (country of citizenship). A person can hold multiple nationalities (dual/multiple citizenship), so it is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"educated_at\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'educated_at' refers to the educational institution(s) a person attended. It maps directly to Wikidata property P69 ('educated at'). It is multi-valued because a person can attend multiple institutions over their lifetime (e.g., undergraduate and graduate schools). The object is a named entity (the institution), not a quantity or proposition, and the claim is factual rather than user-authoritative.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"employed_by\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'employed_by' denotes a factual employment relationship between a person (subject) and an organization (object). This maps directly to Wikidata property P108 ('employer'). It is multi-valued since a person can hold employment with multiple organizations over time or even simultaneously.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"located_in\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "A subject (place or entity) is located in an object (place/territory). The predicate maps to Wikidata property P131 (located in the administrative territorial entity), which is a well-established geographic relation. Single-valued is set to 0 because a place can be located in multiple overlapping or hierarchical entities (e.g., a city located in both a state and a country, or on a terrain feature).",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"part_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": "0",
+          "routing_hint": "kb_resolvable",
+          "single_valued": "0",
+          "kb_namespace": "wikidata",
+          "kb_property": "P361",
+          "distinct_slots": [
+            "subject",
+            "object"
+          ],
+          "slot_to_qualifier": "null",
+          "reason": "\"part_of\" expresses a meronymic or compositional relationship where the subject is a constituent, sub-unit, or member of the object entity. This maps directly to Wikidata property P361 (\"part of\"). It is multi-valued because an entity can be part of more than one whole (e.g., a person in multiple organizations, a region claimed by overlapping jurisdictions). Subject and object must differ to avoid trivial self-membership."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"instance_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"instance_of\" directly maps to Wikidata property P31, a core ontological property classifying entities by type. An entity can be an instance of multiple classes (e.g., a person is both 'human' and 'Wikidata item'), so it is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_population\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "The predicate relates a geographic entity to its population count, a numeric quantity. This maps directly to Wikidata property P1082 (population). It is multi-valued because a place can have multiple population figures at different points in time (e.g., census years), so single_valued=0. The 'point in time' qualifier (P585) commonly accompanies population values.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_capital\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Maps directly to Wikidata property P35 (capital). A country or administrative entity has at most one primary capital, making it functional. The subject (country/territory) and object (city) must be distinct entities.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_official_language\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "has_official_language maps directly to Wikidata property P37 (official language), which links a jurisdiction to its official language(s). Countries like Canada and India have multiple official languages, so this is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"received_award\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "'received_award' maps directly to Wikidata property P166 (award received). A subject can receive multiple distinct awards over time, so it is multi-valued. The subject is not required to be the asserting party \u2014 awards are objective public facts, not subjective preferences.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"authored\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'authored' links a person to a creative work they wrote. The closest Wikidata forward-direction property is P800 (notable work), which maps a person to their notable authored works. This is a multi-valued, factual relationship resolvable via a knowledge base.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"founded\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"founded\" maps inversely to Wikidata P112 (founded by): subject is the founder, object is the organization. A person or group can found multiple organizations, so this is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_016",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_parent\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'has_parent' refers to a verifiable familial relationship, but Wikidata lacks a single unified 'parent' property \u2014 it splits parentage into P22 (father) and P25 (mother). Since no single Wikidata property cleanly maps to the general 'has_parent' predicate, and the instructions require confidence in a specific property mapping for kb_resolvable, the safest routing is abstain. A subject can have multiple parents (e.g., mother and father), so the predicate is multi-valued.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_017",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_spouse\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": "0",
+          "routing_hint": "kb_resolvable",
+          "single_valued": "0",
+          "kb_namespace": "wikidata",
+          "kb_property": "P26",
+          "distinct_slots": [
+            "subject",
+            "object"
+          ],
+          "slot_to_qualifier": "null",
+          "reason": "Maps directly to Wikidata property P26 (spouse), which is a well-established relationship property. It is multi-valued because a person can have multiple spouses over time (through remarriage) or concurrently in certain legal systems, so single_valued=0."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_018",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"member_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": 0,
+          "routing_hint": "kb_resolvable",
+          "kb_namespace": "wikidata",
+          "kb_property": "P463",
+          "single_valued": 0,
+          "reason": "member_of is a well-established Wikidata property (P463) indicating that a subject belongs to an organization, group, or collective. It is multi-valued since an entity can hold membership in multiple groups simultaneously."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_019",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_area\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "has_area maps to Wikidata property P2046 (area), which is a well-established numeric property for geographic and other entities. Area is a quantity with units (e.g. km\u00b2). Multiple area values may exist for a single subject (e.g. total area vs. land area), so it is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_020",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_height\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "Height is a measurable physical quantity (numeric value with a unit such as meters). It maps to Wikidata property P2048 (height), which is widely used for persons, buildings, mountains, etc. A subject typically has at most one canonical height value, so the predicate is single-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_021",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_headquarters\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"has_headquarters\" maps directly to Wikidata property P159 (headquarters location), which stores the location where an organization is headquartered. It is multi-valued because organizations may have multiple headquarters (e.g., co-headquarters or regional HQs).",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_022",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"graduated_from\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "graduated_from indicates the educational institution a person completed a degree at. This maps to Wikidata property P69 (educated at), which is the standard property for recording institutional affiliations including graduation. A person can graduate from multiple institutions (e.g., bachelor's and PhD at different universities), so it is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_023",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"affiliated_with\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": 0,
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "reason": "affiliated_with maps to Wikidata property P1416 (affiliation), which links a person or organization to an affiliated institution. It is multi-valued because an entity can be affiliated with multiple organizations simultaneously."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_024",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_currency\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Maps directly to Wikidata property P38 (currency). A subject (typically a country) can have multiple official currencies (e.g., Zimbabwe, Ecuador), so it is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_025",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"successor_of\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "X successor_of Y means X succeeds Y, mapping directly to Wikidata property P155 (succeeds). A subject typically has at most one direct predecessor in a succession chain, so this is single-valued. The subject and object must be distinct \u2014 nothing can be its own successor.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_026",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_isbn\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "has_isbn relates a publication to its ISBN identifier, which maps to Wikidata properties P212 (ISBN-13) and P957 (ISBN-10). A single work can have multiple ISBNs across editions and formats, so it is multi-valued.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_027",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"co_founded\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "A person can co-found multiple organizations, so multi-valued. The predicate is factually verifiable via Wikidata P112 (founded by), though the lookup direction is inverted: 'X co-founded Y' corresponds to Y having X in its P112 values. The 'co-' nuance (multiple founders) is not separately encoded in Wikidata, but the founder relation itself is.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_028",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_ceo\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Maps to Wikidata property P169 'chief executive officer', linking an organization (subject) to a person (object). Multi-valued because companies can have multiple CEOs over time and occasionally co-CEOs, so setting single_valued=0 to avoid false contradictions.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_029",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_age\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "Age is a derived quantity computed from a person's date of birth and the current date. It is not stored as a stable KB property (since it changes continuously), making it best routed to deterministic computation (python). A person has at most one true age at any given time, so it is single-valued.",
+          "routing_hint": "python",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_kb_030",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"place_of_birth\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "A person has exactly one place of birth, making it a functional predicate. It maps directly to Wikidata property P19, a well-established and widely-used property for recording the birthplace of a person.",
+          "routing_hint": "kb_resolvable",
+          "single_valued": 1,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"metaphorically_represents\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "user_subject_required": 0,
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "reason": "Metaphorical representation is inherently interpretive and culturally/contextually dependent\u2014there is no single authoritative source for what something metaphorically represents, and it does not map to a well-defined Wikidata property. A symbol can metaphorically represent many different concepts, so the predicate is multi-valued."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"symbolizes\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Symbolism is culturally contingent, context-dependent, and lacks a universally accepted mapping; the same entity can symbolize different things across cultures and traditions, making it unverifiable by any single authoritative source. There is no clean, general Wikidata property for 'symbolizes', and it is neither deterministic nor user-authoritative.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"could_be\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "proposition",
+          "user_subject_required": 1,
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "reason": "\"could_be\" is a modal/epistemic predicate expressing possibility rather than a factual claim; it reflects the asserter's subjective assessment of potential, which cannot be objectively verified against any knowledge base."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"might_have\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"might_have\" is a modal/epistemic predicate expressing mere possibility (e.g., \"X might have condition Y\"), which is inherently speculative and cannot be authoritatively verified against a knowledge base or by computation. It is not user-authoritative either, as it does not express a personal preference or belief, but rather an uncertain possibility claim.",
+          "routing_hint": "abstain",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"caused\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Causal attribution ('X caused Y') is philosophically and scientifically contested; the same effect may have multiple contributing causes, and causal claims are often matters of interpretation rather than established fact. No single authoritative Wikidata property cleanly captures this general predicate, so abstaining is appropriate.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"influenced\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "'Influenced' denotes an intellectual, artistic, or philosophical influence relationship. While Wikidata has P737 (influenced by) and P738 (influences), influence is an interpretive scholarly claim \u2014 whether one figure genuinely influenced another is frequently debated among experts and cannot be objectively resolved from a knowledge base. Choosing abstain per the conservative routing guideline.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_better_than\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "\"is_better_than\" expresses a subjective comparative judgment (e.g., X is better than Y). There is no objective or authoritative source for such claims \u2014 they depend on criteria, context, and personal evaluation. The predicate cannot be resolved to a Wikidata property, and the subject is the entity being compared, not the asserting party, so user_authoritative routing does not apply.",
+          "routing_hint": "abstain",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"deserves\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'deserves' expresses a subjective value judgment about what a subject is worthy of (e.g., 'Person X deserves award Y'). There is no authoritative knowledge-base property or deterministic computation for worthiness claims, and the asserting party is not inherently the ground truth for such judgments about others, so it cannot be objectively verified.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"means\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'means' asserts that a term or concept X has the meaning Y. Meaning is inherently context-dependent and contested \u2014 polysemy is common, dictionaries disagree, and semantic interpretation varies across communities. There is no single authoritative KB property for general definitional meaning, and it is not deterministically computable, so abstain is the safest routing choice.",
+          "routing_hint": "abstain",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_abstain_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_inspired_by\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "is_inspired_by maps directly to Wikidata property P941 (\"inspired by\"), which links a creative work, movement, or person to the entity that inspired it. It is multi-valued since a subject can draw inspiration from many sources.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ambig_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"rating\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "\"Rating\" represents a subjective score or evaluation assigned to an entity (e.g., a movie, product, restaurant). Ratings are inherently perspectival \u2014 the asserting party is the authoritative source for their own rating, making this user_authoritative. The predicate is multi-valued since the same subject can receive different ratings from different sources, so no single-valued contradiction logic applies.",
+          "routing_hint": "user_authoritative",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ambig_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"is_popular_in\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "Popularity is inherently subjective, context-dependent, and varies over time and by measure (sales, cultural impact, etc.). There is no standard Wikidata property for 'popular in', and it cannot be resolved deterministically. The claim is a general assertion rather than a personal preference, so no authoritative source exists.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ambig_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"succeeded\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'succeeded' indicates that the subject entity followed/took over from the object entity (e.g., a person succeeding another in office). This maps directly to Wikidata property P155 (\"follows\" / \"succeeded by\"), which is used for sequential succession in roles, offices, titles, and other ordered contexts. It is multi-valued because a subject can succeed different entities in different contexts.",
+          "routing_hint": "kb_resolvable",
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ambig_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"has_score\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "quantity",
+          "reason": "\"has_score\" is too generic to map to a single Wikidata property \u2014 scores apply across sports, exams, ratings, reviews, etc., each with distinct KB properties. No deterministic computation applies, and the asserting party isn't authoritative, so abstain is the safest routing.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pred_ambig_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_translation",
+        "request": {
+          "system": "You are a knowledge-representation expert helping to build a claim-verification system.\nGiven an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:\n\nobject_type options:\n  entity       \u2014 the object is a named entity (person, place, org, concept)\n  quantity     \u2014 the object is a number with optional unit\n  time         \u2014 the object is a date, time, or duration\n  proposition  \u2014 the object is a nested claim\n  entity_list  \u2014 the object is a list of entities\n\nrouting_hint options:\n  user_authoritative \u2014 the asserting party is the ground truth (preference, belief, opinion)\n  python             \u2014 reducible to deterministic computation (arithmetic, date math)\n  kb_resolvable      \u2014 maps to a structured knowledge base property (Wikidata)\n  abstain            \u2014 no authoritative source of belief; cannot be verified\n\nWhen in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are\nconfident the predicate maps to a real Wikidata property.\n\nsingle_valued: set 1 only for functional predicates where a subject has at most one\ntrue object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates\n(position_held, occupation, award_received, member_of). When unsure, choose 0 \u2014 a wrong\nsingle_valued=1 produces a false contradiction.\n",
+          "user_message": "Generate metadata for the Aedos predicate: \"responded_to\"",
+          "tool": "generate_predicate_metadata"
+        },
+        "response": {
+          "object_type": "entity",
+          "reason": "The predicate 'responded_to' is too broad and context-dependent to map to a single Wikidata property \u2014 a subject can respond to a statement, crisis, question, accusation, etc. There is no authoritative KB property that reliably captures this general relational action, and it is neither computationally determinable nor subjectively authoritative, so abstain is the safest choice.",
+          "routing_hint": "abstain",
+          "single_valued": 0,
+          "slot_to_qualifier": null,
+          "user_subject_required": 0
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  }
+]
