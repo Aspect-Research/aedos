@@ -68,8 +68,8 @@
     "kb_namespace": null,
     "kb_property": null,
     "slot_to_qualifier": null,
-    "single_valued": 0,
-    "reason": "Seed mapping. Residence is user-context information; not resolvable in KB for individuals. user_authoritative — single_valued is not consulted on the user-authoritative route."
+    "single_valued": 1,
+    "reason": "Phase G D23 (2026-05-23) corrected from single_valued=0. Residence is user-context information; not resolvable in KB for individuals. user_authoritative. Functional at a point in time: a person has one current residence; relocations are belief-revision events per architecture §6.1. The original value of 0 with the rationale 'single_valued is not consulted on the user-authoritative route' was invalidated by D16 — the walker's object-conflict path and the Tier U write path both consult single_valued on the user_authoritative route. der_revision_001/002 expectations require functional semantics. Phase 10.5 measures the corrected behavior."
   },
   {
     "aedos_predicate": "located_in",

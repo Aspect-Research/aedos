@@ -35,6 +35,8 @@ _FUNCTIONAL_PREDICATES = {
     "born_in_year",  # one birth date per person
     "prefers",       # functional at a point in time per object-class (revisable)
     "status",        # one current status per entity (revisable)
+    # Phase G D23 (2026-05-23) correction (was single_valued=0):
+    "lives_in",      # one current residence per person (revisable on relocation)
 }
 
 
