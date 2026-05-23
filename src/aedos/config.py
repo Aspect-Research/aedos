@@ -67,6 +67,17 @@ class Config:
     # caps how many candidates we fetch P31 for in a single roundtrip.
     wikidata_type_filter_p31_batch_size: int = 50
 
+    # Phase H D47 (2026-05-23): MediaWiki / Wikipedia normalizer.
+    # Stage 1 resolves bare ambiguous references to canonical Wikipedia
+    # article titles via the redirects API; Stage 2 falls back to an LLM
+    # selection over disambiguation-page links when Stage 1 surfaces
+    # ambiguity. The normalizer fires inside EntityResolver.resolve, so
+    # every caller (pipeline, calibration runner, ad-hoc tests) benefits.
+    wikipedia_api_url: str = "https://en.wikipedia.org/w/api.php"
+    wikipedia_request_rate_per_second: float = 10.0
+    wikipedia_normalizer_enabled: bool = True  # diagnostic kill switch
+    wikipedia_stage_2_max_candidates: int = 20  # truncate disambig links
+
     # HTTP User-Agent for external services (Wikimedia policy requires
     # contact info — URL or email). Privacy caveat: the contact info
     # appears in HTTP headers to Wikimedia and any network observers
@@ -163,6 +174,23 @@ class Config:
             raise ValueError(
                 f"wikidata_type_filter_p31_batch_size must be positive; got "
                 f"{self.wikidata_type_filter_p31_batch_size!r}"
+            )
+
+        # Phase H D47 — Wikipedia normalizer fields.
+        if not isinstance(self.wikipedia_api_url, str) or not self.wikipedia_api_url.startswith(("http://", "https://")):
+            raise ValueError(
+                f"wikipedia_api_url must be a http(s) URL; got "
+                f"{self.wikipedia_api_url!r}"
+            )
+        if self.wikipedia_request_rate_per_second <= 0:
+            raise ValueError(
+                f"wikipedia_request_rate_per_second must be positive; got "
+                f"{self.wikipedia_request_rate_per_second!r}"
+            )
+        if self.wikipedia_stage_2_max_candidates <= 0:
+            raise ValueError(
+                f"wikipedia_stage_2_max_candidates must be positive; got "
+                f"{self.wikipedia_stage_2_max_candidates!r}"
             )
 
         # User-Agent must be non-empty (Wikimedia policy requires
