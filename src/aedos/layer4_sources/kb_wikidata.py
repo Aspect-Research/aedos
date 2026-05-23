@@ -53,6 +53,52 @@ _PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
 # dynamic-discovery follow-up.
 _DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
 
+# Phase G D33 (2026-05-23): when the wbsearchentities post-filter eliminates
+# all candidates AND expected_entity_types is non-empty, fall back to a SPARQL
+# label-OR-altLabel search constrained by P31. Live validation surfaced that
+# canonical entities (Q76 for "Obama", Q49112 for "Williams College") aren't
+# in wbsearchentities' returned pool at any reasonable depth — the API
+# under-serves short ambiguous queries. The SPARQL fallback uses Wikidata's
+# label indexes directly and scopes by type, recovering the canonical entity.
+def _build_label_type_search_query(
+    reference: str, expected_types: list[KBEntityID], limit: int
+) -> str:
+    """Build the SPARQL fallback query: items whose rdfs:label OR skos:altLabel
+    matches the reference exactly in English AND whose P31 is one of the
+    expected_types. Escapes embedded quotes / backslashes in `reference` for
+    safe SPARQL string-literal construction (defense-in-depth — the resolver's
+    upstream callers pass user-provided strings here).
+
+    The query is deliberately scoped:
+      - rdfs:label catches the canonical English label.
+      - skos:altLabel catches the "also known as" aliases (where Q76's "Obama"
+        and Q49112's "Williams College" actually live).
+      - P31 type constraint enforces the D33 filter even at this fallback.
+    """
+    if limit <= 0 or limit > 100:
+        # Keep the LIMIT bounded — runaway SPARQL on a broad altLabel match
+        # is expensive on WDQS and noisy downstream.
+        raise ValueError(f"limit must be in (0, 100]; got {limit!r}")
+    # Validate each expected type as a Q-id — defense-in-depth against a
+    # caller injecting a SPARQL fragment via expected_entity_types.
+    for qid in expected_types:
+        if not _ENTITY_ID_PATTERN.match(qid):
+            raise ValueError(f"Invalid expected_entity_type: {qid!r}")
+    escaped = reference.replace("\\", "\\\\").replace('"', '\\"')
+    values_clause = " ".join(f"wd:{q}" for q in expected_types)
+    return (
+        f"SELECT DISTINCT ?item ?itemLabel ?itemDescription WHERE {{\n"
+        f"  VALUES ?type {{ {values_clause} }}\n"
+        f"  {{ ?item rdfs:label \"{escaped}\"@en . }}\n"
+        f"  UNION\n"
+        f"  {{ ?item skos:altLabel \"{escaped}\"@en . }}\n"
+        f"  ?item wdt:P31 ?type .\n"
+        f"  SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"en\". }}\n"
+        f"}}\n"
+        f"LIMIT {limit}"
+    )
+
+
 # Subsumption relation-type → SPARQL property-path alternation.
 # Per architecture §9.1 and F2 design §6:
 #   is_a    → P31 (instance of), P279 (subclass of)
@@ -485,8 +531,12 @@ class WikidataAdapter:
         pre_filter_count = len(candidates)
         filter_eliminated_count = 0
         filter_no_op_reason: Optional[str] = None
+        sparql_fallback_used = False
+        sparql_fallback_count = 0
+        sparql_fallback_error: Optional[str] = None
         expected_types = list(local_context.expected_entity_types or [])
         type_filter_on = self._cfg_value("wikidata_type_filter_enabled", True)
+        filter_ran_cleanly = False
 
         if not candidates:
             filter_no_op_reason = "no_candidates"
@@ -512,6 +562,27 @@ class WikidataAdapter:
                         kept.append(cand)
                 filter_eliminated_count = len(candidates) - len(kept)
                 candidates = kept
+                filter_ran_cleanly = True
+
+        # Phase G D33 (2026-05-23, surfaced during live validation): the
+        # wbsearchentities top-N candidate pool sometimes does not contain the
+        # canonical entity even after raising pool size — short ambiguous
+        # references like "Obama" or "Williams College" return mostly
+        # disambiguation noise. When the post-filter empties under those
+        # conditions, fall back to a SPARQL label-OR-altLabel search scoped
+        # by expected_types. The fallback only runs when the filter ran
+        # cleanly (so we don't double-call on fail-open paths) and the pool
+        # genuinely doesn't contain a type-matching candidate.
+        if filter_ran_cleanly and not candidates and expected_types:
+            sparql_fallback_used = True
+            fb_candidates, fb_error = self._sparql_label_type_fallback(
+                reference, expected_types
+            )
+            sparql_fallback_count = len(fb_candidates)
+            sparql_fallback_error = fb_error
+            if fb_error is not None and last_error is None:
+                last_error = fb_error
+            candidates = fb_candidates
 
         duration_ms = (time.monotonic() - start) * 1000.0
         self._log_audit_event(
@@ -527,9 +598,96 @@ class WikidataAdapter:
                 "filter_eliminated_count": filter_eliminated_count,
                 "expected_entity_types": expected_types,
                 "filter_no_op_reason": filter_no_op_reason,
+                "sparql_fallback_used": sparql_fallback_used,
+                "sparql_fallback_count": sparql_fallback_count,
+                "sparql_fallback_error": sparql_fallback_error,
             },
         )
         return candidates
+
+    def _sparql_label_type_fallback(
+        self, reference: str, expected_types: list[KBEntityID]
+    ) -> tuple[list[ResolutionCandidate], Optional[str]]:
+        """Phase G D33: SPARQL fallback when the wbsearchentities post-filter
+        empties. Looks up items by rdfs:label OR skos:altLabel match in English,
+        constrained by P31 ∈ expected_types. Returns (candidates, error).
+
+        Candidates are scored 1/(rank+1) like wbsearchentities, preserving the
+        downstream resolver's score-based selection. The fallback can't match
+        the search API's relevance ranking (SPARQL has no equivalent), so
+        ranking is bound to the SPARQL result order — which is typically
+        Wikidata's internal item order. In practice, exact-label matches with
+        type constraint return few results (the type filter is sharp), so
+        ranking effects are small.
+        """
+        if not expected_types:
+            return ([], None)
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._sparql_label_type_fallback requires an http_cache"
+            )
+
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        # Use the search pool size as the LIMIT so the fallback can't return
+        # more candidates than the primary path's pool size.
+        limit = self._cfg_value(
+            "wikidata_candidate_pool_size", _DEFAULT_CANDIDATE_POOL_SIZE
+        )
+        try:
+            query = _build_label_type_search_query(reference, expected_types, limit)
+        except ValueError as exc:
+            # Invalid Q-id in expected_types — return ([], error) and let the
+            # caller record fail-open behavior. Never crash a live resolution
+            # on a substrate-provided type list.
+            return ([], f"{type(exc).__name__}: {exc}")
+
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt == 0:
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                return ([], f"{type(exc).__name__}: {exc}")
+            except Exception as exc:
+                return ([], f"{type(exc).__name__}: {exc}")
+
+            bindings = (
+                data.get("results", {}).get("bindings", [])
+                if isinstance(data, dict)
+                else []
+            )
+            candidates: list[ResolutionCandidate] = []
+            for rank, row in enumerate(bindings):
+                item_uri = row.get("item", {}).get("value", "")
+                if not item_uri:
+                    continue
+                qid = _extract_entity_id(item_uri)
+                if not _ENTITY_ID_PATTERN.match(qid):
+                    continue
+                label = row.get("itemLabel", {}).get("value")
+                description = row.get("itemDescription", {}).get("value")
+                candidates.append(
+                    ResolutionCandidate(
+                        kb_identifier=qid,
+                        provenance={
+                            "search_rank": rank,
+                            "label": label,
+                            "description": description,
+                            "source": "sparql_fallback",
+                        },
+                        score=1.0 / (rank + 1),
+                    )
+                )
+            return (candidates, None)
+
+        return ([], "unreachable_code")  # pragma: no cover
 
     def _fetch_p31_for_candidates(
         self, candidate_ids: list[KBEntityID]

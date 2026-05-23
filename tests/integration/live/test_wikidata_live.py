@@ -108,51 +108,27 @@ class TestLiveResolve:
         assert "duration_ms" in events[0]["event_data"]
 
 
-class TestD33CanonicalEntityReachability:
-    """Phase G D33 (2026-05-23): canonical entities that were unreachable
-    in the wbsearchentities default top-10 are now reachable via the
-    larger pool (size 30) + P31 type filter. The previous xfail markers
-    have been removed; these tests now assert the post-filter behavior
-    directly. See docs/phase_G/d33_design.md."""
-
-    def test_obama_canonical_q76_reachable_with_type_filter(self, live_adapter):
-        # With expected_entity_types=[Q5] (human), the filter eliminates
-        # disambiguation pages, place-named Obamas (Obama, Fukui), and
-        # other non-person candidates that crowded out Q76 in the default
-        # top-10. Q76 lives further down the unfiltered ranking but
-        # survives the filter.
-        lc = LocalContext(
-            predicate="holds_role",
-            slot_position="subject",
-            expected_entity_types=["Q5"],
-        )
-        candidates = live_adapter.resolve_entity("Obama", lc)
-        ids = [c.kb_identifier for c in candidates]
-        assert "Q76" in ids, (
-            f"Q76 (Barack Obama) should be in filtered candidates with "
-            f"expected_entity_types=[Q5]; got {ids}"
-        )
-
-    def test_williams_college_canonical_q49112_reachable_with_type_filter(self, live_adapter):
-        # Q3918 (university), Q38723 (higher education institution),
-        # Q1188663 (private not-for-profit educational institution) cover
-        # the canonical Williams College's typical P31 values.
-        lc = LocalContext(
-            predicate="located_in",
-            slot_position="subject",
-            expected_entity_types=["Q3918", "Q38723", "Q1188663"],
-        )
-        candidates = live_adapter.resolve_entity("Williams College", lc)
-        ids = [c.kb_identifier for c in candidates]
-        assert "Q49112" in ids, (
-            f"Q49112 (Williams College, MA) should be in filtered candidates "
-            f"with expected_entity_types=[Q3918, Q38723, Q1188663]; got {ids}"
-        )
+class TestD33TypeFilterAndBareStringLimit:
+    """Phase G D33 (2026-05-23): the type filter correctly drops wrong-type
+    entities for queries where the canonical entity is type-distinguishable
+    from the noise (test_type_filter_drops_obama_fukui_for_person_query).
+    Live validation also surfaced the new finding D47: some canonical
+    entities (Q76 for "Obama", Q49112 for "Williams College") are NOT
+    reachable from their bare ambiguous string forms via Wikidata — the
+    bare strings are not registered in Wikidata's label or altLabel fields
+    for the canonical entities (verified by direct SPARQL on 2026-05-23,
+    e.g. Q76's only English altLabel is "POTUS 44"). Contextual
+    disambiguation upstream of KB queries is the v0.16 D47 work item.
+    The two tests below pin this limit so a future Wikidata edit
+    (Q76 gaining "Obama" as an altLabel, etc.) is detected via xpass.
+    """
 
     def test_type_filter_drops_obama_fukui_for_person_query(self, live_adapter):
         # Q41773 (Obama, Fukui — the Japanese town) sits at the top of
         # the unfiltered ranking for query 'Obama'. With expected types
-        # [Q5] (human), it should NOT survive the filter.
+        # [Q5] (human), it must NOT survive the filter. This is the
+        # load-bearing D33 correction: the filter prevents Q41773 from
+        # masquerading as a person.
         lc = LocalContext(
             predicate="holds_role",
             slot_position="subject",
@@ -166,7 +142,7 @@ class TestD33CanonicalEntityReachability:
         )
 
     def test_audit_event_records_filter_metrics(self, live_adapter):
-        # The audit event must carry the new D33 fields so Phase 10.5
+        # The audit event must carry the D33 fields so Phase 10.5
         # measurement can compute filter-rescue rate post-hoc.
         from aedos.audit.log import query_events
         lc = LocalContext(
@@ -184,11 +160,89 @@ class TestD33CanonicalEntityReachability:
         assert "filter_eliminated_count" in data
         assert "expected_entity_types" in data
         assert data["expected_entity_types"] == ["Q5"]
-        # The filter should actually have eliminated some candidates
-        # (this is the load-bearing claim — the filter is doing work).
+        assert "sparql_fallback_used" in data
+        # The filter must actually be doing work here (eliminating non-humans).
         assert data["pre_filter_count"] > data["candidate_count"], (
             f"Filter should have eliminated at least one candidate; "
             f"pre={data['pre_filter_count']} post={data['candidate_count']}"
+        )
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "D47 (2026-05-23): Q76's only English altLabel is 'POTUS 44'; "
+            "the bare string 'Obama' is not registered as a label/altLabel "
+            "for Q76 in Wikidata. Resolution of the bare string to the "
+            "canonical Q76 requires contextual disambiguation upstream of "
+            "the KB query (v0.16 D47 work item). The xfail pins this "
+            "Wikidata data-model limit; an xpass means Wikidata edits have "
+            "added 'Obama' as a Q76 altLabel and Aedos can now reach it."
+        ),
+    )
+    def test_obama_short_query_does_not_yield_canonical_q76(self, live_adapter):
+        # Direct empirical pin of the D47 finding. With type filter [Q5],
+        # the bare 'Obama' query returns *some* humans (other people whose
+        # primary label IS 'Obama'), but not Q76 — its label is 'Barack
+        # Obama' and its only English altLabel is 'POTUS 44'.
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        candidates = live_adapter.resolve_entity("Obama", lc)
+        ids = [c.kb_identifier for c in candidates]
+        assert "Q76" in ids, (
+            f"D47 finding: 'Obama' alone does not reach Q76; got {ids}. "
+            f"If this xpasses, Wikidata may have added 'Obama' as a Q76 "
+            f"altLabel — update the D47 documentation."
+        )
+
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "D47 (2026-05-23): Q49112 (Williams College, MA) is not "
+            "reachable from the bare string 'Williams College' via either "
+            "wbsearchentities (returns 13 unrelated entities, Q49112 not "
+            "among them) or SPARQL label/altLabel match. Resolution "
+            "requires contextual disambiguation upstream (v0.16 D47)."
+        ),
+    )
+    def test_williams_college_short_query_does_not_yield_canonical_q49112(
+        self, live_adapter
+    ):
+        lc = LocalContext(
+            predicate="located_in",
+            slot_position="subject",
+            expected_entity_types=["Q3918", "Q38723", "Q1188663"],
+        )
+        candidates = live_adapter.resolve_entity("Williams College", lc)
+        ids = [c.kb_identifier for c in candidates]
+        assert "Q49112" in ids, (
+            f"D47 finding: 'Williams College' alone does not reach Q49112; "
+            f"got {ids}."
+        )
+
+    def test_barack_obama_full_name_reaches_q76(self, live_adapter):
+        """Phase G D33 + D47 positive case: 'Barack Obama' (the canonical
+        full label) DOES reach Q76 with the type filter. This is what
+        Phase 10.5 corpora using unambiguous references will see — the
+        filter works correctly when the canonical entity is in the pool.
+        Documents the working path so future readers see both sides."""
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        candidates = live_adapter.resolve_entity("Barack Obama", lc)
+        ids = [c.kb_identifier for c in candidates]
+        assert "Q76" in ids, (
+            f"With the canonical full name 'Barack Obama' and type filter "
+            f"[Q5], Q76 must be in the candidates; got {ids}"
+        )
+        # Q76 should be the top candidate (highest score).
+        assert candidates[0].kb_identifier == "Q76", (
+            f"Q76 should be the top-ranked candidate; got "
+            f"{candidates[0].kb_identifier}"
         )
 
 
@@ -212,10 +266,13 @@ class TestLiveFetchP31:
         p31, err = live_adapter._fetch_p31_for_candidates(["Q76", "Q49112"])
         assert err is None
         assert "Q5" in p31["Q76"]
-        # Q49112 (Williams College) is an instance_of Q3918 (university)
-        # and/or Q38723 (higher education institution).
-        assert any(qid in p31["Q49112"] for qid in ("Q3918", "Q38723")), (
-            f"Q49112's P31 should include Q3918 or Q38723; got {p31['Q49112']}"
+        # Q49112 (Williams College) carries Q1188663 (private not-for-profit
+        # educational institution) among its P31 values on 2026-05-23. The
+        # assertion is on the load-bearing relation (educational institution
+        # of some flavor), not on a specific Q-id that Wikidata may revise.
+        assert "Q1188663" in p31["Q49112"], (
+            f"Q49112's P31 should include Q1188663 (private not-for-profit "
+            f"educational institution); got {p31['Q49112']}"
         )
 
 

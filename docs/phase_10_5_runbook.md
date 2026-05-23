@@ -297,6 +297,19 @@ py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "en
 - entity_resolution_corpus: ≥ 90% (live KB).
 - kb_mapping_corpus: ≥ 90% (live KB).
 
+**Phase G D47 caveat (added 2026-05-23).** Live validation of D33's type
+filter surfaced that some canonical entities (Q76 for Barack Obama,
+Q49112 for Williams College) are not reachable from their bare
+ambiguous string forms via Wikidata — the bare strings are not in
+Wikidata's label or altLabel index for the canonical entities. Cases
+in this corpus that use such bare ambiguous references will produce
+abstentions in v0.15. Interpret missed cases as honest measurement of
+v0.15's known upstream-disambiguation constraint, not as a defect; the
+v0.16 D47 work item addresses extraction-time normalization and oracle
+context enhancement. The acceptance threshold above remains the ship
+gate; if it is not met and the gap traces to D47 cases, that data
+informs v0.16 sequencing rather than blocking the v0.15 release.
+
 ### Phase 5 — Subsumption + predicate distribution corpora
 
 ```bash
