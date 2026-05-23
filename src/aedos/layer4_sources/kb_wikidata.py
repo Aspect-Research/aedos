@@ -481,6 +481,38 @@ class WikidataAdapter:
             last_error = None
             break
 
+        # Phase G D33: post-filter the candidate pool by P31 ∩ expected types.
+        pre_filter_count = len(candidates)
+        filter_eliminated_count = 0
+        filter_no_op_reason: Optional[str] = None
+        expected_types = list(local_context.expected_entity_types or [])
+        type_filter_on = self._cfg_value("wikidata_type_filter_enabled", True)
+
+        if not candidates:
+            filter_no_op_reason = "no_candidates"
+        elif not type_filter_on:
+            filter_no_op_reason = "filter_disabled"
+        elif not expected_types:
+            filter_no_op_reason = "no_expected_types"
+        else:
+            candidate_ids = [c.kb_identifier for c in candidates]
+            p31_by_qid, fetch_error = self._fetch_p31_for_candidates(candidate_ids)
+            if fetch_error is not None:
+                # Fail-open per design doc: a transient wbgetentities failure
+                # must not abstain on every resolution. Audit makes it visible.
+                filter_no_op_reason = "wbgetentities_failed"
+                if last_error is None:
+                    last_error = fetch_error
+            else:
+                type_set = set(expected_types)
+                kept: list[ResolutionCandidate] = []
+                for cand in candidates:
+                    p31 = p31_by_qid.get(cand.kb_identifier, [])
+                    if type_set & set(p31):
+                        kept.append(cand)
+                filter_eliminated_count = len(candidates) - len(kept)
+                candidates = kept
+
         duration_ms = (time.monotonic() - start) * 1000.0
         self._log_audit_event(
             event_type="kb_live_resolve",
@@ -490,6 +522,11 @@ class WikidataAdapter:
                 "duration_ms": round(duration_ms, 2),
                 "retry_count": retries,
                 "error": last_error,
+                # Phase G D33 audit fields.
+                "pre_filter_count": pre_filter_count,
+                "filter_eliminated_count": filter_eliminated_count,
+                "expected_entity_types": expected_types,
+                "filter_no_op_reason": filter_no_op_reason,
             },
         )
         return candidates
