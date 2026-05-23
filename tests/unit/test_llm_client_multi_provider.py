@@ -56,10 +56,26 @@ class _FakeOpenAIClient:
 
 class TestPurposeRouting:
     def test_openai_purpose_carries_openai_endpoint(self):
-        cfg = _resolve_purpose_config("extractor:user", DEFAULT_MODEL)
+        # Phase E5 migrated extractor:* purposes to Anthropic/Haiku 4.5; this
+        # test uses python_verifier (still OpenAI-routed as of v0.15) to
+        # exercise the OpenAI-endpoint resolution path. Other substrate:*
+        # purposes are also still OpenAI-routed and would work equivalently.
+        cfg = _resolve_purpose_config("python_verifier", DEFAULT_MODEL)
         assert cfg["base_url"] == "https://api.openai.com/v1"
         assert cfg["api_key_env_var"] == "OPENAI_API_KEY"
-        assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["extractor:user"]["model"]
+        assert cfg["model"] == DEFAULT_MODEL_BY_PURPOSE["python_verifier"]["model"]
+
+    def test_extractor_purpose_routes_to_anthropic_after_phase_e5(self):
+        # Phase E5 (2026-05-23) routed extractor:user and extractor:assistant
+        # to claude-haiku-4-5 after Phase E3 prompt-engineering produced
+        # 53/53 = 100% on the cleaned extraction corpus. Earlier rc.x tags
+        # had these routing to gpt-4.1-mini / gpt-4.1; the test guards
+        # against the migration being silently reverted.
+        for purpose in ("extractor:user", "extractor:assistant"):
+            cfg = _resolve_purpose_config(purpose, DEFAULT_MODEL)
+            assert cfg["base_url"] is None, purpose
+            assert cfg["api_key_env_var"] == "ANTHROPIC_API_KEY", purpose
+            assert cfg["model"] == "claude-haiku-4-5", purpose
 
     def test_chat_purpose_routes_to_anthropic(self):
         cfg = _resolve_purpose_config("chat", DEFAULT_MODEL)
@@ -90,13 +106,16 @@ class TestPurposeRouting:
 
 class TestProviderDispatch:
     def test_openai_purpose_dispatches_to_openai_path(self, monkeypatch):
+        # Phase E5 migrated extractor:* to Anthropic; this test now uses
+        # python_verifier (still OpenAI-routed in v0.15) to exercise the
+        # OpenAI dispatch path.
         sink: list[dict] = []
         client = LLMClient()
         monkeypatch.setattr(client, "_openai_client", lambda base_url, env: _FakeOpenAIClient(sink))
-        out = client.chat("sys", [ChatMessage("user", "hi")], purpose="extractor:user")
+        out = client.chat("sys", [ChatMessage("user", "hi")], purpose="python_verifier")
         assert out == "fake-reply"
         # routed to the OpenAI-compatible path with the purpose's configured model
-        assert sink[0]["model"] == DEFAULT_MODEL_BY_PURPOSE["extractor:user"]["model"]
+        assert sink[0]["model"] == DEFAULT_MODEL_BY_PURPOSE["python_verifier"]["model"]
         assert sink[0]["extra_body"] is None  # no override → no extra_body
 
     def test_extra_body_from_override_reaches_create(self, monkeypatch):
@@ -172,13 +191,15 @@ class TestRawResponseAttachedOnFailure:
     diagnostic transcript can record what the model actually returned."""
 
     def test_extract_with_tool_attaches_raw_response_on_parse_failure(self, monkeypatch):
+        # Phase E5 routed extractor:* to Anthropic; this test exercises the
+        # OpenAI parse-failure path, so use python_verifier (still OpenAI).
         client = LLMClient()
         monkeypatch.setattr(client, "_openai_client", lambda b, e: _BrokenOpenAIClient())
         with pytest.raises(TypeError) as exc_info:
             client.extract_with_tool(
                 "sys", "msg",
                 {"name": "extract_claims", "description": "x", "input_schema": {}},
-                purpose="extractor:user",
+                purpose="python_verifier",
             )
         raw = getattr(exc_info.value, "_raw_response", None)
         assert raw is not None
