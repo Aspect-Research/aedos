@@ -476,6 +476,19 @@ class TestToolSchema:
         assert "subject_entity_types" in props
         assert "object_entity_types" in props
 
+    def test_prompt_guides_entity_type_emission(self):
+        # Phase G D33: the system prompt must instruct the LLM on when to
+        # emit entity types (and when to leave them null). Regression guard
+        # so the prompt narrative doesn't silently lose this guidance.
+        from aedos.layer3_substrate.predicate_translation import (
+            _GENERATION_SYSTEM_PROMPT,
+        )
+        assert "subject_entity_types" in _GENERATION_SYSTEM_PROMPT
+        assert "object_entity_types" in _GENERATION_SYSTEM_PROMPT
+        # Must mention the null/open-type path so the LLM doesn't always
+        # guess a list when the slot is open.
+        assert "null" in _GENERATION_SYSTEM_PROMPT.lower()
+
 
 # ---------------------------------------------------------------------------
 # TestEntityTypesRoundTrip (Phase G D33)
