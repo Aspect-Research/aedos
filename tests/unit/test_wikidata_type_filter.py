@@ -24,6 +24,7 @@ from aedos.database import open_memory_db
 from aedos.layer4_sources.kb_protocol import LocalContext
 from aedos.layer4_sources.kb_wikidata import (
     WikidataAdapter,
+    _build_label_type_search_query,
     _extract_p31,
 )
 from aedos.utils.http_cache import CachingHTTPClient, LRUHTTPCache
@@ -157,6 +158,48 @@ class TestExtractP31:
             }
         }
         assert _extract_p31(entity) == ["Q5"]
+
+
+# ---------------------------------------------------------------------------
+# _build_label_type_search_query unit tests
+# ---------------------------------------------------------------------------
+
+class TestBuildLabelTypeSearchQuery:
+    def test_contains_label_and_altlabel_clauses(self):
+        q = _build_label_type_search_query("Obama", ["Q5"], 30)
+        assert "rdfs:label" in q
+        assert "skos:altLabel" in q
+        assert "UNION" in q
+
+    def test_contains_p31_type_constraint(self):
+        q = _build_label_type_search_query("Obama", ["Q5", "Q43229"], 30)
+        assert "wdt:P31" in q
+        assert "wd:Q5" in q
+        assert "wd:Q43229" in q
+
+    def test_includes_limit(self):
+        q = _build_label_type_search_query("Obama", ["Q5"], 25)
+        assert "LIMIT 25" in q
+
+    def test_escapes_double_quote_in_reference(self):
+        q = _build_label_type_search_query('she said "hi"', ["Q5"], 30)
+        # Embedded quote must be backslash-escaped, not bare in the literal.
+        assert '\\"hi\\"' in q
+
+    def test_escapes_backslash_in_reference(self):
+        q = _build_label_type_search_query("foo\\bar", ["Q5"], 30)
+        # Backslash doubled so the SPARQL parser sees a literal backslash.
+        assert "foo\\\\bar" in q
+
+    def test_rejects_invalid_qid(self):
+        with pytest.raises(ValueError, match="expected_entity_type"):
+            _build_label_type_search_query("Obama", ["not-a-qid"], 30)
+
+    def test_rejects_invalid_limit(self):
+        with pytest.raises(ValueError, match="limit"):
+            _build_label_type_search_query("Obama", ["Q5"], 0)
+        with pytest.raises(ValueError, match="limit"):
+            _build_label_type_search_query("Obama", ["Q5"], 101)
 
 
 # ---------------------------------------------------------------------------
@@ -400,6 +443,147 @@ class TestLiveResolveTypeFilter:
         from aedos.audit.log import query_events
         events = query_events(db, event_type="kb_live_resolve")
         assert events[0]["event_data"]["filter_no_op_reason"] == "filter_disabled"
+
+    def test_sparql_fallback_when_filter_empties(self):
+        """Phase G D33 (surfaced during live validation): when the post-filter
+        eliminates all candidates AND expected_entity_types is non-empty, a
+        SPARQL label+P31 fallback runs and its candidates are returned. The
+        live wbsearchentities API under-serves short ambiguous queries
+        (\"Obama\", \"Williams College\"); the SPARQL fallback recovers the
+        canonical entity via label indexes."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        # wbsearchentities returns 1 non-matching candidate; filter empties.
+        search_resp = _search_response(["Q41773"])
+        wbget_resp = _wbgetentities_response({"Q41773": ["Q3957"]})
+        # SPARQL fallback returns Q76 + Q649593 (Obama Sr.)
+        sparql_body = json.dumps(
+            {
+                "results": {
+                    "bindings": [
+                        {
+                            "item": {
+                                "type": "uri",
+                                "value": "http://www.wikidata.org/entity/Q76",
+                            },
+                            "itemLabel": {"value": "Barack Obama"},
+                            "itemDescription": {"value": "44th US president"},
+                        },
+                        {
+                            "item": {
+                                "type": "uri",
+                                "value": "http://www.wikidata.org/entity/Q649593",
+                            },
+                            "itemLabel": {"value": "Barack Obama Sr."},
+                            "itemDescription": {"value": "father"},
+                        },
+                    ]
+                }
+            }
+        ).encode()
+        sparql_resp = _make_response(sparql_body)
+        cm, _ = _scripted_httpx([search_resp, wbget_resp, sparql_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        ids = [c.kb_identifier for c in candidates]
+        assert ids == ["Q76", "Q649593"]
+        # Provenance marks them as sparql-fallback so downstream can tell.
+        assert candidates[0].provenance.get("source") == "sparql_fallback"
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        data = events[0]["event_data"]
+        assert data["sparql_fallback_used"] is True
+        assert data["sparql_fallback_count"] == 2
+        assert data["sparql_fallback_error"] is None
+
+    def test_sparql_fallback_skipped_when_filter_keeps_candidates(self):
+        """No fallback runs when the post-filter retains at least one candidate
+        — we don't want to amplify candidate count when ranking already worked."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q76"])
+        wbget_resp = _wbgetentities_response({"Q76": ["Q5"]})
+        # Only 2 responses scripted — if the fallback fires, the test fails.
+        cm, _ = _scripted_httpx([search_resp, wbget_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        assert [c.kb_identifier for c in candidates] == ["Q76"]
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["sparql_fallback_used"] is False
+
+    def test_sparql_fallback_skipped_on_fail_open(self):
+        """When the post-filter takes the fail-open path (wbgetentities failure),
+        the fallback must NOT run — we'd be running SPARQL on top of an already-
+        unfiltered candidate list, defeating the fail-open."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q41773", "Q76"])
+        timeout_exc = httpx.TimeoutException("simulated")
+        inner = MagicMock()
+        inner.get.side_effect = [search_resp, timeout_exc]
+        cm = MagicMock()
+        cm.__enter__.return_value = inner
+        cm.__exit__.return_value = False
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                candidates = adapter._live_resolve("Obama", lc)
+
+        # Both unfiltered candidates surface; no fallback was attempted.
+        assert {c.kb_identifier for c in candidates} == {"Q41773", "Q76"}
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["filter_no_op_reason"] == "wbgetentities_failed"
+        assert events[0]["event_data"]["sparql_fallback_used"] is False
+
+    def test_sparql_fallback_error_surfaces_in_audit(self):
+        """When the SPARQL fallback itself fails (timeout, malformed), the
+        adapter returns [] and the audit records the error."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q41773"])
+        wbget_resp = _wbgetentities_response({"Q41773": ["Q3957"]})
+        timeout_exc = httpx.TimeoutException("sparql timeout")
+
+        inner = MagicMock()
+        inner.get.side_effect = [search_resp, wbget_resp, timeout_exc, timeout_exc]
+        cm = MagicMock()
+        cm.__enter__.return_value = inner
+        cm.__exit__.return_value = False
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                candidates = adapter._live_resolve("Obama", lc)
+
+        assert candidates == []
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        data = events[0]["event_data"]
+        assert data["sparql_fallback_used"] is True
+        assert data["sparql_fallback_count"] == 0
+        assert "Timeout" in data["sparql_fallback_error"]
 
     def test_audit_event_has_expected_entity_types(self):
         """The expected_entity_types list is recorded in the audit event for
