@@ -153,12 +153,19 @@ class TestStage1CleanRedirect:
 
 class TestStage1DisambiguationPage:
     """MediaWiki returned a disambiguation page. pageprops contains
-    the 'disambiguation' key. Step 1's compose_result leaves the surface
-    form unchanged (Stage 2 is a no-op at this commit)."""
+    the 'disambiguation' key. With Step 2 wired, the disambiguation
+    outcome drives Stage 2; these tests cover the Stage 1 detection
+    (without an LLM, Stage 2 abstains visibly via the no-LLM path)."""
 
-    def test_basic_disambiguation(self):
+    def test_basic_disambiguation_without_llm_abstains(self):
+        """No LLM client wired → Stage 2 can't run → abstain with the
+        surface form preserved and an error noting the wiring gap."""
         normalizer, _ = _make_normalizer()
-        response = _api_response(
+        # Stage 1 returns disambiguation; Stage 2 tries to fetch
+        # candidates and would invoke the LLM. Both calls go through
+        # httpx — the second is the parse call. Mock both, then
+        # confirm that without an LLM Stage 2 records the gap honestly.
+        stage_1_response = _api_response(
             {
                 "pages": [
                     {
@@ -169,21 +176,36 @@ class TestStage1DisambiguationPage:
                 ]
             }
         )
+        parse_response = _make_response(
+            json.dumps(
+                {
+                    "parse": {
+                        "title": "Smith",
+                        "links": [
+                            {"ns": 0, "title": "John Smith", "exists": True},
+                        ],
+                    }
+                }
+            ).encode()
+        )
         with patch("httpx.Client") as MockClient:
-            MockClient.return_value.__enter__.return_value.get.return_value = response
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                stage_1_response,
+                parse_response,
+            ]
             result = normalizer.normalize("Smith")
         assert result.stage_1_outcome == OUTCOME_DISAMBIGUATION_PAGE
-        # Step 1 compose: stage 2 not yet wired, surface form preserved.
+        # Wiring-gap defence: no LLM → abstain, surface form preserved.
         assert result.normalized_form == "Smith"
-        assert result.stage_1_redirect_target == "Smith"
         assert result.stage_2_invoked is False
+        assert result.error == "no_llm_client_for_stage_2"
 
     def test_redirect_then_disambiguation(self):
         """Redirect followed to a page that turns out to be a disambiguation
         page. Outcome is disambiguation_page; the redirect target is
         recorded as the disambig title."""
         normalizer, _ = _make_normalizer()
-        response = _api_response(
+        stage_1_response = _api_response(
             {
                 "redirects": [{"from": "Obama", "to": "Obama (disambiguation)"}],
                 "pages": [
@@ -195,12 +217,21 @@ class TestStage1DisambiguationPage:
                 ],
             }
         )
+        # Empty links payload — exercises the no-candidates abstention.
+        parse_response = _make_response(
+            json.dumps({"parse": {"title": "Obama (disambiguation)", "links": []}}).encode()
+        )
         with patch("httpx.Client") as MockClient:
-            MockClient.return_value.__enter__.return_value.get.return_value = response
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                stage_1_response,
+                parse_response,
+            ]
             result = normalizer.normalize("Obama")
         assert result.stage_1_outcome == OUTCOME_DISAMBIGUATION_PAGE
         assert result.stage_1_redirect_target == "Obama (disambiguation)"
+        # No candidates → abstain on surface form.
         assert result.normalized_form == "Obama"
+        assert result.error == "no_candidates_on_disambiguation_page"
 
 
 class TestStage1NotFound:
@@ -462,3 +493,296 @@ class TestWiringGapDefence:
         normalizer = WikipediaNormalizer(http_cache=None, db=None, config=Config())
         with pytest.raises(RuntimeError, match="requires an http_cache"):
             normalizer.normalize("Barack Obama")
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — LLM-mediated selection over disambiguation candidates (Step 2)
+# ---------------------------------------------------------------------------
+
+
+class _StubLLM:
+    """Stub LLM that returns a pre-canned `extract_with_tool` response.
+
+    Records the most recent call's user_message + system + tool for
+    assertions about prompt construction."""
+
+    def __init__(self, response: dict | Exception | None = None):
+        self._response = response
+        self.last_system: str | None = None
+        self.last_user_message: str | None = None
+        self.last_tool: dict | None = None
+        self.last_purpose: str | None = None
+        self.call_count = 0
+
+    def extract_with_tool(self, system, user_message, tool, purpose=None, **kwargs):
+        self.call_count += 1
+        self.last_system = system
+        self.last_user_message = user_message
+        self.last_tool = tool
+        self.last_purpose = purpose
+        if isinstance(self._response, Exception):
+            raise self._response
+        return self._response or {}
+
+
+def _disambig_stage_1_response(
+    disambig_title: str = "Smith", input_title: str | None = None
+):
+    """Build a Stage 1 response indicating the input resolves to a
+    disambiguation page. When `input_title` differs from `disambig_title`,
+    a redirects block is included so the parser maps input → page
+    correctly."""
+    query: dict = {
+        "pages": [
+            {
+                "title": disambig_title,
+                "pageid": 12345,
+                "pageprops": {"disambiguation": ""},
+            }
+        ]
+    }
+    if input_title is not None and input_title != disambig_title:
+        query["redirects"] = [{"from": input_title, "to": disambig_title}]
+    return _api_response(query)
+
+
+def _disambig_parse_response(candidates: list[str], disambig_title: str = "Smith"):
+    """Build a `action=parse` response containing the given candidates as
+    namespace-0 article links."""
+    links = [{"ns": 0, "title": c, "exists": True} for c in candidates]
+    return _make_response(
+        json.dumps(
+            {
+                "parse": {
+                    "title": disambig_title,
+                    "links": links,
+                }
+            }
+        ).encode()
+    )
+
+
+def _make_normalizer_with_llm(llm_response):
+    db = open_memory_db()
+    config = Config()
+    cache = LRUHTTPCache()
+    http_client = CachingHTTPClient(
+        cache=cache, headers={"User-Agent": config.user_agent}
+    )
+    stub = _StubLLM(llm_response)
+    normalizer = WikipediaNormalizer(
+        http_cache=http_client, llm_client=stub, db=db, config=config
+    )
+    return normalizer, db, stub
+
+
+class TestStage2Selection:
+    def test_clear_context_selects_candidate(self):
+        """Bare 'Obama' + source text mentioning Barack signing a bill
+        → LLM picks 'Barack Obama' from candidates."""
+        normalizer, db, llm = _make_normalizer_with_llm(
+            {"selection": "Barack Obama", "reasoning": "Source text mentions the President signing a bill."}
+        )
+        candidates = ["Barack Obama", "Michelle Obama", "Obama, Fukui"]
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(candidates, "Obama (disambiguation)"),
+            ]
+            result = normalizer.normalize(
+                "Obama",
+                claim_subject="Obama",
+                claim_predicate="signed",
+                claim_object="the bill",
+                source_text="Barack Obama signed the bill. Obama said it was historic.",
+                slot_position="subject",
+                claim_id="test-1",
+            )
+
+        assert result.stage_1_outcome == OUTCOME_DISAMBIGUATION_PAGE
+        assert result.stage_2_invoked is True
+        assert result.stage_2_candidates == candidates
+        assert result.stage_2_selection == "Barack Obama"
+        assert result.normalized_form == "Barack Obama"
+        assert result.error is None
+
+        # The prompt should include the source text and candidates.
+        assert "Barack Obama signed the bill" in llm.last_user_message
+        for c in candidates:
+            assert c in llm.last_user_message
+
+    def test_abstain_when_no_context(self):
+        """'Smith proved the theorem' with no further context — the LLM
+        emits ABSTAIN; the surface form is preserved unchanged."""
+        normalizer, _, _ = _make_normalizer_with_llm(
+            {"selection": "ABSTAIN", "reasoning": "Surrounding text gives no clue which Smith."}
+        )
+        candidates = ["Adam Smith", "Will Smith", "John Smith"]
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Smith"),
+                _disambig_parse_response(candidates, "Smith"),
+            ]
+            result = normalizer.normalize(
+                "Smith",
+                claim_subject="Smith",
+                claim_predicate="proved",
+                claim_object="the theorem",
+                source_text="Smith proved the theorem.",
+            )
+
+        assert result.stage_1_outcome == OUTCOME_DISAMBIGUATION_PAGE
+        assert result.stage_2_invoked is True
+        assert result.stage_2_candidates == candidates
+        assert result.stage_2_selection is None  # abstained
+        assert result.normalized_form == "Smith"  # surface form preserved
+        assert "no clue" in result.stage_2_reasoning.lower()
+
+    def test_abstain_via_empty_string(self):
+        """The model returns an empty selection string — treated as abstention."""
+        normalizer, _, _ = _make_normalizer_with_llm(
+            {"selection": "", "reasoning": "uncertain"}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Smith"),
+                _disambig_parse_response(["Adam Smith"], "Smith"),
+            ]
+            result = normalizer.normalize(
+                "Smith", source_text="Smith said yes."
+            )
+        assert result.stage_2_invoked is True
+        assert result.stage_2_selection is None
+        assert result.normalized_form == "Smith"
+
+    def test_selection_not_in_candidates_treated_as_abstention(self):
+        """Defence-in-depth: a model that invents a title outside the
+        candidate set is treated as abstention. A stray hallucination
+        must not drive a wrong KB query downstream."""
+        normalizer, _, _ = _make_normalizer_with_llm(
+            {"selection": "Barack Hussein Obama", "reasoning": "guess"}
+        )
+        candidates = ["Barack Obama", "Michelle Obama"]
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(candidates, "Obama (disambiguation)"),
+            ]
+            result = normalizer.normalize(
+                "Obama", source_text="Obama signed the bill."
+            )
+        assert result.stage_2_invoked is True
+        assert result.stage_2_selection is None
+        assert result.normalized_form == "Obama"
+        assert "selection_not_in_candidates" in (result.error or "")
+
+    def test_llm_exception_abstains(self):
+        """LLM call raises → recorded as abstention, no crash."""
+        normalizer, _, _ = _make_normalizer_with_llm(RuntimeError("rate limited"))
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Smith"),
+                _disambig_parse_response(["Adam Smith"], "Smith"),
+            ]
+            result = normalizer.normalize(
+                "Smith", source_text="Smith proved it."
+            )
+        assert result.stage_2_invoked is True
+        assert result.stage_2_selection is None
+        assert result.normalized_form == "Smith"
+        assert "RuntimeError" in (result.error or "")
+
+    def test_candidate_fetch_failure_abstains(self):
+        """The disambiguation page fetch fails → no candidates → abstain,
+        no LLM call attempted."""
+        normalizer, _, llm = _make_normalizer_with_llm(None)
+        with patch("httpx.Client") as MockClient:
+            stage_1 = _disambig_stage_1_response("Smith")
+            # Second call (the parse) raises a network error.
+            mock_get = MockClient.return_value.__enter__.return_value.get
+            mock_get.side_effect = [
+                stage_1,
+                httpx.NetworkError("timeout"),
+                httpx.NetworkError("timeout"),  # retry
+            ]
+            result = normalizer.normalize(
+                "Smith", source_text="Smith proved it."
+            )
+        assert result.stage_1_outcome == OUTCOME_DISAMBIGUATION_PAGE
+        assert result.stage_2_invoked is False  # never reached
+        assert result.normalized_form == "Smith"
+        assert "NetworkError" in (result.error or "")
+        # No LLM call should have been attempted.
+        assert llm.call_count == 0
+
+    def test_candidate_truncation_respects_max(self):
+        """A disambiguation page with many links is truncated to
+        Config.wikipedia_stage_2_max_candidates (default 20)."""
+        normalizer, _, llm = _make_normalizer_with_llm(
+            {"selection": "Cand0", "reasoning": "first"}
+        )
+        # 50 candidates → should be truncated to 20.
+        candidates = [f"Cand{i}" for i in range(50)]
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("ManyCands"),
+                _disambig_parse_response(candidates, "ManyCands"),
+            ]
+            result = normalizer.normalize("ManyCands", source_text="t")
+        assert len(result.stage_2_candidates) == 20
+        # First 20 in original order preserved.
+        assert result.stage_2_candidates == [f"Cand{i}" for i in range(20)]
+
+    def test_non_namespace_0_links_filtered(self):
+        """Disambiguation pages have many non-article links (categories,
+        meta-pages); only ns=0 article links are eligible candidates."""
+        normalizer, _, llm = _make_normalizer_with_llm(
+            {"selection": "Adam Smith", "reasoning": "ok"}
+        )
+        # Mix ns=0 (article), ns=14 (category), ns=10 (template), red link.
+        mixed_links = [
+            {"ns": 0, "title": "Adam Smith", "exists": True},
+            {"ns": 14, "title": "Category:Smiths", "exists": True},
+            {"ns": 10, "title": "Template:Disambig", "exists": True},
+            {"ns": 0, "title": "Smith (red link)", "exists": False},
+            {"ns": 0, "title": "Will Smith", "exists": True},
+        ]
+        parse_resp = _make_response(
+            json.dumps(
+                {"parse": {"title": "Smith", "links": mixed_links}}
+            ).encode()
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Smith"),
+                parse_resp,
+            ]
+            result = normalizer.normalize("Smith", source_text="t")
+        # Only the two ns=0 + exists links should remain.
+        assert result.stage_2_candidates == ["Adam Smith", "Will Smith"]
+
+    def test_audit_event_includes_stage_2_fields(self):
+        normalizer, db, _ = _make_normalizer_with_llm(
+            {"selection": "Barack Obama", "reasoning": "Context matches."}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(
+                    ["Barack Obama", "Michelle Obama"], "Obama (disambiguation)"
+                ),
+            ]
+            normalizer.normalize(
+                "Obama",
+                claim_id="c1",
+                source_text="Barack Obama signed it.",
+            )
+        events = query_events(db, event_type="entity_normalization", limit=5)
+        assert len(events) == 1
+        data = events[0]["event_data"]
+        assert data["stage_1_outcome"] == OUTCOME_DISAMBIGUATION_PAGE
+        assert data["stage_2_invoked"] is True
+        assert data["stage_2_selection"] == "Barack Obama"
+        assert data["stage_2_candidates"] == ["Barack Obama", "Michelle Obama"]
+        assert "Context" in data["stage_2_reasoning"]
+        assert data["normalized_form"] == "Barack Obama"

@@ -76,6 +76,11 @@ DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
     # false-verifieds on python_verification_corpus where five other
     # candidates each produced 1. See docs/phase_E_report.md.
     "python_verifier":                  {"model": "mistralai/devstral-small", **_OPENROUTER},
+    # Phase H D47 step 2 — Wikipedia normalizer Stage 2 selection. Bounded
+    # closed-set selection over disambiguation-page candidates with explicit
+    # abstention. Haiku 4.5 (Anthropic native) — small, fast, reliable tool
+    # calls; matches the extractor model.
+    "layer1:entity_normalization":      {"model": "claude-haiku-4-5", **_ANTHROPIC},
 }
 
 _TEMPERATURE_DEPRECATED_PREFIXES = ("claude-opus-4-7",)
