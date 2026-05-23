@@ -49,13 +49,23 @@ class Config:
     wikidata_sparql_endpoint: str = "https://query.wikidata.org/sparql"
     wikidata_search_endpoint: str = "https://www.wikidata.org/w/api.php"
     wikidata_subsumption_depth: int = 6
-    wikidata_candidate_pool_size: int = 10
+    # Phase G D33: pool raised from 10 to 30. The post-filter prunes
+    # wrong-type candidates; a larger initial pool gives the filter more
+    # to work with so the canonical entity is more likely to survive.
+    wikidata_candidate_pool_size: int = 30
     # Rate limits (per Phase F2 design §7.4). WDQS soft limit is ~5 req/s
     # SPARQL; wbsearchentities tolerates ~50 req/s. AEDOS_KB_REQUEST_DELAY_MS
     # (env, optional) overrides both with an explicit delay — the runbook's
     # existing knob now reaches the limiter.
     wikidata_sparql_rate_per_second: float = 5.0
     wikidata_search_rate_per_second: float = 50.0
+    # Phase G D33: post-filter entity-resolution candidates by P31. The
+    # candidate-pool size is raised to 30 (from 10) so the canonical
+    # entity has a better chance of being in the pool before filtering.
+    wikidata_type_filter_enabled: bool = True
+    # wbgetentities accepts up to 50 entity ids per call; the batch size
+    # caps how many candidates we fetch P31 for in a single roundtrip.
+    wikidata_type_filter_p31_batch_size: int = 50
 
     # HTTP User-Agent for external services (Wikimedia policy requires
     # contact info — URL or email). Privacy caveat: the contact info
@@ -148,6 +158,11 @@ class Config:
             raise ValueError(
                 f"wikidata_search_rate_per_second must be positive; got "
                 f"{self.wikidata_search_rate_per_second!r}"
+            )
+        if self.wikidata_type_filter_p31_batch_size <= 0:
+            raise ValueError(
+                f"wikidata_type_filter_p31_batch_size must be positive; got "
+                f"{self.wikidata_type_filter_p31_batch_size!r}"
             )
 
         # User-Agent must be non-empty (Wikimedia policy requires

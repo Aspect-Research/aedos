@@ -161,6 +161,33 @@ class TestD33CanonicalEntityReachability:
         assert "Q49112" in ids
 
 
+class TestLiveFetchP31:
+    """Live tests for `_fetch_p31_for_candidates` (Phase G D33 step 2).
+
+    Verifies the wbgetentities helper reaches the real API and returns
+    P31 values for known canonical entities."""
+
+    def test_fetch_p31_q76_includes_q5(self, live_adapter):
+        """Q76 (Barack Obama) is an instance_of Q5 (human) on Wikidata.
+        The P31 fetch should return a list containing Q5."""
+        p31, err = live_adapter._fetch_p31_for_candidates(["Q76"])
+        assert err is None
+        assert "Q5" in p31["Q76"], (
+            f"Q76's P31 should include Q5 (human); got {p31['Q76']}"
+        )
+
+    def test_fetch_p31_batch_multiple_entities(self, live_adapter):
+        """Batched fetch with multiple Q-ids: each gets its own P31 list."""
+        p31, err = live_adapter._fetch_p31_for_candidates(["Q76", "Q49112"])
+        assert err is None
+        assert "Q5" in p31["Q76"]
+        # Q49112 (Williams College) is an instance_of Q3918 (university)
+        # and/or Q38723 (higher education institution).
+        assert any(qid in p31["Q49112"] for qid in ("Q3918", "Q38723")), (
+            f"Q49112's P31 should include Q3918 or Q38723; got {p31['Q49112']}"
+        )
+
+
 class TestLiveLookup:
     """Live tests for `_live_lookup` (F2 commit #2).
 

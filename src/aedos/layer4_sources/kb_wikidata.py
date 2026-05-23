@@ -28,7 +28,9 @@ _DEPRECATED_RANK = "http://wikiba.se/ontology#DeprecatedRank"
 # come through build_pipeline which passes a Config.
 _DEFAULT_SEARCH_ENDPOINT = "https://www.wikidata.org/w/api.php"
 _DEFAULT_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
-_DEFAULT_CANDIDATE_POOL_SIZE = 10
+_DEFAULT_CANDIDATE_POOL_SIZE = 30
+# wbgetentities accepts up to 50 entity ids per call.
+_DEFAULT_P31_BATCH_SIZE = 50
 _DEFAULT_SPARQL_RATE = 5.0
 _DEFAULT_SEARCH_RATE = 50.0
 _DEFAULT_ENTITY_TTL_SECONDS = 3600
@@ -230,6 +232,29 @@ def _rank_label(rank_uri: str) -> str:
 
 def _extract_entity_id(uri: str) -> str:
     return uri.rsplit("/", 1)[-1]
+
+
+def _extract_p31(entity_data: dict) -> list[str]:
+    """Phase G D33: extract P31 (instance-of) Q-ids from a wbgetentities
+    entity payload. Returns an empty list when the entity has no P31
+    claims or the claim shape is unexpected (defensive — Wikidata's
+    schema is stable in practice but downstream callers should not crash
+    on a single malformed claim)."""
+    claims = entity_data.get("claims", {}).get("P31", []) if isinstance(entity_data, dict) else []
+    out: list[str] = []
+    for claim in claims:
+        try:
+            qid = (
+                claim.get("mainsnak", {})
+                .get("datavalue", {})
+                .get("value", {})
+                .get("id")
+            )
+        except AttributeError:
+            qid = None
+        if isinstance(qid, str) and qid.startswith("Q"):
+            out.append(qid)
+    return out
 
 
 def _parse_time_value(raw: str) -> str:
@@ -468,6 +493,68 @@ class WikidataAdapter:
             },
         )
         return candidates
+
+    def _fetch_p31_for_candidates(
+        self, candidate_ids: list[KBEntityID]
+    ) -> tuple[dict[str, list[str]], Optional[str]]:
+        """Phase G D33: batch-fetch P31 (instance-of) Q-ids for each candidate.
+
+        Calls ``wbgetentities`` with ``props=claims``, splitting into batches
+        of at most ``Config.wikidata_type_filter_p31_batch_size`` (default 50,
+        the API limit). Returns ``(p31_by_qid, error)``:
+
+          - ``p31_by_qid`` maps each candidate Q-id to its P31 list. Candidates
+            whose entity payload is missing or unparseable get an empty list.
+          - ``error`` is None on full success. On API failure ``error`` is the
+            stringified exception; ``_live_resolve`` interprets a non-None
+            error as "fail-open" (return unfiltered candidates) per the design
+            doc's transient-failure decision.
+
+        Uses the search rate-limiter — wbgetentities shares the action-API
+        endpoint with wbsearchentities and the same per-IP fairness budget.
+        Caches at the HTTP layer with the entity TTL (P31 values rarely
+        change, and the entity TTL is the right shelf-life).
+        """
+        if not candidate_ids:
+            return ({}, None)
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._fetch_p31_for_candidates requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        url = self._cfg_value("wikidata_search_endpoint", _DEFAULT_SEARCH_ENDPOINT)
+        ttl = self._cfg_value("http_cache_entity_ttl_seconds", _DEFAULT_ENTITY_TTL_SECONDS)
+        batch_size = self._cfg_value(
+            "wikidata_type_filter_p31_batch_size", _DEFAULT_P31_BATCH_SIZE
+        )
+
+        p31_by_qid: dict[str, list[str]] = {qid: [] for qid in candidate_ids}
+        for start in range(0, len(candidate_ids), batch_size):
+            batch = candidate_ids[start : start + batch_size]
+            params = {
+                "action": "wbgetentities",
+                "ids": "|".join(batch),
+                "props": "claims",
+                "format": "json",
+            }
+            self._search_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except Exception as exc:
+                # Batch-level failure: surface as fail-open signal.
+                # Per design doc lines 283-289: a transient wbgetentities
+                # failure should not abstain on every resolution.
+                return (p31_by_qid, f"{type(exc).__name__}: {exc}")
+
+            entities = data.get("entities", {}) if isinstance(data, dict) else {}
+            for qid in batch:
+                entity_data = entities.get(qid)
+                if isinstance(entity_data, dict):
+                    p31_by_qid[qid] = _extract_p31(entity_data)
+                # If the API omitted the entity, it stays at the [] seed.
+
+        return (p31_by_qid, None)
 
     def _log_audit_event(self, event_type: str, event_subject: str, event_data: dict) -> None:
         """Best-effort audit logging. No-ops when no db is wired (test
