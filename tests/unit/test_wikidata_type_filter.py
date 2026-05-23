@@ -239,3 +239,184 @@ class TestFetchP31ForCandidates:
         adapter = WikidataAdapter()
         with pytest.raises(RuntimeError, match="http_cache"):
             adapter._fetch_p31_for_candidates(["Q76"])
+
+
+# ---------------------------------------------------------------------------
+# _live_resolve with type filter (Phase G D33 step 3)
+# ---------------------------------------------------------------------------
+
+class TestLiveResolveTypeFilter:
+    def test_filter_keeps_matching_p31(self):
+        """Filter retains candidates whose P31 intersects expected_entity_types."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        # Search returns 3 candidates; only Q76 is a human.
+        search_resp = _search_response(["Q41773", "Q76", "Q18355807"])
+        wbget_resp = _wbgetentities_response(
+            {
+                "Q41773": ["Q3957"],  # Obama, Fukui — a town
+                "Q76": ["Q5"],         # Barack Obama — human
+                "Q18355807": ["Q4167410"],  # disambiguation page
+            }
+        )
+        cm, _ = _scripted_httpx([search_resp, wbget_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        ids = [c.kb_identifier for c in candidates]
+        assert ids == ["Q76"]
+
+    def test_filter_drops_non_matching(self):
+        """A candidate without a matching P31 is removed."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q41773"])  # town, not human
+        wbget_resp = _wbgetentities_response({"Q41773": ["Q3957"]})
+        cm, _ = _scripted_httpx([search_resp, wbget_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        assert candidates == []
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["pre_filter_count"] == 1
+        assert events[0]["event_data"]["filter_eliminated_count"] == 1
+        assert events[0]["event_data"]["candidate_count"] == 0
+
+    def test_filter_returns_empty_when_all_drop(self):
+        """No candidate matches → return [] (not the unfiltered list)."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q41773", "Q18355807"])
+        wbget_resp = _wbgetentities_response(
+            {"Q41773": ["Q3957"], "Q18355807": ["Q4167410"]}
+        )
+        cm, _ = _scripted_httpx([search_resp, wbget_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        assert candidates == []
+
+    def test_filter_skipped_when_no_expected_types(self):
+        """Empty expected_entity_types → filter no-ops; candidates unchanged.
+        No wbgetentities call should be made."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=[],
+        )
+        search_resp = _search_response(["Q41773", "Q76"])
+        # Only one response in the script: if the adapter calls wbgetentities,
+        # the test will raise StopIteration. So absence-of-call is asserted
+        # by the test not crashing.
+        cm, _ = _scripted_httpx([search_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        ids = [c.kb_identifier for c in candidates]
+        assert ids == ["Q41773", "Q76"]  # unfiltered
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["filter_no_op_reason"] == "no_expected_types"
+        assert events[0]["event_data"]["filter_eliminated_count"] == 0
+
+    def test_filter_fails_open_on_wbgetentities_failure(self):
+        """wbgetentities HTTP failure → filter no-ops, returns unfiltered
+        candidates, audit records `filter_no_op_reason: wbgetentities_failed`."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q41773", "Q76"])
+        timeout_exc = httpx.TimeoutException("simulated")
+
+        # First call: search succeeds. Second call: wbgetentities times out.
+        inner = MagicMock()
+        inner.get.side_effect = [search_resp, timeout_exc]
+        cm = MagicMock()
+        cm.__enter__.return_value = inner
+        cm.__exit__.return_value = False
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                candidates = adapter._live_resolve("Obama", lc)
+
+        ids = [c.kb_identifier for c in candidates]
+        assert ids == ["Q41773", "Q76"]  # unfiltered (fail-open)
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["filter_no_op_reason"] == "wbgetentities_failed"
+        assert events[0]["event_data"]["pre_filter_count"] == 2
+        assert events[0]["event_data"]["candidate_count"] == 2
+        assert "Timeout" in events[0]["event_data"]["error"]
+
+    def test_filter_disabled_via_config(self):
+        """When wikidata_type_filter_enabled=False, filter no-ops even with
+        expected types populated."""
+        db = open_memory_db()
+        config = Config(wikidata_type_filter_enabled=False)
+        cache = LRUHTTPCache()
+        http_client = CachingHTTPClient(
+            cache=cache, headers={"User-Agent": config.user_agent}
+        )
+        adapter = WikidataAdapter(http_cache=http_client, db=db, config=config)
+
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        search_resp = _search_response(["Q41773"])
+        cm, _ = _scripted_httpx([search_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            candidates = adapter._live_resolve("Obama", lc)
+
+        ids = [c.kb_identifier for c in candidates]
+        assert ids == ["Q41773"]  # unfiltered
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["filter_no_op_reason"] == "filter_disabled"
+
+    def test_audit_event_has_expected_entity_types(self):
+        """The expected_entity_types list is recorded in the audit event for
+        post-hoc analysis (Phase 10.5)."""
+        adapter, db = _make_adapter()
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5", "Q43229"],
+        )
+        search_resp = _search_response(["Q76"])
+        wbget_resp = _wbgetentities_response({"Q76": ["Q5"]})
+        cm, _ = _scripted_httpx([search_resp, wbget_resp])
+
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            adapter._live_resolve("Obama", lc)
+
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_resolve")
+        assert events[0]["event_data"]["expected_entity_types"] == ["Q5", "Q43229"]
