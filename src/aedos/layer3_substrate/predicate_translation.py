@@ -97,28 +97,82 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
 
 _GENERATION_SYSTEM_PROMPT = """\
 You are a knowledge-representation expert helping to build a claim-verification system.
-Given an Aedos predicate (a canonical snake_case relational predicate), produce its metadata:
+Given an Aedos predicate (a canonical snake_case relational predicate), produce its metadata.
 
 object_type options:
   entity       — the object is a named entity (person, place, org, concept)
-  quantity     — the object is a number with optional unit
+  quantity     — the object is a number with optional unit (degrees, kilograms,
+                 minutes); also durations and other measurable values
   time         — the object is a date, time, or duration
   proposition  — the object is a nested claim
   entity_list  — the object is a list of entities
 
-routing_hint options:
-  user_authoritative — the asserting party is the ground truth (preference, belief, opinion)
-  python             — reducible to deterministic computation (arithmetic, date math)
-  kb_resolvable      — maps to a structured knowledge base property (Wikidata)
-  abstain            — no authoritative source of belief; cannot be verified
+routing_hint — pick the SINGLE most-applicable verification source:
 
-When in doubt, choose abstain over kb_resolvable. Only choose kb_resolvable when you are
-confident the predicate maps to a real Wikidata property.
+  user_authoritative — the asserting party is ground truth. Use whenever the
+    predicate describes a personal state, preference, belief, opinion, intention,
+    or first-person experience that only the asserting party can reliably
+    report.
+      examples: prefers, believes, feels, experienced, ranks, intends, fears,
+                hopes, plans_to, regrets, remembers, knows
+      signal: the asserting party is also the subject (first-person claims),
+              OR the predicate is about an inner state that only the
+              asserter has privileged access to.
+      caution: do NOT default to abstain just because the claim is subjective —
+              if the asserting party is the right authority for it, route here.
 
-single_valued: set 1 only for functional predicates where a subject has at most one
-true object (place_of_birth, date_of_death, capital). Set 0 for multi-valued predicates
-(position_held, occupation, award_received, member_of). When unsure, choose 0 — a wrong
-single_valued=1 produces a false contradiction.
+  python — reducible to deterministic computation: arithmetic, comparison,
+    sequence ordering, date math, string operations, or formal logic over
+    literal values. The object is typically a quantity, time, or another
+    literal value.
+      examples: equals, is_between, is_prime, has_length_of,
+                chronologically_precedes, older_than, divides,
+                is_anagram_of, lies_in_range
+      signal: the verdict is a mathematical or logical computation, not a
+              fact-lookup.
+
+  kb_resolvable — maps to a structured Wikidata property and refers to a
+    publicly-known fact about a real-world entity.
+      examples:
+        born_in        P19   has_capital     P36
+        founded        P112  (founder; note: P571 is inception date, not founder)
+        co_founded     P112  (also founder; multi-valued)
+        died_in        P20   spouse          P26
+        educated_at    P69   member_of       P463
+        occupation     P106  parent          P22 / P25
+        successor_of   P1365 (replaces; note: P155 is `follows` in a sequence)
+        has_isbn       P212  (identifier of a book — object_type=entity, since
+                              the identifier names a specific publishable work)
+        part_of        P361  (mereological; distinct_slots=true to disambiguate
+                              from inverse `has_part`)
+      caution: when more than one property could fit, pick the property that
+              matches the predicate's MEANING (founder vs. inception), not the
+              first plausible match.
+
+  abstain — no authoritative source of belief. Reserve for predicates that
+    are intrinsically contested across observers (no single ground truth), or
+    too vague/speculative to verify.
+      examples: influenced (no clean ground-truth), is_better_than,
+                is_smarter_than, is_more_important_than, would_have,
+                secretly_believes, relates_to, connects_to
+      caution: abstain is for "no source of belief exists" — not "I'm uncertain
+              which of the other three to pick." Pick a routing if any of the
+              other three plausibly applies.
+
+When in doubt between routings: prefer user_authoritative or python over
+kb_resolvable (they fail safe by checking a different source); prefer
+kb_resolvable over abstain (kb-not-found yields a clean abstention at
+verification time, while routing_hint=abstain forecloses verification entirely).
+
+single_valued: set 1 only for functional predicates where a subject has at
+most one true object (place_of_birth, date_of_death, capital). Set 0 for
+multi-valued predicates (position_held, occupation, award_received,
+member_of). When unsure, choose 0 — a wrong single_valued=1 produces a false
+contradiction; a wrong single_valued=0 only loses a contradiction check.
+
+distinct_slots: set true for predicates where subject and object can map to
+the same KB property but to different qualifier roles (e.g. `part_of` and
+`has_part` both map to P361 but invert the slot direction).
 
 subject_entity_types / object_entity_types: Wikidata Q-ids of the acceptable
 instance-of (P31) types for each slot. The deployed pipeline post-filters
