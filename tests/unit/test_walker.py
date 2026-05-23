@@ -79,7 +79,7 @@ class MockKBVerifier:
     def __init__(self, verdict=KBVerdictType.NO_MATCH):
         self._verdict = verdict
 
-    def verify(self, claim, current_time=None):
+    def verify(self, claim, current_time=None, source_text=None):
         return KBVerdict(verdict=self._verdict, subject_kb_id="Q76")
 
 

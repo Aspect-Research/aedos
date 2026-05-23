@@ -17,6 +17,16 @@ class LocalContext:
     # the slot being resolved. When non-empty, _live_resolve post-filters
     # candidates whose P31 intersects this list. Empty/absent means no filter.
     expected_entity_types: list["KBEntityID"] = field(default_factory=list)
+    # Phase H D47 (2026-05-23): context for the Wikipedia normalizer's Stage 2
+    # LLM-mediated selection. `source_text` is the full input text the
+    # extractor saw (request-scoped, not stored on Claim). The three claim_*
+    # fields surface the immediate claim's slot values for the Stage 2 prompt.
+    # All optional; absence falls through to Stage 2's abstention bias.
+    source_text: Optional[str] = None
+    claim_subject: Optional[str] = None
+    claim_predicate: Optional[str] = None
+    claim_object: Optional[str] = None
+    claim_id: Optional[str] = None
 
 
 @dataclass

@@ -40,7 +40,12 @@ class KBVerifier:
         self._resolver = entity_resolver
         self._pt = predicate_translation
 
-    def verify(self, claim: Claim, current_time: Optional[str] = None) -> KBVerdict:
+    def verify(
+        self,
+        claim: Claim,
+        current_time: Optional[str] = None,
+        source_text: Optional[str] = None,
+    ) -> KBVerdict:
         """Full KB verification: translate → map slots → resolve → lookup → compare.
 
         Honors claim polarity (C1): a negated claim inverts the KB's positive-
@@ -96,11 +101,18 @@ class KBVerifier:
         # keyed on (it becomes the KB statement subject).
         # Phase G D33: pass entity types for the Aedos slot being resolved;
         # the wikidata adapter post-filters candidates by P31 ∩ types.
+        # Phase H D47: thread the source text + immediate-claim context to
+        # the resolver so the Wikipedia normalizer's Stage 2 can use it.
         lookup_ctx = LocalContext(
             predicate=claim.predicate,
             slot_position=lookup_slot,
             asserting_party=claim.asserting_party,
             expected_entity_types=_types_for_slot(meta, lookup_slot),
+            source_text=source_text,
+            claim_subject=claim.subject,
+            claim_predicate=claim.predicate,
+            claim_object=claim.object,
+            claim_id=claim.claim_id,
         )
         lookup_subject_id = self._resolver.select(
             self._resolver.resolve(lookup_ref, lookup_ctx), lookup_ctx
@@ -128,6 +140,11 @@ class KBVerifier:
                 slot_position=value_slot,
                 asserting_party=claim.asserting_party,
                 expected_entity_types=_types_for_slot(meta, value_slot),
+                source_text=source_text,
+                claim_subject=claim.subject,
+                claim_predicate=claim.predicate,
+                claim_object=claim.object,
+                claim_id=claim.claim_id,
             )
             resolved_value = self._resolver.select(
                 self._resolver.resolve(expected_ref, value_ctx), value_ctx

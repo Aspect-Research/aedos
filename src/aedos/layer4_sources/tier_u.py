@@ -36,14 +36,49 @@ class TierU:
         db: sqlite3.Connection,
         entity_resolver=None,  # stub in Phase 3; wired in Phase 4
         predicate_translation: Optional[PredicateTranslation] = None,
+        wikipedia_normalizer=None,
     ) -> None:
         # `db` is required; audit events are written via log_event(db, ...)
         # unconditionally — the vestigial `audit_log` flag (a D8 leftover that
         # build_pipeline never set) was removed in Phase B (B3), matching the
         # A4 cleanup of consistency.py / retraction.py / contradiction_tracer.py.
+        #
+        # Phase H D47: `wikipedia_normalizer` (optional) lets TierU key
+        # rows on the canonical Wikipedia form rather than the surface
+        # form, so cross-utterance references to the same entity dedupe
+        # to one row. The original surface forms are preserved in the
+        # tier_u.subject_surface / object_surface columns. When None
+        # (test paths that don't wire it), TierU behaves exactly as
+        # before — subject/object are keyed on the literal Claim slots.
         self._db = db
         self._resolver = entity_resolver
         self._oracle = predicate_translation
+        self._normalizer = wikipedia_normalizer
+
+    def _normalize_slot(self, value: str, claim: Claim, slot: str) -> str:
+        """Phase H D47: return the canonical Wikipedia form for a claim
+        slot. No-op when no normalizer is wired or the value is empty;
+        also skipped for the asserting party itself (first-person
+        canonicalization output) and synthetic event ids."""
+        if self._normalizer is None or not value:
+            return value
+        if claim.asserting_party and value == claim.asserting_party:
+            return value
+        if value.startswith("event_"):
+            return value
+        try:
+            result = self._normalizer.normalize(
+                surface_form=value,
+                claim_subject=claim.subject,
+                claim_predicate=claim.predicate,
+                claim_object=claim.object,
+                source_text=claim.source_text,
+                slot_position=slot,
+                claim_id=claim.claim_id,
+            )
+        except Exception:
+            return value
+        return result.normalized_form or value
 
     def write(self, claim: Claim, source_context: Optional[dict] = None) -> WriteResult:
         """Write claim to Tier U.
@@ -66,14 +101,23 @@ class TierU:
         now = _NOW()
         source_ctx_json = json.dumps(source_context) if source_context else None
 
+        # Phase H D47: persist the canonical form in subject/object and the
+        # surface form in subject_surface/object_surface. All downstream
+        # keying (idempotency, negation, object-conflict) is on the
+        # canonical form, so cross-utterance references to the same entity
+        # collapse to one row. When the normalizer is not wired the
+        # canonical form equals the surface form and behavior is unchanged.
+        subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
+        object_canonical = self._normalize_slot(claim.object, claim, "object")
+
         # Idempotency: exact match on asserting_party + subject + predicate + object + polarity
         existing = self._db.execute(
             """SELECT id FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=? AND object=?
                AND polarity=? AND retracted_at IS NULL
                ORDER BY id LIMIT 1""",
-            (claim.asserting_party, claim.subject, claim.predicate,
-             claim.object, claim.polarity),
+            (claim.asserting_party, subject_canonical, claim.predicate,
+             object_canonical, claim.polarity),
         ).fetchone()
         if existing is not None:
             return WriteResult(row_id=existing["id"], was_idempotent=True)
@@ -87,8 +131,8 @@ class TierU:
             """SELECT id FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=?
                AND object=? AND polarity=? AND retracted_at IS NULL""",
-            (claim.asserting_party, claim.subject, claim.predicate,
-             claim.object, 1 - claim.polarity),
+            (claim.asserting_party, subject_canonical, claim.predicate,
+             object_canonical, 1 - claim.polarity),
         ).fetchall()
         closed_row_ids.extend(r["id"] for r in negation_rows)
 
@@ -101,7 +145,8 @@ class TierU:
                 """SELECT id FROM tier_u
                    WHERE asserting_party=? AND subject=? AND predicate=?
                    AND object!=? AND polarity=1 AND retracted_at IS NULL""",
-                (claim.asserting_party, claim.subject, claim.predicate, claim.object),
+                (claim.asserting_party, subject_canonical, claim.predicate,
+                 object_canonical),
             ).fetchall()
             if other_object_rows:
                 if self._predicate_is_functional(claim.predicate):
@@ -118,13 +163,14 @@ class TierU:
             """INSERT INTO tier_u
                (asserting_party, subject, predicate, object, polarity,
                 valid_from, valid_until, valid_during_ref,
-                source_text, source_context, asserted_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                source_text, source_context, asserted_at,
+                subject_surface, object_surface)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 claim.asserting_party,
-                claim.subject,
+                subject_canonical,
                 claim.predicate,
-                claim.object,
+                object_canonical,
                 claim.polarity,
                 claim.valid_from,
                 claim.valid_until,
@@ -132,6 +178,8 @@ class TierU:
                 claim.source_text,
                 source_ctx_json,
                 now,
+                claim.subject if subject_canonical != claim.subject else None,
+                claim.object if object_canonical != claim.object else None,
             ),
         )
         self._db.commit()
@@ -230,16 +278,26 @@ class TierU:
         Only positive (polarity=1) rows are returned: a negative Tier U row
         `¬(S P O′)` about a different object O′ does not bear on a claim about
         O. Literal match only — no entity/predicate broadening.
+
+        Phase H D47: subject + object are normalized to canonical Wikipedia
+        form (when the normalizer is wired) before keying. A prior row
+        asserting "Asa lives_in Boston" and a current claim "Asa lives_in
+        Massachusetts" — wait, those are different canonicals; conflict
+        legitimately fires. But "Asa lives_in Boston" vs. "Asa lives_in
+        Boston, Massachusetts" — same canonical "Boston" after redirect —
+        correctly dedupes through this path.
         """
         if current_time is None:
             current_time = _NOW()
+        subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
+        object_canonical = self._normalize_slot(claim.object, claim, "object")
         rows = self._db.execute(
             """SELECT * FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=?
                AND object != ? AND polarity=1 AND retracted_at IS NULL
                AND (valid_until IS NULL OR (valid_until != ? AND valid_until > ?))""",
-            (claim.asserting_party, claim.subject, claim.predicate,
-             claim.object, BEFORE_PRESENT, current_time),
+            (claim.asserting_party, subject_canonical, claim.predicate,
+             object_canonical, BEFORE_PRESENT, current_time),
         ).fetchall()
         rows = [dict(r) for r in rows]
         return LookupResult(found=bool(rows), rows=rows, stage=1)
@@ -281,23 +339,27 @@ class TierU:
             return False
 
     def _stage1(self, claim: Claim, current_time: str) -> LookupResult:
+        subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
+        object_canonical = self._normalize_slot(claim.object, claim, "object")
         rows = self._query_current(
-            claim.asserting_party, claim.subject, claim.predicate,
-            claim.object, claim.polarity, current_time,
+            claim.asserting_party, subject_canonical, claim.predicate,
+            object_canonical, claim.polarity, current_time,
         )
         if rows:
             return LookupResult(found=True, rows=rows, stage=1)
         return LookupResult(found=False)
 
     def _stage1_historical(self, claim: Claim) -> list[dict]:
+        subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
+        object_canonical = self._normalize_slot(claim.object, claim, "object")
         rows = self._db.execute(
             """SELECT * FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=? AND object=?
                AND polarity=? AND retracted_at IS NULL
                AND (valid_until IS NOT NULL OR valid_until=?)""",
             (
-                claim.asserting_party, claim.subject, claim.predicate,
-                claim.object, claim.polarity, BEFORE_PRESENT,
+                claim.asserting_party, subject_canonical, claim.predicate,
+                object_canonical, claim.polarity, BEFORE_PRESENT,
             ),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -312,12 +374,14 @@ class TierU:
             neighbors = self._oracle.query_neighbors(claim.predicate)
         except PredicateTranslationError:
             return LookupResult(found=False)
+        subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
+        object_canonical = self._normalize_slot(claim.object, claim, "object")
         for neighbor in neighbors:
             if neighbor.retracted_at is not None:
                 continue
             rows = self._query_current(
-                claim.asserting_party, claim.subject, neighbor.aedos_predicate,
-                claim.object, claim.polarity, current_time,
+                claim.asserting_party, subject_canonical, neighbor.aedos_predicate,
+                object_canonical, claim.polarity, current_time,
             )
             if rows:
                 return LookupResult(found=True, rows=rows, stage=3)

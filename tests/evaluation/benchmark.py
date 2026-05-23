@@ -204,9 +204,12 @@ class AedosRunner:
             if not claims:
                 return RunResult(case_id=case.case_id, verdict="no_grounding_found",
                                  latency_seconds=time.monotonic() - start)
+            # Phase H D47: thread the statement as source_text so the
+            # Wikipedia normalizer's Stage 2 has context for disambiguation.
             vctx = VerificationContext(
                 current_time=datetime.now(timezone.utc).isoformat(),
                 asserting_party="benchmark",
+                source_text=case.statement,
             )
             results = [walker.walk(c, vctx) for c in claims]
             vr = aggregator.aggregate(claims, results)

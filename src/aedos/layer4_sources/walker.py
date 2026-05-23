@@ -20,6 +20,12 @@ from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
 class VerificationContext:
     current_time: str
     asserting_party: str
+    # Phase H D47: the full input text the extractor was originally called
+    # with, threaded request-scoped so the resolver / normalizer can use it
+    # for Stage 2 disambiguation context. Optional — callers that don't
+    # have a meaningful source text (direct-resolver corpus runners,
+    # ad-hoc tests) pass None and Stage 2's abstention bias fires hard.
+    source_text: Optional[str] = None
 
 
 @dataclass
@@ -323,7 +329,11 @@ class Walker:
 
         # KB verification
         if self._kb_verifier is not None:
-            kb_result = self._kb_verifier.verify(node, current_time=context.current_time)
+            kb_result = self._kb_verifier.verify(
+                node,
+                current_time=context.current_time,
+                source_text=context.source_text,
+            )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
                 trace.edges.append(TraceEdge(

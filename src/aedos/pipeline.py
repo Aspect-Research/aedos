@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from .config import Config
 from .layer1_extraction.extractor import Extractor
+from .layer1_extraction.wikipedia_normalizer import WikipediaNormalizer
 from .layer3_substrate import Substrate
 from .layer3_substrate.consistency import ConsistencyChecker
 from .layer3_substrate.predicate_distribution import PredicateDistributionOracle
@@ -54,6 +55,7 @@ class Pipeline:
     walker: Walker
     extractor: Extractor
     aggregator: Aggregator
+    wikipedia_normalizer: WikipediaNormalizer
 
 
 def build_default_kb(db, llm_client: LLMClient, config: Config) -> WikidataAdapter:
@@ -132,7 +134,36 @@ def build_pipeline(
     )
 
     pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=consistency)
-    resolver = EntityResolver(kb_protocol=kb, db=db, llm_client=client)
+
+    # Phase H D47: Wikipedia normalizer wired into the resolver. The
+    # normalizer shares the HTTP cache layer that build_default_kb already
+    # set up (CachingHTTPClient with User-Agent + LRU + TTL from Config);
+    # we reuse `kb._http` to avoid building a second cache. When the
+    # caller injects a mock `kb` without `_http`, fall back to a fresh
+    # CachingHTTPClient — keeps test paths working without forcing every
+    # mock to expose an http_cache attribute.
+    normalizer_http = getattr(kb, "_http", None)
+    if normalizer_http is None and config.wikipedia_normalizer_enabled:
+        normalizer_lru = LRUHTTPCache(
+            max_size=config.http_cache_lru_size,
+            default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+        )
+        normalizer_http = CachingHTTPClient(
+            cache=normalizer_lru,
+            default_ttl_seconds=config.http_cache_entity_ttl_seconds,
+            headers={"User-Agent": config.user_agent},
+        )
+    wikipedia_normalizer = WikipediaNormalizer(
+        http_cache=normalizer_http,
+        llm_client=client,
+        db=db,
+        config=config,
+    ) if config.wikipedia_normalizer_enabled else None
+
+    resolver = EntityResolver(
+        kb_protocol=kb, db=db, llm_client=client,
+        wikipedia_normalizer=wikipedia_normalizer,
+    )
     subsumption = SubsumptionOracle(
         db=db, llm_client=client, kb_protocol=kb, consistency_checker=consistency
     )
@@ -146,7 +177,11 @@ def build_pipeline(
         predicate_distribution=distribution,
     )
 
-    tier_u = TierU(db=db, predicate_translation=pt)
+    tier_u = TierU(
+        db=db,
+        predicate_translation=pt,
+        wikipedia_normalizer=wikipedia_normalizer,
+    )
     kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
     python_verifier = PythonVerifier(llm_client=client)
     walker = Walker(
@@ -179,4 +214,5 @@ def build_pipeline(
         walker=walker,
         extractor=extractor,
         aggregator=aggregator,
+        wikipedia_normalizer=wikipedia_normalizer,
     )
