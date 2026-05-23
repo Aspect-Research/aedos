@@ -109,56 +109,87 @@ class TestLiveResolve:
 
 
 class TestD33CanonicalEntityReachability:
-    """xfail tests that act as runtime documentation of D33's finding —
-    fixture-encoded canonical entities currently unreachable in live
-    top-10. Marked `strict=False` so an xpass (the live API improves
-    or the canonical entity climbs the rankings) reports as a notice
-    rather than a failure. See `docs/v0.16_planning.md` D33."""
+    """Phase G D33 (2026-05-23): canonical entities that were unreachable
+    in the wbsearchentities default top-10 are now reachable via the
+    larger pool (size 30) + P31 type filter. The previous xfail markers
+    have been removed; these tests now assert the post-filter behavior
+    directly. See docs/phase_G/d33_design.md."""
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "D33: Q76 (Barack Obama) not in wbsearchentities top-10 for "
-            "query 'Obama' as of 2026-05-20; canonical entity unreachable "
-            "via default search."
-        ),
-    )
-    def test_obama_canonical_q76_currently_unreachable(self, live_adapter):
-        # As of 2026-05-20, live wbsearchentities returns these
-        # candidates for "Obama", in rank order:
-        #   Q41773, Q18355807, Q124706956, Q122348649, Q59661289,
-        #   Q5280414, Q1414593, Q26446735, Q25095673, Q7074605
-        # Q76 (Barack Obama — the canonical entity Phase E expects) is
-        # not present. This test xfails until Wikidata's ranking changes
-        # or until Aedos's resolution path includes type filtering
-        # (deferred Ambiguity A, v0.16 D33 work item 1).
-        lc = LocalContext(predicate="holds_role", slot_position="subject")
+    def test_obama_canonical_q76_reachable_with_type_filter(self, live_adapter):
+        # With expected_entity_types=[Q5] (human), the filter eliminates
+        # disambiguation pages, place-named Obamas (Obama, Fukui), and
+        # other non-person candidates that crowded out Q76 in the default
+        # top-10. Q76 lives further down the unfiltered ranking but
+        # survives the filter.
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
         candidates = live_adapter.resolve_entity("Obama", lc)
         ids = [c.kb_identifier for c in candidates]
-        assert "Q76" in ids
+        assert "Q76" in ids, (
+            f"Q76 (Barack Obama) should be in filtered candidates with "
+            f"expected_entity_types=[Q5]; got {ids}"
+        )
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "D33: Q49112 (Williams College, MA) not in wbsearchentities "
-            "top-10 for query 'Williams College' as of 2026-05-20; "
-            "canonical entity unreachable via default search."
-        ),
-    )
-    def test_williams_college_canonical_q49112_currently_unreachable(self, live_adapter):
-        # As of 2026-05-20, live wbsearchentities returns these
-        # candidates for "Williams College", in rank order:
-        #   Q49166, Q12072937, Q8021012, Q61782737, Q23018410, Q7989431,
-        #   Q116718410, Q117012255, Q91769454, Q72585582
-        # Q49112 (Williams College, Williamstown, MA — the institution
-        # Phase E expects) is not present. This test xfails until
-        # Wikidata's ranking changes or until Aedos's resolution path
-        # includes type filtering (deferred Ambiguity A, v0.16 D33
-        # work item 1).
-        lc = LocalContext(predicate="located_in", slot_position="subject")
+    def test_williams_college_canonical_q49112_reachable_with_type_filter(self, live_adapter):
+        # Q3918 (university), Q38723 (higher education institution),
+        # Q1188663 (private not-for-profit educational institution) cover
+        # the canonical Williams College's typical P31 values.
+        lc = LocalContext(
+            predicate="located_in",
+            slot_position="subject",
+            expected_entity_types=["Q3918", "Q38723", "Q1188663"],
+        )
         candidates = live_adapter.resolve_entity("Williams College", lc)
         ids = [c.kb_identifier for c in candidates]
-        assert "Q49112" in ids
+        assert "Q49112" in ids, (
+            f"Q49112 (Williams College, MA) should be in filtered candidates "
+            f"with expected_entity_types=[Q3918, Q38723, Q1188663]; got {ids}"
+        )
+
+    def test_type_filter_drops_obama_fukui_for_person_query(self, live_adapter):
+        # Q41773 (Obama, Fukui — the Japanese town) sits at the top of
+        # the unfiltered ranking for query 'Obama'. With expected types
+        # [Q5] (human), it should NOT survive the filter.
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        candidates = live_adapter.resolve_entity("Obama", lc)
+        ids = [c.kb_identifier for c in candidates]
+        assert "Q41773" not in ids, (
+            f"Q41773 (Obama, Fukui — a town, not a human) should be "
+            f"eliminated by the type filter; got {ids}"
+        )
+
+    def test_audit_event_records_filter_metrics(self, live_adapter):
+        # The audit event must carry the new D33 fields so Phase 10.5
+        # measurement can compute filter-rescue rate post-hoc.
+        from aedos.audit.log import query_events
+        lc = LocalContext(
+            predicate="holds_role",
+            slot_position="subject",
+            expected_entity_types=["Q5"],
+        )
+        live_adapter.resolve_entity("Obama", lc)
+        events = query_events(
+            live_adapter._db, event_type="kb_live_resolve", limit=10
+        )
+        assert len(events) >= 1
+        data = events[0]["event_data"]
+        assert "pre_filter_count" in data
+        assert "filter_eliminated_count" in data
+        assert "expected_entity_types" in data
+        assert data["expected_entity_types"] == ["Q5"]
+        # The filter should actually have eliminated some candidates
+        # (this is the load-bearing claim — the filter is doing work).
+        assert data["pre_filter_count"] > data["candidate_count"], (
+            f"Filter should have eliminated at least one candidate; "
+            f"pre={data['pre_filter_count']} post={data['candidate_count']}"
+        )
 
 
 class TestLiveFetchP31:
