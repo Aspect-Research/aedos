@@ -112,15 +112,18 @@ class TestD33TypeFilterAndBareStringLimit:
     """Phase G D33 (2026-05-23): the type filter correctly drops wrong-type
     entities for queries where the canonical entity is type-distinguishable
     from the noise (test_type_filter_drops_obama_fukui_for_person_query).
-    Live validation also surfaced the new finding D47: some canonical
-    entities (Q76 for "Obama", Q49112 for "Williams College") are NOT
-    reachable from their bare ambiguous string forms via Wikidata — the
-    bare strings are not registered in Wikidata's label or altLabel fields
-    for the canonical entities (verified by direct SPARQL on 2026-05-23,
-    e.g. Q76's only English altLabel is "POTUS 44"). Contextual
-    disambiguation upstream of KB queries is the v0.16 D47 work item.
-    The two tests below pin this limit so a future Wikidata edit
-    (Q76 gaining "Obama" as an altLabel, etc.) is detected via xpass.
+
+    Phase H D47 (2026-05-23): the bare-string-doesn't-reach-canonical limit
+    that Phase G surfaced is still TRUE at the WikidataAdapter level — a
+    direct adapter call with bare 'Obama' still does not return Q76 in
+    the candidate pool. D47 fixes this at the EntityResolver layer by
+    normalizing bare references to canonical Wikipedia article titles
+    BEFORE the adapter is called. The two former xfails are now passing
+    tests against the resolver-level path (test_obama_query_via_d47_path
+    and test_williams_college_query_via_d47_path), and the original
+    adapter-level pins (the two xfails that remain) document that the
+    Wikidata data-model limit is unchanged — D47 routes around it, it
+    does not change it.
     """
 
     def test_type_filter_drops_obama_fukui_for_person_query(self, live_adapter):
@@ -170,20 +173,22 @@ class TestD33TypeFilterAndBareStringLimit:
     @pytest.mark.xfail(
         strict=False,
         reason=(
-            "D47 (2026-05-23): Q76's only English altLabel is 'POTUS 44'; "
-            "the bare string 'Obama' is not registered as a label/altLabel "
-            "for Q76 in Wikidata. Resolution of the bare string to the "
-            "canonical Q76 requires contextual disambiguation upstream of "
-            "the KB query (v0.16 D47 work item). The xfail pins this "
-            "Wikidata data-model limit; an xpass means Wikidata edits have "
-            "added 'Obama' as a Q76 altLabel and Aedos can now reach it."
+            "D47 routes around this at the EntityResolver layer (Phase H, "
+            "2026-05-23); this test pins the WIKIDATA-LEVEL limit by "
+            "calling the adapter directly. Q76's only English altLabel "
+            "is 'POTUS 44'; the bare string 'Obama' is not registered as "
+            "a label/altLabel for Q76 in Wikidata's data model. The full "
+            "D47 path (Extractor → Walker → KBVerifier → EntityResolver "
+            "with the normalizer) DOES reach Q76 — see "
+            "tests/integration/live/test_d47_e2e.py. An xpass here means "
+            "Wikidata edits have changed the underlying data model; the "
+            "D47 fix at the resolver layer is independent of it."
         ),
     )
     def test_obama_short_query_does_not_yield_canonical_q76(self, live_adapter):
-        # Direct empirical pin of the D47 finding. With type filter [Q5],
-        # the bare 'Obama' query returns *some* humans (other people whose
-        # primary label IS 'Obama'), but not Q76 — its label is 'Barack
-        # Obama' and its only English altLabel is 'POTUS 44'.
+        # Adapter-direct pin: bypasses D47 to confirm the Wikidata-side
+        # data-model limit is unchanged. The full pipeline path that uses
+        # D47 successfully reaches Q76 (test_d47_e2e.py).
         lc = LocalContext(
             predicate="holds_role",
             slot_position="subject",
@@ -192,19 +197,24 @@ class TestD33TypeFilterAndBareStringLimit:
         candidates = live_adapter.resolve_entity("Obama", lc)
         ids = [c.kb_identifier for c in candidates]
         assert "Q76" in ids, (
-            f"D47 finding: 'Obama' alone does not reach Q76; got {ids}. "
-            f"If this xpasses, Wikidata may have added 'Obama' as a Q76 "
-            f"altLabel — update the D47 documentation."
+            f"Wikidata-direct: 'Obama' alone does not reach Q76; got {ids}. "
+            f"Pinned as xfail to detect Wikidata-side data-model changes; "
+            f"the D47 resolver-layer path routes around this and DOES reach "
+            f"Q76 (see test_d47_e2e.py)."
         )
 
     @pytest.mark.xfail(
         strict=False,
         reason=(
-            "D47 (2026-05-23): Q49112 (Williams College, MA) is not "
-            "reachable from the bare string 'Williams College' via either "
-            "wbsearchentities (returns 13 unrelated entities, Q49112 not "
-            "among them) or SPARQL label/altLabel match. Resolution "
-            "requires contextual disambiguation upstream (v0.16 D47)."
+            "D47 routes around this at the EntityResolver layer (Phase H, "
+            "2026-05-23); this test pins the WIKIDATA-LEVEL limit by "
+            "calling the adapter directly. Q49112 (Williams College, MA) "
+            "is not reachable from the bare string 'Williams College' via "
+            "either wbsearchentities or SPARQL label/altLabel match. The "
+            "full D47 path normalizes 'Williams College' via Wikipedia "
+            "(canonical_no_redirect → 'Williams College' the article) and "
+            "the resolver reaches Q49112 — see "
+            "tests/integration/live/test_d47_e2e.py."
         ),
     )
     def test_williams_college_short_query_does_not_yield_canonical_q49112(
@@ -218,8 +228,9 @@ class TestD33TypeFilterAndBareStringLimit:
         candidates = live_adapter.resolve_entity("Williams College", lc)
         ids = [c.kb_identifier for c in candidates]
         assert "Q49112" in ids, (
-            f"D47 finding: 'Williams College' alone does not reach Q49112; "
-            f"got {ids}."
+            f"Wikidata-direct: 'Williams College' alone does not reach "
+            f"Q49112; got {ids}. Pinned as xfail; the D47 resolver-layer "
+            f"path routes around this (see test_d47_e2e.py)."
         )
 
     def test_barack_obama_full_name_reaches_q76(self, live_adapter):
