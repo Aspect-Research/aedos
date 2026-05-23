@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS tier_u (
     asserted_at TEXT NOT NULL,
     retracted_at TEXT,
     retraction_reason TEXT,
+    subject_surface TEXT,
+    object_surface TEXT,
     UNIQUE(asserting_party, subject, predicate, object, polarity, asserted_at)
 );
 
@@ -147,6 +149,18 @@ def create_schema(conn: sqlite3.Connection) -> None:
             )
         except sqlite3.OperationalError:
             pass  # column already exists
+    # Phase H D47 (2026-05-23): subject_surface / object_surface columns on
+    # tier_u. With the Wikipedia normalizer wired, TierU keys subject /
+    # object on the normalized (canonical) form so cross-utterance
+    # references to the same entity dedupe to one row. The original
+    # surface form is preserved in *_surface for trace inspection. Same
+    # idempotent ALTER pattern as the D33 columns; NULL default
+    # preserves pre-D47 row semantics.
+    for col in ("subject_surface", "object_surface"):
+        try:
+            conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
 

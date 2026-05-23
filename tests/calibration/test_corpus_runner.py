@@ -94,6 +94,7 @@ class _Harness:
         self._pt = None
         self._resolver = None
         self._substrate = None
+        self._normalizer = None
 
     @property
     def db(self):
@@ -131,10 +132,31 @@ class _Harness:
         return self._pt
 
     @property
+    def normalizer(self):
+        """Phase H D47: the calibration harness wires the Wikipedia
+        normalizer the same way build_pipeline does — shared http_cache
+        with the KB adapter, llm + db + config from the harness."""
+        if self._normalizer is None:
+            from aedos.config import Config
+            from aedos.layer1_extraction.wikipedia_normalizer import WikipediaNormalizer
+            cfg = Config.from_env()
+            # Reuse the kb adapter's http_cache (built by build_default_kb).
+            self._normalizer = WikipediaNormalizer(
+                http_cache=getattr(self.kb, "_http", None),
+                llm_client=self.client,
+                db=self.db,
+                config=cfg,
+            )
+        return self._normalizer
+
+    @property
     def resolver(self):
         if self._resolver is None:
             from aedos.layer3_substrate.resolver import EntityResolver
-            self._resolver = EntityResolver(kb_protocol=self.kb, db=self.db, llm_client=self.client)
+            self._resolver = EntityResolver(
+                kb_protocol=self.kb, db=self.db, llm_client=self.client,
+                wikipedia_normalizer=self.normalizer,
+            )
         return self._resolver
 
     @property
@@ -156,7 +178,11 @@ class _Harness:
         from aedos.layer4_sources.python_verifier import PythonVerifier
         from aedos.layer4_sources.tier_u import TierU
         from aedos.layer4_sources.walker import Walker
-        tier_u = TierU(db=self.db, predicate_translation=self.predicate_translation)
+        tier_u = TierU(
+            db=self.db,
+            predicate_translation=self.predicate_translation,
+            wikipedia_normalizer=self.normalizer,
+        )
         kb_verifier = KBVerifier(
             kb_protocol=self.kb, entity_resolver=self.resolver,
             predicate_translation=self.predicate_translation,
@@ -298,9 +324,35 @@ def _run_temporal_scope(h: _Harness, case: dict) -> bool:
 
 
 def _run_entity_resolution(h: _Harness, case: dict) -> bool:
+    """Run one entity_resolution_corpus case.
+
+    Phase H D47: passes `expected_entity_types` from the corpus's
+    `input.expected_type` field (when present — the 10 `type_filter` cases
+    pin it) so the D33 type filter fires. With the resolver wired to the
+    Wikipedia normalizer, bare references like 'Obama' are normalized to
+    'Barack Obama' via Stage 1 (clean redirect) or Stage 2 (LLM
+    selection) before the KB query; cases without surrounding text get
+    Stage 2's abstention-bias path.
+
+    The runner does not have a meaningful source_text — corpus cases pin
+    a bare reference + predicate + slot, not a sentence. LocalContext's
+    source_text stays None and Stage 2 (when it fires) leans on the
+    predicate / claim context alone.
+    """
     from aedos.layer4_sources.kb_protocol import LocalContext
     inp = case["input"]
-    ctx = LocalContext(predicate=inp["predicate"], slot_position=inp["slot_position"])
+    expected_types: list[str] = []
+    expected_type = inp.get("expected_type")
+    if isinstance(expected_type, str):
+        expected_types = [expected_type]
+    elif isinstance(expected_type, list):
+        expected_types = list(expected_type)
+    ctx = LocalContext(
+        predicate=inp["predicate"],
+        slot_position=inp["slot_position"],
+        expected_entity_types=expected_types,
+        claim_predicate=inp["predicate"],
+    )
     selected = h.resolver.select(h.resolver.resolve(inp["reference"], ctx), ctx)
     expected = case["expected_output"]
     if "top_kb_identifier" in expected:
@@ -511,8 +563,13 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
         asserting_party="calibration", context_type="document"))
     if not claims:
         return expected.get("verdict") == "no_grounding_found"
+    # Phase H D47: thread the corpus case's text as source_text so the
+    # Wikipedia normalizer's Stage 2 has context for disambiguation.
     ctx = VerificationContext(
-        current_time=datetime.now(timezone.utc).isoformat(), asserting_party="calibration")
+        current_time=datetime.now(timezone.utc).isoformat(),
+        asserting_party="calibration",
+        source_text=inp["text"],
+    )
     result = walker.walk(claims[0], ctx)
     expected_verdict = expected.get("verdict")
     if expected_verdict in ("verified", "contradicted", "no_grounding_found"):

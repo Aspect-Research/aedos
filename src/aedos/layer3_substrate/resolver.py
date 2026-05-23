@@ -23,15 +23,49 @@ class EntityResolverError(Exception):
 
 
 class EntityResolver:
-    def __init__(self, kb_protocol, db: sqlite3.Connection, llm_client=None) -> None:
+    def __init__(
+        self,
+        kb_protocol,
+        db: sqlite3.Connection,
+        llm_client=None,
+        wikipedia_normalizer=None,
+    ) -> None:
+        """`wikipedia_normalizer` is the Phase H D47 normalizer. When
+        provided, `resolve` invokes it on the reference before the cache
+        lookup / KB call — bare ambiguous references are normalized to
+        canonical Wikipedia article titles (when Wikipedia's redirect
+        system or Stage 2's LLM selection determines a canonical form).
+
+        When None (e.g. test paths that don't wire it), `resolve` skips
+        normalization and behaves exactly as before. The deployed
+        pipeline (`build_pipeline`) always wires it.
+        """
         self._kb = kb_protocol
         self._db = db
         self._llm = llm_client
+        self._normalizer = wikipedia_normalizer
 
     def resolve(self, reference: str, local_context: LocalContext) -> list[ResolutionCandidate]:
-        """Cache-first resolution. On miss, delegates to KB and writes cache."""
+        """Cache-first resolution. On miss, delegates to KB and writes cache.
+
+        Phase H D47: before the cache lookup, normalize the reference via
+        the Wikipedia normalizer when one is wired. The cache and KB
+        lookups then key on the normalized form, so cross-utterance
+        references that resolve to the same canonical entity dedupe
+        through one cache row.
+
+        Skipped when:
+          - no normalizer is wired (None);
+          - the normalizer is disabled via Config;
+          - the reference is the asserting party itself (first-person
+            canonicalization output — not a Wikipedia article title);
+          - the reference looks like a synthetic event id (starts with
+            "event_").
+        """
+        normalized_reference = self._normalize_if_applicable(reference, local_context)
+
         key = _cache_key(
-            reference, local_context.predicate,
+            normalized_reference, local_context.predicate,
             local_context.slot_position, local_context.asserting_party,
         )
         cached = self._db.execute(
@@ -39,7 +73,7 @@ class EntityResolver:
                FROM entity_resolution_cache
                WHERE local_context_signature=? AND reference=? AND retracted_at IS NULL
                ORDER BY id LIMIT 1""",
-            (key, reference),
+            (key, normalized_reference),
         ).fetchone()
 
         if cached is not None:
@@ -55,7 +89,7 @@ class EntityResolver:
                 score=1.0,
             )]
 
-        candidates = self._kb.resolve_entity(reference, local_context)
+        candidates = self._kb.resolve_entity(normalized_reference, local_context)
 
         if candidates:
             best = candidates[0]
@@ -65,7 +99,7 @@ class EntityResolver:
                     resolved_kb_identifier, provenance, created_at, used_count)
                    VALUES (?, ?, ?, ?, ?, ?, 1)""",
                 (
-                    reference, key,
+                    normalized_reference, key,
                     "wikidata",
                     best.kb_identifier,
                     json.dumps(best.provenance),
@@ -75,6 +109,47 @@ class EntityResolver:
             self._db.commit()
 
         return candidates
+
+    # ------------------------------------------------------------------
+    # D47 normalization helper
+    # ------------------------------------------------------------------
+
+    def _normalize_if_applicable(
+        self, reference: str, local_context: LocalContext
+    ) -> str:
+        """Run the Wikipedia normalizer and return the normalized form,
+        or the surface form when normalization is skipped or fails.
+        """
+        if self._normalizer is None or not reference:
+            return reference
+
+        # Skip first-person canonicalization output (the asserting party
+        # is not a Wikipedia article title; normalizing it would silently
+        # invent a wrong canonical).
+        if local_context.asserting_party and reference == local_context.asserting_party:
+            return reference
+
+        # Skip synthetic event ids produced by the extractor's event
+        # decomposition path.
+        if reference.startswith("event_"):
+            return reference
+
+        try:
+            result = self._normalizer.normalize(
+                surface_form=reference,
+                claim_subject=local_context.claim_subject,
+                claim_predicate=local_context.claim_predicate or local_context.predicate,
+                claim_object=local_context.claim_object,
+                source_text=local_context.source_text,
+                slot_position=local_context.slot_position,
+                claim_id=local_context.claim_id,
+            )
+        except Exception:
+            # Fail-open: a normalizer outage must not abstain on every
+            # resolution. The normalizer's own audit-log path records the
+            # failure; the resolver keeps moving with the surface form.
+            return reference
+        return result.normalized_form or reference
 
     def select(
         self, candidates: list[ResolutionCandidate], local_context: LocalContext

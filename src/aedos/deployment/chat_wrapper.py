@@ -110,9 +110,13 @@ class ChatWrapper:
             claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
 
         # 3. Verify each claim
+        # Phase H D47: thread the draft (the text the extractor saw) as
+        # source_text so the Wikipedia normalizer's Stage 2 has context
+        # for disambiguating bare ambiguous references.
         verification_context = VerificationContext(
             current_time=current_time,
             asserting_party=asserting_party,
+            source_text=draft,
         )
         walk_results = []
         for claim in claims:
