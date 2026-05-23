@@ -31,6 +31,10 @@ _FUNCTIONAL_PREDICATES = {
     "born_in", "died_in", "born_on", "died_on", "capital_of", "has_capital",
     "continent_of", "founded_in_year", "head_of_government", "head_of_state",
     "gender",
+    # Phase G D39 (2026-05-23) additions:
+    "born_in_year",  # one birth date per person
+    "prefers",       # functional at a point in time per object-class (revisable)
+    "status",        # one current status per entity (revisable)
 }
 
 
@@ -169,9 +173,16 @@ class TestSeedSingleValued:
                     f"{entry['aedos_predicate']!r} should be single_valued=0 (conservative default)"
                 )
 
-    def test_exactly_eleven_functional(self, seeds):
+    def test_functional_count_matches_set(self, seeds):
+        # Phase G D39 added 3 functional predicates (born_in_year, prefers,
+        # status); count is asserted against `_FUNCTIONAL_PREDICATES` rather
+        # than a hardcoded 11 so further seed-pack changes update one place.
         functional = [e for e in seeds if e["single_valued"] == 1]
-        assert len(functional) == 11 == len(_FUNCTIONAL_PREDICATES)
+        assert len(functional) == len(_FUNCTIONAL_PREDICATES), (
+            f"seed pack has {len(functional)} functional entries but "
+            f"_FUNCTIONAL_PREDICATES lists {len(_FUNCTIONAL_PREDICATES)}; "
+            f"sync the test fixture with the seed pack additions."
+        )
 
 
 # ---------------------------------------------------------------------------

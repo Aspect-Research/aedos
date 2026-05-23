@@ -730,5 +730,43 @@
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 1,
     "reason": "Seed mapping. Wikidata P21 (sex or gender). Functional: P21 carries a single sex-or-gender value per subject."
+  },
+  {
+    "aedos_predicate": "born_in_year",
+    "object_type": "date",
+    "subject_entity_types": ["Q5"],
+    "object_entity_types": ["Q577"],
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_resolvable",
+    "kb_namespace": "wikidata",
+    "kb_property": "P569",
+    "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
+    "single_valued": 1,
+    "reason": "Phase G D39 (2026-05-23). Wikidata P569 (date of birth), year component only. Functional: a person has one birth date. Used by der_cross_007 (Tier U provides the year; arithmetic verification fires on a separate computed-predicate claim that consumes this value). Entity types: subject=human (Q5), object=year (Q577)."
+  },
+  {
+    "aedos_predicate": "prefers",
+    "object_type": "entity",
+    "user_subject_required": 1,
+    "distinct_slots": null,
+    "routing_hint": "user_authoritative",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 1,
+    "reason": "Phase G D39 (2026-05-23). Preferences are user-authoritative; the asserting party is ground truth. Functional at a point in time (one current preference per object-class for the same subject), revisable over time (der_revision_001 'Asa prefers tea' → 'Asa prefers coffee' = contradicted). Matches predicate_metadata_corpus pred_ua_001 pinned metadata exactly. Entity-types omitted: prefers takes objects of many types (food, brand, color, etc.) — type filter would over-constrain."
+  },
+  {
+    "aedos_predicate": "status",
+    "object_type": "entity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "user_authoritative",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 1,
+    "reason": "Phase G D39 (2026-05-23). Status (project/marriage/role/etc.) is user-authoritative; the asserting party tracks it. Functional: one current status at a time, revisable (der_revision_005 'project status ongoing' + 'The project ended in 2024' = contradicted). Entity-types omitted: status values are state labels (e.g. 'ongoing', 'ended'), not Wikidata-resolvable entities. v0.16 candidate: re-evaluate if corpus additions introduce multiple senses (project status vs marital status vs employment status), in which case split into status_project / status_marital / status_employment."
   }
 ]
