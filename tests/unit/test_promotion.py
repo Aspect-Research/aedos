@@ -169,3 +169,59 @@ class TestPromotionResultDataclass:
         assert pr.tier_u_row_id == 1
         assert pr.pre_verdict is None
         assert pr.write_result is None
+
+
+class TestCrossSourceContradictionAuditTrail:
+    """Phase H Cluster 2 step 4: confirm the full audit trail for the
+    KB-wins cross-source path. When a promotion's pre_verdict surfaces
+    `contradicted`, three audit events should fire in sequence:
+
+      1. row_created (the new tier_u row, with status =
+         contradicted_by_externally_verified)
+      2. cross_source_contradiction (the §"KB wins" decision, with
+         the conflicting externally_verified row id captured)
+
+    The third event (walker_skipped_due_to_pre_verdict) is emitted
+    by the *caller* that honors pre_verdict — the corpus runner does
+    so explicitly; the chat-wrapper does not (per Q-Aggregation: the
+    contradiction is audited but not surfaced to this turn's
+    intervention). Both are correct; this test exercises the runner-
+    style call path."""
+
+    def test_full_audit_sequence_on_kb_wins(self):
+        tu, db = _tier_u()
+        # Externally-verified prior establishes the KB-grounded fact.
+        prior = tu.write(_claim(polarity=0), status="externally_verified")
+
+        # User assertion that contradicts the prior.
+        promotions = promote_assertions([_claim(polarity=1)], tu)
+        assert promotions[0].pre_verdict == "contradicted"
+
+        # row_created for the new row, with the contradicted status.
+        row_events = query_events(db, event_type="row_created")
+        # 2 row_created events total: the externally_verified prior + the new.
+        assert len(row_events) == 2
+        new_row_event = next(
+            e for e in row_events
+            if e["event_subject"] == f"tier_u:{promotions[0].tier_u_row_id}"
+        )
+        assert new_row_event["event_data"]["status"] == "contradicted_by_externally_verified"
+
+        # cross_source_contradiction captures the §"KB wins" decision.
+        cs_events = query_events(db, event_type="cross_source_contradiction")
+        assert len(cs_events) == 1
+        cs = cs_events[0]
+        assert cs["event_subject"] == f"tier_u:{promotions[0].tier_u_row_id}"
+        assert prior.row_id in cs["event_data"]["conflicting_row_ids"]
+        assert cs["event_data"]["new_row_status"] == "contradicted_by_externally_verified"
+
+    def test_walker_skipped_event_not_auto_emitted(self):
+        # Promotion alone does NOT emit walker_skipped_due_to_pre_verdict
+        # — that event is the caller's responsibility (corpus runner
+        # logs it when it honors pre_verdict and skips the walker;
+        # chat-wrapper skips emitting it intentionally).
+        tu, db = _tier_u()
+        tu.write(_claim(polarity=0), status="externally_verified")
+        promote_assertions([_claim(polarity=1)], tu)
+        skipped_events = query_events(db, event_type="walker_skipped_due_to_pre_verdict")
+        assert skipped_events == []
