@@ -32,6 +32,7 @@ Patterns deliberately mirror `kb_wikidata.py`:
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -45,6 +46,17 @@ from ..utils.rate_limit import RateLimiter
 # emit this literal string when no candidate clearly matches; the parser
 # treats it as "leave surface form unchanged."
 STAGE_2_ABSTAIN = "ABSTAIN"
+
+# Phase H Cluster 1 step 1 (2026-05-24): Wikidata Q-id pattern. The
+# walker's D5 KB neighbor enumeration substitutes Q-id-keyed children
+# into claims that then re-enter `EntityResolver.resolve`, which calls
+# this normalizer. A Q-id IS already a canonical KB identifier — sending
+# it through Wikipedia normalization either (a) returns not_found
+# (Q618779 has no Wikipedia article titled "Q618779") or (b) lands on a
+# real but unrelated Wikipedia article (Q5 is a Wikipedia disambig page
+# about the alphanumeric label, not "human"). Either way the result is
+# wasted LLM/HTTP cost. Skip Q-ids at entry.
+_QID_PATTERN = re.compile(r"^Q\d+$")
 
 # Stage 2 tool schema — closed-set selection over candidate strings, with
 # abstention as a first-class first-option. The output is one of the
@@ -120,6 +132,10 @@ OUTCOME_CLEAN_REDIRECT = "clean_redirect"
 OUTCOME_DISAMBIGUATION_PAGE = "disambiguation_page"
 OUTCOME_NOT_FOUND = "not_found"
 OUTCOME_API_ERROR = "api_error"
+# Phase H Cluster 1 step 1: short-circuit outcome for Q-id surface forms.
+# Distinct from the four real Stage 1 outcomes so audit log readers can
+# count "skipped vs. attempted" separately.
+OUTCOME_SKIPPED_KB_IDENTIFIER = "skipped_kb_identifier"
 
 
 @dataclass
@@ -142,6 +158,12 @@ class NormalizationResult:
     stage_2_reasoning: Optional[str] = None
     duration_ms: float = 0.0
     error: Optional[str] = None
+    # Phase H Cluster 1 step 1: True when this result was served from
+    # the per-instance memo rather than freshly computed. The audit
+    # event still fires (observability of resolver call patterns), so
+    # downstream readers count memo hits via this flag rather than via
+    # counts of unique normalize() invocations.
+    from_memo: bool = False
 
 
 @dataclass
@@ -174,6 +196,24 @@ class WikipediaNormalizer:
         rate = self._cfg_value("wikipedia_request_rate_per_second", _DEFAULT_RATE)
         self._limiter = RateLimiter(rate)
 
+        # Phase H Cluster 1 step 1: per-instance memo of normalize()
+        # outcomes. The Cluster 1 diagnostic surfaced that the walker
+        # calls `EntityResolver.resolve("President", ctx)` eight or more
+        # times per case (multiple slots × KB neighbor enumeration paths).
+        # Each call drove a fresh Stage 2 Haiku invocation, multiplying
+        # cost. The memo holds the NormalizationResult for the duration
+        # of the normalizer instance; the calibration runner and the
+        # pipeline both build one normalizer per session, so the memo
+        # spans a single walk / verification request.
+        #
+        # Key is the full set of inputs that change Stage 2's prompt
+        # (surface form + structured claim context + source text +
+        # slot). Two calls with identical inputs get the same answer
+        # without firing the LLM again. Audit events still fire on
+        # memo hits (with `from_memo=True`) so observability is
+        # preserved.
+        self._normalize_memo: dict[tuple, NormalizationResult] = {}
+
     def _cfg_value(self, attr: str, default):
         if self._config is None:
             return default
@@ -204,7 +244,69 @@ class WikipediaNormalizer:
 
         not_found / api_error: surface form preserved (downstream
         resolution behaves as it does today, likely abstaining).
+
+        Phase H Cluster 1 step 1: Q-id surface forms short-circuit
+        without an HTTP call (they're already canonical KB identifiers;
+        Wikipedia has nothing useful to say about them). Repeat calls
+        with identical context are served from `_normalize_memo` —
+        Stage 1's HTTP fetch and Stage 2's Haiku call both happen at
+        most once per (surface, context) per normalizer instance.
         """
+        # Q-id short-circuit (Mechanism F fix). Skips Stage 1, Stage 2,
+        # and the memo — the answer is structural, not data-driven.
+        if isinstance(surface_form, str) and _QID_PATTERN.match(surface_form):
+            result = NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=surface_form,
+                stage_1_outcome=OUTCOME_SKIPPED_KB_IDENTIFIER,
+            )
+            self._log_audit_event(
+                result,
+                claim_id=claim_id,
+                slot_position=slot_position,
+                claim_subject=claim_subject,
+                claim_predicate=claim_predicate,
+                claim_object=claim_object,
+                source_text=source_text,
+            )
+            return result
+
+        memo_key = (
+            surface_form,
+            claim_subject,
+            claim_predicate,
+            claim_object,
+            source_text,
+            slot_position,
+        )
+        memo_hit = self._normalize_memo.get(memo_key)
+        if memo_hit is not None:
+            # Return a fresh result so the caller doesn't mutate the
+            # stored value. `from_memo=True` flags the audit event.
+            result = NormalizationResult(
+                surface_form=memo_hit.surface_form,
+                normalized_form=memo_hit.normalized_form,
+                stage_1_outcome=memo_hit.stage_1_outcome,
+                stage_1_redirect_target=memo_hit.stage_1_redirect_target,
+                stage_2_invoked=memo_hit.stage_2_invoked,
+                stage_2_candidates=list(memo_hit.stage_2_candidates),
+                stage_2_selection=memo_hit.stage_2_selection,
+                stage_2_reasoning=memo_hit.stage_2_reasoning,
+                duration_ms=memo_hit.duration_ms,
+                error=memo_hit.error,
+                from_memo=True,
+            )
+            self._log_audit_event(
+                result,
+                claim_id=claim_id,
+                slot_position=slot_position,
+                claim_subject=claim_subject,
+                claim_predicate=claim_predicate,
+                claim_object=claim_object,
+                source_text=source_text,
+            )
+            return result
+
         start = time.monotonic()
         stage1 = self._stage_1_for_single(surface_form)
         result = self._compose_result(
@@ -216,6 +318,7 @@ class WikipediaNormalizer:
             claim_object=claim_object,
             source_text=source_text,
         )
+        self._normalize_memo[memo_key] = result
         self._log_audit_event(
             result,
             claim_id=claim_id,
@@ -827,6 +930,7 @@ class WikipediaNormalizer:
                     "stage_2_reasoning": result.stage_2_reasoning,
                     "duration_ms": round(result.duration_ms, 2),
                     "error": result.error,
+                    "from_memo": result.from_memo,
                 },
             )
         except Exception:

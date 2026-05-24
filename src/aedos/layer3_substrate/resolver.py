@@ -82,6 +82,16 @@ class EntityResolver:
                 (_NOW(), cached["id"]),
             )
             self._db.commit()
+            # Phase H Cluster 1 step 1: negative cache. Empty
+            # resolved_kb_identifier means a prior call resolved this
+            # (normalized_reference, context) to no KB candidates; surface
+            # the same answer without re-querying KB. The schema's
+            # `resolved_kb_identifier TEXT NOT NULL` constraint is
+            # satisfied by storing `''`; a fuller alternative
+            # (`ALTER TABLE ... DROP NOT NULL`) would require SQLite's
+            # multi-step table-recreation dance.
+            if not cached["resolved_kb_identifier"]:
+                return []
             prov = json.loads(cached["provenance"]) if cached["provenance"] else {}
             return [ResolutionCandidate(
                 kb_identifier=cached["resolved_kb_identifier"],
@@ -103,6 +113,29 @@ class EntityResolver:
                     "wikidata",
                     best.kb_identifier,
                     json.dumps(best.provenance),
+                    _NOW(),
+                ),
+            )
+            self._db.commit()
+        else:
+            # Negative cache write. The Cluster 1 diagnostic surfaced
+            # that abstain-then-no-match cases re-queried KB on every
+            # walker iteration (the cache only wrote on candidates>0),
+            # so a single walk fired one KB call per surface-form
+            # occurrence — eight per case for the "President" surface
+            # forms. The empty-string sentinel marks the row as
+            # "asked KB, got nothing"; subsequent calls short-circuit
+            # at the cache lookup above.
+            self._db.execute(
+                """INSERT OR IGNORE INTO entity_resolution_cache
+                   (reference, local_context_signature, resolved_kb_namespace,
+                    resolved_kb_identifier, provenance, created_at, used_count)
+                   VALUES (?, ?, ?, ?, ?, ?, 1)""",
+                (
+                    normalized_reference, key,
+                    "",
+                    "",
+                    json.dumps({"negative_cache": True}),
                     _NOW(),
                 ),
             )
