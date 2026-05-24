@@ -1,25 +1,32 @@
 {
-  "timestamp": "2026-05-24T05:43:33.789613+00:00",
+  "timestamp": "2026-05-24T10:02:04.303466+00:00",
   "total_cases": 50,
-  "passed": 17,
-  "accuracy": 0.34,
+  "passed": 16,
+  "accuracy": 0.32,
   "verdict_distribution": {
     "no_grounding_found": 44,
-    "verified": 4,
+    "verified": 3,
+    "contradicted": 1,
     "null": 2
   },
-  "total_kb_live_neighbors_events": 60,
-  "cases_where_kb_was_called": 7,
-  "cases_with_d5_edge_in_trace": 7,
-  "total_kb_neighbor_edges": 151,
-  "audit_events_with_neighbors_returned": 60,
+  "total_kb_live_neighbors_events": 44,
+  "cases_where_kb_was_called": 21,
+  "cases_with_d5_edge_in_trace": 18,
+  "total_kb_neighbor_edges": 128,
+  "audit_events_with_neighbors_returned": 24,
   "per_property_calls_returning_neighbors": {
-    "P31": 45,
-    "P279": 43
+    "P31": 16,
+    "P279": 2,
+    "P361": 2,
+    "P131": 6,
+    "P17": 1
   },
   "per_property_total_neighbors_returned": {
-    "P31": 65,
-    "P279": 86
+    "P131": 96,
+    "P361": 2,
+    "P17": 5,
+    "P31": 22,
+    "P279": 3
   },
   "per_case": [
     {
@@ -29,7 +36,7 @@
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
       "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -38,8 +45,349 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q4986635"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q4986637"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5002037"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5017252"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025368"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025392"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025393"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025439"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025444"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025447"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025501"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025512"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025624"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5045960"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5059832"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5061835"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5093622"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5099775"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5108740"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5108986"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -48,8 +396,26 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q14875642",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Springfield"
+          },
+          "target_content": {
+            "object": "Q17509201"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -58,8 +424,349 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q17442"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q41506"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q490303"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q604635"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q689053"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q1278454"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q1588733"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q2477691"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q2587890"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q2720242"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q3070474"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q3306070"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q3968168"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q4873561"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q4887530"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q5012283"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q5018096"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q5020256"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q5049888"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q47265",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Palo Alto"
+          },
+          "target_content": {
+            "object": "Q5527099"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -69,7 +776,7 @@
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
       "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "kb_live_neighbors_calls_this_case": 1,
       "error": null
     },
     {
@@ -77,996 +784,9 @@
       "category": "multi_hop_distribution",
       "passed": false,
       "verdict": "no_grounding_found",
-      "abstention_reason": "budget_wall_clock",
-      "edges": [
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q55983715"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q154954"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q164509"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q215627"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q15978631"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q1144560"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q6174489"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q7336288"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q55983715",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q55983715"
-          },
-          "target_content": {
-            "subject": "Q19478619"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q55983715",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q55983715"
-          },
-          "target_content": {
-            "subject": "Q21871294"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q1144560"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q6174489"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q7336288"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q154954",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q154954"
-          },
-          "target_content": {
-            "subject": "Q2135465"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q154954",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q154954"
-          },
-          "target_content": {
-            "subject": "Q10541491"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q154954",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q154954"
-          },
-          "target_content": {
-            "subject": "Q3778211"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q154954",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q154954"
-          },
-          "target_content": {
-            "subject": "Q106559804"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q1144560"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q6174489"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q7336288"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q164509",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q164509"
-          },
-          "target_content": {
-            "subject": "Q729"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q164509",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q164509"
-          },
-          "target_content": {
-            "subject": "Q72638"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q1144560"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q6174489"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q7336288"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q215627",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q215627"
-          },
-          "target_content": {
-            "subject": "Q795052"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q215627",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q215627"
-          },
-          "target_content": {
-            "subject": "Q3778211"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q215627",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q215627"
-          },
-          "target_content": {
-            "subject": "Q24229398"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q1144560"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q6174489"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q7336288"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q15978631",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q15978631"
-          },
-          "target_content": {
-            "subject": "Q16521"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q15978631",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q15978631"
-          },
-          "target_content": {
-            "subject": "Q171283"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q1144560"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q6174489"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q58702",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "mortal"
-          },
-          "target_content": {
-            "object": "Q7336288"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q55983715"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q154954"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q164509"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q215627"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q15978631"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q1144560",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q1144560"
-          },
-          "target_content": {
-            "object": "Q24034552"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q1144560",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q1144560"
-          },
-          "target_content": {
-            "object": "Q2091629"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q1144560",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q1144560"
-          },
-          "target_content": {
-            "object": "Q3481047"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q55983715"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q154954"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q164509"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q215627"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q15978631"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q6174489",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q6174489"
-          },
-          "target_content": {
-            "object": "Q18208034"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P31",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q55983715"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q154954"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q164509"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q215627"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q5",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Humans"
-          },
-          "target_content": {
-            "subject": "Q15978631"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q7336288",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q7336288"
-          },
-          "target_content": {
-            "object": "Q5449740"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q7336288",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q7336288"
-          },
-          "target_content": {
-            "object": "Q17004438"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "both",
-            "kb_property": "P279",
-            "subject_qid": "Q7336288",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q7336288"
-          },
-          "target_content": {
-            "object": "Q122295832"
-          }
-        }
-      ],
-      "kb_live_neighbors_calls_this_case": 18,
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
     {
@@ -1125,8 +845,349 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q4986635"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q4986637"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5002037"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5017252"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025368"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025392"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025393"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025439"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025444"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025447"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025501"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025512"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5025624"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5045960"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5059832"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5061835"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5093622"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5099775"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5108740"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Cambridge"
+          },
+          "target_content": {
+            "object": "Q5108986"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 1,
       "error": null
     },
     {
@@ -1155,8 +1216,26 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q49166",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Williams College"
+          },
+          "target_content": {
+            "subject": "Q72585582"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1164,7 +1243,7 @@
       "category": "cross_source",
       "passed": false,
       "verdict": "no_grounding_found",
-      "abstention_reason": "budget_wall_clock",
+      "abstention_reason": "depth_exhausted",
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
@@ -1199,162 +1278,9 @@
           "target_content": {
             "object": "Q3305213"
           }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3409032",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q3409032"
-          },
-          "target_content": {
-            "subject": "Q202444"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3409032",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q3409032"
-          },
-          "target_content": {
-            "subject": "Q136439588"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q28533405",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "a student"
-          },
-          "target_content": {
-            "object": "Q3305213"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q113145171"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q28417815"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q56085456"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q3305213",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3305213"
-          },
-          "target_content": {
-            "object": "Q116474095"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3305213",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3305213"
-          },
-          "target_content": {
-            "object": "Q838948"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3305213",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3305213"
-          },
-          "target_content": {
-            "object": "Q110304307"
-          }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 6,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1364,7 +1290,7 @@
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
       "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -1398,25 +1324,25 @@
     {
       "case_id": "der_cross_007",
       "category": "cross_source",
-      "passed": true,
-      "verdict": "verified",
+      "passed": false,
+      "verdict": "contradicted",
       "abstention_reason": null,
       "edges": [
         {
           "edge_type": "premise_lookup",
           "metadata": {
             "source": "python",
-            "verdict": "verified"
+            "verdict": "contradicted"
           },
           "source_content": {
             "subject": "Asa's birth year",
-            "predicate": "plus_30_equals",
+            "predicate": "plus_30_is",
             "object": "2003",
             "polarity": 1
           },
           "target_content": {
-            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if subject == \"Asa's birth year\" and predicate == 'plus_30_equals':\n        # Asa was born in 1973\n        birth_year = 1973\n        return (birth_year + 30) == int(obj)\n    return False",
-            "output": "TRUE"
+            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Extract the birth year from the subject\n    birth_year_str = subject.split()[-1]\n    try:\n        birth_year = int(birth_year_str)\n    except ValueError:\n        return False\n\n    # Check if the predicate is 'plus_30_is'\n    if predicate != 'plus_30_is':\n        return False\n\n    # Calculate the year 30 years after the birth year\n    target_year = birth_year + 30\n\n    # Check if the target year matches the object\n    return str(target_year) == obj",
+            "output": "FALSE"
           }
         }
       ],
@@ -1466,655 +1392,9 @@
           "target_content": {
             "subject": "Q8502"
           }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q8502",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q8502"
-          },
-          "target_content": {
-            "subject": "Q618123"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q8502",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q8502"
-          },
-          "target_content": {
-            "subject": "Q12046615"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q8502",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q8502"
-          },
-          "target_content": {
-            "subject": "Q35145263"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q8502",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q8502"
-          },
-          "target_content": {
-            "subject": "Q106589819"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q618123",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q618123"
-          },
-          "target_content": {
-            "subject": "Q27096213"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q12046615",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q12046615"
-          },
-          "target_content": {
-            "subject": "Q19478619"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q12046615",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q12046615"
-          },
-          "target_content": {
-            "subject": "Q24017414"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q12046615",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q12046615"
-          },
-          "target_content": {
-            "subject": "Q96251598"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35145263",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35145263"
-          },
-          "target_content": {
-            "subject": "Q618123"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35145263",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35145263"
-          },
-          "target_content": {
-            "subject": "Q16686022"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35145263",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35145263"
-          },
-          "target_content": {
-            "subject": "Q27096220"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35145263",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35145263"
-          },
-          "target_content": {
-            "subject": "Q115385384"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q106589819",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q106589819"
-          },
-          "target_content": {
-            "subject": "Q106589826"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q106589819",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q106589819"
-          },
-          "target_content": {
-            "subject": "Q271669"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q106589819",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q106589819"
-          },
-          "target_content": {
-            "subject": "Q618123"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q106589819",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q106589819"
-          },
-          "target_content": {
-            "subject": "Q2221906"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q27096213",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q27096213"
-          },
-          "target_content": {
-            "subject": "Q26713767"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q27096213",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q27096213"
-          },
-          "target_content": {
-            "subject": "Q123349660"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q19478619",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q19478619"
-          },
-          "target_content": {
-            "subject": "Q151885"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q19478619",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q19478619"
-          },
-          "target_content": {
-            "subject": "Q19868531"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q19478619",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q19478619"
-          },
-          "target_content": {
-            "subject": "Q23958852"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q19478619",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q19478619"
-          },
-          "target_content": {
-            "subject": "Q16889133"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q24017414",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q24017414"
-          },
-          "target_content": {
-            "subject": "Q24017465"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q24017414",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q24017414"
-          },
-          "target_content": {
-            "subject": "Q19478619"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q24017414",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q24017414"
-          },
-          "target_content": {
-            "subject": "Q23959932"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q96251598",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q96251598"
-          },
-          "target_content": {
-            "subject": "Q19478619"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q96251598",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q96251598"
-          },
-          "target_content": {
-            "subject": "Q21146257"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q16686022",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q16686022"
-          },
-          "target_content": {
-            "subject": "Q223557"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q16686022",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q16686022"
-          },
-          "target_content": {
-            "subject": "Q1970309"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q27096220",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q27096220"
-          },
-          "target_content": {
-            "subject": "Q27096213"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q115385384",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q115385384"
-          },
-          "target_content": {
-            "subject": "Q13196193"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q106589826",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q106589826"
-          },
-          "target_content": {
-            "subject": "Q25894868"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q271669",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q271669"
-          },
-          "target_content": {
-            "subject": "Q12046615"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q271669",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q271669"
-          },
-          "target_content": {
-            "subject": "Q618123"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q271669",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q271669"
-          },
-          "target_content": {
-            "subject": "Q2221906"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q2221906",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q2221906"
-          },
-          "target_content": {
-            "subject": "Q96253971"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q2221906",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q2221906"
-          },
-          "target_content": {
-            "subject": "Q137015716"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q2221906",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q2221906"
-          },
-          "target_content": {
-            "subject": "Q27096213"
-          }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 16,
+      "kb_live_neighbors_calls_this_case": 1,
       "error": null
     },
     {
@@ -2143,8 +1423,349 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q62"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q1265"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q4558"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q5925"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q8688"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q17550"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q26777"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q27026"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q29655"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q37393"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q37405"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q37584"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q37586"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q37590"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q37752"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q887010"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q16570559"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q126265065"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q135232124"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q99",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "California"
+          },
+          "target_content": {
+            "object": "Q139077872"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 1,
       "error": null
     },
     {
@@ -2153,8 +1774,77 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q937",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Einstein"
+          },
+          "target_content": {
+            "subject": "Q5"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q80061",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Nobel Prize"
+          },
+          "target_content": {
+            "object": "Q7191"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q80061",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Nobel Prize"
+          },
+          "target_content": {
+            "object": "Q11448906"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q80061",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Nobel Prize"
+          },
+          "target_content": {
+            "object": "Q7191"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -2162,7 +1852,7 @@
       "category": "entity_disambiguation",
       "passed": true,
       "verdict": "no_grounding_found",
-      "abstention_reason": "budget_wall_clock",
+      "abstention_reason": "depth_exhausted",
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
@@ -2231,366 +1921,9 @@
           "target_content": {
             "object": "Q96888669"
           }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q28872924"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q135236673"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q107390"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q155076"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q192611"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q852446"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q10864048"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q35657",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q35657"
-          },
-          "target_content": {
-            "subject": "Q106458883"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q500131",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "a state"
-          },
-          "target_content": {
-            "object": "Q3918"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q500131",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "a state"
-          },
-          "target_content": {
-            "object": "Q23002039"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q500131",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "a state"
-          },
-          "target_content": {
-            "object": "Q96888669"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q1223",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Washington"
-          },
-          "target_content": {
-            "subject": "Q35657"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q3918",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3918"
-          },
-          "target_content": {
-            "object": "Q112872396"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3918",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3918"
-          },
-          "target_content": {
-            "object": "Q38723"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3918",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3918"
-          },
-          "target_content": {
-            "object": "Q4671277"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3918",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3918"
-          },
-          "target_content": {
-            "object": "Q123349660"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q1223",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Washington"
-          },
-          "target_content": {
-            "subject": "Q35657"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q23002039",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q23002039"
-          },
-          "target_content": {
-            "object": "Q7257916"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q23002039",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q23002039"
-          },
-          "target_content": {
-            "object": "Q23002037"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q1223",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Washington"
-          },
-          "target_content": {
-            "subject": "Q35657"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q96888669",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q96888669"
-          },
-          "target_content": {
-            "object": "Q2085381"
-          }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 10,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -2623,7 +1956,7 @@
             "polarity": 1
           },
           "target_content": {
-            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Define the order of planets from the sun\n    planet_order = [\n        'Mercury', 'Venus', 'Earth', 'Mars',\n        'Jupiter', 'Saturn', 'Uranus', 'Neptune'\n    ]\n    \n    # Find the indices of the subject and object in the planet order\n    try:\n        subject_index = planet_order.index(subject)\n        obj_index = planet_order.index(obj)\n    except ValueError:\n        # If either subject or object is not in the list, return False\n        return False\n    \n    # Check if the subject is closer to the sun than the object\n    if predicate == 'closer_to_the_sun_than':\n        return subject_index < obj_index\n    elif predicate == 'farther_from_the_sun_than':\n        return subject_index > obj_index\n    else:\n        # If the predicate is not recognized, return False\n        return False",
+            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Define the order of planets from the sun\n    planet_order = ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune']\n    \n    # Find the indices of the subject and object in the planet order\n    try:\n        subject_index = planet_order.index(subject)\n        obj_index = planet_order.index(obj)\n    except ValueError:\n        # If either subject or object is not in the list, return False\n        return False\n    \n    # Check if the subject is closer to the sun than the object\n    if predicate == 'closer_to_the_sun_than':\n        return subject_index < obj_index\n    elif predicate == 'farther_from_the_sun_than':\n        return subject_index > obj_index\n    else:\n        # If the predicate is not recognized, return False\n        return False",
             "output": "TRUE"
           }
         }
@@ -2637,8 +1970,349 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q4986635"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q4986637"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5002037"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5017252"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025368"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025392"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025393"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025439"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025444"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025447"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025501"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025512"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5025624"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5045960"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5059832"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5061835"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5093622"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5099775"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5108740"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q49111",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Cambridge"
+          },
+          "target_content": {
+            "subject": "Q5108986"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -2677,8 +2351,26 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q49166",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Williams College"
+          },
+          "target_content": {
+            "subject": "Q72585582"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -2687,8 +2379,26 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q7186",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Marie Curie"
+          },
+          "target_content": {
+            "subject": "Q5"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 1,
       "error": null
     },
     {
@@ -2774,7 +2484,7 @@
       "category": "belief_revision",
       "passed": false,
       "verdict": "no_grounding_found",
-      "abstention_reason": "budget_wall_clock",
+      "abstention_reason": "depth_exhausted",
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
@@ -2809,162 +2519,9 @@
           "target_content": {
             "object": "Q3305213"
           }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3409032",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q3409032"
-          },
-          "target_content": {
-            "subject": "Q202444"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3409032",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Q3409032"
-          },
-          "target_content": {
-            "subject": "Q136439588"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q28533405",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "a student"
-          },
-          "target_content": {
-            "object": "Q3305213"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q113145171"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q28417815"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q56085456"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q3305213",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3305213"
-          },
-          "target_content": {
-            "object": "Q116474095"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3305213",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3305213"
-          },
-          "target_content": {
-            "object": "Q838948"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q3305213",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Q3305213"
-          },
-          "target_content": {
-            "object": "Q110304307"
-          }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 6,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -2972,7 +2529,7 @@
       "category": "belief_revision",
       "passed": false,
       "verdict": "no_grounding_found",
-      "abstention_reason": "budget_wall_clock",
+      "abstention_reason": "depth_exhausted",
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
@@ -3009,7 +2566,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 2,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -3037,7 +2594,7 @@
       "category": "abstention",
       "passed": true,
       "verdict": "no_grounding_found",
-      "abstention_reason": "budget_wall_clock",
+      "abstention_reason": "depth_exhausted",
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
@@ -3134,8 +2691,60 @@
       "passed": true,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q113145171"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q28417815"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q56085456"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 1,
       "error": null
     },
     {
@@ -3144,8 +2753,26 @@
       "passed": true,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q18562909",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "in France"
+          },
+          "target_content": {
+            "object": "Q18761202"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -3171,8 +2798,65 @@
   ],
   "audit_log_kb_live_neighbors": [
     {
+      "event_subject": "Q18562909",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 375.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q18562909",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 7406.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q18216",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 375.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
       "event_subject": "Q1879675",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3182,7 +2866,7 @@
           "P31": 4,
           "P279": 0
         },
-        "duration_ms": 438.0,
+        "duration_ms": 360.0,
         "retry_count": 0,
         "error": null
       }
@@ -3190,6 +2874,7 @@
     {
       "event_subject": "Q6906732",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3199,7 +2884,7 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 593.0,
+        "duration_ms": 407.0,
         "retry_count": 0,
         "error": null
       }
@@ -3207,6 +2892,47 @@
     {
       "event_subject": "Q123482344",
       "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 375.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q123482344",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 390.0,
+        "retry_count": 0,
+        "error": "HTTPStatusError: Server error '502 Bad Gateway' for url 'https://query.wikidata.org/sparql?query=SELECT+%3Fprop+%3Fvalue+WHERE+%7B%0A++VALUES+%3Fprop+%7B+wdt%3AP131+wdt%3AP361+wdt%3AP17+%7D%0A++wd%3AQ123482344+%3Fprop+%3Fvalue+.%0A++FILTER%28isIRI%28%3Fvalue%29%29%0A%7D&format=json'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502"
+      }
+    },
+    {
+      "event_subject": "Q123482344",
+      "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3224,6 +2950,7 @@
     {
       "event_subject": "Q123482344",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3233,41 +2960,7 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 453.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3305213",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
-        },
-        "duration_ms": 203.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q18216",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
-        },
-        "duration_ms": 0.0,
+        "duration_ms": 407.0,
         "retry_count": 0,
         "error": null
       }
@@ -3275,40 +2968,7 @@
     {
       "event_subject": "Q28533405",
       "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 0
-        },
-        "duration_ms": 94.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3409032",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 2,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 2
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q28533405",
-      "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3326,6 +2986,7 @@
     {
       "event_subject": "Q3472263",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3341,33 +3002,75 @@
       }
     },
     {
-      "event_subject": "Q96888669",
+      "event_subject": "Q7186",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
         ],
         "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q49166",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 1,
+          "P17": 0
+        },
+        "duration_ms": 203.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q49166",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
         "per_property_counts": {
           "P31": 0,
-          "P279": 1
+          "P279": 0
         },
-        "duration_ms": 438.0,
+        "duration_ms": 188.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q1223",
+      "event_subject": "Q49111",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
-          "P31",
-          "P279"
+          "P131",
+          "P361",
+          "P17"
         ],
-        "total_neighbors_returned": 1,
+        "total_neighbors_returned": 20,
         "per_property_counts": {
-          "P31": 1,
-          "P279": 0
+          "P131": 20,
+          "P361": 0,
+          "P17": 0
         },
         "duration_ms": 0.0,
         "retry_count": 0,
@@ -3375,117 +3078,16 @@
       }
     },
     {
-      "event_subject": "Q23002039",
+      "event_subject": "Q49111",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 2,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
           "P31": 0,
-          "P279": 2
-        },
-        "duration_ms": 453.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q1223",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 0
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3918",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 4,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 3
-        },
-        "duration_ms": 453.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q1223",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 0
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q500131",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 3,
-          "P279": 0
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q35657",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 8,
-        "per_property_counts": {
-          "P31": 2,
-          "P279": 6
-        },
-        "duration_ms": 438.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q500131",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 3,
           "P279": 0
         },
         "duration_ms": 422.0,
@@ -3494,8 +3096,27 @@
       }
     },
     {
+      "event_subject": "Q500131",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 3,
+          "P279": 0
+        },
+        "duration_ms": 375.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
       "event_subject": "Q1223",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3504,244 +3125,6 @@
         "per_property_counts": {
           "P31": 1,
           "P279": 0
-        },
-        "duration_ms": 469.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q2221906",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 2,
-          "P279": 1
-        },
-        "duration_ms": 453.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q271669",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
-        },
-        "duration_ms": 516.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q106589826",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 1
-        },
-        "duration_ms": 454.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q115385384",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 1
-        },
-        "duration_ms": 437.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q27096220",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 1
-        },
-        "duration_ms": 468.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q16686022",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 2,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 2
-        },
-        "duration_ms": 453.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q96251598",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 2,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 1
-        },
-        "duration_ms": 438.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q24017414",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
-        },
-        "duration_ms": 437.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q19478619",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 4,
-        "per_property_counts": {
-          "P31": 3,
-          "P279": 1
-        },
-        "duration_ms": 453.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q27096213",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 2,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 2
-        },
-        "duration_ms": 454.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q106589819",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 4,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 3
-        },
-        "duration_ms": 469.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q35145263",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 4,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 4
-        },
-        "duration_ms": 438.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q12046615",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 2,
-          "P279": 1
-        },
-        "duration_ms": 421.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q618123",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 1
         },
         "duration_ms": 594.0,
         "retry_count": 0,
@@ -3749,18 +3132,57 @@
       }
     },
     {
-      "event_subject": "Q8502",
+      "event_subject": "Q80061",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 4,
+        "total_neighbors_returned": 3,
         "per_property_counts": {
           "P31": 2,
-          "P279": 2
+          "P279": 1
         },
-        "duration_ms": 453.0,
+        "duration_ms": 547.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q937",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 750.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q99",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 20,
+        "per_property_counts": {
+          "P131": 15,
+          "P361": 0,
+          "P17": 5
+        },
+        "duration_ms": 375.0,
         "retry_count": 0,
         "error": null
       }
@@ -3768,6 +3190,7 @@
     {
       "event_subject": "Q513",
       "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3776,40 +3199,6 @@
         "per_property_counts": {
           "P31": 1,
           "P279": 0
-        },
-        "duration_ms": 437.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3305213",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
-        },
-        "duration_ms": 438.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q18216",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
         },
         "duration_ms": 453.0,
         "retry_count": 0,
@@ -3817,52 +3206,21 @@
       }
     },
     {
-      "event_subject": "Q28533405",
+      "event_subject": "Q8021289",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
-          "P31",
-          "P279"
+          "P131",
+          "P361",
+          "P17"
         ],
-        "total_neighbors_returned": 1,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 1,
-          "P279": 0
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
         },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3409032",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 2,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 2
-        },
-        "duration_ms": 437.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q28533405",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 1,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 0
-        },
-        "duration_ms": 516.0,
+        "duration_ms": 204.0,
         "retry_count": 0,
         "error": null
       }
@@ -3870,6 +3228,63 @@
     {
       "event_subject": "Q3472263",
       "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 203.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q8021289",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 203.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3472263",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q28533405",
+      "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
@@ -3879,90 +3294,43 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 516.0,
+        "duration_ms": 406.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q7336288",
+      "event_subject": "Q3472263",
       "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 3
-        },
-        "duration_ms": 531.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q5",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 5,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 4
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q6174489",
-      "event_data": {
+        "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
         ],
         "total_neighbors_returned": 1,
         "per_property_counts": {
-          "P31": 0,
-          "P279": 1
+          "P31": 1,
+          "P279": 0
         },
-        "duration_ms": 453.0,
+        "duration_ms": 547.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q5",
+      "event_subject": "Q49166",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
-          "P31",
-          "P279"
+          "P131",
+          "P361",
+          "P17"
         ],
-        "total_neighbors_returned": 5,
+        "total_neighbors_returned": 1,
         "per_property_counts": {
-          "P31": 1,
-          "P279": 4
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q1144560",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 2
+          "P131": 0,
+          "P361": 1,
+          "P17": 0
         },
         "duration_ms": 485.0,
         "retry_count": 0,
@@ -3970,16 +3338,37 @@
       }
     },
     {
-      "event_subject": "Q5",
+      "event_subject": "Q49166",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 5,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 1,
-          "P279": 4
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 594.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q49111",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 20,
+        "per_property_counts": {
+          "P131": 20,
+          "P361": 0,
+          "P17": 0
         },
         "duration_ms": 0.0,
         "retry_count": 0,
@@ -3987,33 +3376,77 @@
       }
     },
     {
-      "event_subject": "Q58702",
+      "event_subject": "Q76",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
-          "P31",
-          "P279"
+          "P131",
+          "P361",
+          "P17"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 2,
-          "P279": 1
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
         },
-        "duration_ms": 0.0,
+        "duration_ms": 406.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q15978631",
+      "event_subject": "Q47265",
       "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 20,
+        "per_property_counts": {
+          "P131": 20,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 391.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q47265",
+      "event_data": {
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 2,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 1,
-          "P279": 1
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 406.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q14875642",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P131": 1,
+          "P361": 0,
+          "P17": 0
         },
         "duration_ms": 453.0,
         "retry_count": 0,
@@ -4021,33 +3454,55 @@
       }
     },
     {
-      "event_subject": "Q58702",
+      "event_subject": "Q31395811",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
-          "P31",
-          "P279"
+          "P131",
+          "P361",
+          "P17"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 2,
-          "P279": 1
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
         },
-        "duration_ms": 0.0,
+        "duration_ms": 469.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q215627",
+      "event_subject": "Q14875642",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
           "P31": 0,
-          "P279": 3
+          "P279": 0
+        },
+        "duration_ms": 391.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q31395811",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
         },
         "duration_ms": 656.0,
         "retry_count": 0,
@@ -4055,33 +3510,97 @@
       }
     },
     {
-      "event_subject": "Q58702",
+      "event_subject": "Q49111",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
-          "P31",
-          "P279"
+          "P131",
+          "P361",
+          "P17"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 20,
         "per_property_counts": {
-          "P31": 2,
-          "P279": 1
+          "P131": 20,
+          "P361": 0,
+          "P17": 0
         },
-        "duration_ms": 0.0,
+        "duration_ms": 375.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q164509",
+      "event_subject": "Q8352134",
       "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q8021289",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3472263",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 703.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q8021289",
+      "event_data": {
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 2,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
           "P31": 0,
-          "P279": 2
+          "P279": 0
         },
         "duration_ms": 437.0,
         "retry_count": 0,
@@ -4089,103 +3608,19 @@
       }
     },
     {
-      "event_subject": "Q58702",
+      "event_subject": "Q3472263",
       "event_data": {
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 2,
-          "P279": 1
+          "P31": 0,
+          "P279": 0
         },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q154954",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 4,
-        "per_property_counts": {
-          "P31": 2,
-          "P279": 2
-        },
-        "duration_ms": 437.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q58702",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 2,
-          "P279": 1
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q55983715",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 2,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 1
-        },
-        "duration_ms": 500.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q58702",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 3,
-        "per_property_counts": {
-          "P31": 2,
-          "P279": 1
-        },
-        "duration_ms": 1016.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q5",
-      "event_data": {
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 5,
-        "per_property_counts": {
-          "P31": 1,
-          "P279": 4
-        },
-        "duration_ms": 813.0,
+        "duration_ms": 578.0,
         "retry_count": 0,
         "error": null
       }
