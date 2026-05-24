@@ -435,13 +435,49 @@ class TestTierUMarkExternallyVerified:
         from aedos.audit.log import query_events
         tu, db = _tier_u()
         wr = tu.write(_claim())
-        tu.mark_externally_verified(wr.row_id, grounding_chain={"kb_statement": "Q1/P31/Q5"})
+        tu.mark_externally_verified(
+            wr.row_id,
+            grounding_chain={
+                "source": "kb",
+                "entity": "Q76",
+                "kb_property": "P39",
+                "statement_value": "Q11696",
+            },
+            verification_context="turn:42",
+        )
         events = query_events(db, event_type="tier_u_status_upgraded")
         assert len(events) == 1
-        assert events[0]["event_subject"] == f"tier_u:{wr.row_id}"
-        assert events[0]["event_data"]["from_status"] == "asserted_unverified"
-        assert events[0]["event_data"]["to_status"] == "externally_verified"
-        assert events[0]["event_data"]["grounding_chain"] == {"kb_statement": "Q1/P31/Q5"}
+        ev = events[0]
+        assert ev["event_subject"] == f"tier_u:{wr.row_id}"
+        assert ev["event_data"]["from_status"] == "asserted_unverified"
+        assert ev["event_data"]["to_status"] == "externally_verified"
+        # Verdict produced by the triggering walk — operator-requested
+        # explicit capture for v0.16 retraction propagation. Default is
+        # 'verified' (the upgrade only fires on successful external
+        # grounding).
+        assert ev["event_data"]["verdict_produced"] == "verified"
+        # Grounding chain — the WHICH-external-source detail. Step 3
+        # walker populates per the docstring shape.
+        assert ev["event_data"]["grounding_chain"] == {
+            "source": "kb", "entity": "Q76",
+            "kb_property": "P39", "statement_value": "Q11696",
+        }
+        # row_id captured in event_subject; occurred_at auto-captured;
+        # verification_context preserved on the audit_log column for
+        # cross-event correlation.
+        assert ev["occurred_at"] is not None
+        assert ev["verification_context"] == "turn:42"
+
+    def test_upgrade_verdict_produced_override(self):
+        # Default is 'verified', but the field accepts the explicit
+        # value so callers can record an unusual upgrade context (none
+        # exist in v0.15; reserved for future use).
+        from aedos.audit.log import query_events
+        tu, db = _tier_u()
+        wr = tu.write(_claim())
+        tu.mark_externally_verified(wr.row_id, verdict_produced="verified")
+        ev = query_events(db, event_type="tier_u_status_upgraded")[0]
+        assert ev["event_data"]["verdict_produced"] == "verified"
 
     def test_upgrade_nonexistent_row(self):
         tu, _ = _tier_u()
