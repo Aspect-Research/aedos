@@ -190,6 +190,126 @@ Phase H commit would have doubled the SPARQL surface and the
 audit event variants; the disciplined scope is single-direction
 v0.15, dual-direction v0.16 driven by Phase 10.5 data.
 
+## Diagnostic addendum — full-corpus audit-log + trace capture
+
+After the operator's check-in on the +4 pp ambiguity, a third full
+corpus run (`scripts/d5_diagnostic.py`, output
+`docs/phase_H/d5_diagnostic.json`) captured every walker trace and
+every `kb_live_neighbors` audit event to discriminate three
+possibilities:
+
+1. D5's mechanism is sound but the corpus doesn't structurally
+   exercise it.
+2. D5 fires but enumerated neighbors aren't reaching verdict.
+3. Cases that would benefit fail at upstream layers before reaching
+   enumeration.
+
+### Headline numbers (this third run)
+
+| Field | Value |
+|---|---|
+| Accuracy | **34.0% (17/50)** — reproduces validation #1 |
+| `kb_live_neighbors` audit events | 60 (every call returned ≥1 neighbor) |
+| Cases where `_live_neighbors` was called | 7 of 50 (14%) |
+| Cases with `kb_neighbor_enumeration` trace edge | 7 of 50 (matches the call set) |
+| Total `kb_neighbor_enumeration` edges across all walks | 151 |
+| Neighbors returned per property (totals) | P279: 86, P31: 65, **P361: 0, P131: 0, P17: 0** |
+
+### Discrimination
+
+**(1) is partially true.** D5 fires for 7 cases. The 7 are
+distributed across categories (multi-hop, cross-source,
+disambiguation, belief-revision, abstain). None of the 7 lifts the
+case's verdict — three of those pass (correctly abstaining as the
+corpus expects), four fail (verdict unchanged). So D5's
+enumeration is integrating correctly with the walker but is not
+producing premises the walker can use to verify a previously-failing
+case.
+
+**(2) is true with a structural twist.** D5 fires exclusively on
+the `is_a` relation (every audit event has
+`props_requested=['P31', 'P279']`). For `is_a` cases the enumerated
+neighbors are entity-types and ancestor-classes (e.g. Q5 →
+Q55983715, Q154954, Q164509 — species, hominid, ape, etc.). The
+walker substitutes the slot with these and walks the new claim, but
+the new claim doesn't have a premise either (no Tier U row about
+species or hominids), so the chain doesn't terminate in a verdict.
+
+**(3) is also true for `part_of` cases.** D5 NEVER fires on the
+`part_of` relation in this corpus. Two upstream-layer reasons:
+
+- **Distribution gate closes** for locative predicates +
+  `part_of` in some cases (`predicate_distribution.consult("lives_in", 1, "part_of")` returns `neither`). No expansion fires at all,
+  no trace edges, walker abstains immediately. Example:
+  `der_multihop_001` has 0 trace edges, 0 `kb_live_neighbors` calls.
+- **Distribution opens with `distributes_up`** (directions={"child"})
+  for the cases where the gate is open. D5's outgoing-edge
+  enumeration serves the `parent` direction; `child` direction
+  requires reverse SPARQL enumeration (D51). So D5 is
+  architecturally the wrong direction for the locative-multi-hop
+  case shape that dominates `der_multihop_*`.
+
+### What D5 is — and isn't — doing
+
+**D5 is sound, integrating cleanly, and exercising real Wikidata
+data.** 60 live SPARQL calls, all returning data; 151 neighbour
+substitutions producing 7 cases' walker expansions. No exceptions,
+no errors, no false-verifieds introduced.
+
+**D5 is not lifting derivation_corpus on the cases that would
+mechanically need it.** The `der_multihop_*` cases — the architectural
+target audience for D5 per the Phase H prompt's framing — require
+reverse-direction enumeration (D51) or distribution-gate-opening
+(predicate_distribution prompt iteration). D5's outgoing-only
+implementation is in the right architectural direction but
+half-the-design at v0.15.
+
+The +4 pp delta in validation run #1 was variance: the 2 lifted
+cases (`der_predicate_translation_004`, `_008`) had zero
+`kb_neighbor_enumeration` edges in this diagnostic run's traces,
+confirming the lift was a point-estimate fluctuation, not a
+D5-attributed shift.
+
+### Updated v0.16 candidates
+
+- **D51 — Reverse KB neighbor enumeration** (sharpened by this
+  diagnostic): the diagnostic confirms D51 is necessary to lift any
+  `der_multihop_*` case via KB enumeration. The reverse-direction
+  SPARQL (`?x wdt:Pn wd:E`) is what serves
+  `distributes_up`+`part_of` — the dominant shape in the multi-hop
+  corpus.
+- **D52 — predicate_distribution prompt iteration** (carryover from
+  Phase E v2 Part 2): for cases where the gate closes
+  (`der_multihop_001`-style: returns `neither` for predicates that
+  should distribute), prompt iteration would open the gate.
+  Phase E v2 Part 2 carried the same finding for the substrate
+  prompt at large.
+
+D51 + D52 together likely unlock the `der_multihop_*` block of
+cases. Either alone has bounded effect (D51 only fires if D52
+opens the gate; D52 only enables substrate traversal if the
+substrate already has the chain, or D51 fills the cold-start
+gap).
+
+### Honest framing for Phase H
+
+D5 is **architecturally complete** as the v0.15 capability the
+plan named (the walker's fourth KB operation). The implementation
+fires correctly, audit-logs correctly, integrates cleanly with the
+walker. v0.15 ships with the capability available; calibration
+exercises it on 7 of 50 derivation cases.
+
+D5 is **not the dominant lift on derivation_corpus accuracy** under
+the current corpus shape and substrate prompts. The remaining
+architectural lift on that corpus is D51 + D52 + corpus alignment
+(D48) — not further work on D5 itself.
+
+This is the honest framing the Phase H prompt's discipline rubric
+required ("the architecture is the contract; the lift is what it
+is"). Phase H delivered the architectural item; the measurement
+will be precise after Phase 10.5's ×3-median protocol + v0.16's
+D51/D52 lift either or both of those follow-ups.
+
 ## Audit trail
 
 - Pre-D5 baseline: `docs/phase_H/d16_postfix_baseline_derivation_corpus.json`
