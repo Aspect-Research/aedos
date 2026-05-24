@@ -67,6 +67,13 @@ class Config:
     # caps how many candidates we fetch P31 for in a single roundtrip.
     wikidata_type_filter_p31_batch_size: int = 50
 
+    # Phase H D53 (2026-05-24): wbsearchentities `limit` parameter.
+    # 20 is the design-doc default — gives Stage C's LLM a usefully
+    # ranked candidate pool without bloating the prompt. The API caps
+    # at 50 per call; values above 50 will be silently truncated by
+    # Wikidata.
+    wikidata_wbsearch_limit: int = 20
+
     # Phase H D47 (2026-05-23): MediaWiki / Wikipedia normalizer.
     # Stage 1 resolves bare ambiguous references to canonical Wikipedia
     # article titles via the redirects API; Stage 2 falls back to an LLM
@@ -181,6 +188,11 @@ class Config:
             raise ValueError(
                 f"wikidata_type_filter_p31_batch_size must be positive; got "
                 f"{self.wikidata_type_filter_p31_batch_size!r}"
+            )
+        if self.wikidata_wbsearch_limit <= 0 or self.wikidata_wbsearch_limit > 50:
+            raise ValueError(
+                f"wikidata_wbsearch_limit must be in (0, 50]; got "
+                f"{self.wikidata_wbsearch_limit!r}"
             )
 
         # Phase H D47 — Wikipedia normalizer fields.

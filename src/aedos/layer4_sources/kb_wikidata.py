@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,29 @@ from .kb_protocol import (
     Statement,
     SubsumptionResult,
 )
+
+
+@dataclass
+class WBSearchCandidate:
+    """Phase H D53: a raw wbsearchentities result row.
+
+    Distinct from `ResolutionCandidate` (which is the KBProtocol-shaped
+    score-wrapped form `KB.resolve_entity` returns). `WBSearchCandidate`
+    preserves the API's full per-result payload — label, description,
+    aliases, match metadata — so the D53 normalizer's Stage C can drive
+    the LLM with rich disambiguation context.
+
+    `rank` is 1-based position in the API response (the API already
+    ranks by its prominence/relevance algorithm).
+    """
+
+    qid: KBEntityID
+    label: str
+    description: Optional[str]
+    aliases: list[str] = field(default_factory=list)
+    match_type: str = ""        # "label" | "alias" | ""
+    match_text: str = ""        # the literal string the API matched against
+    rank: int = 0               # 1-based
 
 _FIXTURE_DIR = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "wikidata"
 _DEPRECATED_RANK = "http://wikiba.se/ontology#DeprecatedRank"
@@ -484,6 +508,118 @@ class WikidataAdapter:
         if self._live:
             return self._live_subsumption(entity_a, entity_b, relation_type)
         return self._fixture_subsumption(entity_a, entity_b, relation_type)
+
+    def wbsearchentities(
+        self, query: str, limit: Optional[int] = None
+    ) -> list[WBSearchCandidate]:
+        """Phase H D53: raw wbsearchentities query.
+
+        Returns ranked Wikidata entity candidates with full metadata
+        (label, description, aliases, match info). Unlike
+        `resolve_entity`, this method does NOT apply the D33 type
+        filter — Stage C of the D53 normalizer flow runs the filter
+        downstream with knowledge of the claim's expected types.
+
+        Fails open on error: returns `[]` and records an audit event
+        with the error. Never raises. (Architecture §3.1: a transient
+        Wikidata outage must not abstain on every resolution; the
+        empty list lets the caller record the absence and proceed.)
+
+        `query` is the search string. `limit` is the API's `limit`
+        parameter (max 50 per the API contract); defaults to
+        `Config.wikidata_wbsearch_limit` (which itself defaults to 20).
+
+        Rate-limited via `self._search_limiter` (shared with
+        `_live_resolve` and `_fetch_p31_for_candidates`). Cached at
+        the HTTP layer with the entity TTL.
+
+        Audit event: `wbsearchentities_query`. event_subject is the
+        query string. event_data records query, limit, n_candidates,
+        top_qids, duration, error.
+        """
+        if not isinstance(query, str) or not query.strip():
+            return []
+
+        if limit is None:
+            limit = self._cfg_value("wikidata_wbsearch_limit", 20)
+
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter.wbsearchentities requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        url = self._cfg_value("wikidata_search_endpoint", _DEFAULT_SEARCH_ENDPOINT)
+        params = {
+            "action": "wbsearchentities",
+            "search": query,
+            "language": "en",
+            "type": "item",
+            "limit": limit,
+            "format": "json",
+        }
+        ttl = self._cfg_value("http_cache_entity_ttl_seconds", _DEFAULT_ENTITY_TTL_SECONDS)
+
+        start = time.monotonic()
+        retries = 0
+        last_error: Optional[str] = None
+        data = None
+
+        for attempt in range(2):
+            self._search_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+                last_error = None
+                break
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+
+        candidates: list[WBSearchCandidate] = []
+        if data is not None and isinstance(data, dict):
+            results = data.get("search", [])
+            if isinstance(results, list):
+                for i, item in enumerate(results, start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    qid = item.get("id", "")
+                    if not isinstance(qid, str) or not _ENTITY_ID_PATTERN.match(qid):
+                        continue
+                    match = item.get("match", {}) if isinstance(item.get("match"), dict) else {}
+                    aliases = item.get("aliases", []) if isinstance(item.get("aliases"), list) else []
+                    candidates.append(
+                        WBSearchCandidate(
+                            qid=qid,
+                            label=item.get("label", "") or "",
+                            description=item.get("description"),
+                            aliases=[a for a in aliases if isinstance(a, str)],
+                            match_type=match.get("type", "") or "",
+                            match_text=match.get("text", "") or "",
+                            rank=i,
+                        )
+                    )
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="wbsearchentities_query",
+            event_subject=query,
+            event_data={
+                "query": query,
+                "limit": limit,
+                "candidate_count": len(candidates),
+                "top_qids": [c.qid for c in candidates[:5]],
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return candidates
 
     def enumerate_neighbors(
         self,
