@@ -616,8 +616,26 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
     # honor any pre-verdict; otherwise invoke the walker.
     primary_promotion = promotions[0]  # one-to-one with claims
     if primary_promotion.pre_verdict is not None:
+        from aedos.audit.log import log_event
         from aedos.layer4_sources.walker import WalkResult
         from aedos.layer5_result.trace import JustificationTrace, TraceNode
+        # Phase H Cluster 2 step 2: explicit audit event records why no
+        # walker trace exists for this claim — the cross-source
+        # contradiction decided the verdict authoritatively at
+        # promotion time, and invoking the walker would be wasteful
+        # and confusing (the walker would re-verify a claim already
+        # decided contradicted; a future debugger reading the audit
+        # log needs to see the skip rationale).
+        log_event(
+            h.db,
+            event_type="walker_skipped_due_to_pre_verdict",
+            event_subject=f"claim:{claims[0].claim_id}",
+            event_data={
+                "pre_verdict": primary_promotion.pre_verdict,
+                "tier_u_row_id": primary_promotion.tier_u_row_id,
+                "reason": "cross_source_contradiction",
+            },
+        )
         result = WalkResult(
             verdict=primary_promotion.pre_verdict,
             trace=JustificationTrace(root=TraceNode("claim")),
@@ -763,7 +781,18 @@ class _DryRunHarness(_Harness):
         return _Stub()
 
     def walker(self):
-        return _Stub(), _Stub()
+        # Phase H Cluster 2 step 2: the corpus runner now calls
+        # `promote_assertions` on the tier_u returned here, which reads
+        # back fields on the WriteResult (was_cross_source_contradicted
+        # in particular). A _Stub WriteResult evaluates truthy on
+        # every attribute access, mis-triggering the pre_verdict
+        # branch. tier_u is cheap (SQL on the existing in-memory DB,
+        # no LLM), so we wire a real one — keeping the walker itself
+        # stubbed since walker.walk would otherwise need a heavyweight
+        # pipeline. The dry-run still exercises the structural
+        # promotion path without spending on the walker.
+        from aedos.layer4_sources.tier_u import TierU
+        return _Stub(), TierU(db=self.db)
 
 
 # ---------------------------------------------------------------------------
