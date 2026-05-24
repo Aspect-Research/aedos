@@ -1,0 +1,138 @@
+======================================================================
+D53 empirical investigation: wbsearchentities for problem cases
+======================================================================
+
+
+--- 'Obama'  expected=Q76 (Barack Obama) ---
+  [default] 20 results, canonical rank=NOT FOUND
+     1. Q41773   Obama                                     match=label
+     2. Q18355807 Obama                                     match=label
+     3. Q124706956 Obama                                     match=label
+     4. Q122348649 Obama                                     match=label
+     5. Q59661289 Barack Obama Presidential Library         match=alias
+  [type_item] 20 results, canonical rank=NOT FOUND
+     1. Q41773   Obama                                     match=label
+     2. Q18355807 Obama                                     match=label
+     3. Q124706956 Obama                                     match=label
+     4. Q122348649 Obama                                     match=label
+     5. Q59661289 Barack Obama Presidential Library         match=alias
+  [strict_lang] 20 results, canonical rank=NOT FOUND
+     1. Q59661289 Barack Obama Presidential Library         match=alias
+     2. Q41773   Obama                                     match=label
+     3. Q18355807 Obama                                     match=label
+     4. Q5280414 Obama                                     match=label
+     5. Q1379733 presidency of Barack Obama                match=alias
+
+--- 'Apple'  expected=Q312 (Apple Inc.) ---
+  [default] 20 results, canonical rank=1
+     1. Q312     Apple Inc.                                match=label  <-- EXPECTED
+     2. Q213710  Apple Records                             match=label
+     3. Q89      apple                                     match=label
+     4. Q20056642 Apple Music                               match=label
+     5. Q26944931 Apple                                     match=label
+  [type_item] 20 results, canonical rank=1
+     1. Q312     Apple Inc.                                match=label  <-- EXPECTED
+     2. Q213710  Apple Records                             match=label
+     3. Q89      apple                                     match=label
+     4. Q20056642 Apple Music                               match=label
+     5. Q26944931 Apple                                     match=label
+  [strict_lang] 20 results, canonical rank=4
+     1. Q89      apple                                     match=label
+     2. Q9589    iTunes                                    match=alias
+     3. Q12912667 Appletons' Cyclopædia of American Biogra  match=label
+     4. Q312     Apple Inc.                                match=label  <-- EXPECTED
+     5. Q20056642 Apple Music                               match=label
+
+--- 'Amazon'  expected=(none) (no expected canonical without context) ---
+  [default] 20 results, canonical rank=NOT FOUND
+     1. Q3884    Amazon                                    match=label
+     2. Q40040   Amazonas                                  match=label
+     3. Q456065  Amazon                                    match=label
+     4. Q136469  Amazon Kindle                             match=alias
+     5. Q201162  Amazonas Department                       match=label
+  [type_item] 20 results, canonical rank=NOT FOUND
+     1. Q3884    Amazon                                    match=label
+     2. Q40040   Amazonas                                  match=label
+     3. Q456065  Amazon                                    match=label
+     4. Q136469  Amazon Kindle                             match=alias
+     5. Q201162  Amazonas Department                       match=label
+  [strict_lang] 20 results, canonical rank=NOT FOUND
+     1. Q3884    Amazon                                    match=label
+     2. Q40040   Amazonas                                  match=label
+     3. Q177567  Amazon rainforest                         match=label
+     4. Q3783    Amazon                                    match=label
+     5. Q134154  Amazons                                   match=label
+
+--- 'Einstein'  expected=Q937 (Albert Einstein) ---
+  [default] 20 results, canonical rank=2
+     1. Q16834800 Einstein                                  match=label
+     2. Q937     Albert Einstein                           match=alias  <-- EXPECTED
+     3. Q901448  einstein                                  match=label
+     4. Q1309274 Einstein                                  match=label
+     5. Q26854017 Einstein / Instituto de Ensino e Pesquis  match=label
+  [type_item] 20 results, canonical rank=2
+     1. Q16834800 Einstein                                  match=label
+     2. Q937     Albert Einstein                           match=alias  <-- EXPECTED
+     3. Q901448  einstein                                  match=label
+     4. Q1309274 Einstein                                  match=label
+     5. Q26854017 Einstein / Instituto de Ensino e Pesquis  match=label
+  [strict_lang] 20 results, canonical rank=NOT FOUND
+     1. Q26854017 Einstein / Instituto de Ensino e Pesquis  match=label
+     2. Q11452   general relativity                        match=alias
+     3. Q2030894 Albert Einstein College of Medicine       match=alias
+     4. Q28843527 Einstein Slew survey, Version No. 1       match=label
+     5. Q16834800 Einstein                                  match=label
+
+--- 'President'  expected=Q11696 (President of the United States) ---
+  [default] 20 results, canonical rank=4
+     1. Q30461   president                                 match=label
+     2. Q1255921 president                                 match=label
+     3. Q140686  chairperson                               match=alias
+     4. Q11696   President of the United States            match=label  <-- EXPECTED
+     5. Q110737816 President                                 match=label
+  [type_item] 20 results, canonical rank=4
+     1. Q30461   president                                 match=label
+     2. Q1255921 president                                 match=label
+     3. Q140686  chairperson                               match=alias
+     4. Q11696   President of the United States            match=label  <-- EXPECTED
+     5. Q110737816 President                                 match=label
+  [strict_lang] 20 results, canonical rank=4
+     1. Q30461   president                                 match=label
+     2. Q1255921 president                                 match=label
+     3. Q140686  chairperson                               match=alias
+     4. Q11696   President of the United States            match=label  <-- EXPECTED
+     5. Q1758037 speaker                                   match=alias
+
+--- 'Williams College'  expected=Q49112 (Williams College) ---
+  [default] 13 results, canonical rank=NOT FOUND
+     1. Q49166   Williams College                          match=label
+     2. Q12072937 Williams College Museum of Art            match=label
+     3. Q8021012 Williams Ephs                             match=alias
+     4. Q61782737 Williams College Cemetery                 match=label
+     5. Q23018410 Williams College Investment Office        match=label
+  [type_item] 13 results, canonical rank=NOT FOUND
+     1. Q49166   Williams College                          match=label
+     2. Q12072937 Williams College Museum of Art            match=label
+     3. Q8021012 Williams Ephs                             match=alias
+     4. Q61782737 Williams College Cemetery                 match=label
+     5. Q23018410 Williams College Investment Office        match=label
+  [strict_lang] 13 results, canonical rank=NOT FOUND
+     1. Q49166   Williams College                          match=label
+     2. Q12072937 Williams College Museum of Art            match=label
+     3. Q8021012 Williams Ephs                             match=alias
+     4. Q61782737 Williams College Cemetery                 match=label
+     5. Q23018410 Williams College Investment Office        match=label
+
+
+======================================================================
+Summary: canonical position by variant
+======================================================================
+surface                expected   default    type=item    strictlang  
+Obama                  Q76        NOT FOUND  NOT FOUND    NOT FOUND   
+Apple                  Q312       1          1            4           
+Amazon                 -          NOT FOUND  NOT FOUND    NOT FOUND   
+Einstein               Q937       2          2            NOT FOUND   
+President              Q11696     4          4            4           
+Williams College       Q49112     NOT FOUND  NOT FOUND    NOT FOUND   
+
+Wrote C:\code\aedos\docs\phase_H\d53_investigation.json

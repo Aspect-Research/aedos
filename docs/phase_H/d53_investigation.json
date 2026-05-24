@@ -1,0 +1,3417 @@
+{
+  "cases": [
+    {
+      "surface": "Obama",
+      "expected_qid": "Q76",
+      "note": "Barack Obama",
+      "variants": {
+        "default": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q41773",
+              "label": "Obama",
+              "description": "city in Fukui prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q18355807",
+              "label": "Obama",
+              "description": "genus of worms",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q124706956",
+              "label": "Obama",
+              "description": "Italian drag performer",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q122348649",
+              "label": "Obama",
+              "description": "2022 video game",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q59661289",
+              "label": "Barack Obama Presidential Library",
+              "description": "reference unit of the National Archives and Records Administration",
+              "match_type": "alias",
+              "match_text": "Obama Presidential Library",
+              "aliases": [
+                "Obama Presidential Library"
+              ]
+            },
+            {
+              "rank": 6,
+              "qid": "Q5280414",
+              "label": "Obama",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q1414593",
+              "label": "Patient Protection and Affordable Care Act",
+              "description": "U.S. federal statute known as Obamacare",
+              "match_type": "alias",
+              "match_text": "Obamacare",
+              "aliases": [
+                "Obamacare"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q26446735",
+              "label": "Obama",
+              "description": "Japanese family name (\u5c0f\u6d5c, \u304a\u3070\u307e)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q25095673",
+              "label": "Obama nungara",
+              "description": "species of worm",
+              "match_type": "label",
+              "match_text": "Obama nungara",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q7074605",
+              "label": "Obama",
+              "description": "dissolved municipality in Minamitakaki district, Nagasaki prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q15259951",
+              "label": "Obama",
+              "description": "dissolved municipality in Ony\u016b district, Fukui prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q11462618",
+              "label": "Obama",
+              "description": "dissolved municipality in Adachi district, Fukushima prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q39240943",
+              "label": "Obama",
+              "description": "Japanese family name (\u5c0f\u6c40)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q90037178",
+              "label": "Obama",
+              "description": "undifferentiated Japanese kana surname (\u304a\u3070\u307e)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q33687029",
+              "label": "C. Obama",
+              "description": "botanist",
+              "match_type": "alias",
+              "match_text": "Obama",
+              "aliases": [
+                "Obama"
+              ]
+            },
+            {
+              "rank": 16,
+              "qid": "Q64145866",
+              "label": "Obama",
+              "description": "photograph in the National Gallery of Art (NGA 165298)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q19897574",
+              "label": "Obamadon",
+              "description": "genus of reptiles",
+              "match_type": "label",
+              "match_text": "Obamadon",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q25095534",
+              "label": "Obama anthropophila",
+              "description": "species of Turbellaria",
+              "match_type": "label",
+              "match_text": "Obama anthropophila",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q25095452",
+              "label": "Obama ladislavii",
+              "description": "species of Turbellaria",
+              "match_type": "label",
+              "match_text": "Obama ladislavii",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q56862161",
+              "label": "Obama marmorata",
+              "description": "species of worm",
+              "match_type": "label",
+              "match_text": "Obama marmorata",
+              "aliases": []
+            }
+          ]
+        },
+        "type_item": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q41773",
+              "label": "Obama",
+              "description": "city in Fukui prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q18355807",
+              "label": "Obama",
+              "description": "genus of worms",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q124706956",
+              "label": "Obama",
+              "description": "Italian drag performer",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q122348649",
+              "label": "Obama",
+              "description": "2022 video game",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q59661289",
+              "label": "Barack Obama Presidential Library",
+              "description": "reference unit of the National Archives and Records Administration",
+              "match_type": "alias",
+              "match_text": "Obama Presidential Library",
+              "aliases": [
+                "Obama Presidential Library"
+              ]
+            },
+            {
+              "rank": 6,
+              "qid": "Q5280414",
+              "label": "Obama",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q1414593",
+              "label": "Patient Protection and Affordable Care Act",
+              "description": "U.S. federal statute known as Obamacare",
+              "match_type": "alias",
+              "match_text": "Obamacare",
+              "aliases": [
+                "Obamacare"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q26446735",
+              "label": "Obama",
+              "description": "Japanese family name (\u5c0f\u6d5c, \u304a\u3070\u307e)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q25095673",
+              "label": "Obama nungara",
+              "description": "species of worm",
+              "match_type": "label",
+              "match_text": "Obama nungara",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q7074605",
+              "label": "Obama",
+              "description": "dissolved municipality in Minamitakaki district, Nagasaki prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q15259951",
+              "label": "Obama",
+              "description": "dissolved municipality in Ony\u016b district, Fukui prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q11462618",
+              "label": "Obama",
+              "description": "dissolved municipality in Adachi district, Fukushima prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q39240943",
+              "label": "Obama",
+              "description": "Japanese family name (\u5c0f\u6c40)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q90037178",
+              "label": "Obama",
+              "description": "undifferentiated Japanese kana surname (\u304a\u3070\u307e)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q33687029",
+              "label": "C. Obama",
+              "description": "botanist",
+              "match_type": "alias",
+              "match_text": "Obama",
+              "aliases": [
+                "Obama"
+              ]
+            },
+            {
+              "rank": 16,
+              "qid": "Q64145866",
+              "label": "Obama",
+              "description": "photograph in the National Gallery of Art (NGA 165298)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q19897574",
+              "label": "Obamadon",
+              "description": "genus of reptiles",
+              "match_type": "label",
+              "match_text": "Obamadon",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q25095534",
+              "label": "Obama anthropophila",
+              "description": "species of Turbellaria",
+              "match_type": "label",
+              "match_text": "Obama anthropophila",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q25095452",
+              "label": "Obama ladislavii",
+              "description": "species of Turbellaria",
+              "match_type": "label",
+              "match_text": "Obama ladislavii",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q56862161",
+              "label": "Obama marmorata",
+              "description": "species of worm",
+              "match_type": "label",
+              "match_text": "Obama marmorata",
+              "aliases": []
+            }
+          ]
+        },
+        "strict_lang": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q59661289",
+              "label": "Barack Obama Presidential Library",
+              "description": "reference unit of the National Archives and Records Administration",
+              "match_type": "alias",
+              "match_text": "Obama Presidential Library",
+              "aliases": [
+                "Obama Presidential Library"
+              ]
+            },
+            {
+              "rank": 2,
+              "qid": "Q41773",
+              "label": "Obama",
+              "description": "city in Fukui prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q18355807",
+              "label": "Obama",
+              "description": "genus of worms",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q5280414",
+              "label": "Obama",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q1379733",
+              "label": "presidency of Barack Obama",
+              "description": "44th presidential administration and cabinet of the USA (2009-2017)",
+              "match_type": "alias",
+              "match_text": "Obama presidency",
+              "aliases": [
+                "Obama presidency"
+              ]
+            },
+            {
+              "rank": 6,
+              "qid": "Q26446735",
+              "label": "Obama",
+              "description": "Japanese family name (\u5c0f\u6d5c, \u304a\u3070\u307e)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q1414593",
+              "label": "Patient Protection and Affordable Care Act",
+              "description": "U.S. federal statute known as Obamacare",
+              "match_type": "alias",
+              "match_text": "Obamacare",
+              "aliases": [
+                "Obamacare"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q41060323",
+              "label": "Obama City Open Data (Public Buildings)",
+              "description": "",
+              "match_type": "label",
+              "match_text": "Obama City Open Data (Public Buildings)",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q7074605",
+              "label": "Obama",
+              "description": "dissolved municipality in Minamitakaki district, Nagasaki prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q1058227",
+              "label": "Obama Line",
+              "description": "railway line in Japan",
+              "match_type": "label",
+              "match_text": "Obama Line",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q15259951",
+              "label": "Obama",
+              "description": "dissolved municipality in Ony\u016b district, Fukui prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q11462618",
+              "label": "Obama",
+              "description": "dissolved municipality in Adachi district, Fukushima prefecture, Japan",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q39240943",
+              "label": "Obama",
+              "description": "Japanese family name (\u5c0f\u6c40)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q643049",
+              "label": "family of Barack Obama",
+              "description": "First Family of the United States from 2009 to 2017",
+              "match_type": "alias",
+              "match_text": "Obama family",
+              "aliases": [
+                "Obama family"
+              ]
+            },
+            {
+              "rank": 15,
+              "qid": "Q1088442",
+              "label": "Obama Domain",
+              "description": "Japanese historical estate in Wakasa province",
+              "match_type": "label",
+              "match_text": "Obama Domain",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q25094",
+              "label": "first inauguration of Barack Obama",
+              "description": "56th United States presidential inauguration",
+              "match_type": "alias",
+              "match_text": "Obama's first inauguration",
+              "aliases": [
+                "Obama's first inauguration"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q90037178",
+              "label": "Obama",
+              "description": "undifferentiated Japanese kana surname (\u304a\u3070\u307e)",
+              "match_type": "label",
+              "match_text": "Obama",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q4206667",
+              "label": "Barack Obama Administration cabinet",
+              "description": "the government of the United States under President Barack Obama",
+              "match_type": "alias",
+              "match_text": "Obama administration",
+              "aliases": [
+                "Obama administration"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q702603",
+              "label": "Kohama Island",
+              "description": "island in Okinawa, Japan",
+              "match_type": "alias",
+              "match_text": "Obama-jima",
+              "aliases": [
+                "Obama-jima"
+              ]
+            },
+            {
+              "rank": 20,
+              "qid": "Q33687029",
+              "label": "C. Obama",
+              "description": "botanist",
+              "match_type": "alias",
+              "match_text": "Obama",
+              "aliases": [
+                "Obama"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "Apple",
+      "expected_qid": "Q312",
+      "note": "Apple Inc.",
+      "variants": {
+        "default": {
+          "n_results": 20,
+          "canonical_position": 1,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q312",
+              "label": "Apple Inc.",
+              "description": "American multinational technology company based in Cupertino, California",
+              "match_type": "label",
+              "match_text": "Apple Inc.",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q213710",
+              "label": "Apple Records",
+              "description": "UK international record label; imprint of Apple Corps Ltd.",
+              "match_type": "label",
+              "match_text": "Apple Records",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q89",
+              "label": "apple",
+              "description": "edible fruit of the apple tree",
+              "match_type": "label",
+              "match_text": "apple",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q20056642",
+              "label": "Apple Music",
+              "description": "Internet online music service by Apple",
+              "match_type": "label",
+              "match_text": "Apple Music",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q26944931",
+              "label": "Apple",
+              "description": "unisex given name",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q111046003",
+              "label": "Apple",
+              "description": "registered trademark owned by Apple",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q104819",
+              "label": "Malus",
+              "description": "flowering genus in the rose family Rosaceae",
+              "match_type": "alias",
+              "match_text": "apples",
+              "aliases": [
+                "apples"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q9589",
+              "label": "iTunes",
+              "description": "media player and library software",
+              "match_type": "alias",
+              "match_text": "Apple iTunes",
+              "aliases": [
+                "Apple iTunes"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q158657",
+              "label": "Malus pumila",
+              "description": "species of apple tree",
+              "match_type": "alias",
+              "match_text": "apple",
+              "aliases": [
+                "apple"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q62446736",
+              "label": "Apple TV",
+              "description": "video streaming service by Apple Inc.",
+              "match_type": "label",
+              "match_text": "Apple TV",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q70058728",
+              "label": "Apple Podcasts",
+              "description": "mobile application developed by Apple",
+              "match_type": "label",
+              "match_text": "Apple Podcasts",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q3017175",
+              "label": "Apple II",
+              "description": "first computer model in the Apple II series",
+              "match_type": "label",
+              "match_text": "Apple II",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q48493",
+              "label": "iOS",
+              "description": "mobile operating system by Apple Inc.",
+              "match_type": "alias",
+              "match_text": "Apple iOS",
+              "aliases": [
+                "Apple iOS"
+              ]
+            },
+            {
+              "rank": 14,
+              "qid": "Q368215",
+              "label": "App Store",
+              "description": "digital app distribution platform for iOS/iPadOS",
+              "match_type": "alias",
+              "match_text": "Apple App Store",
+              "aliases": [
+                "Apple App Store"
+              ]
+            },
+            {
+              "rank": 15,
+              "qid": "Q621540",
+              "label": "Appleby-in-Westmorland",
+              "description": "town and civil parish in Cumbria, England, UK",
+              "match_type": "label",
+              "match_text": "Appleby-in-Westmorland",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q12912667",
+              "label": "Appletons' Cyclop\u00e6dia of American Biography",
+              "description": "collection of biographies of notable people involved in the history of the New World",
+              "match_type": "label",
+              "match_text": "Appletons' Cyclop\u00e6dia of American Biography",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q136298537",
+              "label": "Apple",
+              "description": "brand owned by Apple, Inc.",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q135057203",
+              "label": "Apple",
+              "description": "2024 video game developed by Chair Studios",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q16147615",
+              "label": "Appleton",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Appleton",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q270285",
+              "label": "Apple TV",
+              "description": "home media receiver device made by Apple",
+              "match_type": "label",
+              "match_text": "Apple TV",
+              "aliases": []
+            }
+          ]
+        },
+        "type_item": {
+          "n_results": 20,
+          "canonical_position": 1,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q312",
+              "label": "Apple Inc.",
+              "description": "American multinational technology company based in Cupertino, California",
+              "match_type": "label",
+              "match_text": "Apple Inc.",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q213710",
+              "label": "Apple Records",
+              "description": "UK international record label; imprint of Apple Corps Ltd.",
+              "match_type": "label",
+              "match_text": "Apple Records",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q89",
+              "label": "apple",
+              "description": "edible fruit of the apple tree",
+              "match_type": "label",
+              "match_text": "apple",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q20056642",
+              "label": "Apple Music",
+              "description": "Internet online music service by Apple",
+              "match_type": "label",
+              "match_text": "Apple Music",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q26944931",
+              "label": "Apple",
+              "description": "unisex given name",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q111046003",
+              "label": "Apple",
+              "description": "registered trademark owned by Apple",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q104819",
+              "label": "Malus",
+              "description": "flowering genus in the rose family Rosaceae",
+              "match_type": "alias",
+              "match_text": "apples",
+              "aliases": [
+                "apples"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q9589",
+              "label": "iTunes",
+              "description": "media player and library software",
+              "match_type": "alias",
+              "match_text": "Apple iTunes",
+              "aliases": [
+                "Apple iTunes"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q158657",
+              "label": "Malus pumila",
+              "description": "species of apple tree",
+              "match_type": "alias",
+              "match_text": "apple",
+              "aliases": [
+                "apple"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q62446736",
+              "label": "Apple TV",
+              "description": "video streaming service by Apple Inc.",
+              "match_type": "label",
+              "match_text": "Apple TV",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q70058728",
+              "label": "Apple Podcasts",
+              "description": "mobile application developed by Apple",
+              "match_type": "label",
+              "match_text": "Apple Podcasts",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q3017175",
+              "label": "Apple II",
+              "description": "first computer model in the Apple II series",
+              "match_type": "label",
+              "match_text": "Apple II",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q48493",
+              "label": "iOS",
+              "description": "mobile operating system by Apple Inc.",
+              "match_type": "alias",
+              "match_text": "Apple iOS",
+              "aliases": [
+                "Apple iOS"
+              ]
+            },
+            {
+              "rank": 14,
+              "qid": "Q368215",
+              "label": "App Store",
+              "description": "digital app distribution platform for iOS/iPadOS",
+              "match_type": "alias",
+              "match_text": "Apple App Store",
+              "aliases": [
+                "Apple App Store"
+              ]
+            },
+            {
+              "rank": 15,
+              "qid": "Q621540",
+              "label": "Appleby-in-Westmorland",
+              "description": "town and civil parish in Cumbria, England, UK",
+              "match_type": "label",
+              "match_text": "Appleby-in-Westmorland",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q12912667",
+              "label": "Appletons' Cyclop\u00e6dia of American Biography",
+              "description": "collection of biographies of notable people involved in the history of the New World",
+              "match_type": "label",
+              "match_text": "Appletons' Cyclop\u00e6dia of American Biography",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q136298537",
+              "label": "Apple",
+              "description": "brand owned by Apple, Inc.",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q135057203",
+              "label": "Apple",
+              "description": "2024 video game developed by Chair Studios",
+              "match_type": "label",
+              "match_text": "Apple",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q16147615",
+              "label": "Appleton",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Appleton",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q270285",
+              "label": "Apple TV",
+              "description": "home media receiver device made by Apple",
+              "match_type": "label",
+              "match_text": "Apple TV",
+              "aliases": []
+            }
+          ]
+        },
+        "strict_lang": {
+          "n_results": 20,
+          "canonical_position": 4,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q89",
+              "label": "apple",
+              "description": "edible fruit of the apple tree",
+              "match_type": "label",
+              "match_text": "apple",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q9589",
+              "label": "iTunes",
+              "description": "media player and library software",
+              "match_type": "alias",
+              "match_text": "Apple iTunes",
+              "aliases": [
+                "Apple iTunes"
+              ]
+            },
+            {
+              "rank": 3,
+              "qid": "Q12912667",
+              "label": "Appletons' Cyclop\u00e6dia of American Biography",
+              "description": "collection of biographies of notable people involved in the history of the New World",
+              "match_type": "label",
+              "match_text": "Appletons' Cyclop\u00e6dia of American Biography",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q312",
+              "label": "Apple Inc.",
+              "description": "American multinational technology company based in Cupertino, California",
+              "match_type": "label",
+              "match_text": "Apple Inc.",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q20056642",
+              "label": "Apple Music",
+              "description": "Internet online music service by Apple",
+              "match_type": "label",
+              "match_text": "Apple Music",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q104819",
+              "label": "Malus",
+              "description": "flowering genus in the rose family Rosaceae",
+              "match_type": "alias",
+              "match_text": "apples",
+              "aliases": [
+                "apples"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q213710",
+              "label": "Apple Records",
+              "description": "UK international record label; imprint of Apple Corps Ltd.",
+              "match_type": "label",
+              "match_text": "Apple Records",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q158657",
+              "label": "Malus pumila",
+              "description": "species of apple tree",
+              "match_type": "alias",
+              "match_text": "apple",
+              "aliases": [
+                "apple"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q15731356",
+              "label": "apple cultivar",
+              "description": "cultivar of apple (Malus domestica)",
+              "match_type": "label",
+              "match_text": "apple cultivar",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q166843",
+              "label": "Psidium guajava",
+              "description": "species of plant",
+              "match_type": "alias",
+              "match_text": "apple guava",
+              "aliases": [
+                "apple guava"
+              ]
+            },
+            {
+              "rank": 11,
+              "qid": "Q18674606",
+              "label": "Malus domestica",
+              "description": "species of genus apple (malus)",
+              "match_type": "alias",
+              "match_text": "apple tree",
+              "aliases": [
+                "apple tree"
+              ]
+            },
+            {
+              "rank": 12,
+              "qid": "Q75687",
+              "label": "Mac",
+              "description": "family of personal computers designed, manufactured, and sold by Apple Inc.",
+              "match_type": "alias",
+              "match_text": "Apple Mac",
+              "aliases": [
+                "Apple Mac"
+              ]
+            },
+            {
+              "rank": 13,
+              "qid": "Q62446736",
+              "label": "Apple TV",
+              "description": "video streaming service by Apple Inc.",
+              "match_type": "label",
+              "match_text": "Apple TV",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q70058728",
+              "label": "Apple Podcasts",
+              "description": "mobile application developed by Apple",
+              "match_type": "label",
+              "match_text": "Apple Podcasts",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q201652",
+              "label": "Apple II series",
+              "description": "computer series by Apple, 1977\u20131993",
+              "match_type": "label",
+              "match_text": "Apple II series",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q94928",
+              "label": "Appleton",
+              "description": "city in and county seat of Outagamie County, Wisconsin, United States",
+              "match_type": "label",
+              "match_text": "Appleton",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q3017175",
+              "label": "Apple II",
+              "description": "first computer model in the Apple II series",
+              "match_type": "label",
+              "match_text": "Apple II",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q64857449",
+              "label": "Robert Barrie Appleby",
+              "description": "researcher",
+              "match_type": "alias",
+              "match_text": "Appleby RB",
+              "aliases": [
+                "Appleby RB"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q838963",
+              "label": "Pyrus pyrifolia",
+              "description": "species of pear",
+              "match_type": "alias",
+              "match_text": "apple pear",
+              "aliases": [
+                "apple pear"
+              ]
+            },
+            {
+              "rank": 20,
+              "qid": "Q1282269",
+              "label": "Apple IIGS",
+              "description": "Apple II series 16-bit computer",
+              "match_type": "label",
+              "match_text": "Apple IIGS",
+              "aliases": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "Amazon",
+      "expected_qid": null,
+      "note": "no expected canonical without context",
+      "variants": {
+        "default": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q3884",
+              "label": "Amazon",
+              "description": "American multinational technology company",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q40040",
+              "label": "Amazonas",
+              "description": "state in the North Region of Brazil",
+              "match_type": "label",
+              "match_text": "Amazonas",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q456065",
+              "label": "Amazon",
+              "description": "1984 video game",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q136469",
+              "label": "Amazon Kindle",
+              "description": "e-book reading device",
+              "match_type": "alias",
+              "match_text": "Amazon Kindle product line",
+              "aliases": [
+                "Amazon Kindle product line"
+              ]
+            },
+            {
+              "rank": 5,
+              "qid": "Q201162",
+              "label": "Amazonas Department",
+              "description": "department of Peru",
+              "match_type": "label",
+              "match_text": "Amazonas Department",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q4740856",
+              "label": "Amazon Prime Video",
+              "description": "American video streaming service",
+              "match_type": "label",
+              "match_text": "Amazon Prime Video",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q177567",
+              "label": "Amazon rainforest",
+              "description": "large rainforest in South America",
+              "match_type": "label",
+              "match_text": "Amazon rainforest",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q3783",
+              "label": "Amazon",
+              "description": "river in South America",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q456513",
+              "label": "Amazona",
+              "description": "genus of birds",
+              "match_type": "label",
+              "match_text": "Amazona",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q733115",
+              "label": "Amazon Mechanical Turk",
+              "description": "micro-work service subsidiary of Amazon",
+              "match_type": "label",
+              "match_text": "Amazon Mechanical Turk",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q134154",
+              "label": "Amazons",
+              "description": "warrior women from Greek mythology",
+              "match_type": "label",
+              "match_text": "Amazons",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q102385",
+              "label": "The Pussycat Dolls",
+              "description": "American girl group and dance ensemble",
+              "match_type": "alias",
+              "match_text": "Amazon",
+              "aliases": [
+                "Amazon"
+              ]
+            },
+            {
+              "rank": 13,
+              "qid": "Q456157",
+              "label": "Amazon Web Services",
+              "description": "subsidiary of Amazon that provides on-demand cloud computing platforms on a metered pay-as-you-go basis",
+              "match_type": "label",
+              "match_text": "Amazon Web Services",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q4740868",
+              "label": "Amazon MGM Studios",
+              "description": "division of Amazon.com that develops movies, television shows and comics",
+              "match_type": "label",
+              "match_text": "Amazon MGM Studios",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q4740884",
+              "label": "Amazonia",
+              "description": "genus of fungi",
+              "match_type": "label",
+              "match_text": "Amazonia",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q525897",
+              "label": "Blue-fronted Parrot",
+              "description": "species of parrot",
+              "match_type": "alias",
+              "match_text": "Amazona aestiva",
+              "aliases": [
+                "Amazona aestiva"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q456078",
+              "label": "Amazon Appstore",
+              "description": "app store",
+              "match_type": "label",
+              "match_text": "Amazon Appstore",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q882965",
+              "label": "Hispaniolan Amazon",
+              "description": "species of bird",
+              "match_type": "alias",
+              "match_text": "Amazona ventralis",
+              "aliases": [
+                "Amazona ventralis"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q4740905",
+              "label": "Amazonides",
+              "description": "genus of insects",
+              "match_type": "label",
+              "match_text": "Amazonides",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q1753278",
+              "label": "Amazon Standard Identification Number",
+              "description": "10-character alphanumeric unique identifier",
+              "match_type": "label",
+              "match_text": "Amazon Standard Identification Number",
+              "aliases": []
+            }
+          ]
+        },
+        "type_item": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q3884",
+              "label": "Amazon",
+              "description": "American multinational technology company",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q40040",
+              "label": "Amazonas",
+              "description": "state in the North Region of Brazil",
+              "match_type": "label",
+              "match_text": "Amazonas",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q456065",
+              "label": "Amazon",
+              "description": "1984 video game",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q136469",
+              "label": "Amazon Kindle",
+              "description": "e-book reading device",
+              "match_type": "alias",
+              "match_text": "Amazon Kindle product line",
+              "aliases": [
+                "Amazon Kindle product line"
+              ]
+            },
+            {
+              "rank": 5,
+              "qid": "Q201162",
+              "label": "Amazonas Department",
+              "description": "department of Peru",
+              "match_type": "label",
+              "match_text": "Amazonas Department",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q4740856",
+              "label": "Amazon Prime Video",
+              "description": "American video streaming service",
+              "match_type": "label",
+              "match_text": "Amazon Prime Video",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q177567",
+              "label": "Amazon rainforest",
+              "description": "large rainforest in South America",
+              "match_type": "label",
+              "match_text": "Amazon rainforest",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q3783",
+              "label": "Amazon",
+              "description": "river in South America",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q456513",
+              "label": "Amazona",
+              "description": "genus of birds",
+              "match_type": "label",
+              "match_text": "Amazona",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q733115",
+              "label": "Amazon Mechanical Turk",
+              "description": "micro-work service subsidiary of Amazon",
+              "match_type": "label",
+              "match_text": "Amazon Mechanical Turk",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q134154",
+              "label": "Amazons",
+              "description": "warrior women from Greek mythology",
+              "match_type": "label",
+              "match_text": "Amazons",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q102385",
+              "label": "The Pussycat Dolls",
+              "description": "American girl group and dance ensemble",
+              "match_type": "alias",
+              "match_text": "Amazon",
+              "aliases": [
+                "Amazon"
+              ]
+            },
+            {
+              "rank": 13,
+              "qid": "Q456157",
+              "label": "Amazon Web Services",
+              "description": "subsidiary of Amazon that provides on-demand cloud computing platforms on a metered pay-as-you-go basis",
+              "match_type": "label",
+              "match_text": "Amazon Web Services",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q4740868",
+              "label": "Amazon MGM Studios",
+              "description": "division of Amazon.com that develops movies, television shows and comics",
+              "match_type": "label",
+              "match_text": "Amazon MGM Studios",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q4740884",
+              "label": "Amazonia",
+              "description": "genus of fungi",
+              "match_type": "label",
+              "match_text": "Amazonia",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q525897",
+              "label": "Blue-fronted Parrot",
+              "description": "species of parrot",
+              "match_type": "alias",
+              "match_text": "Amazona aestiva",
+              "aliases": [
+                "Amazona aestiva"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q456078",
+              "label": "Amazon Appstore",
+              "description": "app store",
+              "match_type": "label",
+              "match_text": "Amazon Appstore",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q882965",
+              "label": "Hispaniolan Amazon",
+              "description": "species of bird",
+              "match_type": "alias",
+              "match_text": "Amazona ventralis",
+              "aliases": [
+                "Amazona ventralis"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q4740905",
+              "label": "Amazonides",
+              "description": "genus of insects",
+              "match_type": "label",
+              "match_text": "Amazonides",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q1753278",
+              "label": "Amazon Standard Identification Number",
+              "description": "10-character alphanumeric unique identifier",
+              "match_type": "label",
+              "match_text": "Amazon Standard Identification Number",
+              "aliases": []
+            }
+          ]
+        },
+        "strict_lang": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q3884",
+              "label": "Amazon",
+              "description": "American multinational technology company",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q40040",
+              "label": "Amazonas",
+              "description": "state in the North Region of Brazil",
+              "match_type": "label",
+              "match_text": "Amazonas",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q177567",
+              "label": "Amazon rainforest",
+              "description": "large rainforest in South America",
+              "match_type": "label",
+              "match_text": "Amazon rainforest",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q3783",
+              "label": "Amazon",
+              "description": "river in South America",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q134154",
+              "label": "Amazons",
+              "description": "warrior women from Greek mythology",
+              "match_type": "label",
+              "match_text": "Amazons",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q201162",
+              "label": "Amazonas Department",
+              "description": "department of Peru",
+              "match_type": "label",
+              "match_text": "Amazonas Department",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q244451",
+              "label": "Amazon basin",
+              "description": "drainage basin in South America drained via the Amazon River into the Atlantic Ocean",
+              "match_type": "label",
+              "match_text": "Amazon basin",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q4740856",
+              "label": "Amazon Prime Video",
+              "description": "American video streaming service",
+              "match_type": "label",
+              "match_text": "Amazon Prime Video",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q102385",
+              "label": "The Pussycat Dolls",
+              "description": "American girl group and dance ensemble",
+              "match_type": "alias",
+              "match_text": "Amazon",
+              "aliases": [
+                "Amazon"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q733115",
+              "label": "Amazon Mechanical Turk",
+              "description": "micro-work service subsidiary of Amazon",
+              "match_type": "label",
+              "match_text": "Amazon Mechanical Turk",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q170453",
+              "label": "Amazonas",
+              "description": "Venezuelan state",
+              "match_type": "label",
+              "match_text": "Amazonas",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q44724",
+              "label": "Amazonas Department",
+              "description": "department of Colombia",
+              "match_type": "label",
+              "match_text": "Amazonas Department",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q21386039",
+              "label": "Amazoniana",
+              "description": "scientific journal",
+              "match_type": "label",
+              "match_text": "Amazoniana",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q136469",
+              "label": "Amazon Kindle",
+              "description": "e-book reading device",
+              "match_type": "alias",
+              "match_text": "Amazon Kindle product line",
+              "aliases": [
+                "Amazon Kindle product line"
+              ]
+            },
+            {
+              "rank": 15,
+              "qid": "Q456157",
+              "label": "Amazon Web Services",
+              "description": "subsidiary of Amazon that provides on-demand cloud computing platforms on a metered pay-as-you-go basis",
+              "match_type": "label",
+              "match_text": "Amazon Web Services",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q5715270",
+              "label": "Kindle File Format",
+              "description": "e-book file format",
+              "match_type": "alias",
+              "match_text": "Amazon Kindle File",
+              "aliases": [
+                "Amazon Kindle File"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q4740868",
+              "label": "Amazon MGM Studios",
+              "description": "division of Amazon.com that develops movies, television shows and comics",
+              "match_type": "label",
+              "match_text": "Amazon MGM Studios",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q220271",
+              "label": "South American tapir",
+              "description": "species of mammal",
+              "match_type": "alias",
+              "match_text": "Amazonian tapir",
+              "aliases": [
+                "Amazonian tapir"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q456065",
+              "label": "Amazon",
+              "description": "1984 video game",
+              "match_type": "label",
+              "match_text": "Amazon",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q4740884",
+              "label": "Amazonia",
+              "description": "genus of fungi",
+              "match_type": "label",
+              "match_text": "Amazonia",
+              "aliases": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "Einstein",
+      "expected_qid": "Q937",
+      "note": "Albert Einstein",
+      "variants": {
+        "default": {
+          "n_results": 20,
+          "canonical_position": 2,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q16834800",
+              "label": "Einstein",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q937",
+              "label": "Albert Einstein",
+              "description": "german-born theoretical physicist (1879\u20131955)",
+              "match_type": "alias",
+              "match_text": "Einstein",
+              "aliases": [
+                "Einstein"
+              ]
+            },
+            {
+              "rank": 3,
+              "qid": "Q901448",
+              "label": "einstein",
+              "description": "obsolete unit measuring either one mole of photons or the energy of one mole of photons",
+              "match_type": "label",
+              "match_text": "einstein",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q1309274",
+              "label": "Einstein",
+              "description": "mountain of the Allg\u00e4u Alps in Tyrol, Austria",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q26854017",
+              "label": "Einstein / Instituto de Ensino e Pesquisa Albert Einstein",
+              "description": "journal",
+              "match_type": "label",
+              "match_text": "Einstein / Instituto de Ensino e Pesquisa Albert Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q1892",
+              "label": "einsteinium",
+              "description": "chemical element with symbol Es and atomic number 99",
+              "match_type": "label",
+              "match_text": "einsteinium",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q28739649",
+              "label": "Einstein",
+              "description": "opera by Paul Dessau",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q11452",
+              "label": "general relativity",
+              "description": "standard and classical physics theory of gravity and space",
+              "match_type": "alias",
+              "match_text": "Einstein's general theory of relativity",
+              "aliases": [
+                "Einstein's general theory of relativity"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q2030894",
+              "label": "Albert Einstein College of Medicine",
+              "description": "private medical school in New York City, NY",
+              "match_type": "alias",
+              "match_text": "Einstein College of Medicine",
+              "aliases": [
+                "Einstein College of Medicine"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q146709",
+              "label": "2001 Einstein",
+              "description": "Inner main belt asteroid",
+              "match_type": "alias",
+              "match_text": "Einstein",
+              "aliases": [
+                "Einstein"
+              ]
+            },
+            {
+              "rank": 11,
+              "qid": "Q106846857",
+              "label": "Einsteinstra\u00dfe",
+              "description": "street in the city district of Bothfeld in Hanover",
+              "match_type": "label",
+              "match_text": "Einsteinstra\u00dfe",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q28843527",
+              "label": "Einstein Slew survey, Version No. 1",
+              "description": "Cat\u00e0leg astron\u00f2mic",
+              "match_type": "label",
+              "match_text": "Einstein Slew survey, Version No. 1",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q23691666",
+              "label": "Einstein",
+              "description": "parrot trained to imitate sounds on cue, owned by animal trainer Stephanie White",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q28344686",
+              "label": "Einstein",
+              "description": "German television series (2017-2019)",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q1060565",
+              "label": "Einstein@Home",
+              "description": "BOINC volunteer computing project that analyzes data from LIGO to detect gravitational waves",
+              "match_type": "label",
+              "match_text": "Einstein@Home",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q43514",
+              "label": "theory of relativity",
+              "description": "two interrelated physics theories by Albert Einstein",
+              "match_type": "alias",
+              "match_text": "Einstein Theory of Relativity",
+              "aliases": [
+                "Einstein Theory of Relativity"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q27492829",
+              "label": "Einstein",
+              "description": "character from Disney's \"Oliver & Company\"",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q11282510",
+              "label": "Einstein",
+              "description": "Japanese comedy duo",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q8772688",
+              "label": "Einstein",
+              "description": "metro station in Santiago, Chile",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q52795967",
+              "label": "Einstein",
+              "description": "high school in Turin, Turin, Piedmont, Italy [school id: TOIS01800R]",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            }
+          ]
+        },
+        "type_item": {
+          "n_results": 20,
+          "canonical_position": 2,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q16834800",
+              "label": "Einstein",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q937",
+              "label": "Albert Einstein",
+              "description": "german-born theoretical physicist (1879\u20131955)",
+              "match_type": "alias",
+              "match_text": "Einstein",
+              "aliases": [
+                "Einstein"
+              ]
+            },
+            {
+              "rank": 3,
+              "qid": "Q901448",
+              "label": "einstein",
+              "description": "obsolete unit measuring either one mole of photons or the energy of one mole of photons",
+              "match_type": "label",
+              "match_text": "einstein",
+              "aliases": []
+            },
+            {
+              "rank": 4,
+              "qid": "Q1309274",
+              "label": "Einstein",
+              "description": "mountain of the Allg\u00e4u Alps in Tyrol, Austria",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q26854017",
+              "label": "Einstein / Instituto de Ensino e Pesquisa Albert Einstein",
+              "description": "journal",
+              "match_type": "label",
+              "match_text": "Einstein / Instituto de Ensino e Pesquisa Albert Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q1892",
+              "label": "einsteinium",
+              "description": "chemical element with symbol Es and atomic number 99",
+              "match_type": "label",
+              "match_text": "einsteinium",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q28739649",
+              "label": "Einstein",
+              "description": "opera by Paul Dessau",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q11452",
+              "label": "general relativity",
+              "description": "standard and classical physics theory of gravity and space",
+              "match_type": "alias",
+              "match_text": "Einstein's general theory of relativity",
+              "aliases": [
+                "Einstein's general theory of relativity"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q2030894",
+              "label": "Albert Einstein College of Medicine",
+              "description": "private medical school in New York City, NY",
+              "match_type": "alias",
+              "match_text": "Einstein College of Medicine",
+              "aliases": [
+                "Einstein College of Medicine"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q146709",
+              "label": "2001 Einstein",
+              "description": "Inner main belt asteroid",
+              "match_type": "alias",
+              "match_text": "Einstein",
+              "aliases": [
+                "Einstein"
+              ]
+            },
+            {
+              "rank": 11,
+              "qid": "Q106846857",
+              "label": "Einsteinstra\u00dfe",
+              "description": "street in the city district of Bothfeld in Hanover",
+              "match_type": "label",
+              "match_text": "Einsteinstra\u00dfe",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q28843527",
+              "label": "Einstein Slew survey, Version No. 1",
+              "description": "Cat\u00e0leg astron\u00f2mic",
+              "match_type": "label",
+              "match_text": "Einstein Slew survey, Version No. 1",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q23691666",
+              "label": "Einstein",
+              "description": "parrot trained to imitate sounds on cue, owned by animal trainer Stephanie White",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q28344686",
+              "label": "Einstein",
+              "description": "German television series (2017-2019)",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q1060565",
+              "label": "Einstein@Home",
+              "description": "BOINC volunteer computing project that analyzes data from LIGO to detect gravitational waves",
+              "match_type": "label",
+              "match_text": "Einstein@Home",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q43514",
+              "label": "theory of relativity",
+              "description": "two interrelated physics theories by Albert Einstein",
+              "match_type": "alias",
+              "match_text": "Einstein Theory of Relativity",
+              "aliases": [
+                "Einstein Theory of Relativity"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q27492829",
+              "label": "Einstein",
+              "description": "character from Disney's \"Oliver & Company\"",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q11282510",
+              "label": "Einstein",
+              "description": "Japanese comedy duo",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q8772688",
+              "label": "Einstein",
+              "description": "metro station in Santiago, Chile",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q52795967",
+              "label": "Einstein",
+              "description": "high school in Turin, Turin, Piedmont, Italy [school id: TOIS01800R]",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            }
+          ]
+        },
+        "strict_lang": {
+          "n_results": 20,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q26854017",
+              "label": "Einstein / Instituto de Ensino e Pesquisa Albert Einstein",
+              "description": "journal",
+              "match_type": "label",
+              "match_text": "Einstein / Instituto de Ensino e Pesquisa Albert Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q11452",
+              "label": "general relativity",
+              "description": "standard and classical physics theory of gravity and space",
+              "match_type": "alias",
+              "match_text": "Einstein's general theory of relativity",
+              "aliases": [
+                "Einstein's general theory of relativity"
+              ]
+            },
+            {
+              "rank": 3,
+              "qid": "Q2030894",
+              "label": "Albert Einstein College of Medicine",
+              "description": "private medical school in New York City, NY",
+              "match_type": "alias",
+              "match_text": "Einstein College of Medicine",
+              "aliases": [
+                "Einstein College of Medicine"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q28843527",
+              "label": "Einstein Slew survey, Version No. 1",
+              "description": "Cat\u00e0leg astron\u00f2mic",
+              "match_type": "label",
+              "match_text": "Einstein Slew survey, Version No. 1",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q16834800",
+              "label": "Einstein",
+              "description": "family name",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q43514",
+              "label": "theory of relativity",
+              "description": "two interrelated physics theories by Albert Einstein",
+              "match_type": "alias",
+              "match_text": "Einstein Theory of Relativity",
+              "aliases": [
+                "Einstein Theory of Relativity"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q1892",
+              "label": "einsteinium",
+              "description": "chemical element with symbol Es and atomic number 99",
+              "match_type": "label",
+              "match_text": "einsteinium",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q28739649",
+              "label": "Einstein",
+              "description": "opera by Paul Dessau",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q509660",
+              "label": "Arik Einstein",
+              "description": "Israeli singer (1939-2013)",
+              "match_type": "alias",
+              "match_text": "Einstein, Ariq\u200f",
+              "aliases": [
+                "Einstein, Ariq\u200f"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q782022",
+              "label": "Kalinga Prize",
+              "description": "UNESCO science award",
+              "match_type": "alias",
+              "match_text": "Einstein Medal",
+              "aliases": [
+                "Einstein Medal"
+              ]
+            },
+            {
+              "rank": 11,
+              "qid": "Q146709",
+              "label": "2001 Einstein",
+              "description": "Inner main belt asteroid",
+              "match_type": "alias",
+              "match_text": "Einstein",
+              "aliases": [
+                "Einstein"
+              ]
+            },
+            {
+              "rank": 12,
+              "qid": "Q35875",
+              "label": "mass\u2013energy equivalence",
+              "description": "physical law relating mass to energy",
+              "match_type": "alias",
+              "match_text": "Einstein formula",
+              "aliases": [
+                "Einstein formula"
+              ]
+            },
+            {
+              "rank": 13,
+              "qid": "Q17712",
+              "label": "Albert Einstein Medal",
+              "description": "science award",
+              "match_type": "alias",
+              "match_text": "Einstein Prize",
+              "aliases": [
+                "Einstein Prize"
+              ]
+            },
+            {
+              "rank": 14,
+              "qid": "Q901448",
+              "label": "einstein",
+              "description": "obsolete unit measuring either one mole of photons or the energy of one mole of photons",
+              "match_type": "label",
+              "match_text": "einstein",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q23691666",
+              "label": "Einstein",
+              "description": "parrot trained to imitate sounds on cue, owned by animal trainer Stephanie White",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q28344686",
+              "label": "Einstein",
+              "description": "German television series (2017-2019)",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q1309274",
+              "label": "Einstein",
+              "description": "mountain of the Allg\u00e4u Alps in Tyrol, Austria",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            },
+            {
+              "rank": 18,
+              "qid": "Q4710134",
+              "label": "Jefferson Einstein Hospital",
+              "description": "hospital in Pennsylvania, United States",
+              "match_type": "alias",
+              "match_text": "Einstein Medical Center",
+              "aliases": [
+                "Einstein Medical Center"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q273711",
+              "label": "Einstein field equations",
+              "description": "field equations in general relativity",
+              "match_type": "label",
+              "match_text": "Einstein field equations",
+              "aliases": []
+            },
+            {
+              "rank": 20,
+              "qid": "Q27492829",
+              "label": "Einstein",
+              "description": "character from Disney's \"Oliver & Company\"",
+              "match_type": "label",
+              "match_text": "Einstein",
+              "aliases": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "President",
+      "expected_qid": "Q11696",
+      "note": "President of the United States",
+      "variants": {
+        "default": {
+          "n_results": 20,
+          "canonical_position": 4,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q30461",
+              "label": "president",
+              "description": "leader of a country or part of a country, usually in republics",
+              "match_type": "label",
+              "match_text": "president",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q1255921",
+              "label": "president",
+              "description": "leader of an organization",
+              "match_type": "label",
+              "match_text": "president",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q140686",
+              "label": "chairperson",
+              "description": "leading or presiding officer of an organized group",
+              "match_type": "alias",
+              "match_text": "president (chairman)",
+              "aliases": [
+                "president (chairman)"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q11696",
+              "label": "President of the United States",
+              "description": "head of state and head of government of the United States of America",
+              "match_type": "label",
+              "match_text": "President of the United States",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q110737816",
+              "label": "President",
+              "description": "1987 video game",
+              "match_type": "label",
+              "match_text": "President",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q1758037",
+              "label": "speaker",
+              "description": "presiding officer of a national assembly or legislative body, originated in the Westminster Parliament",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q61061",
+              "label": "chancellor",
+              "description": "leader of a university or a college",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q4376769",
+              "label": "university president",
+              "description": "chief executive officer of a university",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q7245047",
+              "label": "principal",
+              "description": "chief executive and the chief academic officer of a university or college in certain parts of the Commonwealth",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q16933549",
+              "label": "President of the Generalitat of Catalonia",
+              "description": "Head of government of the Generalitat of Catalonia",
+              "match_type": "label",
+              "match_text": "President of the Generalitat of Catalonia",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q5631625",
+              "label": "HMS Bonaventure",
+              "description": "1650 fourth-rate ship of the line",
+              "match_type": "alias",
+              "match_text": "President",
+              "aliases": [
+                "President"
+              ]
+            },
+            {
+              "rank": 12,
+              "qid": "Q750551",
+              "label": "Presidente Hayes Department",
+              "description": "department of Paraguay",
+              "match_type": "label",
+              "match_text": "Presidente Hayes Department",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q135218611",
+              "label": "President",
+              "description": "British metal band",
+              "match_type": "label",
+              "match_text": "President",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q218295",
+              "label": "President of Russia",
+              "description": "head of state of the RSFSR (office established in 1991) and Russia",
+              "match_type": "label",
+              "match_text": "President of Russia",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q9960",
+              "label": "Ronald Reagan",
+              "description": "president of the United States from 1981 to 1989 and actor (1911-2004)",
+              "match_type": "alias",
+              "match_text": "President Reagan",
+              "aliases": [
+                "President Reagan"
+              ]
+            },
+            {
+              "rank": 16,
+              "qid": "Q7241458",
+              "label": "presidential proclamation",
+              "description": "statement issued by a US president on a matter of public policy",
+              "match_type": "label",
+              "match_text": "presidential proclamation",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q22686",
+              "label": "Donald Trump",
+              "description": "American businessman and politician (born 1946), President of the United States (2017\u20132021; since 2025)",
+              "match_type": "alias",
+              "match_text": "President Donald Trump",
+              "aliases": [
+                "President Donald Trump"
+              ]
+            },
+            {
+              "rank": 18,
+              "qid": "Q23505",
+              "label": "George H. W. Bush",
+              "description": "president of the United States from 1989 to 1993 (1924-2018)",
+              "match_type": "alias",
+              "match_text": "President Bush",
+              "aliases": [
+                "President Bush"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q91",
+              "label": "Abraham Lincoln",
+              "description": "president of the United States from 1861 to 1865 (1809-1865)",
+              "match_type": "alias",
+              "match_text": "President Lincoln",
+              "aliases": [
+                "President Lincoln"
+              ]
+            },
+            {
+              "rank": 20,
+              "qid": "Q8007",
+              "label": "Franklin Delano Roosevelt",
+              "description": "president of the United States from 1933 to 1945 (1882\u20131945)",
+              "match_type": "alias",
+              "match_text": "President Roosevelt",
+              "aliases": [
+                "President Roosevelt"
+              ]
+            }
+          ]
+        },
+        "type_item": {
+          "n_results": 20,
+          "canonical_position": 4,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q30461",
+              "label": "president",
+              "description": "leader of a country or part of a country, usually in republics",
+              "match_type": "label",
+              "match_text": "president",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q1255921",
+              "label": "president",
+              "description": "leader of an organization",
+              "match_type": "label",
+              "match_text": "president",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q140686",
+              "label": "chairperson",
+              "description": "leading or presiding officer of an organized group",
+              "match_type": "alias",
+              "match_text": "president (chairman)",
+              "aliases": [
+                "president (chairman)"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q11696",
+              "label": "President of the United States",
+              "description": "head of state and head of government of the United States of America",
+              "match_type": "label",
+              "match_text": "President of the United States",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q110737816",
+              "label": "President",
+              "description": "1987 video game",
+              "match_type": "label",
+              "match_text": "President",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q1758037",
+              "label": "speaker",
+              "description": "presiding officer of a national assembly or legislative body, originated in the Westminster Parliament",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q61061",
+              "label": "chancellor",
+              "description": "leader of a university or a college",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q4376769",
+              "label": "university president",
+              "description": "chief executive officer of a university",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q7245047",
+              "label": "principal",
+              "description": "chief executive and the chief academic officer of a university or college in certain parts of the Commonwealth",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q16933549",
+              "label": "President of the Generalitat of Catalonia",
+              "description": "Head of government of the Generalitat of Catalonia",
+              "match_type": "label",
+              "match_text": "President of the Generalitat of Catalonia",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q5631625",
+              "label": "HMS Bonaventure",
+              "description": "1650 fourth-rate ship of the line",
+              "match_type": "alias",
+              "match_text": "President",
+              "aliases": [
+                "President"
+              ]
+            },
+            {
+              "rank": 12,
+              "qid": "Q750551",
+              "label": "Presidente Hayes Department",
+              "description": "department of Paraguay",
+              "match_type": "label",
+              "match_text": "Presidente Hayes Department",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q135218611",
+              "label": "President",
+              "description": "British metal band",
+              "match_type": "label",
+              "match_text": "President",
+              "aliases": []
+            },
+            {
+              "rank": 14,
+              "qid": "Q218295",
+              "label": "President of Russia",
+              "description": "head of state of the RSFSR (office established in 1991) and Russia",
+              "match_type": "label",
+              "match_text": "President of Russia",
+              "aliases": []
+            },
+            {
+              "rank": 15,
+              "qid": "Q9960",
+              "label": "Ronald Reagan",
+              "description": "president of the United States from 1981 to 1989 and actor (1911-2004)",
+              "match_type": "alias",
+              "match_text": "President Reagan",
+              "aliases": [
+                "President Reagan"
+              ]
+            },
+            {
+              "rank": 16,
+              "qid": "Q7241458",
+              "label": "presidential proclamation",
+              "description": "statement issued by a US president on a matter of public policy",
+              "match_type": "label",
+              "match_text": "presidential proclamation",
+              "aliases": []
+            },
+            {
+              "rank": 17,
+              "qid": "Q22686",
+              "label": "Donald Trump",
+              "description": "American businessman and politician (born 1946), President of the United States (2017\u20132021; since 2025)",
+              "match_type": "alias",
+              "match_text": "President Donald Trump",
+              "aliases": [
+                "President Donald Trump"
+              ]
+            },
+            {
+              "rank": 18,
+              "qid": "Q23505",
+              "label": "George H. W. Bush",
+              "description": "president of the United States from 1989 to 1993 (1924-2018)",
+              "match_type": "alias",
+              "match_text": "President Bush",
+              "aliases": [
+                "President Bush"
+              ]
+            },
+            {
+              "rank": 19,
+              "qid": "Q91",
+              "label": "Abraham Lincoln",
+              "description": "president of the United States from 1861 to 1865 (1809-1865)",
+              "match_type": "alias",
+              "match_text": "President Lincoln",
+              "aliases": [
+                "President Lincoln"
+              ]
+            },
+            {
+              "rank": 20,
+              "qid": "Q8007",
+              "label": "Franklin Delano Roosevelt",
+              "description": "president of the United States from 1933 to 1945 (1882\u20131945)",
+              "match_type": "alias",
+              "match_text": "President Roosevelt",
+              "aliases": [
+                "President Roosevelt"
+              ]
+            }
+          ]
+        },
+        "strict_lang": {
+          "n_results": 20,
+          "canonical_position": 4,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q30461",
+              "label": "president",
+              "description": "leader of a country or part of a country, usually in republics",
+              "match_type": "label",
+              "match_text": "president",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q1255921",
+              "label": "president",
+              "description": "leader of an organization",
+              "match_type": "label",
+              "match_text": "president",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q140686",
+              "label": "chairperson",
+              "description": "leading or presiding officer of an organized group",
+              "match_type": "alias",
+              "match_text": "president (chairman)",
+              "aliases": [
+                "president (chairman)"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q11696",
+              "label": "President of the United States",
+              "description": "head of state and head of government of the United States of America",
+              "match_type": "label",
+              "match_text": "President of the United States",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q1758037",
+              "label": "speaker",
+              "description": "presiding officer of a national assembly or legislative body, originated in the Westminster Parliament",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 6,
+              "qid": "Q218295",
+              "label": "President of Russia",
+              "description": "head of state of the RSFSR (office established in 1991) and Russia",
+              "match_type": "label",
+              "match_text": "President of Russia",
+              "aliases": []
+            },
+            {
+              "rank": 7,
+              "qid": "Q9960",
+              "label": "Ronald Reagan",
+              "description": "president of the United States from 1981 to 1989 and actor (1911-2004)",
+              "match_type": "alias",
+              "match_text": "President Reagan",
+              "aliases": [
+                "President Reagan"
+              ]
+            },
+            {
+              "rank": 8,
+              "qid": "Q7241458",
+              "label": "presidential proclamation",
+              "description": "statement issued by a US president on a matter of public policy",
+              "match_type": "label",
+              "match_text": "presidential proclamation",
+              "aliases": []
+            },
+            {
+              "rank": 9,
+              "qid": "Q61061",
+              "label": "chancellor",
+              "description": "leader of a university or a college",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 10,
+              "qid": "Q22686",
+              "label": "Donald Trump",
+              "description": "American businessman and politician (born 1946), President of the United States (2017\u20132021; since 2025)",
+              "match_type": "alias",
+              "match_text": "President Donald Trump",
+              "aliases": [
+                "President Donald Trump"
+              ]
+            },
+            {
+              "rank": 11,
+              "qid": "Q23505",
+              "label": "George H. W. Bush",
+              "description": "president of the United States from 1989 to 1993 (1924-2018)",
+              "match_type": "alias",
+              "match_text": "President Bush",
+              "aliases": [
+                "President Bush"
+              ]
+            },
+            {
+              "rank": 12,
+              "qid": "Q91",
+              "label": "Abraham Lincoln",
+              "description": "president of the United States from 1861 to 1865 (1809-1865)",
+              "match_type": "alias",
+              "match_text": "President Lincoln",
+              "aliases": [
+                "President Lincoln"
+              ]
+            },
+            {
+              "rank": 13,
+              "qid": "Q8007",
+              "label": "Franklin Delano Roosevelt",
+              "description": "president of the United States from 1933 to 1945 (1882\u20131945)",
+              "match_type": "alias",
+              "match_text": "President Roosevelt",
+              "aliases": [
+                "President Roosevelt"
+              ]
+            },
+            {
+              "rank": 14,
+              "qid": "Q4376769",
+              "label": "university president",
+              "description": "chief executive officer of a university",
+              "match_type": "alias",
+              "match_text": "president",
+              "aliases": [
+                "president"
+              ]
+            },
+            {
+              "rank": 15,
+              "qid": "Q858439",
+              "label": "presidential election",
+              "description": "election of any head of state whose official title is president",
+              "match_type": "label",
+              "match_text": "presidential election",
+              "aliases": []
+            },
+            {
+              "rank": 16,
+              "qid": "Q294241",
+              "label": "Ernesto Geisel",
+              "description": "military and president of Brazil (1974\u20131979)",
+              "match_type": "alias",
+              "match_text": "Presidente Ernesto Geisel",
+              "aliases": [
+                "Presidente Ernesto Geisel"
+              ]
+            },
+            {
+              "rank": 17,
+              "qid": "Q9696",
+              "label": "John F. Kennedy",
+              "description": "president of the United States from 1961 to 1963 (1917\u20131963)",
+              "match_type": "alias",
+              "match_text": "President Kennedy",
+              "aliases": [
+                "President Kennedy"
+              ]
+            },
+            {
+              "rank": 18,
+              "qid": "Q6468838",
+              "label": "President of Slovakia",
+              "description": "head of state of Slovakia",
+              "match_type": "label",
+              "match_text": "President of Slovakia",
+              "aliases": []
+            },
+            {
+              "rank": 19,
+              "qid": "Q96761771",
+              "label": "member of the U.S. Electoral College",
+              "description": "position",
+              "match_type": "alias",
+              "match_text": "presidential elector",
+              "aliases": [
+                "presidential elector"
+              ]
+            },
+            {
+              "rank": 20,
+              "qid": "Q313383",
+              "label": "President of India",
+              "description": "Head of state of India",
+              "match_type": "label",
+              "match_text": "President of India",
+              "aliases": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "Williams College",
+      "expected_qid": "Q49112",
+      "note": "Williams College",
+      "variants": {
+        "default": {
+          "n_results": 13,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q49166",
+              "label": "Williams College",
+              "description": "liberal arts college in Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q12072937",
+              "label": "Williams College Museum of Art",
+              "description": "art museum in Williamstown, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College Museum of Art",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q8021012",
+              "label": "Williams Ephs",
+              "description": "collegiate sports club in the United States",
+              "match_type": "alias",
+              "match_text": "Williams College athletics",
+              "aliases": [
+                "Williams College athletics"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q61782737",
+              "label": "Williams College Cemetery",
+              "description": "cemetery at Williams College, Williamstown, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College Cemetery",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q23018410",
+              "label": "Williams College Investment Office",
+              "description": "",
+              "match_type": "label",
+              "match_text": "Williams College Investment Office",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q7989431",
+              "label": "Weston Athletic Complex",
+              "description": "stadium in Massachusetts, USA",
+              "match_type": "alias",
+              "match_text": "Williams College Stadium",
+              "aliases": [
+                "Williams College Stadium"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q116718410",
+              "label": "Williams College - Campus CHP",
+              "description": "power station with capacity >1MW in Berkshire County, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College - Campus CHP",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q117012255",
+              "label": "Institute of Politics at Williamstown",
+              "description": "research",
+              "match_type": "alias",
+              "match_text": "Williams College. Institute of Politics",
+              "aliases": [
+                "Williams College. Institute of Politics"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q91769454",
+              "label": "Williams College of Education, East Godavari",
+              "description": "college affiliated to the Adikavi Nannaya University",
+              "match_type": "label",
+              "match_text": "Williams College of Education, East Godavari",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q72585582",
+              "label": "Williams College Department of History",
+              "description": "academic department",
+              "match_type": "label",
+              "match_text": "Williams College Department of History",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q137545538",
+              "label": "WILLIAMS COLLEGE",
+              "description": "scholarly article published in Anthropology News (1968)",
+              "match_type": "label",
+              "match_text": "WILLIAMS COLLEGE",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q129415570",
+              "label": "Williams College: The SMALL Program",
+              "description": "scholarly article",
+              "match_type": "label",
+              "match_text": "Williams College: The SMALL Program",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q38012934",
+              "label": "Williams College",
+              "description": "Wikimedia disambiguation page",
+              "match_type": "label",
+              "match_text": "Williams College",
+              "aliases": []
+            }
+          ]
+        },
+        "type_item": {
+          "n_results": 13,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q49166",
+              "label": "Williams College",
+              "description": "liberal arts college in Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q12072937",
+              "label": "Williams College Museum of Art",
+              "description": "art museum in Williamstown, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College Museum of Art",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q8021012",
+              "label": "Williams Ephs",
+              "description": "collegiate sports club in the United States",
+              "match_type": "alias",
+              "match_text": "Williams College athletics",
+              "aliases": [
+                "Williams College athletics"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q61782737",
+              "label": "Williams College Cemetery",
+              "description": "cemetery at Williams College, Williamstown, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College Cemetery",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q23018410",
+              "label": "Williams College Investment Office",
+              "description": "",
+              "match_type": "label",
+              "match_text": "Williams College Investment Office",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q7989431",
+              "label": "Weston Athletic Complex",
+              "description": "stadium in Massachusetts, USA",
+              "match_type": "alias",
+              "match_text": "Williams College Stadium",
+              "aliases": [
+                "Williams College Stadium"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q116718410",
+              "label": "Williams College - Campus CHP",
+              "description": "power station with capacity >1MW in Berkshire County, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College - Campus CHP",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q117012255",
+              "label": "Institute of Politics at Williamstown",
+              "description": "research",
+              "match_type": "alias",
+              "match_text": "Williams College. Institute of Politics",
+              "aliases": [
+                "Williams College. Institute of Politics"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q91769454",
+              "label": "Williams College of Education, East Godavari",
+              "description": "college affiliated to the Adikavi Nannaya University",
+              "match_type": "label",
+              "match_text": "Williams College of Education, East Godavari",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q72585582",
+              "label": "Williams College Department of History",
+              "description": "academic department",
+              "match_type": "label",
+              "match_text": "Williams College Department of History",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q137545538",
+              "label": "WILLIAMS COLLEGE",
+              "description": "scholarly article published in Anthropology News (1968)",
+              "match_type": "label",
+              "match_text": "WILLIAMS COLLEGE",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q129415570",
+              "label": "Williams College: The SMALL Program",
+              "description": "scholarly article",
+              "match_type": "label",
+              "match_text": "Williams College: The SMALL Program",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q38012934",
+              "label": "Williams College",
+              "description": "Wikimedia disambiguation page",
+              "match_type": "label",
+              "match_text": "Williams College",
+              "aliases": []
+            }
+          ]
+        },
+        "strict_lang": {
+          "n_results": 13,
+          "canonical_position": 0,
+          "top_20": [
+            {
+              "rank": 1,
+              "qid": "Q49166",
+              "label": "Williams College",
+              "description": "liberal arts college in Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College",
+              "aliases": []
+            },
+            {
+              "rank": 2,
+              "qid": "Q12072937",
+              "label": "Williams College Museum of Art",
+              "description": "art museum in Williamstown, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College Museum of Art",
+              "aliases": []
+            },
+            {
+              "rank": 3,
+              "qid": "Q8021012",
+              "label": "Williams Ephs",
+              "description": "collegiate sports club in the United States",
+              "match_type": "alias",
+              "match_text": "Williams College athletics",
+              "aliases": [
+                "Williams College athletics"
+              ]
+            },
+            {
+              "rank": 4,
+              "qid": "Q61782737",
+              "label": "Williams College Cemetery",
+              "description": "cemetery at Williams College, Williamstown, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College Cemetery",
+              "aliases": []
+            },
+            {
+              "rank": 5,
+              "qid": "Q23018410",
+              "label": "Williams College Investment Office",
+              "description": "",
+              "match_type": "label",
+              "match_text": "Williams College Investment Office",
+              "aliases": []
+            },
+            {
+              "rank": 6,
+              "qid": "Q7989431",
+              "label": "Weston Athletic Complex",
+              "description": "stadium in Massachusetts, USA",
+              "match_type": "alias",
+              "match_text": "Williams College Stadium",
+              "aliases": [
+                "Williams College Stadium"
+              ]
+            },
+            {
+              "rank": 7,
+              "qid": "Q116718410",
+              "label": "Williams College - Campus CHP",
+              "description": "power station with capacity >1MW in Berkshire County, Massachusetts",
+              "match_type": "label",
+              "match_text": "Williams College - Campus CHP",
+              "aliases": []
+            },
+            {
+              "rank": 8,
+              "qid": "Q117012255",
+              "label": "Institute of Politics at Williamstown",
+              "description": "research",
+              "match_type": "alias",
+              "match_text": "Williams College. Institute of Politics",
+              "aliases": [
+                "Williams College. Institute of Politics"
+              ]
+            },
+            {
+              "rank": 9,
+              "qid": "Q91769454",
+              "label": "Williams College of Education, East Godavari",
+              "description": "college affiliated to the Adikavi Nannaya University",
+              "match_type": "label",
+              "match_text": "Williams College of Education, East Godavari",
+              "aliases": []
+            },
+            {
+              "rank": 10,
+              "qid": "Q72585582",
+              "label": "Williams College Department of History",
+              "description": "academic department",
+              "match_type": "label",
+              "match_text": "Williams College Department of History",
+              "aliases": []
+            },
+            {
+              "rank": 11,
+              "qid": "Q137545538",
+              "label": "WILLIAMS COLLEGE",
+              "description": "scholarly article published in Anthropology News (1968)",
+              "match_type": "label",
+              "match_text": "WILLIAMS COLLEGE",
+              "aliases": []
+            },
+            {
+              "rank": 12,
+              "qid": "Q129415570",
+              "label": "Williams College: The SMALL Program",
+              "description": "scholarly article",
+              "match_type": "label",
+              "match_text": "Williams College: The SMALL Program",
+              "aliases": []
+            },
+            {
+              "rank": 13,
+              "qid": "Q38012934",
+              "label": "Williams College",
+              "description": "Wikimedia disambiguation page",
+              "match_type": "label",
+              "match_text": "Williams College",
+              "aliases": []
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
