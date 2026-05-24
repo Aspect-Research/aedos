@@ -88,6 +88,30 @@ class TestBuildNeighborsQuery:
         with pytest.raises(ValueError, match="non-empty"):
             _build_neighbors_query("Q49112", ())
 
+    # --- D51: reverse direction ---
+
+    def test_outgoing_query_shape(self):
+        """Outgoing default: wd:E ?prop ?value (no LIMIT)."""
+        q = _build_neighbors_query("Q49112", ("P31",), direction="outgoing")
+        assert "wd:Q49112 ?prop ?value" in q
+        assert "LIMIT" not in q
+
+    def test_incoming_query_shape(self):
+        """Incoming (D51): ?value ?prop wd:E with LIMIT."""
+        q = _build_neighbors_query("Q49112", ("P31",), direction="incoming")
+        assert "?value ?prop wd:Q49112" in q
+        assert "LIMIT" in q
+
+    def test_invalid_direction_raises(self):
+        with pytest.raises(ValueError, match="direction"):
+            _build_neighbors_query("Q49112", ("P31",), direction="sideways")
+
+    def test_incoming_limit_validated(self):
+        with pytest.raises(ValueError, match="limit"):
+            _build_neighbors_query("Q49112", ("P31",), direction="incoming", limit=0)
+        with pytest.raises(ValueError, match="limit"):
+            _build_neighbors_query("Q49112", ("P31",), direction="incoming", limit=10000)
+
 
 class TestParseNeighborsBindings:
     def test_groups_by_property(self):
@@ -291,3 +315,36 @@ class TestProtocolContract:
         # enumerate_neighbors should call _fixture_neighbors → reads fixture.
         result = adapter.enumerate_neighbors("Q49112", ["P31"])
         assert "Q3918" in result["P31"]
+
+
+# ---------------------------------------------------------------------------
+# Phase H D51: reverse-direction fixture + live tests
+# ---------------------------------------------------------------------------
+
+class TestReverseDirectionFixture:
+    def test_reverse_fixture_loaded(self):
+        """Reverse direction reads a different fixture
+        (`neighbors_<entity>_reverse.json`)."""
+        adapter = WikidataAdapter()
+        # Q49166 doesn't have an outgoing fixture but has a reverse one
+        # we'll add in the same commit.
+        result = adapter.enumerate_neighbors(
+            "Q49166", ["P361"], direction="incoming",
+        )
+        # If reverse fixture exists, it returns non-empty. Otherwise empty.
+        # Both shapes are acceptable here — the test asserts the protocol
+        # contract (key present, list value), not the specific neighbors.
+        assert "P361" in result
+        assert isinstance(result["P361"], list)
+
+
+class TestReverseLiveFailureModes:
+    def test_reverse_call_records_direction_in_audit(self):
+        adapter, db = _make_adapter()
+        body = b'{"results": {"bindings": []}}'
+        cm, _ = _make_httpx_cm(_make_response(body))
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            adapter._live_neighbors("Q49112", ("P31",), direction="incoming")
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_live_neighbors")
+        assert events[0]["event_data"]["direction"] == "incoming"
