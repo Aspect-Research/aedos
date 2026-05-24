@@ -65,3 +65,17 @@ class KBProtocol(Protocol):
     def subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
     ) -> SubsumptionResult: ...
+
+    # Phase H D5 (2026-05-23): a fourth operation. The first three check or
+    # fetch for a *known* entity/pair; `enumerate_neighbors` discovers an
+    # entity's KB neighbors along a constrained property set, so the walker
+    # can ground a derivation in KB-sourced premises it didn't already have.
+    # Per `docs/phase_H/d5_design.md`: the property set is bounded (Decision
+    # 1 — 5-property geographic/taxonomic core), depth is one-hop-per-call
+    # (Decision 2 — walker recurses via existing `max_depth`), failures
+    # fail-open (return empty dict).
+    def enumerate_neighbors(
+        self,
+        entity: KBEntityID,
+        properties: list[KBPropertyID],
+    ) -> dict[KBPropertyID, list[KBEntityID]]: ...
