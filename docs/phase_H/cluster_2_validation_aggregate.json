@@ -1,0 +1,964 @@
+{
+  "n_runs": 3,
+  "n_cases": 50,
+  "per_run_accuracy": [
+    44.0,
+    40.0,
+    44.0
+  ],
+  "avg_accuracy_pct": 42.666666666666664,
+  "inconsistent_verdict_count": 3,
+  "inconsistent_verdict_cases": [
+    "der_cross_007",
+    "der_cross_008",
+    "der_predicate_translation_004"
+  ],
+  "inconsistent_pass_count": 2,
+  "inconsistent_pass_cases": [
+    "der_cross_007",
+    "der_predicate_translation_004"
+  ],
+  "per_case_consistency": {
+    "der_multihop_001": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_002": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_003": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_004": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_005": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_multihop_006": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_007": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_008": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_009": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_010": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_multihop_011": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_multihop_012": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "multi_hop_distribution",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_cross_001": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "cross_source",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_cross_002": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "cross_source",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_cross_003": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R1",
+      "category": "cross_source",
+      "expected_verdict": "verified",
+      "judgment": false
+    },
+    "der_cross_004": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "cross_source",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_cross_005": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R1",
+      "category": "cross_source",
+      "expected_verdict": "verified",
+      "judgment": false
+    },
+    "der_cross_006": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R1",
+      "category": "cross_source",
+      "expected_verdict": "verified",
+      "judgment": false
+    },
+    "der_cross_007": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        false,
+        true
+      ],
+      "consistent_verdict": false,
+      "consistent_pass": false,
+      "rule": "R3",
+      "category": "cross_source",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_cross_008": {
+      "verdicts": [
+        "contradicted",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": false,
+      "consistent_pass": true,
+      "rule": "R1",
+      "category": "cross_source",
+      "expected_verdict": "verified",
+      "judgment": false
+    },
+    "der_cross_009": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "cross_source",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_cross_010": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R1",
+      "category": "cross_source",
+      "expected_verdict": "no_grounding_found",
+      "judgment": false
+    },
+    "der_disambiguation_001": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "NON_STANDARD",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified_with_correct_entity",
+      "judgment": true
+    },
+    "der_disambiguation_002": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_disambiguation_003": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_disambiguation_004": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_disambiguation_005": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "NON_STANDARD",
+      "category": "entity_disambiguation",
+      "expected_verdict": "<non-standard>",
+      "judgment": true
+    },
+    "der_disambiguation_006": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "NON_STANDARD",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified_with_correct_entity",
+      "judgment": true
+    },
+    "der_disambiguation_007": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_disambiguation_008": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "entity_disambiguation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_predicate_translation_001": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "predicate_translation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_predicate_translation_002": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "OVERRIDE",
+      "category": "predicate_translation",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": true
+    },
+    "der_predicate_translation_003": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "predicate_translation",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_predicate_translation_004": {
+      "verdicts": [
+        "verified",
+        "verified_given_assertion",
+        "verified"
+      ],
+      "passed_per_run": [
+        true,
+        false,
+        true
+      ],
+      "consistent_verdict": false,
+      "consistent_pass": false,
+      "rule": "R2",
+      "category": "predicate_translation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_predicate_translation_005": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "predicate_translation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_predicate_translation_006": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "predicate_translation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_predicate_translation_007": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "NON_STANDARD",
+      "category": "predicate_translation",
+      "expected_verdict": "needs_tier_u_or_kb",
+      "judgment": true
+    },
+    "der_predicate_translation_008": {
+      "verdicts": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R2",
+      "category": "predicate_translation",
+      "expected_verdict": "verified",
+      "judgment": true
+    },
+    "der_revision_001": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R4",
+      "category": "belief_revision",
+      "expected_verdict": "contradicted",
+      "judgment": true
+    },
+    "der_revision_002": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R4",
+      "category": "belief_revision",
+      "expected_verdict": "contradicted",
+      "judgment": true
+    },
+    "der_revision_003": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R4",
+      "category": "belief_revision",
+      "expected_verdict": "contradicted",
+      "judgment": true
+    },
+    "der_revision_004": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R4",
+      "category": "belief_revision",
+      "expected_verdict": "verified",
+      "judgment": false
+    },
+    "der_revision_005": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R4",
+      "category": "belief_revision",
+      "expected_verdict": "contradicted",
+      "judgment": true
+    },
+    "der_revision_006": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R4",
+      "category": "belief_revision",
+      "expected_verdict": "contradicted",
+      "judgment": true
+    },
+    "der_abstain_001": {
+      "verdicts": [
+        null,
+        null,
+        null
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R6",
+      "category": "abstention",
+      "expected_verdict": "no_grounding_found",
+      "judgment": false
+    },
+    "der_abstain_002": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "abstention",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_abstain_003": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "abstention",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_abstain_004": {
+      "verdicts": [
+        "verified_given_assertion",
+        "verified_given_assertion",
+        "verified_given_assertion"
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "abstention",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    },
+    "der_abstain_005": {
+      "verdicts": [
+        null,
+        null,
+        null
+      ],
+      "passed_per_run": [
+        true,
+        true,
+        true
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R6",
+      "category": "abstention",
+      "expected_verdict": "no_grounding_found",
+      "judgment": false
+    },
+    "der_abstain_006": {
+      "verdicts": [
+        "no_grounding_found",
+        "no_grounding_found",
+        "no_grounding_found"
+      ],
+      "passed_per_run": [
+        false,
+        false,
+        false
+      ],
+      "consistent_verdict": true,
+      "consistent_pass": true,
+      "rule": "R3",
+      "category": "abstention",
+      "expected_verdict": "verified_given_assertion",
+      "judgment": false
+    }
+  },
+  "rule_pass_per_run": [
+    {
+      "R3:PASS": 13,
+      "R3:MISS": 6,
+      "R2:PASS": 4,
+      "R2:MISS": 9,
+      "R1:MISS": 4,
+      "R1:PASS": 1,
+      "NON_STANDARD:MISS": 3,
+      "NON_STANDARD:PASS": 1,
+      "OVERRIDE:PASS": 1,
+      "R4:MISS": 6,
+      "R6:PASS": 2
+    },
+    {
+      "R3:PASS": 12,
+      "R3:MISS": 7,
+      "R2:PASS": 3,
+      "R2:MISS": 10,
+      "R1:MISS": 4,
+      "R1:PASS": 1,
+      "NON_STANDARD:MISS": 3,
+      "NON_STANDARD:PASS": 1,
+      "OVERRIDE:PASS": 1,
+      "R4:MISS": 6,
+      "R6:PASS": 2
+    },
+    {
+      "R3:PASS": 13,
+      "R3:MISS": 6,
+      "R2:PASS": 4,
+      "R2:MISS": 9,
+      "R1:MISS": 4,
+      "R1:PASS": 1,
+      "NON_STANDARD:MISS": 3,
+      "NON_STANDARD:PASS": 1,
+      "OVERRIDE:PASS": 1,
+      "R4:MISS": 6,
+      "R6:PASS": 2
+    }
+  ]
+}
