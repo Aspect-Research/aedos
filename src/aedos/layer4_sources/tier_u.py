@@ -400,6 +400,8 @@ class TierU:
         self,
         row_id: int,
         grounding_chain: Optional[dict] = None,
+        verdict_produced: str = "verified",
+        verification_context: Optional[str] = None,
     ) -> bool:
         """Upgrade a Tier U row's status from `asserted_unverified` to
         `externally_verified`.
@@ -415,15 +417,53 @@ class TierU:
         separate KB hit on the same row is incoherent and should not
         cancel the contradiction).
 
-        `grounding_chain` (optional) captures the verification chain that
-        triggered the upgrade — KB statement references, Python execution
-        ids, substrate rows. Serialized into the
-        `tier_u_status_upgraded` audit event for v0.16 retraction
-        propagation (D14 territory): if a KB row that triggered an
-        upgrade is later retracted, the upgrade arguably ought to
-        reverse. v0.15 does not implement reverse-upgrade propagation
-        but captures the chain so v0.16 doesn't need archaeological
-        reconstruction.
+        Audit-event detail (for v0.16 retraction propagation per D14).
+        The `tier_u_status_upgraded` event captures everything needed to
+        reconstruct the upgrade decision without forensic walk-replay:
+
+          - `row_id`             — captured in `event_subject` as
+                                   `tier_u:<id>`
+          - `from_status`,
+            `to_status`          — explicit transition
+          - `verdict_produced`   — the walker's verdict for the walk
+                                   that triggered the upgrade. Default
+                                   is `'verified'` (the upgrade only
+                                   fires when external grounding
+                                   succeeded — see Q-Upgrade). Captured
+                                   explicitly so v0.16 can confirm the
+                                   upgrade was contingent on a
+                                   verified outcome.
+          - `grounding_chain`    — caller-supplied structured dict
+                                   describing WHICH external source
+                                   grounded the upgrade. Expected
+                                   shape per source:
+                                     KB:   {"source": "kb",
+                                            "entity": "<Q-id>",
+                                            "kb_property": "<P-id>",
+                                            "statement_value": "<…>"}
+                                     Py:   {"source": "python",
+                                            "code_hash": "<sha>",
+                                            "inputs": {…},
+                                            "output": "…"}
+                                     mix:  {"source": "derivation",
+                                            "chain": [<edges>]}
+                                   The walker populates this in step 3.
+                                   v0.15 does NOT implement
+                                   reverse-upgrade propagation (a
+                                   retracted KB row that triggered an
+                                   upgrade does not auto-downgrade the
+                                   tier_u row); the chain is captured
+                                   now so v0.16 D14 can implement that
+                                   propagation without archaeological
+                                   reconstruction.
+          - `occurred_at`        — timestamp; auto-captured by
+                                   `audit_log` schema (architecture
+                                   §5.2's `occurred_at` column)
+          - `verification_context` — optional caller-supplied
+                                     verification-context identifier;
+                                     audit_log carries this in its own
+                                     column for cross-event correlation
+                                     (turn / batch / session id)
 
         Returns True when an upgrade was performed, False otherwise
         (row not at asserted_unverified, or row missing).
@@ -445,8 +485,10 @@ class TierU:
             event_data={
                 "from_status": "asserted_unverified",
                 "to_status": "externally_verified",
+                "verdict_produced": verdict_produced,
                 "grounding_chain": grounding_chain or {},
             },
+            verification_context=verification_context,
         )
         return True
 
