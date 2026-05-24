@@ -527,31 +527,35 @@ class Walker:
         distribution_verdict,
         trace: JustificationTrace,
     ) -> list[Claim]:
-        """Phase H D5: enumerate KB neighbors of `node`'s slot entities
-        and emit expanded claims with the slot substituted by each
-        neighbor.
+        """Phase H D5 + D51: enumerate KB neighbors of `node`'s slot
+        entities and emit expanded claims with the slot substituted by
+        each neighbor.
 
         Fires as a fallback when `_expand_via_substrate` produced no
         expansion for `relation_type` (per D5 design Decision 5 —
         cheapest-path-first).
 
-        Direction asymmetry (v0.15 scope). `_live_neighbors` enumerates
-        OUTGOING edges only (entity → neighbor). Outgoing P31/P361/P131/P17
-        of E yields E's *parents* — the entity classes/containers E
-        belongs to. So this method produces expansions whose slot value
-        is one of E's parents. That serves `distributes_down` (walker
-        wants parents) and the `parent` branch of `both`; it does not
-        serve `distributes_up` (walker wants children of E), which would
-        need reverse SPARQL enumeration. The reverse path is captured as
-        a v0.16 candidate (D5 design follow-up — see `docs/phase_H/d5_design.md`
-        Decision 5's "alternative shapes" note).
+        Direction mapping (D5 + D51):
+          - `"parent"` ∈ directions (distributes_down, both): call
+            `enumerate_neighbors(direction="outgoing")` — yields E's
+            parents (entities E points to via P31/P361/P131/P17/P279).
+            Walker substitutes E with one of its parents.
+          - `"child"` ∈ directions (distributes_up, both): call
+            `enumerate_neighbors(direction="incoming")` — yields E's
+            children (entities pointing to E). Walker substitutes E
+            with one of its children. D51 (2026-05-24).
+
+        Both directions fire when distribution is `both`; the trace
+        records each direction separately so Phase 10.5 attribution
+        can distinguish.
 
         Audit shape: each emitted expansion gets a
         `kb_neighbor_enumeration` trace edge with the source slot value,
-        resolved Q-id, neighbor Q-id, KB property used, and the
-        distribution-verdict that authorized the traversal. The
-        `_live_neighbors` call itself writes a `kb_live_neighbors`
-        audit-log event (via `WikidataAdapter._live_neighbors`).
+        resolved Q-id, neighbor Q-id, KB property used, the
+        distribution-verdict that authorized the traversal, and the
+        direction (`"parent"` or `"child"`). The `_live_neighbors` call
+        itself writes a `kb_live_neighbors` audit-log event with
+        `direction` recorded.
 
         Fail-open shape: any failure in resolution, KB call, or parsing
         returns no expansion for the affected slot; the walker continues
@@ -559,13 +563,28 @@ class Walker:
         """
         if self._kb is None:
             return []
-        if "parent" not in directions:
-            # Outgoing-only enumeration serves "parent" direction. See
-            # Direction asymmetry note above.
-            return []
         properties = list(_D5_NEIGHBOR_PROPS_BY_RELATION.get(relation_type, ()))
         if not properties:
             return []
+
+        # Map walker-direction → KB enumerate-neighbors-direction. The two
+        # vocabularies use different words for symmetric concepts (the
+        # walker thinks in terms of taxonomy direction; the KB call thinks
+        # in terms of edge direction). For each walker-direction the
+        # operator selected, do one enumeration call.
+        kb_calls: list[tuple[str, str]] = []  # (walker_dir, kb_dir)
+        if "parent" in directions:
+            kb_calls.append(("parent", "outgoing"))
+        if "child" in directions:
+            kb_calls.append(("child", "incoming"))
+        if not kb_calls:
+            return []
+
+        verdict_label = (
+            distribution_verdict.value
+            if hasattr(distribution_verdict, "value")
+            else str(distribution_verdict)
+        )
 
         expanded: list[Claim] = []
         for slot in ("subject", "object"):
@@ -596,40 +615,33 @@ class Walker:
             if not entity_qid or not entity_qid.startswith("Q"):
                 continue
 
-            # Enumerate KB neighbors. Fails open: empty dict on error
-            # (per _live_neighbors contract) — _live_neighbors itself
-            # logs the kb_live_neighbors audit event with the failure.
-            try:
-                neighbors_by_prop = self._kb.enumerate_neighbors(
-                    entity_qid, properties
-                )
-            except Exception:
-                continue
+            for walker_dir, kb_dir in kb_calls:
+                try:
+                    neighbors_by_prop = self._kb.enumerate_neighbors(
+                        entity_qid, properties, direction=kb_dir,
+                    )
+                except Exception:
+                    continue
 
-            verdict_label = (
-                distribution_verdict.value
-                if hasattr(distribution_verdict, "value")
-                else str(distribution_verdict)
-            )
-            for prop_id, neighbor_qids in neighbors_by_prop.items():
-                for neighbor_qid in neighbor_qids:
-                    if slot == "subject":
-                        new_node = _claim_from_parts(node, subject=neighbor_qid)
-                    else:
-                        new_node = _claim_from_parts(node, object_val=neighbor_qid)
-                    trace.edges.append(TraceEdge(
-                        edge_type="kb_neighbor_enumeration",
-                        source=TraceNode("claim", {slot: slot_val}),
-                        target=TraceNode("claim", {slot: neighbor_qid}),
-                        metadata={
-                            "relation_type": relation_type,
-                            "direction": "parent",  # outgoing-only; v0.15 scope
-                            "distribution": verdict_label,
-                            "kb_property": prop_id,
-                            "subject_qid": entity_qid,
-                            "polarity": node.polarity,
-                        },
-                    ))
-                    expanded.append(new_node)
+                for prop_id, neighbor_qids in neighbors_by_prop.items():
+                    for neighbor_qid in neighbor_qids:
+                        if slot == "subject":
+                            new_node = _claim_from_parts(node, subject=neighbor_qid)
+                        else:
+                            new_node = _claim_from_parts(node, object_val=neighbor_qid)
+                        trace.edges.append(TraceEdge(
+                            edge_type="kb_neighbor_enumeration",
+                            source=TraceNode("claim", {slot: slot_val}),
+                            target=TraceNode("claim", {slot: neighbor_qid}),
+                            metadata={
+                                "relation_type": relation_type,
+                                "direction": walker_dir,  # "parent" or "child"
+                                "distribution": verdict_label,
+                                "kb_property": prop_id,
+                                "subject_qid": entity_qid,
+                                "polarity": node.polarity,
+                            },
+                        ))
+                        expanded.append(new_node)
 
         return expanded
