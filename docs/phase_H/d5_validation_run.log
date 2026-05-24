@@ -1,0 +1,57 @@
+
+=== derivation_corpus ===
+  [ 1/50] der_multihop_001                    FAIL verdict=no_grounding_found
+  [ 2/50] der_multihop_002                    FAIL verdict=no_grounding_found
+  [ 3/50] der_multihop_003                    FAIL verdict=no_grounding_found
+  [ 4/50] der_multihop_004                    FAIL verdict=no_grounding_found
+  [ 5/50] der_multihop_005                    FAIL verdict=no_grounding_found
+  [ 6/50] der_multihop_006                    FAIL verdict=no_grounding_found
+  [ 7/50] der_multihop_007                    FAIL verdict=no_grounding_found
+  [ 8/50] der_multihop_008                    FAIL verdict=no_grounding_found
+  [ 9/50] der_multihop_009                    PASS verdict=no_grounding_found
+  [10/50] der_multihop_010                    PASS verdict=no_grounding_found
+  [11/50] der_multihop_011                    PASS verdict=no_grounding_found
+  [12/50] der_multihop_012                    FAIL verdict=no_grounding_found
+  [13/50] der_cross_001                       FAIL verdict=no_grounding_found
+  [14/50] der_cross_002                       FAIL verdict=no_grounding_found
+  [15/50] der_cross_003                       FAIL verdict=no_grounding_found
+  [16/50] der_cross_004                       FAIL verdict=no_grounding_found
+  [17/50] der_cross_005                       FAIL verdict=no_grounding_found
+  [18/50] der_cross_006                       PASS verdict=verified
+  [19/50] der_cross_007                       FAIL verdict=no_grounding_found
+  [20/50] der_cross_008                       FAIL verdict=no_grounding_found
+  [21/50] der_cross_009                       FAIL verdict=no_grounding_found
+  [22/50] der_cross_010                       PASS verdict=no_grounding_found
+  [23/50] der_disambiguation_001              FAIL verdict=no_grounding_found
+  [24/50] der_disambiguation_002              FAIL verdict=no_grounding_found
+  [25/50] der_disambiguation_003              FAIL verdict=no_grounding_found
+  [26/50] der_disambiguation_004              FAIL verdict=no_grounding_found
+  [27/50] der_disambiguation_005              PASS verdict=no_grounding_found
+  [28/50] der_disambiguation_006              FAIL verdict=no_grounding_found
+  [29/50] der_disambiguation_007              PASS verdict=verified
+  [30/50] der_disambiguation_008              FAIL verdict=no_grounding_found
+  [31/50] der_predicate_translation_001       FAIL verdict=no_grounding_found
+  [32/50] der_predicate_translation_002       PASS verdict=no_grounding_found
+  [33/50] der_predicate_translation_003       FAIL verdict=no_grounding_found
+  [34/50] der_predicate_translation_004       PASS verdict=verified
+  [35/50] der_predicate_translation_005       FAIL verdict=no_grounding_found
+  [36/50] der_predicate_translation_006       FAIL verdict=no_grounding_found
+  [37/50] der_predicate_translation_007       PASS verdict=no_grounding_found
+  [38/50] der_predicate_translation_008       PASS verdict=verified
+  [39/50] der_revision_001                    FAIL verdict=no_grounding_found
+  [40/50] der_revision_002                    FAIL verdict=no_grounding_found
+  [41/50] der_revision_003                    FAIL verdict=no_grounding_found
+  [42/50] der_revision_004                    FAIL verdict=no_grounding_found
+  [43/50] der_revision_005                    FAIL verdict=no_grounding_found
+  [44/50] der_revision_006                    FAIL verdict=no_grounding_found
+  [45/50] der_abstain_001                     PASS verdict=None
+  [46/50] der_abstain_002                     PASS verdict=no_grounding_found
+  [47/50] der_abstain_003                     PASS verdict=no_grounding_found
+  [48/50] der_abstain_004                     PASS verdict=no_grounding_found
+  [49/50] der_abstain_005                     PASS verdict=None
+  [50/50] der_abstain_006                     PASS verdict=no_grounding_found
+  accuracy: 34.0% (17/50) in 1158.5s
+  -> C:\code\aedos\docs\phase_H\d16_rebaseline_derivation_corpus.json
+
+=== Summary ===
+  derivation_corpus                34.0% (17/50)
