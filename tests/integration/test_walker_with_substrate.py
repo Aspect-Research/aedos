@@ -73,6 +73,18 @@ def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0, slot_to
     pd = PredicateDistributionOracle(db=db, llm_client=client)
     substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
     tier_u = TierU(db=db, predicate_translation=pt)
+    # Phase H Cluster 2 step 3: tests in this file are about walker
+    # mechanics (Tier U match, KB grounding, subsumption derivation,
+    # belief revision), not about user-assertion-source semantics. The
+    # rows they write represent "established prior Tier U state",
+    # which is `externally_verified` under Cluster 2. Override write's
+    # default so each tier_u.write(claim) keeps its pre-Cluster-2
+    # intent. Tests that specifically need asserted_unverified
+    # semantics pass `status='asserted_unverified'` explicitly.
+    _orig_write = tier_u.write
+    def _write_external(claim, source_context=None, status="externally_verified"):
+        return _orig_write(claim, source_context=source_context, status=status)
+    tier_u.write = _write_external  # type: ignore[method-assign]
     kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
     py_verifier = PythonVerifier()
     walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier, substrate=substrate)

@@ -90,6 +90,15 @@ def _make_walker(kb=None):
     pd = PredicateDistributionOracle(db=db, llm_client=client)
     substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
     tier_u = TierU(db=db, predicate_translation=pt)
+    # Phase H Cluster 2 step 3: failure-mode tests seed "prior Tier U
+    # state" — `externally_verified` matches the test intent. The
+    # belief-revision test (test_claim_contradicting_tier_u_prior)
+    # specifically refers to a `tier_u_prior` row in its docstring,
+    # which is established external knowledge under Q-Seed.
+    _orig_write = tier_u.write
+    def _write_external(claim, source_context=None, status="externally_verified"):
+        return _orig_write(claim, source_context=source_context, status=status)
+    tier_u.write = _write_external  # type: ignore[method-assign]
     kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
     walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=PythonVerifier(), substrate=substrate)
     return walker, tier_u, db

@@ -96,6 +96,28 @@ def _claim_from_parts(
     )
 
 
+def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -> str:
+    """Phase H Cluster 2 step 3: convert a base verdict to its
+    `_given_assertion` dual designation when the chain composition
+    includes an asserted-unverified premise (or when the walk was
+    pre-flagged for a `user_authoritative` claim).
+
+    Imports lazily inside the function to avoid a circular import
+    (aggregator imports from trace; walker imports trace; if walker
+    imports aggregator at module load we get a cycle).
+    """
+    if not trace.chain_includes_assertion:
+        return base_verdict
+    from ..layer5_result.aggregator import _BASE_OF_DUAL  # noqa: F401  (sanity import)
+    # Inverse of _BASE_OF_DUAL — base verdict → dual designation.
+    mapping = {
+        "verified": "verified_given_assertion",
+        "contradicted": "contradicted_given_assertion",
+        "no_grounding_found": "abstained_given_assertion",
+    }
+    return mapping.get(base_verdict, base_verdict)
+
+
 def _distribution_directions(verdict) -> set[str]:
     """Neighbor directions the walker may traverse for a distribution verdict.
 
@@ -185,6 +207,19 @@ class Walker:
         )
         polarity_trace: list[int] = []
 
+        # Phase H Cluster 2 step 3 (Q-UserAuth): for predicates routed
+        # `user_authoritative`, external grounding is structurally
+        # unreachable — no KB property maps to `prefers` / `believes` /
+        # similar, and Python cannot compute first-person facts. Every
+        # verdict on such a claim is therefore conditional on user
+        # assertion. Pre-set the chain flag so the verdict family is
+        # always `*_given_assertion` (verified / contradicted /
+        # abstained), even when no Tier U premise is present (the
+        # abstained_given_assertion case). See design doc §"User_authoritative
+        # verdict semantics".
+        if self._predicate_routing(claim.predicate) == "user_authoritative":
+            trace.chain_includes_assertion = True
+
         frontier: list[Claim] = [claim]
         visited: dict[str, Claim] = {}
         depth = 0
@@ -198,7 +233,7 @@ class Walker:
                 trace.walk_metadata.update({"depth_reached": depth, "budget_exceeded": "wall_clock"})
                 trace.polarity_trace = polarity_trace
                 return WalkResult(
-                    verdict="no_grounding_found",
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
                     trace=trace,
                     abstention_reason="budget_wall_clock",
                     budget_consumption=consumption,
@@ -208,7 +243,7 @@ class Walker:
                 trace.walk_metadata.update({"depth_reached": depth, "budget_exceeded": "llm_calls"})
                 trace.polarity_trace = polarity_trace
                 return WalkResult(
-                    verdict="no_grounding_found",
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
                     trace=trace,
                     abstention_reason="budget_llm_calls",
                     budget_consumption=consumption,
@@ -256,10 +291,14 @@ class Walker:
         trace.polarity_trace = polarity_trace
 
         if current_verdict is not None:
-            return WalkResult(verdict=current_verdict, trace=trace, budget_consumption=consumption)
+            return WalkResult(
+                verdict=_apply_assertion_designation(current_verdict, trace),
+                trace=trace,
+                budget_consumption=consumption,
+            )
 
         return WalkResult(
-            verdict="no_grounding_found",
+            verdict=_apply_assertion_designation("no_grounding_found", trace),
             trace=trace,
             abstention_reason="depth_exhausted",
             budget_consumption=consumption,
@@ -272,12 +311,41 @@ class Walker:
     def _direct_lookup(
         self, node: Claim, context: VerificationContext, trace: JustificationTrace
     ) -> tuple[Optional[str], str, int]:
-        """Returns (verdict_or_None, source, llm_calls_used)."""
+        """Returns (verdict_or_None, source, llm_calls_used).
+
+        Phase H Cluster 2 step 3: status-aware Tier U handling.
+
+        Tier U match flow:
+          - `externally_verified` row → plain verified, no chain flag.
+          - `asserted_unverified` row:
+            * `user_authoritative` route (Q-UserAuth): short-circuit
+              → verified; chain flag was already set at walk start so
+              the final verdict becomes `verified_given_assertion`.
+            * any other route (Q-Lookup α): try KB/Python for external
+              grounding. If KB or Python verifies the same claim, call
+              `tier_u.mark_externally_verified` to upgrade the row and
+              return plain verified WITHOUT setting the chain flag
+              (this walk's verdict is externally grounded). If neither
+              external source verifies, set the chain flag and return
+              verified (final verdict becomes `verified_given_assertion`).
+
+        Belief-revision paths (polarity_conflict, object_conflict)
+        likewise read the contradicting row's status:
+          - externally_verified contradicting row → plain contradicted.
+          - asserted_unverified contradicting row → contradicted with
+            chain flag set → final `contradicted_given_assertion`.
+        """
         llm_delta = 0
 
-        # Tier U lookup
+        # Tier U lookup (positive match)
         tier_u_result = self._tier_u.lookup(node, current_time=context.current_time)
         if tier_u_result.found:
+            # Defensive: a mock TierU may report `found=True` without a
+            # populated rows list. Fall back to the asserted_unverified
+            # default (conservative — never under-flags a verdict).
+            row = tier_u_result.rows[0] if tier_u_result.rows else {}
+            row_status = row.get("status", "asserted_unverified")
+            row_id = row.get("id")
             trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
             trace.edges.append(TraceEdge(
                 edge_type="premise_lookup",
@@ -285,13 +353,46 @@ class Walker:
                 target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
                 metadata={
                     "source": "tier_u", "polarity": node.polarity, "verdict": "verified",
-                    "tier_u_row_id": tier_u_result.rows[0]["id"] if tier_u_result.rows else None,
+                    "tier_u_row_id": row_id,
+                    "premise_status": row_status,
                 },
             ))
             # TierU._stage1 matches polarity exactly: a `found` hit is an
             # assertion of the SAME polarity as the claim, hence verified —
             # including a negated claim grounded in a negated Tier U row.
-            return "verified", "tier_u", 0
+
+            if row_status == "externally_verified":
+                # Established external knowledge; verdict is externally grounded.
+                return "verified", "tier_u", 0
+
+            # asserted_unverified path.
+            route = self._predicate_routing(node.predicate)
+            if route == "user_authoritative":
+                # Q-UserAuth: chain flag was already set at walk start;
+                # do not attempt KB/Python (structurally unreachable).
+                return "verified", "tier_u", 0
+
+            # Q-Lookup α: try external grounding for an upgrade
+            # opportunity. KB first, Python second (matches §6.5 order
+            # for non-Tier-U lookups). On success, upgrade the row and
+            # return plain verified — the chain flag is NOT set
+            # because the verdict is externally grounded.
+            upgrade_verdict, upgrade_source, upgrade_llm_delta, grounding_chain = \
+                self._try_external_grounding(node, context, trace)
+            llm_delta += upgrade_llm_delta
+            if upgrade_verdict == "verified":
+                if row_id is not None:
+                    self._tier_u.mark_externally_verified(
+                        row_id,
+                        grounding_chain=grounding_chain,
+                        verdict_produced="verified",
+                    )
+                return "verified", f"tier_u→{upgrade_source}_upgrade", llm_delta
+            # No external grounding available; chain stays
+            # assertion-conditional.
+            trace.chain_includes_assertion = True
+            return "verified", "tier_u", llm_delta
+
         if tier_u_result.historical_only:
             # Historical match means claim was true at some point, counts as partial evidence
             # but does NOT ground a present-tense claim → skip
@@ -304,6 +405,8 @@ class Walker:
         flipped = _claim_from_parts(node, polarity=1 - node.polarity)
         flipped_result = self._tier_u.lookup(flipped, current_time=context.current_time)
         if flipped_result.found:
+            flipped_row = flipped_result.rows[0] if flipped_result.rows else {}
+            flipped_status = flipped_row.get("status", "asserted_unverified")
             trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
             trace.edges.append(TraceEdge(
                 edge_type="premise_lookup",
@@ -311,10 +414,13 @@ class Walker:
                 target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
                 metadata={
                     "source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted",
-                    "tier_u_row_id": flipped_result.rows[0]["id"] if flipped_result.rows else None,
+                    "tier_u_row_id": flipped_row.get("id"),
                     "belief_revision": "polarity_conflict",
+                    "premise_status": flipped_status,
                 },
             ))
+            if flipped_status == "asserted_unverified":
+                trace.chain_includes_assertion = True
             return "contradicted", "tier_u", 0
 
         # Object-conflict belief revision (D16): a functional (single_valued)
@@ -331,6 +437,8 @@ class Walker:
                 node, current_time=context.current_time
             )
             if oc_result.found and self._predicate_is_functional(node.predicate):
+                oc_row = oc_result.rows[0] if oc_result.rows else {}
+                oc_status = oc_row.get("status", "asserted_unverified")
                 trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
@@ -338,12 +446,44 @@ class Walker:
                     target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
                     metadata={
                         "source": "tier_u", "polarity": node.polarity, "verdict": "contradicted",
-                        "tier_u_row_id": oc_result.rows[0]["id"] if oc_result.rows else None,
+                        "tier_u_row_id": oc_row.get("id"),
                         "belief_revision": "object_conflict",
+                        "premise_status": oc_status,
                     },
                 ))
+                if oc_status == "asserted_unverified":
+                    trace.chain_includes_assertion = True
                 return "contradicted", "tier_u", 0
 
+        # No Tier U premise. Try KB / Python for standalone external
+        # grounding (the §6.5 fallthrough — no upgrade scenario here,
+        # there is no Tier U row to upgrade).
+        external_verdict, external_source, external_llm_delta, _ = \
+            self._try_external_grounding(node, context, trace)
+        llm_delta += external_llm_delta
+        if external_verdict is not None:
+            return external_verdict, external_source, llm_delta
+
+        return None, "", llm_delta
+
+    def _try_external_grounding(
+        self,
+        node: Claim,
+        context: VerificationContext,
+        trace: JustificationTrace,
+    ) -> tuple[Optional[str], str, int, dict]:
+        """Try KB then (if route is python) Python verification for
+        external grounding of `node`. Returns
+        `(verdict_or_None, source, llm_delta, grounding_chain_dict)`.
+
+        Phase H Cluster 2 step 3: factored out of `_direct_lookup` so
+        the Q-Lookup-α upgrade path can share the same logic as the
+        standalone-fallthrough path. The grounding_chain dict is the
+        structured detail consumed by `mark_externally_verified`'s
+        audit event — KB statement coordinates or Python execution
+        identity, per the operator's audit-detail confirmation in
+        step 1.
+        """
         # KB verification
         if self._kb_verifier is not None:
             kb_result = self._kb_verifier.verify(
@@ -364,7 +504,13 @@ class Walker:
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
                     },
                 ))
-                return "verified", "kb", 0
+                grounding = {
+                    "source": "kb",
+                    "entity": kb_result.subject_kb_id,
+                    "kb_property": kb_result.trace.get("kb_property"),
+                    "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                }
+                return "verified", "kb", 0, grounding
             elif kb_result.verdict == KBVerdictType.CONTRADICTED:
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
@@ -375,7 +521,13 @@ class Walker:
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
                     },
                 ))
-                return "contradicted", "kb", 0
+                grounding = {
+                    "source": "kb",
+                    "entity": kb_result.subject_kb_id,
+                    "kb_property": kb_result.trace.get("kb_property"),
+                    "verdict": "contradicted",
+                }
+                return "contradicted", "kb", 0, grounding
 
         # Python verifier (F-042: gated on routing_hint=="python" per architecture
         # §6.5 step 3: "Python verification if the route is Python." Before this
@@ -401,9 +553,14 @@ class Walker:
                     }),
                     metadata={"source": "python", "verdict": py_result.verdict},
                 ))
-                return py_result.verdict, "python", 0
+                grounding = {
+                    "source": "python",
+                    "output": str(getattr(py_result, "output", "")),
+                    "verdict": py_result.verdict,
+                }
+                return py_result.verdict, "python", 0, grounding
 
-        return None, "", 0
+        return None, "", 0, {}
 
     def _predicate_routing(self, predicate: str) -> Optional[str]:
         """Routing hint for `predicate` per the predicate translation oracle.

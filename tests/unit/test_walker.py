@@ -87,7 +87,14 @@ def _make_walker(
     tier_u_found=False,
     kb_verdict=KBVerdictType.NO_MATCH,
     distribution_verdict="neither",
-    routing_hint="user_authoritative",
+    # Phase H Cluster 2 step 3: default is `kb_resolvable` (was
+    # `user_authoritative`). The Q-UserAuth flag-set-at-walk-start
+    # made every walker unit test produce *_given_assertion verdicts,
+    # entangling routine flow assertions with the user_authoritative
+    # semantic. The Q-UserAuth path is tested explicitly in
+    # TestF042RoutingGate and TestQUserAuth (the latter added in step
+    # 3); other tests assert flow behavior with a neutral route.
+    routing_hint="kb_resolvable",
 ):
     db = open_memory_db()
     transport = MockTransport(routing_hint=routing_hint, distribution_verdict=distribution_verdict)
@@ -157,9 +164,15 @@ class TestWalkResultDataclass:
 
 class TestWalkerDirectLookup:
     def test_tier_u_found_returns_verified(self):
+        # Phase H Cluster 2 step 3: MockTierU's `found=True, rows=[]`
+        # shape exercises the walker's defensive defaults (row id
+        # unknown, status defaults to asserted_unverified). KB mock
+        # returns NO_MATCH, so the Q-Lookup-α external-grounding
+        # attempt fails and the verdict is verified_given_assertion.
+        # See TestUpgradePath for the upgrade case where KB succeeds.
         walker = _make_walker(tier_u_found=True)
         result = walker.walk(_claim(), _ctx())
-        assert result.verdict == "verified"
+        assert result.verdict == "verified_given_assertion"
 
     def test_tier_u_not_found_no_grounding(self):
         walker = _make_walker(tier_u_found=False, kb_verdict=KBVerdictType.NO_MATCH)
@@ -253,10 +266,13 @@ class TestF042RoutingGate:
         walker = _make_walker_with_py_verifier(py, routing_hint="user_authoritative")
         result = walker.walk(_claim(predicate="prefers"), _ctx())
         # Walker must abstain, not propagate the adversarial verifier's
-        # contradiction.
-        assert result.verdict == "no_grounding_found", (
-            f"User-authoritative route should not invoke Python verifier; "
-            f"got verdict={result.verdict}"
+        # contradiction. Phase H Cluster 2 step 3 (Q-UserAuth):
+        # user_authoritative claims always produce *_given_assertion
+        # verdicts because external grounding is structurally
+        # unreachable. Abstention here is correct.
+        assert result.verdict == "abstained_given_assertion", (
+            f"User-authoritative route should abstain (no Tier U match, "
+            f"Python skipped); got verdict={result.verdict}"
         )
         assert py.call_count == 0, (
             f"Adversarial Python verifier should not have been called; "
