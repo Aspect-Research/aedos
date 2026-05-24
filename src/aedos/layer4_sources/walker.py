@@ -510,8 +510,16 @@ class Walker:
             # Phase H D5 fallback: substrate oracle had nothing for this
             # relation_type → try live KB neighbor enumeration. Only fires
             # when the distribution gate is open (`directions` non-empty)
-            # and substrate produced nothing.
-            if not sub_produced:
+            # and substrate produced nothing. Capped to depth==0 (the
+            # initial frontier) — without this cap, the D51 reverse-direction
+            # fanout (~20 entities per call × 5 properties × 2 slots × 2
+            # relations × per-depth multiplication) blew past 18-min per-case
+            # wall-clock in the first D51 diagnostic. KB-enumerated
+            # children become Q-id-keyed claims that the walker still
+            # explores via Tier U / KB verifier; further KB enumeration
+            # on those Q-id claims rarely yields useful premises and
+            # multiplies cost catastrophically.
+            if not sub_produced and depth == 0:
                 kb_produced = self._expand_via_kb_neighbors(
                     node, relation_type, directions, dist.verdict, trace
                 )
