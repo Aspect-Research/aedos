@@ -68,12 +68,19 @@ class ChatWrapper:
         walker,
         aggregator,
         llm_client,
+        tier_u=None,
         config: Optional[dict] = None,
     ) -> None:
         self._extractor = extractor
         self._walker = walker
         self._aggregator = aggregator
         self._llm = llm_client
+        # Phase H Cluster 2 step 2: `tier_u` is the promotion target for
+        # user-asserted claims. Optional for back-compat with tests that
+        # construct ChatWrapper without it (those skip the user-message
+        # extraction step; behavior matches pre-Cluster-2). The
+        # build_pipeline shape passes it explicitly.
+        self._tier_u = tier_u
         self._config = config or {}
         self._verification_store: dict[str, VerificationResult] = {}
 
@@ -81,6 +88,41 @@ class ChatWrapper:
         ctx_dict = conversation_context or {}
         asserting_party = ctx_dict.get("asserting_party_id", "user")
         current_time = datetime.now(timezone.utc).isoformat()
+
+        # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): extract claims
+        # from the user_message and promote them into Tier U BEFORE the
+        # draft is generated. This is how "user-asserted claims
+        # accumulate as premises" lands in the deployed pipeline — the
+        # draft-extraction-and-walk loop later in this method then sees
+        # the user's assertions as Tier U premises and can chain off them
+        # (the chain produces a `*_given_assertion` verdict per step 3).
+        #
+        # Bounded extra cost: one additional extraction call per turn.
+        # The user-message extraction reads from `user_message` (not
+        # `draft`), so the asserting party is the user and the claims
+        # are first-person canonicalized via the extractor's existing
+        # logic.
+        #
+        # Skip the promotion path when `tier_u` was not wired (legacy
+        # constructor shape) — the wrapper degrades cleanly to the
+        # pre-Cluster-2 behavior.
+        if self._tier_u is not None and self._extractor is not None and user_message:
+            from ..layer4_sources.promotion import promote_assertions
+            user_ctx = ExtractionContext(
+                asserting_party=asserting_party,
+                context_type="chat_user",
+                turn_id=ctx_dict.get("conversation_id"),
+            )
+            user_claims = self._extractor.extract(user_message, user_ctx)
+            user_claims = [c for c in user_claims if c.triage_decision == TriageDecision.VERIFY]
+            if user_claims:
+                promote_assertions(user_claims, self._tier_u)
+                # The promotion's pre_verdicts (cross-source contradictions
+                # on the user's own assertions vs. prior externally-verified
+                # rows) are not surfaced to this turn's intervention — the
+                # user spoke, we recorded what they said. The audit-log
+                # entries (cross_source_contradiction) are the trail.
+                # Phase 10.5 / a future deployment surface may consume them.
 
         # 1. Generate draft
         system = self._config.get("system_prompt", "You are a helpful assistant.")
@@ -90,7 +132,8 @@ class ChatWrapper:
             purpose="chat",
         )
 
-        # 2. Extract claims
+        # 2. Extract claims from the draft (the LLM's response — the
+        # text whose factual content we intervene on).
         #
         # The extraction call is deliberately NOT wrapped in a broad
         # `except Exception`. A prior `except Exception: claims = []` here

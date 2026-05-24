@@ -160,3 +160,103 @@ class TestChatWrapperExtraction:
         assert claim_id in vr.per_claim_verdicts
         assert claim_id in vr.per_claim_traces
         assert vr.aggregate_metadata.get("claim_count", 0) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Phase H Cluster 2 step 2: user-message extraction + promotion
+# (Q-ChatWrapperSource). When `tier_u` is wired into the ChatWrapper,
+# `respond` extracts claims from the *user_message* and writes them to
+# Tier U as `asserted_unverified` BEFORE generating the draft. This is
+# how user-asserted knowledge accumulates as premises across a session.
+# ---------------------------------------------------------------------------
+
+def _make_wrapper_with_tier_u() -> tuple[ChatWrapper, TierU, "sqlite3.Connection"]:
+    """ChatWrapper with the Cluster-2 wiring — Tier U threaded so the
+    user-message extraction + promotion path fires."""
+    import sqlite3  # noqa: F401  (used implicitly via open_memory_db's return type)
+    db = open_memory_db()
+    client = LLMClient(_transport=MockTransport())
+    kb = StubKB()
+    pt = PredicateTranslation(db=db, llm_client=client)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(
+        resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd
+    )
+    tier_u = TierU(db=db, predicate_translation=pt)
+    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    py_verifier = PythonVerifier()
+    walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier, substrate=substrate)
+    extractor = Extractor(llm_client=client)
+    aggregator = Aggregator()
+    wrapper = ChatWrapper(
+        extractor=extractor, walker=walker, aggregator=aggregator,
+        llm_client=client, tier_u=tier_u,
+    )
+    return wrapper, tier_u, db
+
+
+class TestChatWrapperUserMessagePromotion:
+    def test_user_message_claims_land_in_tier_u(self):
+        wrapper, _tier_u, db = _make_wrapper_with_tier_u()
+        # The mock transport's `extract_with_tool` always returns the
+        # canned _EXTRACTED_CLAIMS (Obama born_in Honolulu). With Tier U
+        # wired, respond() extracts on user_message first and promotes.
+        # That row lands in Tier U with status='asserted_unverified'.
+        wrapper.respond("Tell me about Obama.")
+        rows = db.execute(
+            "SELECT subject, predicate, object, status FROM tier_u"
+        ).fetchall()
+        assert len(rows) >= 1
+        # At least one row has the asserted_unverified status (the
+        # user-message promotion). The draft-extraction path does NOT
+        # write to Tier U; it only walks against existing premises.
+        statuses = {r["status"] for r in rows}
+        assert "asserted_unverified" in statuses
+
+    def test_user_message_promotion_emits_audit(self):
+        from aedos.audit.log import query_events
+        wrapper, _tier_u, db = _make_wrapper_with_tier_u()
+        wrapper.respond("Tell me about Obama.")
+        # Promotion writes call TierU.write → log_event(row_created)
+        # with the asserted_unverified status. Verify the audit trail
+        # records the promotion explicitly.
+        row_events = query_events(db, event_type="row_created")
+        assert len(row_events) >= 1
+        # At least one row_created event records status=asserted_unverified.
+        assert any(
+            e["event_data"].get("status") == "asserted_unverified"
+            for e in row_events
+        )
+
+    def test_pre_cluster_2_back_compat_without_tier_u(self):
+        # When tier_u is NOT wired (the legacy constructor shape used by
+        # test_chat_wrapper.py's _make_wrapper), the user-message
+        # extraction step is skipped. No Tier U writes happen on the
+        # user-message side; behavior matches pre-Cluster-2. The
+        # downstream walker still uses whatever Tier U state the
+        # pipeline holds.
+        wrapper = _make_wrapper()  # no tier_u kwarg
+        response = wrapper.respond("Tell me about Obama.")
+        # Wrapper still returns a normal response; only the new
+        # promotion path is skipped. No exception, no test fixture
+        # change required.
+        assert isinstance(response, ChatResponse)
+
+    def test_extraction_called_on_user_message_and_draft(self):
+        # Both extractions happen — user_message first (for promotion),
+        # then draft (for walker verification). The mock transport
+        # records every call; we expect at least two extract_claims
+        # invocations per respond() turn.
+        wrapper, _tier_u, _db = _make_wrapper_with_tier_u()
+        # Find the underlying mock transport so we can inspect calls.
+        # The LLMClient stores _transport as an attribute.
+        transport = wrapper._llm._transport
+        wrapper.respond("Tell me about Obama.")
+        extract_calls = [
+            c for c in transport.calls
+            if c.get("type") == "extract_with_tool" and c.get("tool") == "extract_claims"
+        ]
+        # Two extract_claims invocations: one on user_message, one on draft.
+        assert len(extract_calls) >= 2

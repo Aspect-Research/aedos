@@ -532,6 +532,7 @@ def _run_intervention(h: _Harness, case: dict) -> bool:
 def _run_derivation(h: _Harness, case: dict) -> bool:
     from aedos.layer1_extraction.extractor import Claim, Extractor, ExtractionContext
     from aedos.layer1_extraction.triage import TriageDecision
+    from aedos.layer4_sources.promotion import promote_assertions
     from aedos.layer4_sources.walker import VerificationContext
     from datetime import datetime, timezone
 
@@ -556,18 +557,27 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
 
     walker, tier_u = h.walker()
 
-    # Seed Tier U from any tier_u / tier_u_prior entries.
+    # Phase H Cluster 2 step 2 (Q-Seed): `tier_u` and `tier_u_prior`
+    # entries represent established external knowledge for the case —
+    # the corpus author seeded them as priors the system would already
+    # know. They are NOT in-session user assertions; they get
+    # `status='externally_verified'`. The §"KB wins" cross-source rule
+    # then fires correctly when the case's extracted claim contradicts
+    # one of them.
     for key in ("tier_u", "tier_u_prior"):
         entries = inp.get(key) or []
         if isinstance(entries, dict):
             entries = [entries]
         for e in entries:
-            tier_u.write(Claim(
-                claim_id="seed", subject=e["subject"], predicate=e["predicate"],
-                object=e["object"], polarity=e.get("polarity", 1), source_text="seed",
-                asserting_party="calibration", triage_decision=TriageDecision.VERIFY,
-                valid_from=e.get("valid_from"),
-            ))
+            tier_u.write(
+                Claim(
+                    claim_id="seed", subject=e["subject"], predicate=e["predicate"],
+                    object=e["object"], polarity=e.get("polarity", 1), source_text="seed",
+                    asserting_party="calibration", triage_decision=TriageDecision.VERIFY,
+                    valid_from=e.get("valid_from"),
+                ),
+                status="externally_verified",
+            )
     # Seed subsumption rows from taxonomic context_premises.
     for prem in inp.get("context_premises") or []:
         if prem.get("predicate") in ("part_of", "is_a"):
@@ -585,6 +595,16 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
         asserting_party="calibration", context_type="document"))
     if not claims:
         return expected.get("verdict") == "no_grounding_found"
+
+    # Phase H Cluster 2 step 2: promote every extracted claim to Tier U
+    # as `asserted_unverified` BEFORE invoking the walker (Q-MultiClaim:
+    # promote-all then walk-all). The walker subsequently sees these
+    # rows as premises; multi-hop chains compose user assertions with
+    # KB / substrate grounding. §"KB wins" cross-source contradictions
+    # surface via PromotionResult.pre_verdict; we honor that pre-verdict
+    # for the case's verified claim without invoking the walker (the
+    # contradiction was already authoritatively decided).
+    promotions = promote_assertions(claims, tier_u)
     # Phase H D47: thread the corpus case's text as source_text so the
     # Wikipedia normalizer's Stage 2 has context for disambiguation.
     ctx = VerificationContext(
@@ -592,7 +612,18 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
         asserting_party="calibration",
         source_text=inp["text"],
     )
-    result = walker.walk(claims[0], ctx)
+    # The corpus runner verifies claims[0]. Find its PromotionResult and
+    # honor any pre-verdict; otherwise invoke the walker.
+    primary_promotion = promotions[0]  # one-to-one with claims
+    if primary_promotion.pre_verdict is not None:
+        from aedos.layer4_sources.walker import WalkResult
+        from aedos.layer5_result.trace import JustificationTrace, TraceNode
+        result = WalkResult(
+            verdict=primary_promotion.pre_verdict,
+            trace=JustificationTrace(root=TraceNode("claim")),
+        )
+    else:
+        result = walker.walk(claims[0], ctx)
     expected_verdict = expected.get("verdict")
     if expected_verdict in ("verified", "contradicted", "no_grounding_found"):
         return result.verdict == expected_verdict

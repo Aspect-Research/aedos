@@ -124,6 +124,11 @@ async def chat(request: ChatRequest) -> JSONResponse:
             walker=pipeline.walker,
             aggregator=pipeline.aggregator,
             llm_client=pipeline.llm_client,
+            # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): thread
+            # Tier U through so the wrapper can promote user-message
+            # claims as `asserted_unverified` premises before draft
+            # generation.
+            tier_u=pipeline.tier_u,
         )
 
     ctx = {"asserting_party_id": request.asserting_party_id or "user"}
