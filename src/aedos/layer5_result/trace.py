@@ -26,6 +26,15 @@ class JustificationTrace:
     polarity_trace: list[int] = field(default_factory=list)
     source_breakdown: dict = field(default_factory=dict)  # tier_u | kb | python counts
     walk_metadata: dict = field(default_factory=dict)  # depth, llm_calls, wall_clock_ms
+    # Phase H Cluster 2 step 1: set True (monotonically) when any premise on
+    # the derivation chain was an `asserted_unverified` Tier U row. The
+    # aggregator reads this flag and converts a base verdict to its
+    # `*_given_assertion` variant. Individual contributing edges carry
+    # `metadata['premise_status']` for fine-grained audit; this flag is
+    # the aggregated signal used at verdict-designation time. (Walker
+    # step 3 sets this; the field exists in step 1 so the schema is
+    # stable across the cluster.)
+    chain_includes_assertion: bool = False
 
 
 def trace_to_json(trace: JustificationTrace) -> dict:
@@ -47,4 +56,5 @@ def trace_to_json(trace: JustificationTrace) -> dict:
         "polarity_trace": trace.polarity_trace,
         "source_breakdown": trace.source_breakdown,
         "walk_metadata": trace.walk_metadata,
+        "chain_includes_assertion": trace.chain_includes_assertion,
     }

@@ -370,6 +370,192 @@ class TestTierURetraction:
 # TestTierUStage3Broadening
 # ---------------------------------------------------------------------------
 
+class TestTierUStatus:
+    """Phase H Cluster 2 step 1: row status flag (asserted_unverified /
+    externally_verified / contradicted_by_externally_verified)."""
+
+    def test_default_status_is_asserted_unverified(self):
+        tu, db = _tier_u()
+        result = tu.write(_claim())
+        row = db.execute("SELECT status FROM tier_u WHERE id=?", (result.row_id,)).fetchone()
+        assert row["status"] == "asserted_unverified"
+
+    def test_explicit_externally_verified_status(self):
+        tu, db = _tier_u()
+        result = tu.write(_claim(), status="externally_verified")
+        row = db.execute("SELECT status FROM tier_u WHERE id=?", (result.row_id,)).fetchone()
+        assert row["status"] == "externally_verified"
+
+    def test_invalid_status_raises(self):
+        tu, _ = _tier_u()
+        with pytest.raises(ValueError, match="invalid tier_u status"):
+            tu.write(_claim(), status="bogus")
+
+    def test_status_persists_across_lookup(self):
+        tu, _ = _tier_u()
+        tu.write(_claim(), status="externally_verified")
+        result = tu.lookup(_claim(), current_time=_NOW_STR)
+        assert result.found is True
+        assert result.rows[0]["status"] == "externally_verified"
+
+
+class TestTierUMarkExternallyVerified:
+    """Phase H Cluster 2 step 1: upgrade path from asserted_unverified
+    to externally_verified (Q-Upgrade)."""
+
+    def test_upgrade_asserted_unverified_row(self):
+        tu, db = _tier_u()
+        wr = tu.write(_claim())  # default asserted_unverified
+        upgraded = tu.mark_externally_verified(wr.row_id)
+        assert upgraded is True
+        row = db.execute("SELECT status FROM tier_u WHERE id=?", (wr.row_id,)).fetchone()
+        assert row["status"] == "externally_verified"
+
+    def test_upgrade_idempotent_on_externally_verified(self):
+        tu, _ = _tier_u()
+        wr = tu.write(_claim(), status="externally_verified")
+        upgraded = tu.mark_externally_verified(wr.row_id)
+        assert upgraded is False  # already at target status; no-op
+
+    def test_upgrade_skipped_for_contradicted_row(self):
+        # contradicted_by_externally_verified cannot be cancelled by an
+        # incoherent subsequent upgrade — the KB-wins decision holds.
+        tu, db = _tier_u()
+        # Seed externally_verified prior + competing user assertion to create
+        # a contradicted_by_externally_verified row.
+        tu.write(_claim(object_val="NYC", polarity=0), status="externally_verified")
+        wr = tu.write(_claim(object_val="NYC", polarity=1))
+        assert wr.was_cross_source_contradicted is True
+        upgraded = tu.mark_externally_verified(wr.row_id)
+        assert upgraded is False
+        row = db.execute("SELECT status FROM tier_u WHERE id=?", (wr.row_id,)).fetchone()
+        assert row["status"] == "contradicted_by_externally_verified"
+
+    def test_upgrade_emits_audit_event(self):
+        from aedos.audit.log import query_events
+        tu, db = _tier_u()
+        wr = tu.write(_claim())
+        tu.mark_externally_verified(wr.row_id, grounding_chain={"kb_statement": "Q1/P31/Q5"})
+        events = query_events(db, event_type="tier_u_status_upgraded")
+        assert len(events) == 1
+        assert events[0]["event_subject"] == f"tier_u:{wr.row_id}"
+        assert events[0]["event_data"]["from_status"] == "asserted_unverified"
+        assert events[0]["event_data"]["to_status"] == "externally_verified"
+        assert events[0]["event_data"]["grounding_chain"] == {"kb_statement": "Q1/P31/Q5"}
+
+    def test_upgrade_nonexistent_row(self):
+        tu, _ = _tier_u()
+        upgraded = tu.mark_externally_verified(9999)
+        assert upgraded is False  # no-op, no raise
+
+
+class TestTierUCrossSourceContradiction:
+    """Phase H Cluster 2 step 1: §"KB wins" — a user assertion that
+    would close an externally_verified prior via §6.1 belief revision
+    is instead written with contradicted_by_externally_verified status;
+    the prior stays open."""
+
+    def test_externally_verified_negation_prior_stays_open(self):
+        # Prior externally-verified negative assertion conflicts with new
+        # positive assertion (direct negation case). KB-wins: prior stays
+        # open; new row gets contradicted_by_externally_verified status.
+        tu, db = _tier_u()
+        prior = tu.write(_claim(polarity=0), status="externally_verified")
+        new = tu.write(_claim(polarity=1))
+        assert new.was_cross_source_contradicted is True
+        assert prior.row_id in new.cross_source_conflicting_row_ids
+        prior_row = db.execute(
+            "SELECT valid_until, status FROM tier_u WHERE id=?", (prior.row_id,)
+        ).fetchone()
+        assert prior_row["valid_until"] is None  # stayed open
+        assert prior_row["status"] == "externally_verified"
+        new_row = db.execute(
+            "SELECT status FROM tier_u WHERE id=?", (new.row_id,)
+        ).fetchone()
+        assert new_row["status"] == "contradicted_by_externally_verified"
+
+    def test_externally_verified_functional_object_conflict(self):
+        # Functional predicate, externally-verified prior with one object,
+        # new assertion with a different object. KB-wins: prior stays.
+        tu, db = _tier_u_with_oracle()
+        prior = tu.write(
+            _claim(predicate="born_in", object_val="NYC"),
+            status="externally_verified",
+        )
+        new = tu.write(_claim(predicate="born_in", object_val="Boston"))
+        assert new.was_cross_source_contradicted is True
+        prior_row = db.execute(
+            "SELECT valid_until, status FROM tier_u WHERE id=?", (prior.row_id,)
+        ).fetchone()
+        assert prior_row["valid_until"] is None
+        assert prior_row["status"] == "externally_verified"
+
+    def test_asserted_unverified_prior_still_closes_normally(self):
+        # No KB-wins escalation for asserted_unverified priors — §6.1
+        # belief revision semantics unchanged.
+        tu, db = _tier_u_with_oracle()
+        prior = tu.write(_claim(predicate="born_in", object_val="NYC"))  # asserted
+        new = tu.write(_claim(predicate="born_in", object_val="Boston"))
+        assert new.was_cross_source_contradicted is False
+        assert new.contradiction_closed is True
+        prior_row = db.execute(
+            "SELECT valid_until FROM tier_u WHERE id=?", (prior.row_id,)
+        ).fetchone()
+        assert prior_row["valid_until"] is not None  # closed
+
+    def test_cross_source_contradicted_row_skipped_on_lookup(self):
+        # The new row is in the table for audit but does NOT ground future
+        # lookups (behaves like a retracted row for verdict purposes).
+        tu, db = _tier_u()
+        tu.write(_claim(polarity=0), status="externally_verified")
+        new = tu.write(_claim(polarity=1))
+        # Re-lookup the positive claim: the contradicted-flagged row should
+        # not satisfy the lookup (only the prior negative row would, and the
+        # lookup is for positive polarity, so found is False).
+        result = tu.lookup(_claim(polarity=1), current_time=_NOW_STR)
+        assert result.found is False
+        # But the row exists in the table.
+        row = db.execute("SELECT id FROM tier_u WHERE id=?", (new.row_id,)).fetchone()
+        assert row is not None
+
+    def test_cross_source_contradicted_skipped_in_object_conflict_lookup(self):
+        # Same skip rule applies to lookup_object_conflict (the walker's
+        # object-conflict belief-revision path must not be triggered by a
+        # KB-wins-contradicted row).
+        tu, db = _tier_u_with_oracle()
+        tu.write(
+            _claim(predicate="born_in", object_val="NYC"),
+            status="externally_verified",
+        )
+        new = tu.write(_claim(predicate="born_in", object_val="Boston"))
+        assert new.was_cross_source_contradicted is True
+        # A subsequent walker query about (Asa, born_in, Boston) running
+        # lookup_object_conflict must see the externally-verified NYC row
+        # (correct contradiction signal) and NOT the new Boston row (skipped).
+        result = tu.lookup_object_conflict(
+            _claim(predicate="born_in", object_val="Boston"),
+            current_time=_NOW_STR,
+        )
+        # The NYC row is at the opposite object; lookup_object_conflict
+        # returns positive prior rows with a different object — NYC qualifies.
+        assert result.found is True
+        returned_objects = {r["object"] for r in result.rows}
+        assert "NYC" in returned_objects
+        # The contradicted Boston row must not appear (its object matches the
+        # claim; lookup_object_conflict already excludes same-object, but
+        # crucially the contradicted-flag would still skip it via the new rule).
+
+    def test_cross_source_contradiction_emits_audit_event(self):
+        from aedos.audit.log import query_events
+        tu, db = _tier_u()
+        tu.write(_claim(polarity=0), status="externally_verified")
+        new = tu.write(_claim(polarity=1))
+        events = query_events(db, event_type="cross_source_contradiction")
+        assert len(events) == 1
+        assert events[0]["event_subject"] == f"tier_u:{new.row_id}"
+        assert events[0]["event_data"]["new_row_status"] == "contradicted_by_externally_verified"
+
+
 class TestTierUStage3Broadening:
     def test_stage3_finds_equivalent_predicate(self):
         from aedos.layer3_substrate.predicate_translation import PredicateTranslation

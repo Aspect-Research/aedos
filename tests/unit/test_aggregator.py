@@ -130,6 +130,174 @@ class TestAggregatorMetadata:
         assert vr.text_input == {"text": "hello"}
 
 
+class TestAggregatorDualDesignation:
+    """Phase H Cluster 2 step 1: the six-way verdict set. Base counts
+    (verified / contradicted / abstained) collapse the dual designations
+    so existing callers — including select_intervention — keep working;
+    the three new *_given_assertion counts are additive observability."""
+
+    def test_verified_given_assertion_counts_as_verified(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("verified_given_assertion")])
+        meta = vr.aggregate_metadata
+        assert meta["verified"] == 1
+        assert meta["verified_given_assertion"] == 1
+        assert meta["contradicted"] == 0
+        assert meta["abstained"] == 0
+
+    def test_contradicted_given_assertion_counts_as_contradicted(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("contradicted_given_assertion")])
+        meta = vr.aggregate_metadata
+        assert meta["contradicted"] == 1
+        assert meta["contradicted_given_assertion"] == 1
+
+    def test_abstained_given_assertion_counts_as_abstained(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("abstained_given_assertion")])
+        meta = vr.aggregate_metadata
+        assert meta["abstained"] == 1
+        assert meta["abstained_given_assertion"] == 1
+
+    def test_per_claim_verdict_preserves_dual_designation(self):
+        # The base-count collapse is observability behavior; the per-claim
+        # verdict stored in VerificationResult must be the un-collapsed
+        # value so audit and downstream readers see the actual designation.
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("verified_given_assertion")])
+        assert vr.per_claim_verdicts["c1"] == "verified_given_assertion"
+
+    def test_mixed_six_way_distribution(self):
+        # All six verdict types in one batch — every count bucket
+        # populates correctly.
+        agg = Aggregator()
+        verdicts = [
+            "verified", "contradicted", "no_grounding_found",
+            "verified_given_assertion", "contradicted_given_assertion",
+            "abstained_given_assertion",
+        ]
+        claims = [_claim(f"c{i}") for i in range(len(verdicts))]
+        results = [_walk_result(v) for v in verdicts]
+        vr = agg.aggregate(claims, results)
+        meta = vr.aggregate_metadata
+        assert meta["verified"] == 2  # base + given_assertion
+        assert meta["contradicted"] == 2
+        assert meta["abstained"] == 2
+        assert meta["verified_given_assertion"] == 1
+        assert meta["contradicted_given_assertion"] == 1
+        assert meta["abstained_given_assertion"] == 1
+        assert meta["claim_count"] == 6
+
+
+class TestVerdictSetStructuralConsistency:
+    """Phase H Cluster 2 step 1: D36-pattern structural test. The six
+    verdict types appear at multiple sites (aggregator counts,
+    intervention selection, trace serialization, audit log, corpus
+    runner). This test pins them all to a single canonical source
+    (`aggregator.ALL_VERDICTS`) so the dual designation cannot drift
+    silently as new code touches verdict handling.
+    """
+
+    def test_canonical_verdict_set_size(self):
+        from aedos.layer5_result.aggregator import (
+            ALL_VERDICTS, BASE_VERDICTS, GIVEN_ASSERTION_VERDICTS,
+        )
+        assert len(BASE_VERDICTS) == 3
+        assert len(GIVEN_ASSERTION_VERDICTS) == 3
+        assert len(ALL_VERDICTS) == 6
+        # No overlap between the two families.
+        assert set(BASE_VERDICTS).isdisjoint(set(GIVEN_ASSERTION_VERDICTS))
+
+    def test_base_verdict_of_collapses_dual_to_base(self):
+        from aedos.layer5_result.aggregator import (
+            BASE_VERDICTS, GIVEN_ASSERTION_VERDICTS, base_verdict_of,
+        )
+        # Every dual collapses to a base.
+        for dual in GIVEN_ASSERTION_VERDICTS:
+            assert base_verdict_of(dual) in BASE_VERDICTS
+        # Every base passes through unchanged.
+        for base in BASE_VERDICTS:
+            assert base_verdict_of(base) == base
+
+    def test_aggregator_recognizes_every_verdict(self):
+        # Each of the six verdicts produces a well-formed
+        # aggregate_metadata when it is the sole verdict in a batch.
+        from aedos.layer5_result.aggregator import ALL_VERDICTS
+        agg = Aggregator()
+        for v in ALL_VERDICTS:
+            c = _claim(f"c_{v}")
+            vr = agg.aggregate([c], [_walk_result(v)])
+            assert vr.per_claim_verdicts[f"c_{v}"] == v
+            # claim_count is always 1; verified+contradicted+abstained
+            # always sums to claim_count (base-count invariant).
+            meta = vr.aggregate_metadata
+            assert meta["verified"] + meta["contradicted"] + meta["abstained"] == 1
+
+    def test_intervention_collapses_dual_to_base(self):
+        # select_intervention reads only the base counts; for any verdict
+        # mix, replacing each verdict with its base-counterpart must
+        # produce the same intervention. That's the invariant — the
+        # dual designation is transparent to intervention selection.
+        from aedos.deployment.chat_wrapper import select_intervention
+        from aedos.layer5_result.aggregator import base_verdict_of, ALL_VERDICTS
+        agg = Aggregator()
+
+        # Exhaustive 1-of-6 single-claim check: every dual matches its base.
+        for v in ALL_VERDICTS:
+            c = _claim("c1")
+            dual_vr = agg.aggregate([c], [_walk_result(v)])
+            base_vr = agg.aggregate([c], [_walk_result(base_verdict_of(v))])
+            assert select_intervention(dual_vr) == select_intervention(base_vr), (
+                f"intervention diverged for verdict {v!r} vs its base "
+                f"{base_verdict_of(v)!r}"
+            )
+
+        # Multi-claim mixed batch: 3 verified_given_assertion + 1
+        # contradicted_given_assertion should match 3 verified + 1
+        # contradicted (a CORRECT — contradicted present but minority).
+        claims = [_claim(f"c{i}") for i in range(4)]
+        dual_results = [_walk_result(v) for v in (
+            "verified_given_assertion", "verified_given_assertion",
+            "verified_given_assertion", "contradicted_given_assertion",
+        )]
+        base_results = [_walk_result(v) for v in (
+            "verified", "verified", "verified", "contradicted",
+        )]
+        dual_vr = agg.aggregate(claims, dual_results)
+        base_vr = agg.aggregate(claims, base_results)
+        assert select_intervention(dual_vr) == select_intervention(base_vr)
+        assert select_intervention(dual_vr).value == "correct"
+
+    def test_trace_serialization_round_trip_carries_assertion_flag(self):
+        # JustificationTrace.chain_includes_assertion survives trace_to_json.
+        from aedos.layer5_result.trace import trace_to_json
+        trace = JustificationTrace(
+            root=TraceNode("claim"),
+            chain_includes_assertion=True,
+        )
+        j = trace_to_json(trace)
+        assert j["chain_includes_assertion"] is True
+
+    def test_corpus_runner_accepts_every_verdict(self):
+        # The corpus runner's expected-verdict comparison must accept all
+        # six verdict strings as recognized values (no unknown-verdict
+        # ValueError or AttributeError). The runner's branching is
+        # explicit on the three v0.15 verdicts plus its non-standard
+        # categories; step 5 will extend that comparison to the dual
+        # verdicts. For step 1 we assert the strings are recognized at
+        # the *aggregator* boundary (the layer the corpus runner reads).
+        from aedos.layer5_result.aggregator import ALL_VERDICTS, _VERDICT_TO_BASE_COUNT
+        for v in ALL_VERDICTS:
+            assert v in _VERDICT_TO_BASE_COUNT, (
+                f"verdict {v!r} missing from _VERDICT_TO_BASE_COUNT — "
+                "the six-way verdict set has drifted"
+            )
+
+
 class TestAggregatorTraces:
     def test_per_claim_traces_populated(self):
         agg = Aggregator()

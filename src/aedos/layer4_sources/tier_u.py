@@ -20,6 +20,15 @@ class WriteResult:
     was_idempotent: bool = False
     contradiction_closed: bool = False
     closed_row_ids: list[int] = field(default_factory=list)
+    # Phase H Cluster 2 step 1: cross-source contradiction signal. Set when
+    # the write would have closed an externally_verified prior row via
+    # §6.1 belief revision; under the KB-wins rule the prior stays open
+    # and the new row is marked `contradicted_by_externally_verified`.
+    # The walker reads this on the WriteResult that the promotion step
+    # returns and records `contradicted` (not `contradicted_given_assertion`
+    # — the contradiction is externally grounded).
+    was_cross_source_contradicted: bool = False
+    cross_source_conflicting_row_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -80,7 +89,12 @@ class TierU:
             return value
         return result.normalized_form or value
 
-    def write(self, claim: Claim, source_context: Optional[dict] = None) -> WriteResult:
+    def write(
+        self,
+        claim: Claim,
+        source_context: Optional[dict] = None,
+        status: str = "asserted_unverified",
+    ) -> WriteResult:
         """Write claim to Tier U.
 
         Idempotent on matching content. A prior row is *closed* (its
@@ -97,7 +111,23 @@ class TierU:
         assertion — the prior stays open (e.g. two occupations, two hobbies).
         A different object at a different polarity (the contrastive-correction
         shape "X, not Y") is likewise compatible: the prior stays open.
+
+        Phase H Cluster 2 step 1: `status` is the new row's provenance flag
+        — `asserted_unverified` (default; entered via the promotion path)
+        or `externally_verified` (pre-seeded as established fact). The
+        §"KB wins" cross-source rule fires when a (D16) closure target
+        is `externally_verified`: the prior stays open, the new row is
+        written with status `contradicted_by_externally_verified`, and
+        `was_cross_source_contradicted` is set on the WriteResult so the
+        caller (promotion step) can record a `contradicted` verdict for
+        the claim.
         """
+        if status not in (
+            "asserted_unverified", "externally_verified",
+            "contradicted_by_externally_verified",
+        ):
+            raise ValueError(f"invalid tier_u status: {status!r}")
+
         now = _NOW()
         source_ctx_json = json.dumps(source_context) if source_context else None
 
@@ -122,37 +152,62 @@ class TierU:
         if existing is not None:
             return WriteResult(row_id=existing["id"], was_idempotent=True)
 
-        closed_row_ids: list[int] = []
-        parallel_assertion = False
-
         # (a) Direct negation: a prior row with the SAME object at the opposite
         #     polarity. Closed regardless of predicate cardinality.
         negation_rows = self._db.execute(
-            """SELECT id FROM tier_u
+            """SELECT id, status FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=?
                AND object=? AND polarity=? AND retracted_at IS NULL""",
             (claim.asserting_party, subject_canonical, claim.predicate,
              object_canonical, 1 - claim.polarity),
         ).fetchall()
-        closed_row_ids.extend(r["id"] for r in negation_rows)
 
         # (b) Functional object revision: prior positive rows asserting a
         #     DIFFERENT object. Only fires for a positive new claim and a
         #     functional predicate; on a multi-valued predicate the prior rows
         #     stay open as parallel assertions.
+        other_object_rows: list = []
         if claim.polarity == 1:
             other_object_rows = self._db.execute(
-                """SELECT id FROM tier_u
+                """SELECT id, status FROM tier_u
                    WHERE asserting_party=? AND subject=? AND predicate=?
                    AND object!=? AND polarity=1 AND retracted_at IS NULL""",
                 (claim.asserting_party, subject_canonical, claim.predicate,
                  object_canonical),
             ).fetchall()
-            if other_object_rows:
-                if self._predicate_is_functional(claim.predicate):
-                    closed_row_ids.extend(r["id"] for r in other_object_rows)
-                else:
-                    parallel_assertion = True
+
+        # Phase H Cluster 2 step 1: §"KB wins" check. A would-be closure
+        # whose target is `externally_verified` does NOT close the prior;
+        # instead, the new row's status flips to
+        # `contradicted_by_externally_verified` and the caller is informed
+        # via `was_cross_source_contradicted`. asserted_unverified prior
+        # rows close as before (D16 / §6.1 semantics unchanged).
+        closed_row_ids: list[int] = []
+        cross_source_conflict_ids: list[int] = []
+        parallel_assertion = False
+
+        for r in negation_rows:
+            if r["status"] == "externally_verified":
+                cross_source_conflict_ids.append(r["id"])
+            else:
+                closed_row_ids.append(r["id"])
+
+        if other_object_rows:
+            if self._predicate_is_functional(claim.predicate):
+                for r in other_object_rows:
+                    if r["status"] == "externally_verified":
+                        cross_source_conflict_ids.append(r["id"])
+                    else:
+                        closed_row_ids.append(r["id"])
+            else:
+                parallel_assertion = True
+
+        # If §"KB wins" fires, override the requested status. The new row
+        # is still written (audit trail of what the user said) but flagged
+        # so subsequent lookups skip it.
+        effective_status = status
+        if cross_source_conflict_ids:
+            effective_status = "contradicted_by_externally_verified"
 
         for closed_id in closed_row_ids:
             self._db.execute(
@@ -164,8 +219,8 @@ class TierU:
                (asserting_party, subject, predicate, object, polarity,
                 valid_from, valid_until, valid_during_ref,
                 source_text, source_context, asserted_at,
-                subject_surface, object_surface)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                subject_surface, object_surface, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 claim.asserting_party,
                 subject_canonical,
@@ -180,6 +235,7 @@ class TierU:
                 now,
                 claim.subject if subject_canonical != claim.subject else None,
                 claim.object if object_canonical != claim.object else None,
+                effective_status,
             ),
         )
         self._db.commit()
@@ -194,6 +250,7 @@ class TierU:
                 "asserting_party": claim.asserting_party,
                 "predicate": claim.predicate,
                 "contradiction_closed": contradiction_closed,
+                "status": effective_status,
             },
         )
         # Audit which case fired, so Phase 10.5 can tell a belief revision
@@ -219,12 +276,29 @@ class TierU:
                     "predicate": claim.predicate,
                 },
             )
+        # Phase H Cluster 2 step 1: §"KB wins" audit event. Records the
+        # asymmetric outcome so Phase 10.5 / debugging can see which
+        # claims were rejected because an externally-verified prior held.
+        if cross_source_conflict_ids:
+            log_event(
+                self._db,
+                event_type="cross_source_contradiction",
+                event_subject=f"tier_u:{row_id}",
+                event_data={
+                    "asserting_party": claim.asserting_party,
+                    "predicate": claim.predicate,
+                    "conflicting_row_ids": cross_source_conflict_ids,
+                    "new_row_status": effective_status,
+                },
+            )
 
         return WriteResult(
             row_id=row_id,
             was_idempotent=False,
             contradiction_closed=contradiction_closed,
             closed_row_ids=closed_row_ids,
+            was_cross_source_contradicted=bool(cross_source_conflict_ids),
+            cross_source_conflicting_row_ids=cross_source_conflict_ids,
         )
 
     def lookup(
@@ -291,10 +365,15 @@ class TierU:
             current_time = _NOW()
         subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
         object_canonical = self._normalize_slot(claim.object, claim, "object")
+        # Phase H Cluster 2 step 1: `contradicted_by_externally_verified`
+        # rows behave like retracted ones for verdict-influencing reads —
+        # they record the user said something contrary to KB, but they
+        # do not ground future verdicts.
         rows = self._db.execute(
             """SELECT * FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=?
                AND object != ? AND polarity=1 AND retracted_at IS NULL
+               AND status != 'contradicted_by_externally_verified'
                AND (valid_until IS NULL OR (valid_until != ? AND valid_until > ?))""",
             (claim.asserting_party, subject_canonical, claim.predicate,
              object_canonical, BEFORE_PRESENT, current_time),
@@ -316,6 +395,60 @@ class TierU:
             event_subject=f"tier_u:{row_id}",
             event_data={"reason": reason},
         )
+
+    def mark_externally_verified(
+        self,
+        row_id: int,
+        grounding_chain: Optional[dict] = None,
+    ) -> bool:
+        """Upgrade a Tier U row's status from `asserted_unverified` to
+        `externally_verified`.
+
+        Called by the walker when a successful KB / Python grounding for
+        a claim also matches an asserted_unverified Tier U row (Q-Upgrade).
+        The upgrade is idempotent: a row already at `externally_verified`
+        is left unchanged and the call returns False. Rows at
+        `contradicted_by_externally_verified` are NOT upgraded — that
+        status was set by an authoritative KB-wins decision and cannot be
+        overridden by a subsequent successful grounding (the contradiction
+        flag means "the user said something the KB disagrees with"; a
+        separate KB hit on the same row is incoherent and should not
+        cancel the contradiction).
+
+        `grounding_chain` (optional) captures the verification chain that
+        triggered the upgrade — KB statement references, Python execution
+        ids, substrate rows. Serialized into the
+        `tier_u_status_upgraded` audit event for v0.16 retraction
+        propagation (D14 territory): if a KB row that triggered an
+        upgrade is later retracted, the upgrade arguably ought to
+        reverse. v0.15 does not implement reverse-upgrade propagation
+        but captures the chain so v0.16 doesn't need archaeological
+        reconstruction.
+
+        Returns True when an upgrade was performed, False otherwise
+        (row not at asserted_unverified, or row missing).
+        """
+        row = self._db.execute(
+            "SELECT status FROM tier_u WHERE id=?", (row_id,)
+        ).fetchone()
+        if row is None or row["status"] != "asserted_unverified":
+            return False
+        self._db.execute(
+            "UPDATE tier_u SET status='externally_verified' WHERE id=?",
+            (row_id,),
+        )
+        self._db.commit()
+        log_event(
+            self._db,
+            event_type="tier_u_status_upgraded",
+            event_subject=f"tier_u:{row_id}",
+            event_data={
+                "from_status": "asserted_unverified",
+                "to_status": "externally_verified",
+                "grounding_chain": grounding_chain or {},
+            },
+        )
+        return True
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -356,6 +489,7 @@ class TierU:
             """SELECT * FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=? AND object=?
                AND polarity=? AND retracted_at IS NULL
+               AND status != 'contradicted_by_externally_verified'
                AND (valid_until IS NOT NULL OR valid_until=?)""",
             (
                 claim.asserting_party, subject_canonical, claim.predicate,
@@ -396,11 +530,17 @@ class TierU:
         polarity: int,
         current_time: str,
     ) -> list[dict]:
-        """Return non-retracted, currently-valid rows matching all given fields."""
+        """Return non-retracted, currently-valid rows matching all given fields.
+
+        Phase H Cluster 2 step 1: `contradicted_by_externally_verified`
+        rows are excluded — they record what the user said but cannot
+        ground a verdict (the KB-wins decision is preserved).
+        """
         rows = self._db.execute(
             """SELECT * FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=? AND object=?
                AND polarity=? AND retracted_at IS NULL
+               AND status != 'contradicted_by_externally_verified'
                AND (valid_until IS NULL OR (valid_until != ? AND valid_until > ?))""",
             (asserting_party, subject, predicate, object_val, polarity,
              BEFORE_PRESENT, current_time),
