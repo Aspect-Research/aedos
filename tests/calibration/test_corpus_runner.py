@@ -643,7 +643,15 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
     else:
         result = walker.walk(claims[0], ctx)
     expected_verdict = expected.get("verdict")
-    if expected_verdict in ("verified", "contradicted", "no_grounding_found"):
+    # Phase H Cluster 2 step 5: the verdict set is now six-way (three
+    # base + three *_given_assertion). The corpus uses dual designations
+    # explicitly per Option A. Strict equality comparison is the
+    # contract — equivocation hides the architectural distinction.
+    if expected_verdict in (
+        "verified", "contradicted", "no_grounding_found",
+        "verified_given_assertion", "contradicted_given_assertion",
+        "abstained_given_assertion",
+    ):
         return result.verdict == expected_verdict
 
     # Non-standard expected verdicts. The pre-D2 blanket `return True`
@@ -662,12 +670,24 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
             for e in result.trace.edges
             if e.target.node_type == "kb_statement"
         }
-        return result.verdict == "verified" and wanted in trace_entities
+        # Phase H Cluster 2 step 5: accept both `verified` (KB upgrade
+        # fired) and `verified_given_assertion` (KB didn't ground but
+        # walker matched its own promoted row). Either outcome
+        # demonstrates correct disambiguation if the intended Q-id
+        # appears in the trace.
+        return (
+            result.verdict in ("verified", "verified_given_assertion")
+            and wanted in trace_entities
+        )
     if expected_verdict == "needs_tier_u_or_kb":
         # der_predicate_translation_007: the runner seeds no Tier U and the
-        # subject has no KB statement, so with neither premise present the
-        # walker abstains.
-        return result.verdict == "no_grounding_found"
+        # subject has no KB statement. Under Cluster 2 the walker promotes
+        # the text-claim as asserted_unverified, hits its own row, and
+        # produces verified_given_assertion (no external upgrade path
+        # for "Asa graduated from Williams College" — Asa not in KB).
+        # Pre-Cluster-2 this case correctly produced no_grounding_found;
+        # the architectural shift means it now grounds via asserted-only.
+        return result.verdict == "verified_given_assertion"
 
     # der_disambiguation_005 carries no `verdict` key — the corpus pins no
     # answer (note: "may abstain or need context"). Kept an explicit auto-pass
