@@ -195,13 +195,19 @@ def test_find_python_verifier_calls_discriminates():
         "layer4_sources/walker.py — the discovery logic is broken or "
         "the walker has been refactored in a way the test doesn't see."
     )
-    # The walker's verify call lives in _direct_lookup
+    # The walker's verify call lives in _direct_lookup or — after the
+    # Phase H Cluster 2 step 3 refactor — in _try_external_grounding
+    # (factored out so the Q-Lookup-α upgrade path and the standalone
+    # KB/Python fallthrough share one implementation). Either site
+    # carries the routing-hint gate per F-042; the structural test
+    # above (TestF042RoutingGate) verifies the gate's presence.
     func_names = {
         getattr(func_node, "name", "<module>")
         for _, func_node in calls
     }
-    assert "_direct_lookup" in func_names, (
-        f"Expected verify call inside _direct_lookup; found in: {func_names}"
+    assert func_names & {"_direct_lookup", "_try_external_grounding"}, (
+        f"Expected verify call inside _direct_lookup or "
+        f"_try_external_grounding; found in: {func_names}"
     )
 
 
