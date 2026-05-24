@@ -8,8 +8,19 @@ from ..layer1_extraction.extractor import Claim
 from ..layer3_substrate import Substrate
 from ..layer3_substrate.subsumption import EntityRef
 from ..layer4_sources.kb_verifier import KBVerdictType
-from ..layer4_sources.kb_protocol import LocalContext
+from ..layer4_sources.kb_protocol import KBProtocol, LocalContext
 from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
+
+
+# Phase H D5: per-relation KB neighbor properties. Mirrors
+# `_SUBSUMPTION_PROPERTIES` in `kb_wikidata.py` for is_a/part_of, plus
+# P17 (country) on part_of for country-level grounding (e.g. Williams
+# College P17 → United States; useful for "X is in the United States"
+# style claims when the substrate's subsumption oracle is cold).
+_D5_NEIGHBOR_PROPS_BY_RELATION: dict[str, tuple[str, ...]] = {
+    "is_a": ("P31", "P279"),
+    "part_of": ("P131", "P361", "P17"),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +124,7 @@ class Walker:
         walker_wall_clock_seconds: Optional[float] = None,
         walker_max_llm_calls: Optional[int] = None,
         walker_max_depth: Optional[int] = None,
+        kb: Optional[KBProtocol] = None,
     ) -> None:
         """Resource budgets resolve in priority order:
 
@@ -138,6 +150,11 @@ class Walker:
         )
         self._default_wall_clock_seconds = walker_wall_clock_seconds
         self._default_max_llm_calls = walker_max_llm_calls
+        # Phase H D5: the KB adapter is threaded explicitly so the walker
+        # can call `enumerate_neighbors` directly. None disables the D5
+        # fallback (back-compat for test paths that construct the walker
+        # without a KB).
+        self._kb = kb
 
     def walk(
         self,
@@ -428,6 +445,12 @@ class Walker:
         identical to the original's, and `TierU.lookup` stage 3 already
         broadens by the same `predicate_translation` oracle. The edge was
         redundant (D7); only distribution-gated subsumption traversal remains.
+
+        Phase H D5: when the substrate's subsumption oracle produces no
+        expansion for a relation_type (no cached rows match), the walker
+        falls back to live KB neighbor enumeration via
+        `_expand_via_kb_neighbors`. Cheapest-path-first per D5 design
+        Decision 5.
         """
         expanded: list[Claim] = []
         llm_delta = 0
@@ -451,6 +474,7 @@ class Walker:
             if not directions:
                 continue  # gate closed (neither)
 
+            sub_produced: list[Claim] = []
             for slot in ("subject", "object"):
                 slot_val = node.subject if slot == "subject" else node.object
                 entity_ref = EntityRef(namespace="aedos", identifier=slot_val)
@@ -480,6 +504,132 @@ class Walker:
                             "polarity": node.polarity,
                         },
                     ))
-                    expanded.append(new_node)
+                    sub_produced.append(new_node)
+            expanded.extend(sub_produced)
+
+            # Phase H D5 fallback: substrate oracle had nothing for this
+            # relation_type → try live KB neighbor enumeration. Only fires
+            # when the distribution gate is open (`directions` non-empty)
+            # and substrate produced nothing.
+            if not sub_produced:
+                kb_produced = self._expand_via_kb_neighbors(
+                    node, relation_type, directions, dist.verdict, trace
+                )
+                expanded.extend(kb_produced)
 
         return expanded, llm_delta
+
+    def _expand_via_kb_neighbors(
+        self,
+        node: Claim,
+        relation_type: str,
+        directions: set[str],
+        distribution_verdict,
+        trace: JustificationTrace,
+    ) -> list[Claim]:
+        """Phase H D5: enumerate KB neighbors of `node`'s slot entities
+        and emit expanded claims with the slot substituted by each
+        neighbor.
+
+        Fires as a fallback when `_expand_via_substrate` produced no
+        expansion for `relation_type` (per D5 design Decision 5 —
+        cheapest-path-first).
+
+        Direction asymmetry (v0.15 scope). `_live_neighbors` enumerates
+        OUTGOING edges only (entity → neighbor). Outgoing P31/P361/P131/P17
+        of E yields E's *parents* — the entity classes/containers E
+        belongs to. So this method produces expansions whose slot value
+        is one of E's parents. That serves `distributes_down` (walker
+        wants parents) and the `parent` branch of `both`; it does not
+        serve `distributes_up` (walker wants children of E), which would
+        need reverse SPARQL enumeration. The reverse path is captured as
+        a v0.16 candidate (D5 design follow-up — see `docs/phase_H/d5_design.md`
+        Decision 5's "alternative shapes" note).
+
+        Audit shape: each emitted expansion gets a
+        `kb_neighbor_enumeration` trace edge with the source slot value,
+        resolved Q-id, neighbor Q-id, KB property used, and the
+        distribution-verdict that authorized the traversal. The
+        `_live_neighbors` call itself writes a `kb_live_neighbors`
+        audit-log event (via `WikidataAdapter._live_neighbors`).
+
+        Fail-open shape: any failure in resolution, KB call, or parsing
+        returns no expansion for the affected slot; the walker continues
+        with whatever expansions other slots produced. Never raises.
+        """
+        if self._kb is None:
+            return []
+        if "parent" not in directions:
+            # Outgoing-only enumeration serves "parent" direction. See
+            # Direction asymmetry note above.
+            return []
+        properties = list(_D5_NEIGHBOR_PROPS_BY_RELATION.get(relation_type, ()))
+        if not properties:
+            return []
+
+        expanded: list[Claim] = []
+        for slot in ("subject", "object"):
+            slot_val = node.subject if slot == "subject" else node.object
+            if not slot_val:
+                continue
+
+            # Resolve the slot's surface form to a KB Q-id. Reuses the
+            # substrate's EntityResolver — same caching, same D47 normalization,
+            # same per-purpose LLM routing as KBVerifier.
+            try:
+                lc = LocalContext(
+                    predicate=node.predicate,
+                    slot_position=slot,
+                    asserting_party=node.asserting_party,
+                    source_text=node.source_text,
+                    claim_subject=node.subject,
+                    claim_predicate=node.predicate,
+                    claim_object=node.object,
+                    claim_id=node.claim_id,
+                )
+                candidates = self._substrate.resolver.resolve(slot_val, lc)
+            except Exception:
+                continue
+            if not candidates:
+                continue
+            entity_qid = candidates[0].kb_identifier
+            if not entity_qid or not entity_qid.startswith("Q"):
+                continue
+
+            # Enumerate KB neighbors. Fails open: empty dict on error
+            # (per _live_neighbors contract) — _live_neighbors itself
+            # logs the kb_live_neighbors audit event with the failure.
+            try:
+                neighbors_by_prop = self._kb.enumerate_neighbors(
+                    entity_qid, properties
+                )
+            except Exception:
+                continue
+
+            verdict_label = (
+                distribution_verdict.value
+                if hasattr(distribution_verdict, "value")
+                else str(distribution_verdict)
+            )
+            for prop_id, neighbor_qids in neighbors_by_prop.items():
+                for neighbor_qid in neighbor_qids:
+                    if slot == "subject":
+                        new_node = _claim_from_parts(node, subject=neighbor_qid)
+                    else:
+                        new_node = _claim_from_parts(node, object_val=neighbor_qid)
+                    trace.edges.append(TraceEdge(
+                        edge_type="kb_neighbor_enumeration",
+                        source=TraceNode("claim", {slot: slot_val}),
+                        target=TraceNode("claim", {slot: neighbor_qid}),
+                        metadata={
+                            "relation_type": relation_type,
+                            "direction": "parent",  # outgoing-only; v0.15 scope
+                            "distribution": verdict_label,
+                            "kb_property": prop_id,
+                            "subject_qid": entity_qid,
+                            "polarity": node.polarity,
+                        },
+                    ))
+                    expanded.append(new_node)
+
+        return expanded
