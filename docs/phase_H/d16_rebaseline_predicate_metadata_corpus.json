@@ -1,0 +1,652 @@
+{
+  "corpus": "predicate_metadata_corpus",
+  "total_cases": 80,
+  "passed": 78,
+  "failed": 2,
+  "accuracy": 0.975,
+  "wall_clock_seconds": 182.3,
+  "timestamp": "2026-05-24T03:03:58.601829+00:00",
+  "config_note": "post-D16 harness fix (per-case Tier U + calib subsumption isolation); production model config (DEFAULT_MODEL_BY_PURPOSE rc.10)",
+  "outcomes": [
+    {
+      "case_id": "pred_ua_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 4438.0
+    },
+    {
+      "case_id": "pred_ua_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2312.0
+    },
+    {
+      "case_id": "pred_ua_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 4625.0
+    },
+    {
+      "case_id": "pred_ua_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2125.0
+    },
+    {
+      "case_id": "pred_ua_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1781.0
+    },
+    {
+      "case_id": "pred_ua_006",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1782.0
+    },
+    {
+      "case_id": "pred_ua_007",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1515.0
+    },
+    {
+      "case_id": "pred_ua_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1813.0
+    },
+    {
+      "case_id": "pred_ua_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1750.0
+    },
+    {
+      "case_id": "pred_ua_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1656.0
+    },
+    {
+      "case_id": "pred_ua_011",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1703.0
+    },
+    {
+      "case_id": "pred_ua_012",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2203.0
+    },
+    {
+      "case_id": "pred_ua_013",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2094.0
+    },
+    {
+      "case_id": "pred_ua_014",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1875.0
+    },
+    {
+      "case_id": "pred_ua_015",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1875.0
+    },
+    {
+      "case_id": "pred_ua_016",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2094.0
+    },
+    {
+      "case_id": "pred_ua_017",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2109.0
+    },
+    {
+      "case_id": "pred_ua_018",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2063.0
+    },
+    {
+      "case_id": "pred_ua_019",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1812.0
+    },
+    {
+      "case_id": "pred_ua_020",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1719.0
+    },
+    {
+      "case_id": "pred_py_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1703.0
+    },
+    {
+      "case_id": "pred_py_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1734.0
+    },
+    {
+      "case_id": "pred_py_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1688.0
+    },
+    {
+      "case_id": "pred_py_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 5531.0
+    },
+    {
+      "case_id": "pred_py_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1609.0
+    },
+    {
+      "case_id": "pred_py_006",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1954.0
+    },
+    {
+      "case_id": "pred_py_007",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2031.0
+    },
+    {
+      "case_id": "pred_py_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1828.0
+    },
+    {
+      "case_id": "pred_py_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1531.0
+    },
+    {
+      "case_id": "pred_py_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1938.0
+    },
+    {
+      "case_id": "pred_py_011",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2062.0
+    },
+    {
+      "case_id": "pred_py_012",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2235.0
+    },
+    {
+      "case_id": "pred_py_013",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 6453.0
+    },
+    {
+      "case_id": "pred_py_014",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1797.0
+    },
+    {
+      "case_id": "pred_py_015",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1656.0
+    },
+    {
+      "case_id": "pred_kb_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2359.0
+    },
+    {
+      "case_id": "pred_kb_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2250.0
+    },
+    {
+      "case_id": "pred_kb_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2531.0
+    },
+    {
+      "case_id": "pred_kb_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2735.0
+    },
+    {
+      "case_id": "pred_kb_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2515.0
+    },
+    {
+      "case_id": "pred_kb_006",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2625.0
+    },
+    {
+      "case_id": "pred_kb_007",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2563.0
+    },
+    {
+      "case_id": "pred_kb_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2500.0
+    },
+    {
+      "case_id": "pred_kb_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2172.0
+    },
+    {
+      "case_id": "pred_kb_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2219.0
+    },
+    {
+      "case_id": "pred_kb_011",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2203.0
+    },
+    {
+      "case_id": "pred_kb_012",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3453.0
+    },
+    {
+      "case_id": "pred_kb_013",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2390.0
+    },
+    {
+      "case_id": "pred_kb_014",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2610.0
+    },
+    {
+      "case_id": "pred_kb_015",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2187.0
+    },
+    {
+      "case_id": "pred_kb_016",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2891.0
+    },
+    {
+      "case_id": "pred_kb_017",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2141.0
+    },
+    {
+      "case_id": "pred_kb_018",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2203.0
+    },
+    {
+      "case_id": "pred_kb_019",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2203.0
+    },
+    {
+      "case_id": "pred_kb_020",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2453.0
+    },
+    {
+      "case_id": "pred_kb_021",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2594.0
+    },
+    {
+      "case_id": "pred_kb_022",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2375.0
+    },
+    {
+      "case_id": "pred_kb_023",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2093.0
+    },
+    {
+      "case_id": "pred_kb_024",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2454.0
+    },
+    {
+      "case_id": "pred_kb_025",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2718.0
+    },
+    {
+      "case_id": "pred_kb_026",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2469.0
+    },
+    {
+      "case_id": "pred_kb_027",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2844.0
+    },
+    {
+      "case_id": "pred_kb_028",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2640.0
+    },
+    {
+      "case_id": "pred_kb_029",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1750.0
+    },
+    {
+      "case_id": "pred_kb_030",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2250.0
+    },
+    {
+      "case_id": "pred_abstain_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2172.0
+    },
+    {
+      "case_id": "pred_abstain_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1844.0
+    },
+    {
+      "case_id": "pred_abstain_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1844.0
+    },
+    {
+      "case_id": "pred_abstain_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1625.0
+    },
+    {
+      "case_id": "pred_abstain_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1844.0
+    },
+    {
+      "case_id": "pred_abstain_006",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1921.0
+    },
+    {
+      "case_id": "pred_abstain_007",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1782.0
+    },
+    {
+      "case_id": "pred_abstain_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1875.0
+    },
+    {
+      "case_id": "pred_abstain_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1734.0
+    },
+    {
+      "case_id": "pred_abstain_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1984.0
+    },
+    {
+      "case_id": "pred_ambig_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2079.0
+    },
+    {
+      "case_id": "pred_ambig_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1875.0
+    },
+    {
+      "case_id": "pred_ambig_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2265.0
+    },
+    {
+      "case_id": "pred_ambig_004",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1828.0
+    },
+    {
+      "case_id": "pred_ambig_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3110.0
+    }
+  ]
+}

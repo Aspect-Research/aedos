@@ -1,0 +1,412 @@
+{
+  "corpus": "entity_resolution_corpus",
+  "total_cases": 50,
+  "passed": 41,
+  "failed": 9,
+  "accuracy": 0.82,
+  "wall_clock_seconds": 95.4,
+  "timestamp": "2026-05-24T03:05:33.967460+00:00",
+  "config_note": "post-D16 harness fix (per-case Tier U + calib subsumption isolation); production model config (DEFAULT_MODEL_BY_PURPOSE rc.10)",
+  "outcomes": [
+    {
+      "case_id": "er_unambiguous_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1875.0
+    },
+    {
+      "case_id": "er_unambiguous_002",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1891.0
+    },
+    {
+      "case_id": "er_unambiguous_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1297.0
+    },
+    {
+      "case_id": "er_unambiguous_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1000.0
+    },
+    {
+      "case_id": "er_unambiguous_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 922.0
+    },
+    {
+      "case_id": "er_unambiguous_006",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 984.0
+    },
+    {
+      "case_id": "er_unambiguous_007",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1141.0
+    },
+    {
+      "case_id": "er_unambiguous_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 953.0
+    },
+    {
+      "case_id": "er_unambiguous_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 922.0
+    },
+    {
+      "case_id": "er_unambiguous_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 937.0
+    },
+    {
+      "case_id": "er_unambiguous_011",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 985.0
+    },
+    {
+      "case_id": "er_unambiguous_012",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1015.0
+    },
+    {
+      "case_id": "er_unambiguous_013",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1047.0
+    },
+    {
+      "case_id": "er_unambiguous_014",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1078.0
+    },
+    {
+      "case_id": "er_unambiguous_015",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1219.0
+    },
+    {
+      "case_id": "er_unambiguous_016",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 984.0
+    },
+    {
+      "case_id": "er_unambiguous_017",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1110.0
+    },
+    {
+      "case_id": "er_unambiguous_018",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1047.0
+    },
+    {
+      "case_id": "er_unambiguous_019",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1218.0
+    },
+    {
+      "case_id": "er_unambiguous_020",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1078.0
+    },
+    {
+      "case_id": "er_ambiguous_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1016.0
+    },
+    {
+      "case_id": "er_ambiguous_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 938.0
+    },
+    {
+      "case_id": "er_ambiguous_003",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3406.0
+    },
+    {
+      "case_id": "er_ambiguous_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1015.0
+    },
+    {
+      "case_id": "er_ambiguous_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3829.0
+    },
+    {
+      "case_id": "er_ambiguous_006",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3156.0
+    },
+    {
+      "case_id": "er_ambiguous_007",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3265.0
+    },
+    {
+      "case_id": "er_ambiguous_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3094.0
+    },
+    {
+      "case_id": "er_ambiguous_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3453.0
+    },
+    {
+      "case_id": "er_ambiguous_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2985.0
+    },
+    {
+      "case_id": "er_ambiguous_011",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3156.0
+    },
+    {
+      "case_id": "er_ambiguous_012",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 969.0
+    },
+    {
+      "case_id": "er_ambiguous_013",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3312.0
+    },
+    {
+      "case_id": "er_ambiguous_014",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3735.0
+    },
+    {
+      "case_id": "er_ambiguous_015",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 906.0
+    },
+    {
+      "case_id": "er_type_filter_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 500.0
+    },
+    {
+      "case_id": "er_type_filter_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 953.0
+    },
+    {
+      "case_id": "er_type_filter_003",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3312.0
+    },
+    {
+      "case_id": "er_type_filter_004",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2047.0
+    },
+    {
+      "case_id": "er_type_filter_005",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1735.0
+    },
+    {
+      "case_id": "er_type_filter_006",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3953.0
+    },
+    {
+      "case_id": "er_type_filter_007",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 984.0
+    },
+    {
+      "case_id": "er_type_filter_008",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 2906.0
+    },
+    {
+      "case_id": "er_type_filter_009",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 6719.0
+    },
+    {
+      "case_id": "er_type_filter_010",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3656.0
+    },
+    {
+      "case_id": "er_no_match_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 969.0
+    },
+    {
+      "case_id": "er_no_match_002",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 3360.0
+    },
+    {
+      "case_id": "er_no_match_003",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1218.0
+    },
+    {
+      "case_id": "er_no_match_004",
+      "passed": false,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1016.0
+    },
+    {
+      "case_id": "er_no_match_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 1094.0
+    }
+  ]
+}

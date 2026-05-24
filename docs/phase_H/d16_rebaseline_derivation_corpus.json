@@ -1,0 +1,412 @@
+{
+  "corpus": "derivation_corpus",
+  "total_cases": 50,
+  "passed": 15,
+  "failed": 35,
+  "accuracy": 0.3,
+  "wall_clock_seconds": 900.9,
+  "timestamp": "2026-05-24T03:20:34.853667+00:00",
+  "config_note": "post-D16 harness fix (per-case Tier U + calib subsumption isolation); production model config (DEFAULT_MODEL_BY_PURPOSE rc.10)",
+  "outcomes": [
+    {
+      "case_id": "der_multihop_001",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 47453.0
+    },
+    {
+      "case_id": "der_multihop_002",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 23047.0
+    },
+    {
+      "case_id": "der_multihop_003",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 45047.0
+    },
+    {
+      "case_id": "der_multihop_004",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 9328.0
+    },
+    {
+      "case_id": "der_multihop_005",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 10406.0
+    },
+    {
+      "case_id": "der_multihop_006",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 21016.0
+    },
+    {
+      "case_id": "der_multihop_007",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 7015.0
+    },
+    {
+      "case_id": "der_multihop_008",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 3016.0
+    },
+    {
+      "case_id": "der_multihop_009",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 19156.0
+    },
+    {
+      "case_id": "der_multihop_010",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 23938.0
+    },
+    {
+      "case_id": "der_multihop_011",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 27890.0
+    },
+    {
+      "case_id": "der_multihop_012",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 23188.0
+    },
+    {
+      "case_id": "der_cross_001",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 20062.0
+    },
+    {
+      "case_id": "der_cross_002",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 29500.0
+    },
+    {
+      "case_id": "der_cross_003",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 6547.0
+    },
+    {
+      "case_id": "der_cross_004",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 27234.0
+    },
+    {
+      "case_id": "der_cross_005",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 44329.0
+    },
+    {
+      "case_id": "der_cross_006",
+      "passed": true,
+      "produced_verdict": "verified",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 8156.0
+    },
+    {
+      "case_id": "der_cross_007",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 6359.0
+    },
+    {
+      "case_id": "der_cross_008",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 27563.0
+    },
+    {
+      "case_id": "der_cross_009",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 23531.0
+    },
+    {
+      "case_id": "der_cross_010",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 10156.0
+    },
+    {
+      "case_id": "der_disambiguation_001",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified_with_correct_entity",
+      "error": null,
+      "elapsed_ms": 4141.0
+    },
+    {
+      "case_id": "der_disambiguation_002",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 8609.0
+    },
+    {
+      "case_id": "der_disambiguation_003",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 9719.0
+    },
+    {
+      "case_id": "der_disambiguation_004",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 10094.0
+    },
+    {
+      "case_id": "der_disambiguation_005",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": null,
+      "error": null,
+      "elapsed_ms": 20156.0
+    },
+    {
+      "case_id": "der_disambiguation_006",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified_with_correct_entity",
+      "error": null,
+      "elapsed_ms": 24906.0
+    },
+    {
+      "case_id": "der_disambiguation_007",
+      "passed": true,
+      "produced_verdict": "verified",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 20688.0
+    },
+    {
+      "case_id": "der_disambiguation_008",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 3828.0
+    },
+    {
+      "case_id": "der_predicate_translation_001",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 6812.0
+    },
+    {
+      "case_id": "der_predicate_translation_002",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 28016.0
+    },
+    {
+      "case_id": "der_predicate_translation_003",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 19875.0
+    },
+    {
+      "case_id": "der_predicate_translation_004",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 15687.0
+    },
+    {
+      "case_id": "der_predicate_translation_005",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 6282.0
+    },
+    {
+      "case_id": "der_predicate_translation_006",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 8156.0
+    },
+    {
+      "case_id": "der_predicate_translation_007",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "needs_tier_u_or_kb",
+      "error": null,
+      "elapsed_ms": 22141.0
+    },
+    {
+      "case_id": "der_predicate_translation_008",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 10156.0
+    },
+    {
+      "case_id": "der_revision_001",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "contradicted",
+      "error": null,
+      "elapsed_ms": 19687.0
+    },
+    {
+      "case_id": "der_revision_002",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "contradicted",
+      "error": null,
+      "elapsed_ms": 18157.0
+    },
+    {
+      "case_id": "der_revision_003",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "contradicted",
+      "error": null,
+      "elapsed_ms": 20593.0
+    },
+    {
+      "case_id": "der_revision_004",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "verified",
+      "error": null,
+      "elapsed_ms": 18750.0
+    },
+    {
+      "case_id": "der_revision_005",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "contradicted",
+      "error": null,
+      "elapsed_ms": 38313.0
+    },
+    {
+      "case_id": "der_revision_006",
+      "passed": false,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "contradicted",
+      "error": null,
+      "elapsed_ms": 29375.0
+    },
+    {
+      "case_id": "der_abstain_001",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 1094.0
+    },
+    {
+      "case_id": "der_abstain_002",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 31656.0
+    },
+    {
+      "case_id": "der_abstain_003",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 25750.0
+    },
+    {
+      "case_id": "der_abstain_004",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 6844.0
+    },
+    {
+      "case_id": "der_abstain_005",
+      "passed": true,
+      "produced_verdict": null,
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 1109.0
+    },
+    {
+      "case_id": "der_abstain_006",
+      "passed": true,
+      "produced_verdict": "no_grounding_found",
+      "expected_verdict": "no_grounding_found",
+      "error": null,
+      "elapsed_ms": 6359.0
+    }
+  ]
+}
