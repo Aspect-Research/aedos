@@ -190,6 +190,9 @@ class _Harness:
         walker = Walker(
             tier_u=tier_u, kb_verifier=kb_verifier,
             python_verifier=PythonVerifier(llm_client=self.client), substrate=self.substrate,
+            # Phase H D5: thread the KB adapter through so the walker can
+            # fall back to KB neighbor enumeration when subsumption is cold.
+            kb=self.kb,
         )
         return walker, tier_u
 

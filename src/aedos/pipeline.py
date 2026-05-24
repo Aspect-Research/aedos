@@ -193,6 +193,10 @@ def build_pipeline(
         walker_wall_clock_seconds=config.walker_wall_clock_seconds,
         walker_max_llm_calls=config.walker_max_llm_calls,
         walker_max_depth=config.walker_max_depth,
+        # Phase H D5: thread the KB adapter explicitly so the walker can
+        # call `enumerate_neighbors` as a fallback when substrate-cached
+        # subsumption is empty.
+        kb=kb,
     )
     extractor = Extractor(llm_client=client)
     aggregator = Aggregator(retraction_propagator=propagator, db=db)
