@@ -74,8 +74,21 @@ class KBProtocol(Protocol):
     # 1 — 5-property geographic/taxonomic core), depth is one-hop-per-call
     # (Decision 2 — walker recurses via existing `max_depth`), failures
     # fail-open (return empty dict).
+    #
+    # Phase H D51 (2026-05-24): the `direction` parameter selects which
+    # SPARQL direction the enumeration traverses.
+    #   - "outgoing" (default; the v0.15 D5 shape): wd:E ?prop ?value —
+    #     returns E's *parents* / containers (Williamstown's P361 → its
+    #     containing entities). Serves the walker's `parent` direction.
+    #   - "incoming": ?value ?prop wd:E — returns E's *children*
+    #     (Williamstown is part_of Massachusetts; reverse of Massachusetts
+    #     returns Williamstown, Boston, Cambridge, …). Serves the walker's
+    #     `child` direction. Reverse enumeration is implementation-bounded
+    #     by a `LIMIT` clause (default 100) to keep unbounded properties
+    #     like P17=Q30 manageable.
     def enumerate_neighbors(
         self,
         entity: KBEntityID,
         properties: list[KBPropertyID],
+        direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]: ...

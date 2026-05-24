@@ -117,11 +117,32 @@ _SUBSUMPTION_PROPERTIES = {
 _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
 
 
+# Phase H D51: reverse enumeration's LIMIT. Unbounded properties like
+# P17=Q30 (country=USA) have millions of subjects; the walker only needs
+# a sample of candidate children for its substitution. 100 is a
+# conservative default — bounded enough that WDQS won't refuse, large
+# enough to surface common children. Configurable via
+# `Config.wikidata_neighbor_reverse_limit` if Phase 10.5 data shows the
+# default misses a known child.
+_DEFAULT_NEIGHBOR_REVERSE_LIMIT = 100
+
+
 def _build_neighbors_query(
-    entity: KBEntityID, properties: tuple[KBPropertyID, ...]
+    entity: KBEntityID,
+    properties: tuple[KBPropertyID, ...],
+    direction: str = "outgoing",
+    limit: int = _DEFAULT_NEIGHBOR_REVERSE_LIMIT,
 ) -> str:
     """Build a single SPARQL query that enumerates the given entity's
     neighbors along all `properties` in one round-trip.
+
+    `direction`:
+      - "outgoing" (Phase H D5; default): `wd:E ?prop ?value` — yields
+        E's parents (entities E points to). No LIMIT (outgoing edges
+        are bounded by the predicate's schema; a few hits per property).
+      - "incoming" (Phase H D51): `?value ?prop wd:E` — yields E's
+        children (entities pointing to E). LIMIT'd to bound the query
+        cost on unbounded properties (P17=Q30 has millions of subjects).
 
     Returns SELECT bindings shaped `?prop` (the P-id URI) and `?value`
     (the neighbor entity URI). `_parse_neighbors_bindings` converts to
@@ -131,9 +152,10 @@ def _build_neighbors_query(
     neighbor that resolves to a real entity is still a valid premise
     for the walker to consider.
 
-    Defense-in-depth: validates entity and every property id (the
-    callers — `_live_neighbors` and walker integration — pass
-    canonical IDs, but the SPARQL boundary stays clean).
+    Defense-in-depth: validates entity, every property id, and the
+    direction string (the callers — `_live_neighbors` and walker
+    integration — pass canonical IDs, but the SPARQL boundary stays
+    clean).
     """
     if not _ENTITY_ID_PATTERN.match(entity):
         raise ValueError(f"Invalid Wikidata entity ID: {entity!r}")
@@ -142,13 +164,30 @@ def _build_neighbors_query(
     for prop in properties:
         if not _PROPERTY_ID_PATTERN.match(prop):
             raise ValueError(f"Invalid Wikidata property ID: {prop!r}")
+    if direction not in ("outgoing", "incoming"):
+        raise ValueError(
+            f"direction must be 'outgoing' or 'incoming'; got {direction!r}"
+        )
     values_clause = " ".join(f"wdt:{p}" for p in properties)
+    if direction == "outgoing":
+        # E → neighbor (no LIMIT; outgoing fanout is naturally bounded).
+        return (
+            f"SELECT ?prop ?value WHERE {{\n"
+            f"  VALUES ?prop {{ {values_clause} }}\n"
+            f"  wd:{entity} ?prop ?value .\n"
+            f"  FILTER(isIRI(?value))\n"
+            f"}}"
+        )
+    # incoming: neighbor → E. LIMIT bounds unbounded properties.
+    if limit <= 0 or limit > 1000:
+        raise ValueError(f"limit must be in (0, 1000]; got {limit!r}")
     return (
         f"SELECT ?prop ?value WHERE {{\n"
         f"  VALUES ?prop {{ {values_clause} }}\n"
-        f"  wd:{entity} ?prop ?value .\n"
+        f"  ?value ?prop wd:{entity} .\n"
         f"  FILTER(isIRI(?value))\n"
-        f"}}"
+        f"}}\n"
+        f"LIMIT {limit}"
     )
 
 
@@ -442,22 +481,29 @@ class WikidataAdapter:
         return self._fixture_subsumption(entity_a, entity_b, relation_type)
 
     def enumerate_neighbors(
-        self, entity: KBEntityID, properties: list[KBPropertyID],
+        self,
+        entity: KBEntityID,
+        properties: list[KBPropertyID],
+        direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5: enumerate `entity`'s direct KB neighbors along the
-        given `properties`. Returns a dict keyed by property; each value is
-        the list of neighbor entity Q-ids that appear as that property's
-        value for `entity`. Fails open (empty values) on error or no match;
-        the audit log records the call's outcome either way.
+        """Phase H D5/D51: enumerate `entity`'s direct KB neighbors along
+        the given `properties`, in the given `direction`. Returns a dict
+        keyed by property; each value is the list of neighbor entity Q-ids
+        related to `entity` by that property in `direction`. Fails open
+        (empty values) on error or no match; the audit log records the
+        call's outcome either way.
 
         `properties` is a list (not a tuple) for KBProtocol parity with the
         other methods' input types — the live and fixture paths normalize
         it to a tuple before SPARQL construction.
+
+        `direction` is "outgoing" (D5; default) or "incoming" (D51); see
+        `KBProtocol.enumerate_neighbors` for the semantic distinction.
         """
         props_tuple = tuple(properties) if properties else _DEFAULT_NEIGHBOR_PROPERTIES
         if self._live:
-            return self._live_neighbors(entity, props_tuple)
-        return self._fixture_neighbors(entity, props_tuple)
+            return self._live_neighbors(entity, props_tuple, direction)
+        return self._fixture_neighbors(entity, props_tuple, direction)
 
     # ------------------------------------------------------------------
     # Fixture-backed implementations
@@ -502,16 +548,24 @@ class WikidataAdapter:
         )
 
     def _fixture_neighbors(
-        self, entity: KBEntityID, properties: tuple[KBPropertyID, ...]
+        self,
+        entity: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5: fixture-backed enumeration. Reads
-        `tests/fixtures/wikidata/neighbors_<entity>.json`, which mirrors
-        the SPARQL response format (`{"results": {"bindings": [...]}}`).
-        Missing fixture returns all-empty (treated as "no neighbors").
-        Filtering to the requested `properties` happens in the parser, so
-        the fixture file can hold a superset and individual tests select
-        the subset they need."""
-        fixture_name = f"neighbors_{entity}.json"
+        """Phase H D5/D51: fixture-backed enumeration. Reads
+        `tests/fixtures/wikidata/neighbors_<entity>.json` for the
+        outgoing direction, `neighbors_<entity>_reverse.json` for
+        incoming. Both mirror the SPARQL response format
+        (`{"results": {"bindings": [...]}}`). Missing fixture returns
+        all-empty (treated as "no neighbors"). Filtering to the
+        requested `properties` happens in the parser, so the fixture
+        file can hold a superset and individual tests select the
+        subset they need."""
+        if direction == "incoming":
+            fixture_name = f"neighbors_{entity}_reverse.json"
+        else:
+            fixture_name = f"neighbors_{entity}.json"
         try:
             data = _load_fixture(fixture_name)
         except FixtureNotFoundError:
@@ -1132,13 +1186,17 @@ class WikidataAdapter:
         return prop_uri.rsplit("/", 1)[-1] or None
 
     def _live_neighbors(
-        self, entity: KBEntityID, properties: tuple[KBPropertyID, ...]
+        self,
+        entity: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5: live SPARQL enumeration of `entity`'s direct
-        neighbors along `properties`. One round-trip, returns the parsed
-        dict.
+        """Phase H D5 + D51: live SPARQL enumeration of `entity`'s direct
+        neighbors along `properties`, in the given `direction`. One
+        round-trip, returns the parsed dict.
 
-        Honors the D5 design contract (`docs/phase_H/d5_design.md`):
+        Honors the D5/D51 design contracts (`docs/phase_H/d5_design.md`
+        + `docs/v0.16_planning.md` D51 entry):
           - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
             (default `https://query.wikidata.org/sparql`).
           - HTTP cache + 24h TTL via `Config.http_cache_statement_ttl_seconds`
@@ -1148,8 +1206,13 @@ class WikidataAdapter:
             `httpx.NetworkError`; thereafter fail-open with all-empty
             (no value for any requested property). Never raises except
             on the wiring-gap defence (no `http_cache`) or a malformed
-            entity/property id (programming error, surfaced honestly).
-          - One audit-log event per call (`event_type="kb_live_neighbors"`).
+            entity/property/direction (programming error, surfaced
+            honestly).
+          - One audit-log event per call (`event_type="kb_live_neighbors"`,
+            event_data carries `direction`).
+          - Reverse direction (D51): LIMIT bounds the query
+            (`Config.wikidata_neighbor_reverse_limit`, default 100) so
+            unbounded properties like P17=Q30 don't blow up.
         """
         if self._http is None:
             raise RuntimeError(
@@ -1158,15 +1221,20 @@ class WikidataAdapter:
             )
 
         url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        limit = self._cfg_value(
+            "wikidata_neighbor_reverse_limit", _DEFAULT_NEIGHBOR_REVERSE_LIMIT
+        )
         try:
-            query = _build_neighbors_query(entity, properties)
+            query = _build_neighbors_query(entity, properties, direction, limit)
         except ValueError as exc:
-            # Programming error: malformed Q/P-id. Architecture §3.1 / §9.4:
-            # abstain on no-grounding, but a malformed call surfaces honestly.
+            # Programming error: malformed Q/P-id or direction. Architecture
+            # §3.1 / §9.4: abstain on no-grounding, but a malformed call
+            # surfaces honestly.
             self._log_audit_event(
                 event_type="kb_live_neighbors",
                 event_subject=entity,
                 event_data={
+                    "direction": direction,
                     "properties_requested": list(properties),
                     "total_neighbors_returned": 0,
                     "error": str(exc),
@@ -1214,6 +1282,7 @@ class WikidataAdapter:
             event_type="kb_live_neighbors",
             event_subject=entity,
             event_data={
+                "direction": direction,
                 "properties_requested": list(properties),
                 "total_neighbors_returned": total,
                 "per_property_counts": {p: len(v) for p, v in result.items()},

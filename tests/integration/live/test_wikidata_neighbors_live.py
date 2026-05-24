@@ -117,6 +117,34 @@ class TestLiveNeighbors:
         for v in result.values():
             assert isinstance(v, list)
 
+    def test_reverse_enumeration_finds_children_of_admin_region(self, live_adapter):
+        """Phase H D51: reverse SPARQL `?value wdt:P131 wd:E` returns
+        entities located in E. For Massachusetts (Q771), Williams College
+        (Q49112) is one such entity. The LIMIT bounds the query (default
+        100); Williams College is curated enough to appear in any
+        reasonable sample.
+
+        This test is intentionally lenient — it asserts EITHER Williams
+        College appears OR P131's incoming count is at least 1 (the
+        sample LIMIT means a specific Q-id might not always be in the
+        slice, but P131 incoming should never be empty for a US state).
+        """
+        adapter, _ = live_adapter
+        result = adapter.enumerate_neighbors(
+            "Q771", ["P131"], direction="incoming",
+        )
+        assert len(result["P131"]) >= 1, (
+            f"Massachusetts P131 reverse should have ≥1 entity; got {result['P131']!r}"
+        )
+
+    def test_reverse_call_audit_event_records_direction(self, live_adapter):
+        from aedos.audit.log import query_events
+        adapter, db = live_adapter
+        adapter.enumerate_neighbors("Q771", ["P131"], direction="incoming")
+        events = query_events(db, event_type="kb_live_neighbors")
+        assert len(events) >= 1
+        assert events[0]["event_data"]["direction"] == "incoming"
+
     def test_caching_amortizes_second_call(self, live_adapter):
         """Two consecutive identical calls — the second should hit the
         HTTP cache (same SPARQL URL+query). Measured via duration:
