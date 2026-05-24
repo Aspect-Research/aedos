@@ -27,6 +27,7 @@ from aedos.layer1_extraction.wikipedia_normalizer import (
     OUTCOME_CLEAN_REDIRECT,
     OUTCOME_DISAMBIGUATION_PAGE,
     OUTCOME_NOT_FOUND,
+    OUTCOME_SKIPPED_KB_IDENTIFIER,
     Stage1Outcome,
     WikipediaNormalizer,
 )
@@ -786,3 +787,131 @@ class TestStage2Selection:
         assert data["stage_2_candidates"] == ["Barack Obama", "Michelle Obama"]
         assert "Context" in data["stage_2_reasoning"]
         assert data["normalized_form"] == "Barack Obama"
+
+
+# ---------------------------------------------------------------------------
+# Phase H Cluster 1 step 1 — Q-id short-circuit + per-instance memo
+# ---------------------------------------------------------------------------
+
+
+class TestQIdShortCircuit:
+    """Wikidata Q-id surface forms bypass Stage 1 entirely. The walker's
+    D5 KB neighbor enumeration substitutes Q-ids into claims that then
+    re-enter the resolver; sending those through Wikipedia is wasted
+    cost (best case not_found, worst case a wrong disambig like Q5)."""
+
+    def test_qid_surface_form_skips_stage_1(self):
+        normalizer, _ = _make_normalizer()
+        # No HTTP mock — the test fails if any HTTP call is attempted.
+        with patch("httpx.Client") as MockClient:
+            result = normalizer.normalize("Q937")
+            MockClient.return_value.__enter__.return_value.get.assert_not_called()
+        assert result.stage_1_outcome == OUTCOME_SKIPPED_KB_IDENTIFIER
+        assert result.normalized_form == "Q937"
+        assert result.stage_2_invoked is False
+
+    def test_qid_surface_form_logs_audit_event(self):
+        normalizer, db = _make_normalizer()
+        with patch("httpx.Client"):
+            normalizer.normalize("Q5", claim_predicate="is_a")
+        events = query_events(db, event_type="entity_normalization", limit=5)
+        assert len(events) == 1
+        data = events[0]["event_data"]
+        assert data["stage_1_outcome"] == OUTCOME_SKIPPED_KB_IDENTIFIER
+        assert data["normalized_form"] == "Q5"
+
+    def test_non_qid_falls_through(self):
+        """'Q' without trailing digits, or 'Q5x' with non-digits, is a
+        regular surface form, not a Q-id — must hit Stage 1."""
+        normalizer, _ = _make_normalizer()
+        response = _api_response(
+            {
+                "pages": [
+                    {
+                        "title": "Q5x",
+                        "missing": True,
+                    }
+                ]
+            }
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = response
+            result = normalizer.normalize("Q5x")
+        assert result.stage_1_outcome == OUTCOME_NOT_FOUND
+
+
+class TestNormalizeMemo:
+    """The Cluster 1 diagnostic surfaced that abstain-then-no-match
+    cases caused the walker to call normalize() with the same inputs
+    eight or more times per case — each call drove a fresh Stage 2
+    Haiku invocation. The per-instance memo collapses repeat calls."""
+
+    def test_repeat_call_serves_from_memo(self):
+        normalizer, db, llm = _make_normalizer_with_llm(
+            {"selection": "Barack Obama", "reasoning": "matches"}
+        )
+        candidates = ["Barack Obama", "Michelle Obama"]
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(candidates, "Obama (disambiguation)"),
+            ]
+            first = normalizer.normalize(
+                "Obama", source_text="Barack signed it.", slot_position="subject",
+            )
+            # Second call with identical inputs must not re-fetch Stage 1
+            # (HTTP) or re-call Stage 2 (LLM).
+            second = normalizer.normalize(
+                "Obama", source_text="Barack signed it.", slot_position="subject",
+            )
+
+        assert first.normalized_form == "Barack Obama"
+        assert second.normalized_form == "Barack Obama"
+        assert first.from_memo is False
+        assert second.from_memo is True
+        # LLM fired only once.
+        assert llm.call_count == 1
+
+    def test_memo_keyed_on_context(self):
+        """Different `source_text` or claim slots are different memo
+        keys — disambiguation outcomes legitimately depend on context."""
+        normalizer, _, llm = _make_normalizer_with_llm(
+            {"selection": "Barack Obama", "reasoning": "matches"}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(
+                    ["Barack Obama", "Michelle Obama"], "Obama (disambiguation)"
+                ),
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(
+                    ["Barack Obama", "Michelle Obama"], "Obama (disambiguation)"
+                ),
+            ]
+            normalizer.normalize("Obama", source_text="text A")
+            normalizer.normalize("Obama", source_text="text B")
+        # Two distinct source_text values → two LLM calls.
+        assert llm.call_count == 2
+
+    def test_memo_hit_logs_audit_event(self):
+        """Memo hits still log an entity_normalization event so the
+        audit trail records every normalize() call — the `from_memo`
+        flag tells downstream readers it was served from memo."""
+        normalizer, db, _ = _make_normalizer_with_llm(
+            {"selection": "Barack Obama", "reasoning": "matches"}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _disambig_stage_1_response("Obama (disambiguation)", input_title="Obama"),
+                _disambig_parse_response(
+                    ["Barack Obama"], "Obama (disambiguation)"
+                ),
+            ]
+            normalizer.normalize("Obama", source_text="t")
+            normalizer.normalize("Obama", source_text="t")
+        events = query_events(db, event_type="entity_normalization", limit=10)
+        assert len(events) == 2
+        # Newest first: second event was the memo hit.
+        assert events[0]["event_data"]["from_memo"] is True
+        assert events[1]["event_data"]["from_memo"] is False

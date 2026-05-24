@@ -148,3 +148,57 @@ class TestEntityResolverRetraction:
         # Next lookup should miss cache and call KB again
         resolver.resolve("Obama", _lc())
         assert kb.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Phase H Cluster 1 step 1 — negative cache
+# ---------------------------------------------------------------------------
+
+
+class TestNegativeCache:
+    """When KB returns no candidates, the resolver writes a negative
+    cache row. Subsequent calls with the same (reference, context)
+    short-circuit without calling KB again. The Cluster 1 diagnostic
+    surfaced that abstain-then-no-match cases re-queried KB on every
+    walker iteration."""
+
+    def _empty_resolver(self):
+        """`_resolver(candidates=[])` falls through to the default via
+        `candidates or [...]`. Build directly here."""
+        db = open_memory_db()
+        kb = MockKB([])
+        return EntityResolver(kb_protocol=kb, db=db), kb, db
+
+    def test_no_candidates_writes_negative_cache(self):
+        resolver, kb, db = self._empty_resolver()
+        resolver.resolve("UnknownEntity", _lc())
+        row = db.execute(
+            "SELECT resolved_kb_identifier, resolved_kb_namespace "
+            "FROM entity_resolution_cache LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        assert row["resolved_kb_identifier"] == ""
+        assert row["resolved_kb_namespace"] == ""
+
+    def test_repeat_lookup_hits_negative_cache(self):
+        resolver, kb, _ = self._empty_resolver()
+        resolver.resolve("UnknownEntity", _lc())
+        resolver.resolve("UnknownEntity", _lc())
+        # KB called once; the second call short-circuits at the cache.
+        assert kb.call_count == 1
+
+    def test_negative_cache_hit_returns_empty_list(self):
+        resolver, _, _ = self._empty_resolver()
+        resolver.resolve("UnknownEntity", _lc())
+        result = resolver.resolve("UnknownEntity", _lc())
+        assert result == []
+
+    def test_positive_lookup_after_negative_distinct_key(self):
+        """A negative cache row for one context doesn't poison lookups
+        for a different context (different predicate, different slot,
+        different party). The UNIQUE key is (reference, context-sig)."""
+        resolver, kb, _ = self._empty_resolver()
+        resolver.resolve("X", LocalContext(predicate="p1", slot_position="subject"))
+        # Different predicate → different context signature → fresh KB call.
+        resolver.resolve("X", LocalContext(predicate="p2", slot_position="subject"))
+        assert kb.call_count == 2
