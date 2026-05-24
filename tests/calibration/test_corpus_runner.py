@@ -146,6 +146,7 @@ class _Harness:
                 llm_client=self.client,
                 db=self.db,
                 config=cfg,
+                kb_adapter=self.kb,  # D53 step 2: Stage B/C use wbsearchentities + P31 fetch
             )
         return self._normalizer
 

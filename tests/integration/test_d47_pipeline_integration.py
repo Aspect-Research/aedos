@@ -65,8 +65,8 @@ class _StubNormalizer:
         return NormalizationResult(
             surface_form=surface_form,
             normalized_form=normalized,
-            stage_1_outcome=outcome,
-            stage_1_redirect_target=normalized if normalized != surface_form else None,
+            stage_a_outcome=outcome,
+            stage_a_redirect_target=normalized if normalized != surface_form else None,
             duration_ms=0.0,
         )
 

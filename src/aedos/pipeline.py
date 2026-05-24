@@ -158,6 +158,10 @@ def build_pipeline(
         llm_client=client,
         db=db,
         config=config,
+        # Phase H D53 step 2: hand the KB adapter to the normalizer so
+        # Stage B can call wbsearchentities and Stage C can call the
+        # batched P31 type-filter fetch.
+        kb_adapter=kb,
     ) if config.wikipedia_normalizer_enabled else None
 
     resolver = EntityResolver(

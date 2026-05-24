@@ -78,7 +78,7 @@ class TestStage1LiveOutcomes:
         """Full canonical names should resolve as canonical_no_redirect:
         the title is itself a valid Wikipedia article."""
         result = live_normalizer.normalize("Barack Obama")
-        assert result.stage_1_outcome == OUTCOME_CANONICAL_NO_REDIRECT
+        assert result.stage_a_outcome == OUTCOME_CANONICAL_NO_REDIRECT
         assert result.normalized_form == "Barack Obama"
 
     def test_obama_is_either_redirect_or_disambiguation(self, live_normalizer):
@@ -91,16 +91,16 @@ class TestStage1LiveOutcomes:
         result = live_normalizer.normalize("Obama")
         # The outcome should be DISAMBIGUATION_PAGE; record for future
         # diagnosis if Wikipedia changes its mind.
-        assert result.stage_1_outcome in (
+        assert result.stage_a_outcome in (
             OUTCOME_DISAMBIGUATION_PAGE,
             OUTCOME_CLEAN_REDIRECT,
-        ), f"unexpected Stage 1 outcome for 'Obama': {result.stage_1_outcome}"
+        ), f"unexpected Stage 1 outcome for 'Obama': {result.stage_a_outcome}"
         # If Wikipedia ever adds a primary-topic redirect from 'Obama'
         # to 'Barack Obama', this records it explicitly so D47's
         # downstream behavior (and the D47 design doc's caveat) can
         # be revisited.
-        if result.stage_1_outcome == OUTCOME_CLEAN_REDIRECT:
-            assert result.stage_1_redirect_target is not None
+        if result.stage_a_outcome == OUTCOME_CLEAN_REDIRECT:
+            assert result.stage_a_redirect_target is not None
 
     def test_williams_college_is_canonical_or_redirect(self, live_normalizer):
         """'Williams College' on English Wikipedia typically redirects
@@ -110,7 +110,7 @@ class TestStage1LiveOutcomes:
         # Either CANONICAL_NO_REDIRECT (the title IS the article) or
         # CLEAN_REDIRECT to "Williams College" canonical form — both
         # acceptable outcomes.
-        assert result.stage_1_outcome in (
+        assert result.stage_a_outcome in (
             OUTCOME_CANONICAL_NO_REDIRECT,
             OUTCOME_CLEAN_REDIRECT,
             OUTCOME_DISAMBIGUATION_PAGE,
@@ -121,7 +121,7 @@ class TestStage1LiveOutcomes:
         result = live_normalizer.normalize(
             "AedosTestNotARealWikipediaArticleTitle98765"
         )
-        assert result.stage_1_outcome == OUTCOME_NOT_FOUND
+        assert result.stage_a_outcome == OUTCOME_NOT_FOUND
         assert (
             result.normalized_form
             == "AedosTestNotARealWikipediaArticleTitle98765"

@@ -180,15 +180,14 @@ class TestD47EndToEnd:
         evt = events[0]
         assert evt["event_subject"] == "Obama"
         data = evt["event_data"]
-        # Stage 1 must have run.
-        assert data["stage_1_outcome"] in (
+        # Stage A must have run.
+        assert data["stage_a_outcome"] in (
             "canonical_no_redirect",
             "clean_redirect",
             "disambiguation_page",
             "not_found",
             "api_error",
         )
-        # If the outcome was disambiguation_page, Stage 2 should have
-        # been invoked (or visibly abstained with an error).
-        if data["stage_1_outcome"] == "disambiguation_page":
-            assert "stage_2_invoked" in data
+        # D53: every successful flow records the Stage C invocation
+        # flag (True when LLM ran, False when shortcut/skip).
+        assert "stage_c_llm_invoked" in data
