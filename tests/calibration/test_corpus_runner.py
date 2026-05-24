@@ -532,6 +532,24 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
     from datetime import datetime, timezone
 
     inp, expected = case["input"], case["expected_output"]
+
+    # Phase H D16 (2026-05-23): per-case Tier U + case-seeded subsumption
+    # isolation. The harness shares one in-memory DB across all 50
+    # derivation cases so substrate generation (predicate_translation,
+    # predicate_distribution, entity_resolution_cache, LLM-generated
+    # subsumption rows) accumulates as designed — cold-start measurement
+    # reuses prior consults. But Tier U rows and the case's own
+    # `context_premises`-seeded subsumption rows are case-state, not
+    # substrate-state: leaking them across cases produced measurement
+    # artifacts (a later case's Stage 1 literal lookup could hit a row a
+    # prior case had written for an unrelated test). The diagnostic at
+    # scripts/diag_d16.py walks the mechanism. Clear case-state at the
+    # start of each case; leave substrate-state intact. See
+    # docs/phase_H/d16_fix.md and v0.16 D50 (broader harness audit).
+    h.db.execute("DELETE FROM tier_u")
+    h.db.execute("DELETE FROM subsumption WHERE source='calib'")
+    h.db.commit()
+
     walker, tier_u = h.walker()
 
     # Seed Tier U from any tier_u / tier_u_prior entries.
