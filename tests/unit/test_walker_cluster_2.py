@@ -278,3 +278,178 @@ class TestAbstainedGivenAssertion:
         result = walker.walk(_claim(), _ctx())
         assert result.verdict == "no_grounding_found"
         assert result.trace.chain_includes_assertion is False
+
+
+# ---------------------------------------------------------------------------
+# TestCrossSourceContradictionWalker — §"KB wins" reciprocal at walker time
+# (Phase H Cluster 2 step 4)
+#
+# Step 1 added the read-path filter: TierU's lookup helpers exclude
+# `contradicted_by_externally_verified` rows. Step 2 added the
+# write-path detection + promotion-time pre_verdict. Step 4 verifies
+# the walker's behavior end-to-end:
+#
+#  - A user assertion that the KB contradicts produces plain
+#    `contradicted` (NOT `contradicted_given_assertion`), because the
+#    contradiction is externally grounded.
+#  - The contradicted-by-KB row is invisible to subsequent walker
+#    lookups (positive match, polarity_conflict, object_conflict
+#    paths all skip it).
+#  - The walker's belief-revision detection still fires against the
+#    surviving externally_verified prior, so a re-walk of the
+#    contradicting claim still produces the correct contradicted
+#    verdict.
+# ---------------------------------------------------------------------------
+
+class TestCrossSourceContradictionWalker:
+    def test_walker_on_contradicting_claim_via_polarity_conflict(self):
+        # Seed an externally_verified negative prior. The walker for a
+        # positive claim performs polarity-conflict belief revision
+        # against the prior. The prior's status is externally_verified
+        # so the chain flag stays clear → plain `contradicted`.
+        walker, tier_u, _ = _build()
+        tier_u.write(_claim(polarity=0), status="externally_verified")
+        result = walker.walk(_claim(polarity=1), _ctx())
+        assert result.verdict == "contradicted"
+        assert result.trace.chain_includes_assertion is False
+
+    def test_walker_on_contradicting_claim_via_object_conflict(self):
+        # Seed externally_verified prior with a specific object on a
+        # functional predicate. Walk a claim with a DIFFERENT object →
+        # object-conflict belief revision against externally_verified
+        # row → plain `contradicted`.
+        from aedos.layer4_sources.tier_u import TierU
+        from aedos.layer3_substrate.predicate_translation import PredicateTranslation
+        # Need a TierU with a functional predicate wired. Build a custom
+        # walker with single_valued=1 on the test predicate.
+
+        db = open_memory_db()
+        client = LLMClient(_transport=_Transport(routing_hint="kb_resolvable"))
+        # Seed a functional predicate before constructing TierU.
+        db.execute(
+            "INSERT INTO predicate_translation "
+            "(aedos_predicate, object_type, routing_hint, single_valued, reason, created_at) "
+            "VALUES ('born_in', 'entity', 'kb_resolvable', 1, 'seed', '2026-01-01')"
+        )
+        db.commit()
+        pt = PredicateTranslation(db=db, llm_client=client)
+        kb = _KB()
+        resolver = EntityResolver(kb_protocol=kb, db=db)
+        sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
+        pd = PredicateDistributionOracle(db=db, llm_client=client)
+        substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+        tier_u = TierU(db=db, predicate_translation=pt)
+        kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+        py = PythonVerifier()
+        walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py, substrate=substrate)
+
+        # Externally-verified prior: born_in NYC. Walk a contradicting
+        # claim: born_in Boston.
+        tier_u.write(
+            _claim(predicate="born_in", object_val="NYC"),
+            status="externally_verified",
+        )
+        result = walker.walk(_claim(predicate="born_in", object_val="Boston"), _ctx())
+        assert result.verdict == "contradicted"
+        assert result.trace.chain_includes_assertion is False
+        # Trace edge records the externally_verified prior as the contradicting row.
+        oc_edges = [
+            e for e in result.trace.edges
+            if e.metadata.get("belief_revision") == "object_conflict"
+        ]
+        assert oc_edges
+        assert oc_edges[0].metadata["premise_status"] == "externally_verified"
+
+    def test_contradicted_by_externally_verified_row_invisible_to_walker(self):
+        # Manually insert a contradicted_by_externally_verified row.
+        # Walker should NOT match it on a positive-claim lookup; the
+        # row exists in the table (audit trail) but cannot ground a
+        # verdict.
+        walker, tier_u, db = _build()
+        # Seed externally_verified negative prior + use TierU.write
+        # promotion path to create the cross-source-contradicted row.
+        tier_u.write(_claim(polarity=0), status="externally_verified")
+        wr = tier_u.write(_claim(polarity=1))  # status auto-flips to contradicted_by_externally_verified
+        assert wr.was_cross_source_contradicted is True
+
+        # The new positive row is in tier_u, but invisible to lookups.
+        result = walker.walk(_claim(polarity=1), _ctx())
+        # Walker should NOT report verified via Stage 1 (the
+        # contradicted row is skipped). Instead it performs
+        # polarity_conflict belief revision against the surviving
+        # externally_verified negative prior → contradicted.
+        assert result.verdict == "contradicted"
+        # The trace's tier_u edge should reference the externally_verified
+        # row, NOT the contradicted_by_externally_verified one.
+        tier_u_edges = [e for e in result.trace.edges if e.metadata.get("source") == "tier_u"]
+        for e in tier_u_edges:
+            assert e.metadata.get("premise_status") != "contradicted_by_externally_verified"
+
+    def test_audit_log_captures_cross_source_event(self):
+        # Step 1's cross_source_contradiction event fires on the
+        # promotion write; step 4 confirms the audit trail is intact
+        # after the walker has run.
+        walker, tier_u, db = _build()
+        tier_u.write(_claim(polarity=0), status="externally_verified")
+        tier_u.write(_claim(polarity=1))  # triggers cross_source_contradiction
+        walker.walk(_claim(polarity=1), _ctx())
+        events = query_events(db, event_type="cross_source_contradiction")
+        assert len(events) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestCrossSourceEndToEnd — promotion → walker integration for the §"KB
+# wins" rule.
+# ---------------------------------------------------------------------------
+
+class TestCrossSourceEndToEnd:
+    def test_promotion_pre_verdict_matches_walker_verdict(self):
+        # The contract: when promotion surfaces pre_verdict='contradicted'
+        # for a claim, the walker (if invoked on the same claim against
+        # the same Tier U state) produces the same `contradicted`
+        # verdict. The runner is safe to honor pre_verdict because the
+        # walker would arrive at the same answer; honoring is a
+        # cost-saving optimization that preserves audit-log correctness.
+        from aedos.layer4_sources.promotion import promote_assertions
+
+        walker, tier_u, db = _build()
+        tier_u.write(_claim(polarity=0), status="externally_verified")
+        # Promote the contradicting claim.
+        promotions = promote_assertions([_claim(polarity=1)], tier_u)
+        assert promotions[0].pre_verdict == "contradicted"
+        # Independently run the walker on the same claim. It should
+        # also produce `contradicted` via the externally_verified
+        # polarity-conflict path.
+        walk_result = walker.walk(_claim(polarity=1), _ctx())
+        assert walk_result.verdict == "contradicted"
+        # Both base verdicts agree → honoring pre_verdict is safe.
+
+    def test_post_contradicted_state_does_not_ground_third_claim(self):
+        # The KB-wins decision must be transitive: a row marked
+        # contradicted_by_externally_verified cannot be a premise for
+        # any future walker call. This is a soundness invariant —
+        # external grounding remains authoritative even as the user
+        # accumulates more assertions.
+        from aedos.layer4_sources.promotion import promote_assertions
+
+        walker, tier_u, _ = _build()
+        # Externally-verified negative prior.
+        tier_u.write(_claim(polarity=0), status="externally_verified")
+        # User asserts the positive → contradicted_by_externally_verified.
+        promote_assertions([_claim(polarity=1)], tier_u)
+        # User later asserts the positive AGAIN with a different
+        # asserting_party to see if the contradicted row leaks as a
+        # premise. Build a fresh claim with a new claim id.
+        retry_claim = Claim(
+            claim_id="c_retry",
+            subject="Asa", predicate="lives_in", object="Williamstown",
+            polarity=1, source_text="retry",
+            asserting_party="user_test",
+            triage_decision=TriageDecision.VERIFY,
+        )
+        result = walker.walk(retry_claim, _ctx())
+        # The contradicted-by-KB positive row is invisible; the
+        # externally_verified negative still contradicts. Plain
+        # contradicted, not _given_assertion.
+        assert result.verdict == "contradicted"
+        assert result.trace.chain_includes_assertion is False
