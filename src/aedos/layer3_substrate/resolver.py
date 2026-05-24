@@ -54,6 +54,13 @@ class EntityResolver:
         references that resolve to the same canonical entity dedupe
         through one cache row.
 
+        Phase H D53: the normalizer's Stage C may produce a `selected_qid`
+        directly. When present, the resolver short-circuits with that
+        Q-id (single ResolutionCandidate at score 1.0) and skips the
+        KB.resolve_entity call. When absent, the existing label-based
+        fallback runs (KB.resolve_entity wraps wbsearchentities + D33
+        + SPARQL fallback as today).
+
         Skipped when:
           - no normalizer is wired (None);
           - the normalizer is disabled via Config;
@@ -62,7 +69,38 @@ class EntityResolver:
           - the reference looks like a synthetic event id (starts with
             "event_").
         """
-        normalized_reference = self._normalize_if_applicable(reference, local_context)
+        normalized_reference, selected_qid = self._normalize_if_applicable(
+            reference, local_context
+        )
+
+        # Phase H D53 step 2: short-circuit when the normalizer's Stage C
+        # produced a Q-id. The KB.resolve_entity path would re-run
+        # wbsearchentities and the type filter — wasteful given the
+        # normalizer has already done that work.
+        if selected_qid:
+            key = _cache_key(
+                normalized_reference, local_context.predicate,
+                local_context.slot_position, local_context.asserting_party,
+            )
+            self._db.execute(
+                """INSERT OR IGNORE INTO entity_resolution_cache
+                   (reference, local_context_signature, resolved_kb_namespace,
+                    resolved_kb_identifier, provenance, created_at, used_count)
+                   VALUES (?, ?, ?, ?, ?, ?, 1)""",
+                (
+                    normalized_reference, key,
+                    "wikidata",
+                    selected_qid,
+                    json.dumps({"source": "wikipedia_normalizer_stage_c"}),
+                    _NOW(),
+                ),
+            )
+            self._db.commit()
+            return [ResolutionCandidate(
+                kb_identifier=selected_qid,
+                provenance={"source": "wikipedia_normalizer_stage_c", "label": normalized_reference},
+                score=1.0,
+            )]
 
         key = _cache_key(
             normalized_reference, local_context.predicate,
@@ -149,23 +187,26 @@ class EntityResolver:
 
     def _normalize_if_applicable(
         self, reference: str, local_context: LocalContext
-    ) -> str:
-        """Run the Wikipedia normalizer and return the normalized form,
-        or the surface form when normalization is skipped or fails.
+    ) -> tuple[str, Optional[KBEntityID]]:
+        """Run the Wikipedia normalizer and return (normalized_form,
+        selected_qid). `normalized_form` is the surface form when
+        normalization is skipped or fails. `selected_qid` is a Wikidata
+        Q-id when the normalizer's Stage C produced one (D53), or None
+        when it abstained, errored, or wasn't asked.
         """
         if self._normalizer is None or not reference:
-            return reference
+            return reference, None
 
         # Skip first-person canonicalization output (the asserting party
         # is not a Wikipedia article title; normalizing it would silently
         # invent a wrong canonical).
         if local_context.asserting_party and reference == local_context.asserting_party:
-            return reference
+            return reference, None
 
         # Skip synthetic event ids produced by the extractor's event
         # decomposition path.
         if reference.startswith("event_"):
-            return reference
+            return reference, None
 
         try:
             result = self._normalizer.normalize(
@@ -176,13 +217,14 @@ class EntityResolver:
                 source_text=local_context.source_text,
                 slot_position=local_context.slot_position,
                 claim_id=local_context.claim_id,
+                expected_entity_types=list(local_context.expected_entity_types or []),
             )
         except Exception:
             # Fail-open: a normalizer outage must not abstain on every
             # resolution. The normalizer's own audit-log path records the
             # failure; the resolver keeps moving with the surface form.
-            return reference
-        return result.normalized_form or reference
+            return reference, None
+        return (result.normalized_form or reference, result.selected_qid)
 
     def select(
         self, candidates: list[ResolutionCandidate], local_context: LocalContext
