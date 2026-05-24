@@ -227,3 +227,69 @@ class TestSingleValuedMigration:
         create_schema(conn)      # second call — must not raise
         assert "single_valued" in _column_names(conn, "predicate_translation")
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# TestTierUStatusMigration (Phase H Cluster 2 step 1): a pre-Cluster-2 DB
+# whose tier_u table lacks the `status` column gets the column added; any
+# pre-existing rows migrate to `externally_verified` (they pre-date the
+# promotion path, so they represent established external knowledge, not
+# in-session user assertions). Same idempotent ALTER pattern as the
+# single_valued migration.
+# ---------------------------------------------------------------------------
+
+class TestTierUStatusMigration:
+    def test_fresh_db_has_status_column(self, conn):
+        cols = _column_names(conn, "tier_u")
+        assert "status" in cols
+
+    def test_status_default_is_asserted_unverified_on_fresh_db(self, conn):
+        # CREATE TABLE's DEFAULT applies to new rows that don't specify status.
+        conn.execute(
+            "INSERT INTO tier_u (asserting_party, subject, predicate, object, polarity, source_text, asserted_at) "
+            "VALUES ('u', 's', 'p', 'o', 1, 'x', '2026-01-01')"
+        )
+        conn.commit()
+        row = conn.execute("SELECT status FROM tier_u").fetchone()
+        assert row["status"] == "asserted_unverified"
+
+    def test_alter_adds_status_and_migrates_existing_rows(self):
+        # Simulate a pre-Cluster-2 database: tier_u without the status
+        # column, holding one existing row (representing an operator-
+        # seeded or test-fixture-seeded external fact).
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "CREATE TABLE tier_u ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, asserting_party TEXT NOT NULL, "
+            "subject TEXT NOT NULL, predicate TEXT NOT NULL, object TEXT NOT NULL, "
+            "polarity INTEGER NOT NULL CHECK(polarity IN (0,1)), "
+            "source_text TEXT NOT NULL, asserted_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO tier_u (asserting_party, subject, predicate, object, polarity, source_text, asserted_at) "
+            "VALUES ('operator', 'Asa', 'lives_in', 'Williamstown', 1, 'pre-c2', '2026-01-01')"
+        )
+        conn.commit()
+        assert "status" not in _column_names(conn, "tier_u")
+
+        create_schema(conn)  # migration runs here
+
+        assert "status" in _column_names(conn, "tier_u")
+        row = conn.execute(
+            "SELECT status FROM tier_u WHERE subject='Asa'"
+        ).fetchone()
+        # Pre-existing rows migrate to externally_verified (they pre-date
+        # the promotion path).
+        assert row["status"] == "externally_verified"
+        conn.close()
+
+    def test_check_constraint_rejects_invalid_status_on_fresh_db(self, conn):
+        # The CREATE TABLE CHECK constraint enforces the three-value enum.
+        # (Migrated DBs lose the CHECK because ALTER can't add it; the
+        # Python code in TierU.write enforces validity in that case.)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO tier_u (asserting_party, subject, predicate, object, polarity, source_text, asserted_at, status) "
+                "VALUES ('u', 's', 'p', 'o', 1, 'x', '2026-01-01', 'bogus_value')"
+            )

@@ -8,6 +8,63 @@ from ..layer1_extraction.extractor import Claim
 from ..layer5_result.trace import JustificationTrace
 
 
+# Phase H Cluster 2 step 1: the six-way verdict set. Three base verdicts
+# (the existing v0.15 semantics) and three dual-designation verdicts
+# tagged with `_given_assertion` when the chain includes any
+# `asserted_unverified` Tier U premise. The aggregator's count buckets,
+# the chat-wrapper's intervention selection, the corpus runner's
+# comparison, and the structural-consistency test all key off these
+# tuples — single source of truth so the six verdicts stay synchronized
+# across every site they appear in.
+
+BASE_VERDICTS: tuple[str, ...] = ("verified", "contradicted", "no_grounding_found")
+
+GIVEN_ASSERTION_VERDICTS: tuple[str, ...] = (
+    "verified_given_assertion",
+    "contradicted_given_assertion",
+    "abstained_given_assertion",
+)
+
+ALL_VERDICTS: tuple[str, ...] = BASE_VERDICTS + GIVEN_ASSERTION_VERDICTS
+
+# Dual designation collapses to its base verdict for intervention
+# selection (Q-Aggregation). The dual flag is metadata for Phase 10.5;
+# user-facing behavior keys off the base verdict only.
+_BASE_OF_DUAL: dict[str, str] = {
+    "verified_given_assertion": "verified",
+    "contradicted_given_assertion": "contradicted",
+    "abstained_given_assertion": "no_grounding_found",
+}
+
+# Mapping from each verdict (base or dual) to its bucket label in the
+# `aggregate_metadata` counts. The three base counts
+# (`verified` / `contradicted` / `abstained`) stay as the user-facing
+# rollup that `select_intervention` reads; the three dual counts are
+# additive observability for Phase 10.5.
+_VERDICT_TO_BASE_COUNT: dict[str, str] = {
+    "verified": "verified",
+    "contradicted": "contradicted",
+    "no_grounding_found": "abstained",
+    "verified_given_assertion": "verified",
+    "contradicted_given_assertion": "contradicted",
+    "abstained_given_assertion": "abstained",
+}
+
+
+def base_verdict_of(verdict: str) -> str:
+    """Collapse a dual-designation verdict to its base verdict; pass base
+    verdicts through unchanged. Used by intervention selection and any
+    caller that needs the v0.15-shaped verdict (verified / contradicted /
+    no_grounding_found) without the assertion-source qualifier.
+    """
+    return _BASE_OF_DUAL.get(verdict, verdict)
+
+
+def is_given_assertion(verdict: str) -> bool:
+    """True iff the verdict is one of the three `*_given_assertion` variants."""
+    return verdict in GIVEN_ASSERTION_VERDICTS
+
+
 @dataclass
 class VerificationResult:
     claims_extracted: list[Claim]
@@ -60,7 +117,18 @@ class Aggregator:
         consistency_warnings: list[dict] = []
         audit_log_entries: list[int] = []
 
+        # Phase H Cluster 2 step 1: base-count buckets stay verified /
+        # contradicted / abstained (the rollup `select_intervention`
+        # consumes — Q-Aggregation collapses dual designations to their
+        # base). Additive observability counts for the three
+        # `*_given_assertion` variants give Phase 10.5 a per-claim
+        # source-of-grounding view without changing v0.15-shaped behavior.
         verdict_counts: dict[str, int] = {"verified": 0, "contradicted": 0, "abstained": 0}
+        given_assertion_counts: dict[str, int] = {
+            "verified_given_assertion": 0,
+            "contradicted_given_assertion": 0,
+            "abstained_given_assertion": 0,
+        }
         total_llm_calls = 0
         max_depth = 0
         source_breakdown: dict[str, int] = {}
@@ -71,12 +139,11 @@ class Aggregator:
             per_claim_verdicts[cid] = result.verdict
             per_claim_traces[cid] = result.trace
 
-            if result.verdict == "verified":
-                verdict_counts["verified"] += 1
-            elif result.verdict == "contradicted":
-                verdict_counts["contradicted"] += 1
-            else:
-                verdict_counts["abstained"] += 1
+            base_count_bucket = _VERDICT_TO_BASE_COUNT.get(result.verdict)
+            if base_count_bucket is not None:
+                verdict_counts[base_count_bucket] += 1
+            if is_given_assertion(result.verdict):
+                given_assertion_counts[result.verdict] += 1
 
             consumption = result.budget_consumption
             total_llm_calls += consumption.llm_calls
@@ -115,6 +182,7 @@ class Aggregator:
         aggregate_metadata: dict[str, Any] = {
             "claim_count": len(claims),
             **verdict_counts,
+            **given_assertion_counts,
             "total_llm_calls": total_llm_calls,
             "max_depth_reached": max_depth,
             "source_breakdown": source_breakdown,

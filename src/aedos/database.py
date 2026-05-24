@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS tier_u (
     retraction_reason TEXT,
     subject_surface TEXT,
     object_surface TEXT,
+    status TEXT NOT NULL DEFAULT 'asserted_unverified'
+        CHECK(status IN ('asserted_unverified', 'externally_verified',
+                         'contradicted_by_externally_verified')),
     UNIQUE(asserting_party, subject, predicate, object, polarity, asserted_at)
 );
 
@@ -161,6 +164,32 @@ def create_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+    # Phase H Cluster 2 step 1: tier_u.status. Three-value enum tracking
+    # provenance of the row — `asserted_unverified` (entered via user
+    # assertion promotion), `externally_verified` (either pre-seeded as
+    # established fact or upgraded by a successful KB/Python grounding
+    # walk), `contradicted_by_externally_verified` (cross-source KB-wins
+    # outcome). ALTER cannot add a CHECK constraint; the application
+    # code (TierU.write / mark_externally_verified) enforces validity.
+    # The CREATE TABLE above carries the CHECK for fresh DBs.
+    #
+    # Migration: pre-Cluster-2 rows pre-date the promotion path, so
+    # they represent established external knowledge (operator seeds,
+    # runbook Step 3 inserts) rather than in-session assertions. The
+    # ALTER's `DEFAULT 'asserted_unverified'` would mis-label them; we
+    # flip pre-existing rows to `externally_verified` only when the
+    # ALTER succeeded (signal that the column is new to this DB).
+    try:
+        conn.execute(
+            "ALTER TABLE tier_u ADD COLUMN status TEXT NOT NULL "
+            "DEFAULT 'asserted_unverified'"
+        )
+        conn.execute(
+            "UPDATE tier_u SET status='externally_verified' "
+            "WHERE status='asserted_unverified'"
+        )
+    except sqlite3.OperationalError:
+        pass  # column already exists; rows already carry meaningful status
     conn.commit()
 
 
