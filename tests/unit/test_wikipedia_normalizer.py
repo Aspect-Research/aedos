@@ -718,21 +718,22 @@ class TestStage2Selection:
 
     def test_candidate_truncation_respects_max(self):
         """A disambiguation page with many links is truncated to
-        Config.wikipedia_stage_2_max_candidates (default 20)."""
+        Config.wikipedia_stage_2_max_candidates (default 100 after
+        Cluster 1 step 2; was 20)."""
         normalizer, _, llm = _make_normalizer_with_llm(
             {"selection": "Cand0", "reasoning": "first"}
         )
-        # 50 candidates → should be truncated to 20.
-        candidates = [f"Cand{i}" for i in range(50)]
+        # 150 candidates → should be truncated to 100.
+        candidates = [f"Cand{i}" for i in range(150)]
         with patch("httpx.Client") as MockClient:
             MockClient.return_value.__enter__.return_value.get.side_effect = [
                 _disambig_stage_1_response("ManyCands"),
                 _disambig_parse_response(candidates, "ManyCands"),
             ]
             result = normalizer.normalize("ManyCands", source_text="t")
-        assert len(result.stage_2_candidates) == 20
-        # First 20 in original order preserved.
-        assert result.stage_2_candidates == [f"Cand{i}" for i in range(20)]
+        assert len(result.stage_2_candidates) == 100
+        # First 100 in original order preserved.
+        assert result.stage_2_candidates == [f"Cand{i}" for i in range(100)]
 
     def test_non_namespace_0_links_filtered(self):
         """Disambiguation pages have many non-article links (categories,
@@ -915,3 +916,140 @@ class TestNormalizeMemo:
         # Newest first: second event was the memo hit.
         assert events[0]["event_data"]["from_memo"] is True
         assert events[1]["event_data"]["from_memo"] is False
+
+
+# ---------------------------------------------------------------------------
+# Phase H Cluster 1 step 2 — implicit-disambig probe
+# ---------------------------------------------------------------------------
+
+
+def _canonical_stage_1_response(title: str):
+    """Build a Stage 1 response indicating the input is itself a real
+    Wikipedia article (canonical_no_redirect)."""
+    return _api_response(
+        {
+            "pages": [
+                {
+                    "title": title,
+                    "pageid": 12345,
+                    "pageprops": {"wikibase_item": "Q1"},
+                }
+            ]
+        }
+    )
+
+
+def _probe_not_found_response(title: str):
+    """Stage 1 probe response indicating the '{title}' page is missing."""
+    return _api_response(
+        {
+            "pages": [
+                {
+                    "title": title,
+                    "missing": True,
+                }
+            ]
+        }
+    )
+
+
+class TestImplicitDisambigProbe:
+    """The Cluster 1 diagnostic found cases like 'Apple was founded in
+    California' where Wikipedia routes the bare 'Apple' to the fruit
+    article (canonical_no_redirect) so Stage 2 never fires — even
+    though 'Apple (disambiguation)' lists Apple Inc. The implicit-
+    disambig probe surfaces those alternatives."""
+
+    def test_no_disambig_page_preserves_canonical(self):
+        """When the probe finds no disambiguation page, the original
+        canonical_no_redirect behavior is preserved unchanged."""
+        normalizer, _ = _make_normalizer()
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _canonical_stage_1_response("Solo Article"),
+                _probe_not_found_response("Solo Article (disambiguation)"),
+            ]
+            result = normalizer.normalize("Solo Article")
+        assert result.stage_1_outcome == OUTCOME_CANONICAL_NO_REDIRECT
+        assert result.normalized_form == "Solo Article"
+        assert result.stage_2_invoked is False
+
+    def test_disambig_probe_drives_stage_2(self):
+        """When the probe finds a disambiguation page, Stage 2 fires
+        with the canonical + disambig candidates merged."""
+        normalizer, _, llm = _make_normalizer_with_llm(
+            {"selection": "Apple Inc.", "reasoning": "founded → company"}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _canonical_stage_1_response("Apple"),
+                _disambig_stage_1_response("Apple (disambiguation)"),
+                _disambig_parse_response(
+                    ["Apple Inc.", "Apple Records"], "Apple (disambiguation)"
+                ),
+            ]
+            result = normalizer.normalize(
+                "Apple",
+                claim_subject="Apple", claim_predicate="founded_in",
+                claim_object="California",
+                source_text="Apple was founded in California",
+            )
+        assert result.stage_1_outcome == OUTCOME_CANONICAL_NO_REDIRECT
+        assert result.stage_2_invoked is True
+        assert result.stage_2_selection == "Apple Inc."
+        assert result.normalized_form == "Apple Inc."
+        # Canonical prepended, disambig candidates follow.
+        assert result.stage_2_candidates[0] == "Apple"
+        assert "Apple Inc." in result.stage_2_candidates
+        assert "Apple Records" in result.stage_2_candidates
+
+    def test_disambig_probe_stage_2_abstain_preserves_canonical(self):
+        """On Stage 2 abstain via the implicit-disambig path, the
+        canonical is preserved (not the surface form)."""
+        normalizer, _, _ = _make_normalizer_with_llm(
+            {"selection": "ABSTAIN", "reasoning": "context unclear"}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _canonical_stage_1_response("Apple"),
+                _disambig_stage_1_response("Apple (disambiguation)"),
+                _disambig_parse_response(
+                    ["Apple Inc."], "Apple (disambiguation)"
+                ),
+            ]
+            result = normalizer.normalize("Apple", source_text="Apple is red")
+        assert result.stage_2_invoked is True
+        assert result.stage_2_selection is None
+        assert result.normalized_form == "Apple"  # canonical preserved
+
+    def test_disambig_probe_can_select_canonical(self):
+        """Stage 2 can explicitly pick the canonical entity when context
+        confirms the primary sense — the canonical is in the candidate
+        list, prepended."""
+        normalizer, _, _ = _make_normalizer_with_llm(
+            {"selection": "Apple", "reasoning": "fruit sense"}
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = [
+                _canonical_stage_1_response("Apple"),
+                _disambig_stage_1_response("Apple (disambiguation)"),
+                _disambig_parse_response(
+                    ["Apple Inc."], "Apple (disambiguation)"
+                ),
+            ]
+            result = normalizer.normalize("Apple", source_text="Apple is sweet")
+        assert result.stage_2_selection == "Apple"
+        assert result.normalized_form == "Apple"
+
+    def test_skips_probe_on_disambiguation_suffix(self):
+        """A surface form already named '... (disambiguation)' must not
+        recurse into another probe."""
+        normalizer, _ = _make_normalizer()
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                _canonical_stage_1_response("Foo (disambiguation)")
+            )
+            result = normalizer.normalize("Foo (disambiguation)")
+            # Only one HTTP call (the Stage 1 fetch) — no probe.
+            assert MockClient.return_value.__enter__.return_value.get.call_count == 1
+        assert result.normalized_form == "Foo (disambiguation)"

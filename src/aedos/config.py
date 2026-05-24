@@ -76,7 +76,14 @@ class Config:
     wikipedia_api_url: str = "https://en.wikipedia.org/w/api.php"
     wikipedia_request_rate_per_second: float = 10.0
     wikipedia_normalizer_enabled: bool = True  # diagnostic kill switch
-    wikipedia_stage_2_max_candidates: int = 20  # truncate disambig links
+    # Phase H Cluster 1 step 2 (2026-05-24): raised 20 → 100. The
+    # Cluster 1 diagnostic found Stage 2 abstaining on cases where the
+    # canonical entity was present on the Wikipedia disambig page but
+    # past the alphabetical truncation (Amazon River, the US presidency
+    # article, etc.). A higher cap fits the prompt budget (Haiku
+    # handles 100 short candidate strings comfortably) and surfaces the
+    # canonical entity for contextually-disambiguated picks.
+    wikipedia_stage_2_max_candidates: int = 100
 
     # HTTP User-Agent for external services (Wikimedia policy requires
     # contact info — URL or email). Privacy caveat: the contact info

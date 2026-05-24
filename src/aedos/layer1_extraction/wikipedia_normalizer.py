@@ -123,7 +123,7 @@ Do not invent a new candidate. Do not paraphrase a candidate.
 _DEFAULT_API_URL = "https://en.wikipedia.org/w/api.php"
 _DEFAULT_RATE = 10.0
 _DEFAULT_ENTITY_TTL_SECONDS = 3600
-_DEFAULT_STAGE_2_MAX_CANDIDATES = 20
+_DEFAULT_STAGE_2_MAX_CANDIDATES = 100  # bumped 20→100 in Cluster 1 step 2
 _RETRY_BACKOFF_SECONDS = 1.0
 
 # Stage 1 outcome strings — keep stable, audit log readers depend on them.
@@ -587,10 +587,36 @@ class WikipediaNormalizer:
         Stage 2 abstains, returns the surface form unchanged.
         """
         if stage1.outcome == OUTCOME_CANONICAL_NO_REDIRECT:
+            # Phase H Cluster 1 step 2: implicit-disambig probe. When
+            # Wikipedia routes the bare surface form to a primary
+            # article (e.g. "Apple" → the fruit), the LLM never gets to
+            # see the alternatives even though `Apple (disambiguation)`
+            # exists and lists Apple Inc. Probe for the matching
+            # disambig page; if present, drive Stage 2 with the
+            # canonical and the disambig candidates merged. On Stage 2
+            # abstain, the original canonical is preserved (do no harm).
+            canonical = stage1.canonical_title or surface_form
+            probe = self._probe_implicit_disambiguation(surface_form, canonical)
+            if probe is not None:
+                return self._stage_2(
+                    stage1=Stage1Outcome(
+                        surface_form=surface_form,
+                        outcome=OUTCOME_DISAMBIGUATION_PAGE,
+                        disambiguation_title=probe,
+                    ),
+                    surface_form=surface_form,
+                    start_time=start_time,
+                    claim_subject=claim_subject,
+                    claim_predicate=claim_predicate,
+                    claim_object=claim_object,
+                    source_text=source_text,
+                    canonical_fallback=canonical,
+                    canonical_outcome=stage1.outcome,
+                )
             duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=stage1.canonical_title or surface_form,
+                normalized_form=canonical,
                 stage_1_outcome=stage1.outcome,
                 duration_ms=duration_ms,
             )
@@ -639,6 +665,8 @@ class WikipediaNormalizer:
         claim_predicate: Optional[str],
         claim_object: Optional[str],
         source_text: Optional[str],
+        canonical_fallback: Optional[str] = None,
+        canonical_outcome: Optional[str] = None,
     ) -> NormalizationResult:
         """Drive Stage 2: fetch candidate links from the disambiguation
         page, ask Haiku to pick one (or abstain), apply the selection.
@@ -651,17 +679,55 @@ class WikipediaNormalizer:
           - LLM picks something not in the candidate list → reject,
             abstain (defence against a future model hallucinating a title).
           - LLM emits ABSTAIN → record reasoning, abstain.
+
+        Phase H Cluster 1 step 2: `canonical_fallback` is set when this
+        Stage 2 call originates from the implicit-disambig probe (a
+        canonical_no_redirect outcome that also has a disambig page).
+        On abstain / fetch error the canonical is preserved instead of
+        the bare surface form — Wikipedia's primary-article routing is
+        the do-no-harm default for cases context doesn't disambiguate.
+        The canonical is also prepended to the candidate list so Stage 2
+        can pick it explicitly when context confirms the primary sense.
         """
         disambig_title = stage1.disambiguation_title or surface_form
+        implicit_disambig = canonical_fallback is not None
+
+        # When Stage 2 originates from the implicit-disambig probe, the
+        # surface form itself resolved cleanly (canonical_no_redirect);
+        # record that real Stage 1 outcome in the result. The probed
+        # disambig title goes into `stage_1_redirect_target` so the
+        # audit log shows where the Stage 2 candidates came from.
+        effective_outcome = (
+            canonical_outcome
+            if implicit_disambig and canonical_outcome
+            else stage1.outcome
+        )
+        # `fallback_normalized` is the value used when Stage 2 declines
+        # to pick or errors out: the canonical (Wikipedia's primary
+        # article) for the implicit-disambig path, the bare surface
+        # form for the regular disambig path.
+        fallback_normalized = (
+            canonical_fallback if implicit_disambig else surface_form
+        )
 
         candidates, fetch_error = self._fetch_disambiguation_candidates(disambig_title)
+        if implicit_disambig and canonical_fallback:
+            # Prepend the canonical so Stage 2 can pick it explicitly.
+            # Deduplicate while preserving order.
+            merged: list[str] = [canonical_fallback]
+            seen = {canonical_fallback}
+            for c in candidates:
+                if c not in seen:
+                    merged.append(c)
+                    seen.add(c)
+            candidates = merged
         if fetch_error is not None:
             duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
+                normalized_form=fallback_normalized,
+                stage_1_outcome=effective_outcome,
+                stage_1_redirect_target=disambig_title,
                 stage_2_invoked=False,
                 duration_ms=duration_ms,
                 error=fetch_error,
@@ -673,9 +739,9 @@ class WikipediaNormalizer:
             duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
+                normalized_form=fallback_normalized,
+                stage_1_outcome=effective_outcome,
+                stage_1_redirect_target=disambig_title,
                 stage_2_invoked=False,
                 duration_ms=duration_ms,
                 error="no_candidates_on_disambiguation_page",
@@ -686,9 +752,9 @@ class WikipediaNormalizer:
             duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
+                normalized_form=fallback_normalized,
+                stage_1_outcome=effective_outcome,
+                stage_1_redirect_target=disambig_title,
                 stage_2_invoked=False,
                 stage_2_candidates=candidates,
                 duration_ms=duration_ms,
@@ -709,9 +775,9 @@ class WikipediaNormalizer:
         if llm_error is not None:
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
+                normalized_form=fallback_normalized,
+                stage_1_outcome=effective_outcome,
+                stage_1_redirect_target=disambig_title,
                 stage_2_invoked=True,
                 stage_2_candidates=candidates,
                 stage_2_selection=None,
@@ -721,13 +787,14 @@ class WikipediaNormalizer:
             )
 
         # Abstention: empty selection or the literal ABSTAIN sentinel.
-        # Surface form preserved.
+        # Surface form preserved (or canonical preserved when this is
+        # an implicit-disambig probe).
         if not selection or selection.strip().upper() == STAGE_2_ABSTAIN:
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
+                normalized_form=fallback_normalized,
+                stage_1_outcome=effective_outcome,
+                stage_1_redirect_target=disambig_title,
                 stage_2_invoked=True,
                 stage_2_candidates=candidates,
                 stage_2_selection=None,
@@ -741,9 +808,9 @@ class WikipediaNormalizer:
         if selection not in candidates:
             return NormalizationResult(
                 surface_form=surface_form,
-                normalized_form=surface_form,
-                stage_1_outcome=stage1.outcome,
-                stage_1_redirect_target=stage1.disambiguation_title,
+                normalized_form=fallback_normalized,
+                stage_1_outcome=effective_outcome,
+                stage_1_redirect_target=disambig_title,
                 stage_2_invoked=True,
                 stage_2_candidates=candidates,
                 stage_2_selection=None,
@@ -755,14 +822,60 @@ class WikipediaNormalizer:
         return NormalizationResult(
             surface_form=surface_form,
             normalized_form=selection,
-            stage_1_outcome=stage1.outcome,
-            stage_1_redirect_target=stage1.disambiguation_title,
+            stage_1_outcome=effective_outcome,
+            stage_1_redirect_target=disambig_title,
             stage_2_invoked=True,
             stage_2_candidates=candidates,
             stage_2_selection=selection,
             stage_2_reasoning=reasoning,
             duration_ms=duration_ms,
         )
+
+    # ------------------------------------------------------------------
+    # Phase H Cluster 1 step 2 — implicit-disambig probe
+    # ------------------------------------------------------------------
+
+    def _probe_implicit_disambiguation(
+        self, surface_form: str, canonical: str
+    ) -> Optional[str]:
+        """When Stage 1 returns canonical_no_redirect, also probe for a
+        '{surface_form} (disambiguation)' page. Returns the disambig
+        page title if one exists, else None.
+
+        The Cluster 1 diagnostic surfaced cases like 'Apple was founded
+        in California' where Wikipedia routes the bare surface ('Apple')
+        to a primary article (the fruit) so Stage 2 never fires — even
+        though 'Apple (disambiguation)' lists Apple Inc. This probe
+        exists to surface those alternatives.
+
+        Skipped when:
+          - the surface form already looks like a disambiguation title
+            (would recurse on itself);
+          - the canonical title already equals '{surface_form}
+            (disambiguation)' (the redirect resolved here already).
+
+        Cost: one extra Wikipedia API call per canonical_no_redirect
+        outcome. The HTTP layer caches Stage 1 responses on TTL so
+        repeat probes for the same surface in the same session are free.
+        """
+        # Avoid recursion on disambig titles.
+        if surface_form.endswith("(disambiguation)"):
+            return None
+        probe_title = f"{surface_form} (disambiguation)"
+        if canonical == probe_title:
+            return None
+        # Reuse Stage 1's query path — it returns OUTCOME_DISAMBIGUATION_PAGE
+        # if the probe lands on a real disambig page, OUTCOME_NOT_FOUND
+        # when no such page exists, OUTCOME_CANONICAL_NO_REDIRECT when
+        # the title exists but isn't actually a disambig (rare; ignore),
+        # OUTCOME_API_ERROR on transient failures (fail open — no probe).
+        try:
+            outcome = self._stage_1_for_single(probe_title)
+        except Exception:
+            return None
+        if outcome.outcome == OUTCOME_DISAMBIGUATION_PAGE:
+            return outcome.disambiguation_title or probe_title
+        return None
 
     def _fetch_disambiguation_candidates(
         self, disambig_title: str
