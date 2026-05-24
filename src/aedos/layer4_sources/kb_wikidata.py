@@ -108,6 +108,79 @@ _SUBSUMPTION_PROPERTIES = {
     "part_of": ("P131", "P361"),
 }
 
+# Phase H D5: default property set for KB neighbor enumeration. The
+# geographic/taxonomic core covers the dominant derivation_corpus
+# multi-hop shapes (X lives_in Y / part_of Z; X is_a Y / kind-properties).
+# Other properties (P50 author, P108 employer, P39 position) are deferred
+# to v0.16 driven by Phase 10.5 data per `docs/phase_H/d5_design.md`
+# Decision 1.
+_DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
+
+
+def _build_neighbors_query(
+    entity: KBEntityID, properties: tuple[KBPropertyID, ...]
+) -> str:
+    """Build a single SPARQL query that enumerates the given entity's
+    neighbors along all `properties` in one round-trip.
+
+    Returns SELECT bindings shaped `?prop` (the P-id URI) and `?value`
+    (the neighbor entity URI). `_parse_neighbors_bindings` converts to
+    `{P-id: [Q-id, ...]}`. Direct-property (`wdt:`) only — qualifiers
+    and statement-rank don't matter for neighbor enumeration; the
+    walker uses these as candidate premises only, and a deprecated-rank
+    neighbor that resolves to a real entity is still a valid premise
+    for the walker to consider.
+
+    Defense-in-depth: validates entity and every property id (the
+    callers — `_live_neighbors` and walker integration — pass
+    canonical IDs, but the SPARQL boundary stays clean).
+    """
+    if not _ENTITY_ID_PATTERN.match(entity):
+        raise ValueError(f"Invalid Wikidata entity ID: {entity!r}")
+    if not properties:
+        raise ValueError("properties must be a non-empty sequence")
+    for prop in properties:
+        if not _PROPERTY_ID_PATTERN.match(prop):
+            raise ValueError(f"Invalid Wikidata property ID: {prop!r}")
+    values_clause = " ".join(f"wdt:{p}" for p in properties)
+    return (
+        f"SELECT ?prop ?value WHERE {{\n"
+        f"  VALUES ?prop {{ {values_clause} }}\n"
+        f"  wd:{entity} ?prop ?value .\n"
+        f"  FILTER(isIRI(?value))\n"
+        f"}}"
+    )
+
+
+def _parse_neighbors_bindings(
+    bindings: list, properties: tuple[KBPropertyID, ...]
+) -> dict[KBPropertyID, list[KBEntityID]]:
+    """Convert SPARQL neighbor-query bindings to `{P-id: [Q-id, ...]}`.
+
+    Every requested property appears in the result dict with at least an
+    empty list — downstream callers (the walker) can iterate the property
+    list deterministically without `KeyError`s. Out-of-set properties
+    that somehow appear in bindings are ignored (defense-in-depth
+    against a future query change).
+    """
+    result: dict[KBPropertyID, list[KBEntityID]] = {p: [] for p in properties}
+    allowed = set(properties)
+    for row in bindings:
+        prop_uri = row.get("prop", {}).get("value", "")
+        value_uri = row.get("value", {}).get("value", "")
+        if not prop_uri or not value_uri:
+            continue
+        # URI shape: http://www.wikidata.org/prop/direct/P131
+        prop_id = prop_uri.rsplit("/", 1)[-1]
+        if prop_id not in allowed:
+            continue
+        value_id = _extract_entity_id(value_uri)
+        if not value_id or not _ENTITY_ID_PATTERN.match(value_id):
+            continue
+        if value_id not in result[prop_id]:  # dedupe within property
+            result[prop_id].append(value_id)
+    return result
+
 
 def _build_subsumption_ask_query(
     source: KBEntityID, target: KBEntityID, relation_type: str
@@ -368,6 +441,24 @@ class WikidataAdapter:
             return self._live_subsumption(entity_a, entity_b, relation_type)
         return self._fixture_subsumption(entity_a, entity_b, relation_type)
 
+    def enumerate_neighbors(
+        self, entity: KBEntityID, properties: list[KBPropertyID],
+    ) -> dict[KBPropertyID, list[KBEntityID]]:
+        """Phase H D5: enumerate `entity`'s direct KB neighbors along the
+        given `properties`. Returns a dict keyed by property; each value is
+        the list of neighbor entity Q-ids that appear as that property's
+        value for `entity`. Fails open (empty values) on error or no match;
+        the audit log records the call's outcome either way.
+
+        `properties` is a list (not a tuple) for KBProtocol parity with the
+        other methods' input types — the live and fixture paths normalize
+        it to a tuple before SPARQL construction.
+        """
+        props_tuple = tuple(properties) if properties else _DEFAULT_NEIGHBOR_PROPERTIES
+        if self._live:
+            return self._live_neighbors(entity, props_tuple)
+        return self._fixture_neighbors(entity, props_tuple)
+
     # ------------------------------------------------------------------
     # Fixture-backed implementations
     # ------------------------------------------------------------------
@@ -409,6 +500,24 @@ class WikidataAdapter:
             predicate,
             provenance={"fixture": fixture_name, "entity": entity, "predicate": predicate},
         )
+
+    def _fixture_neighbors(
+        self, entity: KBEntityID, properties: tuple[KBPropertyID, ...]
+    ) -> dict[KBPropertyID, list[KBEntityID]]:
+        """Phase H D5: fixture-backed enumeration. Reads
+        `tests/fixtures/wikidata/neighbors_<entity>.json`, which mirrors
+        the SPARQL response format (`{"results": {"bindings": [...]}}`).
+        Missing fixture returns all-empty (treated as "no neighbors").
+        Filtering to the requested `properties` happens in the parser, so
+        the fixture file can hold a superset and individual tests select
+        the subset they need."""
+        fixture_name = f"neighbors_{entity}.json"
+        try:
+            data = _load_fixture(fixture_name)
+        except FixtureNotFoundError:
+            return {p: [] for p in properties}
+        bindings = data.get("results", {}).get("bindings", [])
+        return _parse_neighbors_bindings(bindings, properties)
 
     def _fixture_subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
@@ -1021,3 +1130,96 @@ class WikidataAdapter:
             return None
         # URI shape: http://www.wikidata.org/prop/direct/P31
         return prop_uri.rsplit("/", 1)[-1] or None
+
+    def _live_neighbors(
+        self, entity: KBEntityID, properties: tuple[KBPropertyID, ...]
+    ) -> dict[KBPropertyID, list[KBEntityID]]:
+        """Phase H D5: live SPARQL enumeration of `entity`'s direct
+        neighbors along `properties`. One round-trip, returns the parsed
+        dict.
+
+        Honors the D5 design contract (`docs/phase_H/d5_design.md`):
+          - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
+            (default `https://query.wikidata.org/sparql`).
+          - HTTP cache + 24h TTL via `Config.http_cache_statement_ttl_seconds`
+            (same TTL as `_live_lookup`; neighbor data is statement-shaped).
+          - Rate-limited via `self._sparql_limiter` (5/s default).
+          - Single retry on transient `httpx.TimeoutException` /
+            `httpx.NetworkError`; thereafter fail-open with all-empty
+            (no value for any requested property). Never raises except
+            on the wiring-gap defence (no `http_cache`) or a malformed
+            entity/property id (programming error, surfaced honestly).
+          - One audit-log event per call (`event_type="kb_live_neighbors"`).
+        """
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_neighbors requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        try:
+            query = _build_neighbors_query(entity, properties)
+        except ValueError as exc:
+            # Programming error: malformed Q/P-id. Architecture §3.1 / §9.4:
+            # abstain on no-grounding, but a malformed call surfaces honestly.
+            self._log_audit_event(
+                event_type="kb_live_neighbors",
+                event_subject=entity,
+                event_data={
+                    "properties_requested": list(properties),
+                    "total_neighbors_returned": 0,
+                    "error": str(exc),
+                },
+            )
+            raise
+
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        start = time.monotonic()
+        result: dict[KBPropertyID, list[KBEntityID]] = {p: [] for p in properties}
+        retries = 0
+        last_error: Optional[str] = None
+
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+
+            bindings = (
+                data.get("results", {}).get("bindings", [])
+                if isinstance(data, dict)
+                else []
+            )
+            result = _parse_neighbors_bindings(bindings, properties)
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        total = sum(len(v) for v in result.values())
+        self._log_audit_event(
+            event_type="kb_live_neighbors",
+            event_subject=entity,
+            event_data={
+                "properties_requested": list(properties),
+                "total_neighbors_returned": total,
+                "per_property_counts": {p: len(v) for p, v in result.items()},
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return result

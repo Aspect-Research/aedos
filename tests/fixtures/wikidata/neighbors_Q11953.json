@@ -1,0 +1,6 @@
+{
+  "_note": "Phase H D5 fixture. Q11953 = a placeholder used in walker integration tests for an entity that resolves but has no neighbors along the requested properties. Fixture intentionally returns no bindings — exercises the empty-result branch.",
+  "results": {
+    "bindings": []
+  }
+}
