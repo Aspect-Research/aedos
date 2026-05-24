@@ -108,17 +108,26 @@ def _make_substrate(
     )
 
 
-def _make_kb(neighbors_by_prop: dict | None = None):
+def _make_kb(
+    neighbors_by_prop: dict | None = None,
+    incoming_by_prop: dict | None = None,
+):
     """A mock KB adapter exposing `enumerate_neighbors`. `neighbors_by_prop`
-    is the dict returned for every call (or None → empty dict per
-    requested property)."""
+    is what the outgoing direction returns; `incoming_by_prop` is the
+    incoming (D51 reverse). Either defaults to empty per requested
+    property."""
     kb = MagicMock()
-    if neighbors_by_prop is None:
-        def empty(entity, properties):
+
+    def fake(entity, properties, direction="outgoing"):
+        if direction == "incoming":
+            if incoming_by_prop is None:
+                return {p: [] for p in properties}
+            return {p: list(incoming_by_prop.get(p, [])) for p in properties}
+        if neighbors_by_prop is None:
             return {p: [] for p in properties}
-        kb.enumerate_neighbors.side_effect = empty
-    else:
-        kb.enumerate_neighbors.return_value = neighbors_by_prop
+        return {p: list(neighbors_by_prop.get(p, [])) for p in properties}
+
+    kb.enumerate_neighbors.side_effect = fake
     return kb
 
 
@@ -217,20 +226,43 @@ class TestD5Fallback:
 
         kb.enumerate_neighbors.assert_not_called()
 
-    def test_does_not_fire_for_distributes_up(self):
-        """`distributes_up` → directions={'child'}. D5's outgoing-only
-        enumeration serves 'parent' direction; on child-only direction it
-        skips. (Reverse-enumeration v0.16 candidate.)"""
+    def test_fires_reverse_for_distributes_up_after_d51(self):
+        """Phase H D51 (2026-05-24): `distributes_up` → directions={'child'}.
+        D5's outgoing-only used to skip; D51 adds reverse enumeration so
+        the walker fires with `direction="incoming"` instead."""
         substrate = _make_substrate(
             distribution_verdict="distributes_up",
             sub_neighbors=[],
         )
-        kb = _make_kb({"P131": ["Q771397"]})
+        # Outgoing has nothing for these properties; incoming returns
+        # children of the entity.
+        kb = _make_kb(
+            neighbors_by_prop=None,
+            incoming_by_prop={"P131": ["Q5165"]},  # Williamstown is in this region
+        )
         walker = _make_walker(substrate, kb)
 
-        walker.walk(_claim(), _ctx())
+        result = walker.walk(_claim(), _ctx())
 
-        kb.enumerate_neighbors.assert_not_called()
+        # KB enumerate_neighbors should now be called WITH direction="incoming".
+        assert kb.enumerate_neighbors.called
+        call_directions = [
+            (c.kwargs.get("direction") or (c.args[2] if len(c.args) > 2 else "outgoing"))
+            for c in kb.enumerate_neighbors.call_args_list
+        ]
+        assert "incoming" in call_directions, (
+            f"expected 'incoming' direction call; got {call_directions!r}"
+        )
+        # Trace edges should record direction='child'
+        child_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+            and e.metadata.get("direction") == "child"
+        ]
+        assert child_edges, (
+            "expected at least one kb_neighbor_enumeration edge with "
+            f"direction='child'; got {[e.metadata for e in result.trace.edges]}"
+        )
 
     def test_does_not_fire_when_walker_has_no_kb(self):
         """Back-compat: Walker constructed without `kb` parameter
@@ -255,23 +287,37 @@ class TestD5Fallback:
         ]
         assert kb_edges == []
 
-    def test_fires_for_both_distribution(self):
-        """`both` direction means parent OR child. D5 fires for the
-        parent half."""
+    def test_fires_for_both_distribution_emitting_both_directions(self):
+        """`both` direction means parent AND child. D5+D51 should fire
+        both an outgoing (parent) and an incoming (child) enumeration."""
         substrate = _make_substrate(
             distribution_verdict="both",
             sub_neighbors=[],
         )
-        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": []})
+        kb = _make_kb(
+            neighbors_by_prop={"P131": ["Q771397"], "P361": [], "P17": []},
+            incoming_by_prop={"P131": ["Q5165"]},
+        )
         walker = _make_walker(substrate, kb)
 
         result = walker.walk(_claim(), _ctx())
 
+        # Both direction calls must have happened (across slots × call types).
+        call_directions = set(
+            c.kwargs.get("direction") or (c.args[2] if len(c.args) > 2 else "outgoing")
+            for c in kb.enumerate_neighbors.call_args_list
+        )
+        assert "outgoing" in call_directions
+        assert "incoming" in call_directions
+
+        # Trace should record both direction tags.
         kb_edges = [
             e for e in result.trace.edges
             if e.edge_type == "kb_neighbor_enumeration"
         ]
-        assert len(kb_edges) >= 1
+        emitted_directions = {e.metadata.get("direction") for e in kb_edges}
+        assert "parent" in emitted_directions
+        assert "child" in emitted_directions
 
     def test_skips_slot_with_no_resolution(self):
         """If the resolver returns no candidates for a slot, D5 skips
