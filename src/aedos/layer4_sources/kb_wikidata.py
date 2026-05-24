@@ -119,12 +119,17 @@ _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
 
 # Phase H D51: reverse enumeration's LIMIT. Unbounded properties like
 # P17=Q30 (country=USA) have millions of subjects; the walker only needs
-# a sample of candidate children for its substitution. 100 is a
-# conservative default — bounded enough that WDQS won't refuse, large
-# enough to surface common children. Configurable via
-# `Config.wikidata_neighbor_reverse_limit` if Phase 10.5 data shows the
-# default misses a known child.
-_DEFAULT_NEIGHBOR_REVERSE_LIMIT = 100
+# a sample of candidate children for its substitution. 20 is the
+# conservative default after the first D51 diagnostic showed the walker
+# fanning out catastrophically at LIMIT=100 (per-case wall-clock blew
+# past 18 min on der_multihop_002 before the run was killed): with
+# LIMIT=100 a single reverse call returns 100 candidate children, the
+# walker substitutes each into a new claim at depth+1, and each
+# substituted claim fires more KB calls + more enumeration. 20 keeps
+# fanout per call to ~20× rather than 100×, while still surfacing common
+# children. Paired with the walker.py depth==0 cap on KB enumeration
+# fallback (D51 step 3 cleanup) to bound aggregate walker cost.
+_DEFAULT_NEIGHBOR_REVERSE_LIMIT = 20
 
 
 def _build_neighbors_query(
