@@ -83,14 +83,10 @@ class Config:
     wikipedia_api_url: str = "https://en.wikipedia.org/w/api.php"
     wikipedia_request_rate_per_second: float = 10.0
     wikipedia_normalizer_enabled: bool = True  # diagnostic kill switch
-    # Phase H Cluster 1 step 2 (2026-05-24): raised 20 → 100. The
-    # Cluster 1 diagnostic found Stage 2 abstaining on cases where the
-    # canonical entity was present on the Wikipedia disambig page but
-    # past the alphabetical truncation (Amazon River, the US presidency
-    # article, etc.). A higher cap fits the prompt budget (Haiku
-    # handles 100 short candidate strings comfortably) and surfaces the
-    # canonical entity for contextually-disambiguated picks.
-    wikipedia_stage_2_max_candidates: int = 100
+    # Phase H D53 step 3 (2026-05-24): `wikipedia_stage_2_max_candidates`
+    # was removed in the D53 cleanup. The Wikipedia disambig-page
+    # candidate scraping it bounded is gone; wbsearchentities's `limit`
+    # parameter (Config.wikidata_wbsearch_limit) bounds the new flow.
 
     # HTTP User-Agent for external services (Wikimedia policy requires
     # contact info — URL or email). Privacy caveat: the contact info
@@ -205,11 +201,6 @@ class Config:
             raise ValueError(
                 f"wikipedia_request_rate_per_second must be positive; got "
                 f"{self.wikipedia_request_rate_per_second!r}"
-            )
-        if self.wikipedia_stage_2_max_candidates <= 0:
-            raise ValueError(
-                f"wikipedia_stage_2_max_candidates must be positive; got "
-                f"{self.wikipedia_stage_2_max_candidates!r}"
             )
 
         # User-Agent must be non-empty (Wikimedia policy requires
