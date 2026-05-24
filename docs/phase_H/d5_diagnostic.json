@@ -1,32 +1,31 @@
 {
-  "timestamp": "2026-05-24T10:02:04.303466+00:00",
+  "timestamp": "2026-05-24T11:30:19.901813+00:00",
   "total_cases": 50,
-  "passed": 16,
-  "accuracy": 0.32,
+  "passed": 22,
+  "accuracy": 0.44,
   "verdict_distribution": {
-    "no_grounding_found": 44,
-    "verified": 3,
-    "contradicted": 1,
+    "no_grounding_found": 39,
+    "verified": 9,
     "null": 2
   },
-  "total_kb_live_neighbors_events": 44,
-  "cases_where_kb_was_called": 21,
-  "cases_with_d5_edge_in_trace": 18,
-  "total_kb_neighbor_edges": 128,
-  "audit_events_with_neighbors_returned": 24,
+  "total_kb_live_neighbors_events": 49,
+  "cases_where_kb_was_called": 19,
+  "cases_with_d5_edge_in_trace": 17,
+  "total_kb_neighbor_edges": 152,
+  "audit_events_with_neighbors_returned": 26,
   "per_property_calls_returning_neighbors": {
-    "P31": 16,
-    "P279": 2,
-    "P361": 2,
-    "P131": 6,
-    "P17": 1
+    "P31": 17,
+    "P131": 7,
+    "P17": 3,
+    "P279": 1,
+    "P361": 2
   },
   "per_property_total_neighbors_returned": {
-    "P131": 96,
-    "P361": 2,
-    "P17": 5,
-    "P31": 22,
-    "P279": 3
+    "P131": 102,
+    "P361": 6,
+    "P17": 19,
+    "P31": 24,
+    "P279": 1
   },
   "per_case": [
     {
@@ -36,7 +35,7 @@
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
       "edges": [],
-      "kb_live_neighbors_calls_this_case": 4,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -53,14 +52,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q4986635"
+            "object": "Q130187"
           }
         },
         {
@@ -70,14 +69,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q4986637"
+            "object": "Q130282"
           }
         },
         {
@@ -87,14 +86,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5002037"
+            "object": "Q924289"
           }
         },
         {
@@ -104,14 +103,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5017252"
+            "object": "Q956501"
           }
         },
         {
@@ -121,14 +120,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025368"
+            "object": "Q1028334"
           }
         },
         {
@@ -138,14 +137,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025392"
+            "object": "Q1113755"
           }
         },
         {
@@ -155,14 +154,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025393"
+            "object": "Q4045727"
           }
         },
         {
@@ -172,14 +171,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025439"
+            "object": "Q6940801"
           }
         },
         {
@@ -189,14 +188,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025444"
+            "object": "Q15242179"
           }
         },
         {
@@ -206,14 +205,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025447"
+            "object": "Q24241038"
           }
         },
         {
@@ -223,14 +222,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025501"
+            "object": "Q28406877"
           }
         },
         {
@@ -240,14 +239,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025512"
+            "object": "Q50812895"
           }
         },
         {
@@ -257,14 +256,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5025624"
+            "object": "Q50812907"
           }
         },
         {
@@ -274,14 +273,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5045960"
+            "object": "Q50815402"
           }
         },
         {
@@ -291,14 +290,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5059832"
+            "object": "Q50815413"
           }
         },
         {
@@ -308,14 +307,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5061835"
+            "object": "Q50815512"
           }
         },
         {
@@ -325,14 +324,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5093622"
+            "object": "Q50819628"
           }
         },
         {
@@ -342,14 +341,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5099775"
+            "object": "Q50819651"
           }
         },
         {
@@ -359,14 +358,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5108740"
+            "object": "Q50820737"
           }
         },
         {
@@ -376,14 +375,14 @@
             "direction": "child",
             "distribution": "distributes_up",
             "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject_qid": "Q350",
             "polarity": 1
           },
           "source_content": {
             "object": "Cambridge"
           },
           "target_content": {
-            "object": "Q5108986"
+            "object": "Q50820738"
           }
         }
       ],
@@ -772,11 +771,29 @@
     {
       "case_id": "der_multihop_005",
       "category": "multi_hop_distribution",
-      "passed": false,
-      "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 1,
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": false
+          },
+          "source_content": {
+            "subject": "Obama",
+            "predicate": "born_in",
+            "object": "Honolulu",
+            "polarity": 1
+          },
+          "target_content": {
+            "entity": "Q76"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
     {
@@ -842,352 +859,29 @@
     {
       "case_id": "der_multihop_012",
       "category": "multi_hop_distribution",
-      "passed": false,
-      "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
       "edges": [
         {
-          "edge_type": "kb_neighbor_enumeration",
+          "edge_type": "premise_lookup",
           "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": false
           },
           "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q4986635"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
+            "subject": "Asa",
+            "predicate": "died_in",
+            "object": "Cambridge",
             "polarity": 1
           },
-          "source_content": {
-            "object": "Cambridge"
-          },
           "target_content": {
-            "object": "Q4986637"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5002037"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5017252"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025368"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025392"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025393"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025439"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025444"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025447"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025501"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025512"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5025624"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5045960"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5059832"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5061835"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5093622"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5099775"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5108740"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P131",
-            "subject_qid": "Q49111",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Cambridge"
-          },
-          "target_content": {
-            "object": "Q5108986"
+            "entity": "Q347356"
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 1,
+      "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
     {
@@ -1203,10 +897,30 @@
     {
       "case_id": "der_cross_002",
       "category": "cross_source",
-      "passed": false,
-      "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
-      "edges": [],
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "tier_u",
+            "polarity": 1,
+            "verdict": "verified",
+            "tier_u_row_id": 1
+          },
+          "source_content": {
+            "subject": "Asa",
+            "predicate": "employed_by",
+            "object": "Google",
+            "polarity": 1
+          },
+          "target_content": {
+            "subject": "Asa",
+            "predicate": "employed_by"
+          }
+        }
+      ],
       "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
@@ -1233,6 +947,346 @@
           "target_content": {
             "subject": "Q72585582"
           }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q13371"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q15142"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q15143"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q32198"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49108"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49110"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49118"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49119"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49120"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49126"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49129"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49131"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q54072"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q1047264"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q7231574"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q7981597"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q8032397"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q27958831"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q55612862"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q55613218"
+          }
         }
       ],
       "kb_live_neighbors_calls_this_case": 2,
@@ -1243,14 +1297,14 @@
       "category": "cross_source",
       "passed": false,
       "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
+      "abstention_reason": "budget_wall_clock",
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q3472263",
             "polarity": 1
@@ -1267,7 +1321,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q28533405",
             "polarity": 1
@@ -1280,7 +1334,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 2,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -1290,7 +1344,7 @@
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
       "edges": [],
-      "kb_live_neighbors_calls_this_case": 4,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1325,28 +1379,62 @@
       "case_id": "der_cross_007",
       "category": "cross_source",
       "passed": false,
-      "verdict": "contradicted",
-      "abstention_reason": null,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
       "edges": [
         {
-          "edge_type": "premise_lookup",
+          "edge_type": "kb_neighbor_enumeration",
           "metadata": {
-            "source": "python",
-            "verdict": "contradicted"
-          },
-          "source_content": {
-            "subject": "Asa's birth year",
-            "predicate": "plus_30_is",
-            "object": "2003",
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q1986",
             "polarity": 1
           },
+          "source_content": {
+            "object": "2003"
+          },
           "target_content": {
-            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Extract the birth year from the subject\n    birth_year_str = subject.split()[-1]\n    try:\n        birth_year = int(birth_year_str)\n    except ValueError:\n        return False\n\n    # Check if the predicate is 'plus_30_is'\n    if predicate != 'plus_30_is':\n        return False\n\n    # Calculate the year 30 years after the birth year\n    target_year = birth_year + 30\n\n    # Check if the target year matches the object\n    return str(target_year) == obj",
-            "output": "FALSE"
+            "object": "Q235676"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q1986",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "2003"
+          },
+          "target_content": {
+            "object": "Q235729"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q1986",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "2003"
+          },
+          "target_content": {
+            "object": "Q3186692"
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 0,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1381,7 +1469,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q513",
             "polarity": 1
@@ -1394,7 +1482,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 1,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1424,6 +1512,91 @@
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
       "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q312",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Apple"
+          },
+          "target_content": {
+            "subject": "Q1871232"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q312",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Apple"
+          },
+          "target_content": {
+            "subject": "Q2355591"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q312",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Apple"
+          },
+          "target_content": {
+            "subject": "Q4781185"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q312",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Apple"
+          },
+          "target_content": {
+            "subject": "Q65129345"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P361",
+            "subject_qid": "Q312",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Apple"
+          },
+          "target_content": {
+            "subject": "Q136503322"
+          }
+        },
         {
           "edge_type": "kb_neighbor_enumeration",
           "metadata": {
@@ -1765,7 +1938,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 1,
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1799,31 +1972,14 @@
             "direction": "parent",
             "distribution": "distributes_down",
             "kb_property": "P31",
-            "subject_qid": "Q80061",
+            "subject_qid": "Q7191",
             "polarity": 1
           },
           "source_content": {
             "object": "Nobel Prize"
           },
           "target_content": {
-            "object": "Q7191"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q80061",
-            "polarity": 1
-          },
-          "source_content": {
-            "object": "Nobel Prize"
-          },
-          "target_content": {
-            "object": "Q11448906"
+            "object": "Q107655869"
           }
         },
         {
@@ -1833,14 +1989,14 @@
             "direction": "parent",
             "distribution": "distributes_down",
             "kb_property": "P279",
-            "subject_qid": "Q80061",
+            "subject_qid": "Q7191",
             "polarity": 1
           },
           "source_content": {
             "object": "Nobel Prize"
           },
           "target_content": {
-            "object": "Q7191"
+            "object": "Q5257307"
           }
         }
       ],
@@ -1859,7 +2015,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q1223",
             "polarity": 1
@@ -1876,7 +2032,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q500131",
             "polarity": 1
@@ -1893,7 +2049,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q500131",
             "polarity": 1
@@ -1910,7 +2066,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q500131",
             "polarity": 1
@@ -1923,7 +2079,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 2,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -1932,8 +2088,26 @@
       "passed": false,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [],
-      "kb_live_neighbors_calls_this_case": 0,
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q3783",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Amazon"
+          },
+          "target_content": {
+            "subject": "Q4022"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
       "error": null
     },
     {
@@ -1956,7 +2130,7 @@
             "polarity": 1
           },
           "target_content": {
-            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Define the order of planets from the sun\n    planet_order = ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune']\n    \n    # Find the indices of the subject and object in the planet order\n    try:\n        subject_index = planet_order.index(subject)\n        obj_index = planet_order.index(obj)\n    except ValueError:\n        # If either subject or object is not in the list, return False\n        return False\n    \n    # Check if the subject is closer to the sun than the object\n    if predicate == 'closer_to_the_sun_than':\n        return subject_index < obj_index\n    elif predicate == 'farther_from_the_sun_than':\n        return subject_index > obj_index\n    else:\n        # If the predicate is not recognized, return False\n        return False",
+            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Define the order of planets from the sun\n    planet_order = [\n        'Mercury', 'Venus', 'Earth', 'Mars',\n        'Jupiter', 'Saturn', 'Uranus', 'Neptune'\n    ]\n    \n    # Find the indices of the subject and object in the planet order\n    try:\n        subject_index = planet_order.index(subject)\n        obj_index = planet_order.index(obj)\n    except ValueError:\n        # If either subject or object is not in the list, return False\n        return False\n    \n    # Check if the subject is closer to the sun than the object\n    if predicate == 'closer_to_the_sun_than':\n        return subject_index < obj_index\n    elif predicate == 'farther_from_the_sun_than':\n        return subject_index > obj_index\n    else:\n        # If the predicate is not recognized, return False\n        return False",
             "output": "TRUE"
           }
         }
@@ -1967,9 +2141,9 @@
     {
       "case_id": "der_disambiguation_008",
       "category": "entity_disambiguation",
-      "passed": false,
-      "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
       "edges": [
         {
           "edge_type": "kb_neighbor_enumeration",
@@ -1985,7 +2159,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q4986635"
+            "subject": "Q13371"
           }
         },
         {
@@ -2002,7 +2176,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q4986637"
+            "subject": "Q49108"
           }
         },
         {
@@ -2019,7 +2193,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5002037"
+            "subject": "Q49122"
           }
         },
         {
@@ -2036,7 +2210,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5017252"
+            "subject": "Q49123"
           }
         },
         {
@@ -2053,7 +2227,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025368"
+            "subject": "Q49124"
           }
         },
         {
@@ -2070,7 +2244,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025392"
+            "subject": "Q49127"
           }
         },
         {
@@ -2087,7 +2261,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025393"
+            "subject": "Q142740"
           }
         },
         {
@@ -2104,7 +2278,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025439"
+            "subject": "Q152914"
           }
         },
         {
@@ -2121,7 +2295,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025444"
+            "subject": "Q175863"
           }
         },
         {
@@ -2138,7 +2312,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025447"
+            "subject": "Q288106"
           }
         },
         {
@@ -2155,7 +2329,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025501"
+            "subject": "Q474665"
           }
         },
         {
@@ -2172,7 +2346,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025512"
+            "subject": "Q475424"
           }
         },
         {
@@ -2189,7 +2363,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5025624"
+            "subject": "Q533238"
           }
         },
         {
@@ -2206,7 +2380,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5045960"
+            "subject": "Q564248"
           }
         },
         {
@@ -2223,7 +2397,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5059832"
+            "subject": "Q614507"
           }
         },
         {
@@ -2240,7 +2414,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5061835"
+            "subject": "Q637936"
           }
         },
         {
@@ -2257,7 +2431,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5093622"
+            "subject": "Q667786"
           }
         },
         {
@@ -2274,7 +2448,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5099775"
+            "subject": "Q809600"
           }
         },
         {
@@ -2291,7 +2465,7 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5108740"
+            "subject": "Q971421"
           }
         },
         {
@@ -2308,7 +2482,381 @@
             "subject": "Cambridge"
           },
           "target_content": {
-            "subject": "Q5108986"
+            "subject": "Q1017269"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q13371"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q15142"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q15143"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q32198"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49108"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49110"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49118"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49119"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49120"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49126"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49129"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q49131"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P131",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q54072"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q1047264"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q7231574"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q7981597"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q8032397"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q27958831"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q55612862"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "part_of",
+            "direction": "child",
+            "distribution": "distributes_up",
+            "kb_property": "P17",
+            "subject_qid": "Q771",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Massachusetts"
+          },
+          "target_content": {
+            "object": "Q55613218"
+          }
+        },
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": false
+          },
+          "source_content": {
+            "subject": "Cambridge",
+            "predicate": "located_in",
+            "object": "Massachusetts",
+            "polarity": 1
+          },
+          "target_content": {
+            "entity": "Q13371"
+          }
+        },
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": false
+          },
+          "source_content": {
+            "subject": "Cambridge",
+            "predicate": "located_in",
+            "object": "Massachusetts",
+            "polarity": 1
+          },
+          "target_content": {
+            "entity": "Q49108"
           }
         }
       ],
@@ -2338,39 +2886,59 @@
     {
       "case_id": "der_predicate_translation_003",
       "category": "predicate_translation",
-      "passed": false,
-      "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
-      "edges": [],
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "tier_u",
+            "polarity": 1,
+            "verdict": "verified",
+            "tier_u_row_id": 7
+          },
+          "source_content": {
+            "subject": "Asa",
+            "predicate": "employed_by",
+            "object": "Google",
+            "polarity": 1
+          },
+          "target_content": {
+            "subject": "Asa",
+            "predicate": "employed_by"
+          }
+        }
+      ],
       "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
     {
       "case_id": "der_predicate_translation_004",
       "category": "predicate_translation",
-      "passed": false,
-      "verdict": "no_grounding_found",
-      "abstention_reason": "depth_exhausted",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
       "edges": [
         {
-          "edge_type": "kb_neighbor_enumeration",
+          "edge_type": "premise_lookup",
           "metadata": {
-            "relation_type": "part_of",
-            "direction": "child",
-            "distribution": "distributes_up",
-            "kb_property": "P361",
-            "subject_qid": "Q49166",
-            "polarity": 1
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": false
           },
           "source_content": {
-            "subject": "Williams College"
+            "subject": "Williams College",
+            "predicate": "located_in",
+            "object": "Williamstown",
+            "polarity": 1
           },
           "target_content": {
-            "subject": "Q72585582"
+            "entity": "Q49166"
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 2,
+      "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
     {
@@ -2491,7 +3059,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q3472263",
             "polarity": 1
@@ -2508,7 +3076,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q28533405",
             "polarity": 1
@@ -2521,7 +3089,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 2,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -2559,7 +3127,7 @@
             "polarity": 1
           },
           "source_content": {
-            "object": "the project"
+            "object": "The project"
           },
           "target_content": {
             "object": "Q7725634"
@@ -2601,16 +3169,16 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
-            "subject_qid": "Q6906732",
+            "subject_qid": "Q24980",
             "polarity": 1
           },
           "source_content": {
             "subject": "the meaning of life"
           },
           "target_content": {
-            "subject": "Q7889"
+            "subject": "Q11424"
           }
         },
         {
@@ -2618,7 +3186,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q1879675",
             "polarity": 1
@@ -2635,7 +3203,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q1879675",
             "polarity": 1
@@ -2652,7 +3220,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q1879675",
             "polarity": 1
@@ -2669,7 +3237,7 @@
           "metadata": {
             "relation_type": "is_a",
             "direction": "parent",
-            "distribution": "distributes_down",
+            "distribution": "both",
             "kb_property": "P31",
             "subject_qid": "Q1879675",
             "polarity": 1
@@ -2682,7 +3250,7 @@
           }
         }
       ],
-      "kb_live_neighbors_calls_this_case": 2,
+      "kb_live_neighbors_calls_this_case": 4,
       "error": null
     },
     {
@@ -2691,60 +3259,8 @@
       "passed": true,
       "verdict": "no_grounding_found",
       "abstention_reason": "depth_exhausted",
-      "edges": [
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P31",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q113145171"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q28417815"
-          }
-        },
-        {
-          "edge_type": "kb_neighbor_enumeration",
-          "metadata": {
-            "relation_type": "is_a",
-            "direction": "parent",
-            "distribution": "distributes_down",
-            "kb_property": "P279",
-            "subject_qid": "Q18216",
-            "polarity": 1
-          },
-          "source_content": {
-            "subject": "Asa"
-          },
-          "target_content": {
-            "subject": "Q56085456"
-          }
-        }
-      ],
-      "kb_live_neighbors_calls_this_case": 1,
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
       "error": null
     },
     {
@@ -2800,7 +3316,7 @@
     {
       "event_subject": "Q18562909",
       "event_data": {
-        "direction": "outgoing",
+        "direction": "incoming",
         "properties_requested": [
           "P131",
           "P361",
@@ -2812,7 +3328,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 375.0,
+        "duration_ms": 500.0,
         "retry_count": 0,
         "error": null
       }
@@ -2830,23 +3346,23 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 7406.0,
+        "duration_ms": 547.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q18216",
+      "event_subject": "Q1879675",
       "event_data": {
-        "direction": "outgoing",
+        "direction": "incoming",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 0,
         "per_property_counts": {
-          "P31": 1,
-          "P279": 2
+          "P31": 0,
+          "P279": 0
         },
         "duration_ms": 375.0,
         "retry_count": 0,
@@ -2866,13 +3382,31 @@
           "P31": 4,
           "P279": 0
         },
-        "duration_ms": 360.0,
+        "duration_ms": 375.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q6906732",
+      "event_subject": "Q24980",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 421.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q24980",
       "event_data": {
         "direction": "outgoing",
         "properties_requested": [
@@ -2883,26 +3417,6 @@
         "per_property_counts": {
           "P31": 1,
           "P279": 0
-        },
-        "duration_ms": 407.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q123482344",
-      "event_data": {
-        "direction": "outgoing",
-        "properties_requested": [
-          "P131",
-          "P361",
-          "P17"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P131": 0,
-          "P361": 0,
-          "P17": 0
         },
         "duration_ms": 375.0,
         "retry_count": 0,
@@ -2924,9 +3438,29 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 390.0,
+        "duration_ms": 0.0,
         "retry_count": 0,
-        "error": "HTTPStatusError: Server error '502 Bad Gateway' for url 'https://query.wikidata.org/sparql?query=SELECT+%3Fprop+%3Fvalue+WHERE+%7B%0A++VALUES+%3Fprop+%7B+wdt%3AP131+wdt%3AP361+wdt%3AP17+%7D%0A++wd%3AQ123482344+%3Fprop+%3Fvalue+.%0A++FILTER%28isIRI%28%3Fvalue%29%29%0A%7D&format=json'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502"
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q123482344",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 0,
+          "P17": 0
+        },
+        "duration_ms": 469.0,
+        "retry_count": 0,
+        "error": null
       }
     },
     {
@@ -2960,7 +3494,25 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 407.0,
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q28533405",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 203.0,
         "retry_count": 0,
         "error": null
       }
@@ -2976,6 +3528,24 @@
         "total_neighbors_returned": 1,
         "per_property_counts": {
           "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 203.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3472263",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
           "P279": 0
         },
         "duration_ms": 203.0,
@@ -3014,13 +3584,13 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 437.0,
+        "duration_ms": 406.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q49166",
+      "event_subject": "Q771",
       "event_data": {
         "direction": "incoming",
         "properties_requested": [
@@ -3028,31 +3598,13 @@
           "P361",
           "P17"
         ],
-        "total_neighbors_returned": 1,
+        "total_neighbors_returned": 20,
         "per_property_counts": {
-          "P131": 0,
-          "P361": 1,
-          "P17": 0
+          "P131": 13,
+          "P361": 0,
+          "P17": 7
         },
-        "duration_ms": 203.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q49166",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 0
-        },
-        "duration_ms": 188.0,
+        "duration_ms": 0.0,
         "retry_count": 0,
         "error": null
       }
@@ -3072,13 +3624,13 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 0.0,
+        "duration_ms": 453.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q49111",
+      "event_subject": "Q3783",
       "event_data": {
         "direction": "incoming",
         "properties_requested": [
@@ -3096,6 +3648,42 @@
       }
     },
     {
+      "event_subject": "Q3783",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 359.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q500131",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 375.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
       "event_subject": "Q500131",
       "event_data": {
         "direction": "outgoing",
@@ -3108,7 +3696,25 @@
           "P31": 3,
           "P279": 0
         },
-        "duration_ms": 375.0,
+        "duration_ms": 391.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1223",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 422.0,
         "retry_count": 0,
         "error": null
       }
@@ -3126,25 +3732,25 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 594.0,
+        "duration_ms": 437.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q80061",
+      "event_subject": "Q7191",
       "event_data": {
         "direction": "outgoing",
         "properties_requested": [
           "P31",
           "P279"
         ],
-        "total_neighbors_returned": 3,
+        "total_neighbors_returned": 2,
         "per_property_counts": {
-          "P31": 2,
+          "P31": 1,
           "P279": 1
         },
-        "duration_ms": 547.0,
+        "duration_ms": 500.0,
         "retry_count": 0,
         "error": null
       }
@@ -3162,7 +3768,7 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 750.0,
+        "duration_ms": 437.0,
         "retry_count": 0,
         "error": null
       }
@@ -3182,7 +3788,45 @@
           "P361": 0,
           "P17": 5
         },
-        "duration_ms": 375.0,
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q312",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 5,
+        "per_property_counts": {
+          "P131": 0,
+          "P361": 5,
+          "P17": 0
+        },
+        "duration_ms": 359.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q513",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 2203.0,
         "retry_count": 0,
         "error": null
       }
@@ -3200,7 +3844,43 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 453.0,
+        "duration_ms": 391.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1986",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1986",
+      "event_data": {
+        "direction": "outgoing",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 3,
+          "P279": 0
+        },
+        "duration_ms": 484.0,
         "retry_count": 0,
         "error": null
       }
@@ -3220,7 +3900,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 204.0,
+        "duration_ms": 203.0,
         "retry_count": 0,
         "error": null
       }
@@ -3246,7 +3926,7 @@
       }
     },
     {
-      "event_subject": "Q8021289",
+      "event_subject": "Q28533405",
       "event_data": {
         "direction": "incoming",
         "properties_requested": [
@@ -3258,25 +3938,7 @@
           "P31": 0,
           "P279": 0
         },
-        "duration_ms": 203.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3472263",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 0
-        },
-        "duration_ms": 0.0,
+        "duration_ms": 28578.0,
         "retry_count": 0,
         "error": null
       }
@@ -3294,7 +3956,25 @@
           "P31": 1,
           "P279": 0
         },
-        "duration_ms": 406.0,
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3472263",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 0,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 0
+        },
+        "duration_ms": 484.0,
         "retry_count": 0,
         "error": null
       }
@@ -3311,6 +3991,26 @@
         "per_property_counts": {
           "P31": 1,
           "P279": 0
+        },
+        "duration_ms": 516.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q771",
+      "event_data": {
+        "direction": "incoming",
+        "properties_requested": [
+          "P131",
+          "P361",
+          "P17"
+        ],
+        "total_neighbors_returned": 20,
+        "per_property_counts": {
+          "P131": 13,
+          "P361": 0,
+          "P17": 7
         },
         "duration_ms": 547.0,
         "retry_count": 0,
@@ -3332,65 +4032,7 @@
           "P361": 1,
           "P17": 0
         },
-        "duration_ms": 485.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q49166",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 0
-        },
-        "duration_ms": 594.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q49111",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P131",
-          "P361",
-          "P17"
-        ],
-        "total_neighbors_returned": 20,
-        "per_property_counts": {
-          "P131": 20,
-          "P361": 0,
-          "P17": 0
-        },
-        "duration_ms": 0.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q76",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P131",
-          "P361",
-          "P17"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P131": 0,
-          "P361": 0,
-          "P17": 0
-        },
-        "duration_ms": 406.0,
+        "duration_ms": 1375.0,
         "retry_count": 0,
         "error": null
       }
@@ -3410,7 +4052,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 391.0,
+        "duration_ms": 469.0,
         "retry_count": 0,
         "error": null
       }
@@ -3428,7 +4070,7 @@
           "P31": 0,
           "P279": 0
         },
-        "duration_ms": 406.0,
+        "duration_ms": 531.0,
         "retry_count": 0,
         "error": null
       }
@@ -3448,7 +4090,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 453.0,
+        "duration_ms": 485.0,
         "retry_count": 0,
         "error": null
       }
@@ -3468,7 +4110,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 469.0,
+        "duration_ms": 484.0,
         "retry_count": 0,
         "error": null
       }
@@ -3486,7 +4128,7 @@
           "P31": 0,
           "P279": 0
         },
-        "duration_ms": 391.0,
+        "duration_ms": 453.0,
         "retry_count": 0,
         "error": null
       }
@@ -3504,13 +4146,13 @@
           "P31": 0,
           "P279": 0
         },
-        "duration_ms": 656.0,
+        "duration_ms": 500.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q49111",
+      "event_subject": "Q350",
       "event_data": {
         "direction": "incoming",
         "properties_requested": [
@@ -3524,13 +4166,13 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 375.0,
+        "duration_ms": 625.0,
         "retry_count": 0,
         "error": null
       }
     },
     {
-      "event_subject": "Q8352134",
+      "event_subject": "Q3472263",
       "event_data": {
         "direction": "incoming",
         "properties_requested": [
@@ -3544,7 +4186,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 437.0,
+        "duration_ms": 0.0,
         "retry_count": 0,
         "error": null
       }
@@ -3584,43 +4226,7 @@
           "P361": 0,
           "P17": 0
         },
-        "duration_ms": 703.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q8021289",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 0
-        },
-        "duration_ms": 437.0,
-        "retry_count": 0,
-        "error": null
-      }
-    },
-    {
-      "event_subject": "Q3472263",
-      "event_data": {
-        "direction": "incoming",
-        "properties_requested": [
-          "P31",
-          "P279"
-        ],
-        "total_neighbors_returned": 0,
-        "per_property_counts": {
-          "P31": 0,
-          "P279": 0
-        },
-        "duration_ms": 578.0,
+        "duration_ms": 469.0,
         "retry_count": 0,
         "error": null
       }
