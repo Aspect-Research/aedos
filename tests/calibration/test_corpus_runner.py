@@ -529,16 +529,50 @@ def _run_consistency_check(h: _Harness, case: dict) -> bool:
 
 
 def _run_intervention(h: _Harness, case: dict) -> bool:
-    from aedos.deployment.chat_wrapper import select_intervention
-    from aedos.layer5_result.aggregator import VerificationResult
-    counts = case["input"]["verification_result"]
-    total = counts.get("verified", 0) + counts.get("contradicted", 0) + counts.get("abstained", 0)
-    vr = VerificationResult(
-        claims_extracted=[], per_claim_verdicts={}, per_claim_traces={},
-        aggregate_metadata={"claim_count": total, **counts},
-        audit_log_entries=[], text_input={},
+    """Phase 10.5 Session 2 Item 1 (per-claim intervention): the corpus
+    expresses inputs as verdict counts; the runner synthesizes a
+    `ClaimVerdict` list with that shape and calls `select_interventions`.
+    Expected output: ``{overall: pass_through|intervene|decline,
+    action_counts: {correct: N, abstain: M}}``. The action_counts
+    abstract over the specific claim_ids (the test verifies the *shape*
+    of the intervention plan, not the specific text of generated
+    annotations — annotation text is unit-tested in test_chat_wrapper.py)."""
+    from aedos.deployment.chat_wrapper import (
+        ClaimActionType, select_interventions,
     )
-    return select_intervention(vr).value == case["expected_output"]["intervention_type"]
+    from aedos.layer5_result.aggregator import ClaimVerdict
+    from aedos.layer1_extraction.extractor import Claim
+    from aedos.layer1_extraction.triage import TriageDecision
+
+    counts = case["input"]["verification_result"]
+    v = counts.get("verified", 0)
+    c = counts.get("contradicted", 0)
+    a = counts.get("abstained", 0)
+
+    cvs: list[ClaimVerdict] = []
+    idx = 0
+    for verdict, n in (("verified", v), ("contradicted", c), ("no_grounding_found", a)):
+        for _ in range(n):
+            claim = Claim(
+                claim_id=f"int_c{idx}",
+                subject=f"S{idx}", predicate=f"p{idx}", object=f"O{idx}",
+                polarity=1, source_text="", asserting_party="calibration",
+                triage_decision=TriageDecision.VERIFY,
+            )
+            cvs.append(ClaimVerdict(claim_id=claim.claim_id, claim=claim, verdict=verdict))
+            idx += 1
+
+    plan = select_interventions(cvs)
+    expected = case["expected_output"]
+    if plan.overall.value != expected["overall"]:
+        return False
+    expected_counts = expected.get("action_counts", {})
+    actual_correct = sum(1 for action in plan.per_claim_actions
+                         if action.action_type == ClaimActionType.CORRECT)
+    actual_abstain = sum(1 for action in plan.per_claim_actions
+                         if action.action_type == ClaimActionType.ABSTAIN)
+    return (actual_correct == expected_counts.get("correct", 0)
+            and actual_abstain == expected_counts.get("abstain", 0))
 
 
 def _run_derivation(h: _Harness, case: dict) -> bool:
