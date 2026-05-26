@@ -164,6 +164,60 @@ verb merely implies cooperative action.
 company. Do not populate `participants` or `event_type`.
     - 'The team won the championship' → emit ONE claim. The team is a \
 single named entity; team members are not named.
+
+12. EMPLOYMENT EVENTS — when the verb describes a person STARTING work at \
+an organization, emit the relationship claim with predicate='employed_by' \
+and put the year in valid_from. The starting verb itself is not the \
+predicate.
+    - 'Asa joined Google in 2020' → subject='Asa', predicate='employed_by', \
+object='Google', valid_from='2020'.
+    - 'Asa was hired by Microsoft in 2018' → predicate='employed_by', \
+valid_from='2018'.
+    - 'Asa started at Apple in 2015' / 'Asa started working at Apple in \
+2015' → predicate='employed_by', valid_from='2015'.
+    DO NOT apply Rule 12 when:
+    - The object is a non-employment group (a club, party, gym, team, \
+meeting): use predicate='member_of' instead. 'Asa joined the chess club' \
+→ predicate='member_of', object='the chess club'.
+    - The object is an event/activity ('joined the meeting', 'joined the \
+call'): no employment claim; emit the literal participation claim.
+
+13. EMPLOYMENT TERMINATION — when the verb describes a person ENDING work at \
+an organization, emit the same employment relationship claim with the year \
+in valid_until.
+    - 'Asa left Google in 2024' → subject='Asa', predicate='employed_by', \
+object='Google', valid_until='2024'.
+    - 'Asa quit Microsoft in 2019' → predicate='employed_by', \
+object='Microsoft', valid_until='2019'.
+    - 'Asa resigned from Apple in 2022' / 'Asa departed Apple in 2022' → \
+predicate='employed_by', object='Apple', valid_until='2022'.
+    DO NOT apply Rule 13 when:
+    - 'Left' refers to physical departure ('Asa left the room', 'Asa left \
+Paris'): emit the literal claim, not an employment termination.
+    - The object is a non-employment group ('left the club', 'left the \
+party'): use predicate='member_of' with polarity=0 or with valid_until per \
+the group's semantics.
+
+14. STATE CHANGES on state-bearing subjects (projects, partnerships, \
+marriages, programs, eras, relationships) — when a state-bearing subject \
+"ended/concluded/completed" or "began/started/launched", emit the state \
+claim with predicate='status', object='ended' or 'ongoing'.
+    - 'The project ended in 2024' → subject='The project', \
+predicate='status', object='ended', valid_until='2024'.
+    - 'The partnership concluded in 2019' → predicate='status', \
+object='ended', valid_until='2019'.
+    - 'The program began in 2015' → predicate='status', object='ongoing', \
+valid_from='2015'.
+    A STATE-BEARING subject is one that exists over a time interval and has \
+a current state. The defining clue is that the subject is referenced with \
+"the" + a noun denoting an ongoing thing (project, program, partnership, \
+era, period, initiative, effort).
+    DO NOT apply Rule 14 when:
+    - The subject is a one-time historical event (the war, the ceremony, \
+the summit, the conference): Rule 8 applies — keep the verb as the \
+predicate ('the war ended in 1945' → predicate='ended', valid_until='1945').
+    - The subject is a person undertaking an activity ('Asa started \
+swimming'): emit the literal claim.
 """
 
 
