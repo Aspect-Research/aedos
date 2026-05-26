@@ -65,6 +65,30 @@ def is_given_assertion(verdict: str) -> bool:
     return verdict in GIVEN_ASSERTION_VERDICTS
 
 
+@dataclass(frozen=True)
+class ClaimVerdict:
+    """Per-claim verdict shape consumed by the per-claim intervention layer
+    (Phase 10.5 Session 2 Item 1). Carries the claim and its verdict plus
+    the intervention-relevant metadata the chat-wrapper needs to compose
+    a per-claim annotation. The aggregator builds one of these per claim
+    during `aggregate` and exposes the list as `VerificationResult.claim_verdicts`.
+
+    `abstention_reason` is sourced from `WalkResult.abstention_reason` when
+    the verdict is one of the abstention shapes (`no_grounding_found` or
+    `abstained_given_assertion`); None otherwise.
+
+    `contradicting_value` is deferred to v0.16 — extracting the contradicting
+    grounding value from the trace edges requires per-edge interpretation
+    logic that is out of scope for the v0.15 per-claim intervention
+    plumbing. The chat-wrapper composes a generic correction annotation
+    that references the claim's subject/predicate/object; richer
+    annotations land in v0.16 when the contradicting value is plumbed."""
+    claim_id: str
+    claim: Claim
+    verdict: str
+    abstention_reason: Optional[str] = None
+
+
 @dataclass
 class VerificationResult:
     claims_extracted: list[Claim]
@@ -74,6 +98,12 @@ class VerificationResult:
     audit_log_entries: list[int]
     text_input: dict
     consistency_warnings: list[dict] = field(default_factory=list)
+    # Phase 10.5 Session 2 Item 1 (per-claim intervention): structured
+    # per-claim verdict list for the intervention layer. The dict-based
+    # `per_claim_verdicts` / `per_claim_traces` fields stay (callers and
+    # the audit log consume them); `claim_verdicts` is the additive,
+    # iteration-friendly shape `select_interventions` consumes.
+    claim_verdicts: list["ClaimVerdict"] = field(default_factory=list)
 
 
 # Trace-edge metadata keys that carry a retractable substrate/Tier U row id,
@@ -114,6 +144,7 @@ class Aggregator:
     ) -> VerificationResult:
         per_claim_verdicts: dict[str, str] = {}
         per_claim_traces: dict[str, JustificationTrace] = {}
+        claim_verdicts: list[ClaimVerdict] = []
         consistency_warnings: list[dict] = []
         audit_log_entries: list[int] = []
 
@@ -138,6 +169,12 @@ class Aggregator:
             cid = claim.claim_id
             per_claim_verdicts[cid] = result.verdict
             per_claim_traces[cid] = result.trace
+            claim_verdicts.append(ClaimVerdict(
+                claim_id=cid,
+                claim=claim,
+                verdict=result.verdict,
+                abstention_reason=result.abstention_reason,
+            ))
 
             base_count_bucket = _VERDICT_TO_BASE_COUNT.get(result.verdict)
             if base_count_bucket is not None:
@@ -197,4 +234,5 @@ class Aggregator:
             audit_log_entries=audit_log_entries,
             text_input=text_input or {},
             consistency_warnings=consistency_warnings,
+            claim_verdicts=claim_verdicts,
         )

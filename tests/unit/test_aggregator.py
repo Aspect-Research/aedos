@@ -54,6 +54,49 @@ class TestVerificationResultDataclass:
         )
         assert vr.claims_extracted == []
         assert vr.consistency_warnings == []
+        assert vr.claim_verdicts == []
+
+
+# ---------------------------------------------------------------------------
+# Per-claim structured verdicts (Phase 10.5 Session 2 Item 1)
+# ---------------------------------------------------------------------------
+
+class TestClaimVerdictsField:
+    def test_aggregate_populates_claim_verdicts(self):
+        from aedos.layer5_result.aggregator import ClaimVerdict
+        agg = Aggregator()
+        c1 = _claim("c1", "Obama")
+        c2 = _claim("c2", "Paris")
+        result = agg.aggregate(
+            [c1, c2],
+            [_walk_result("verified"),
+             _walk_result("no_grounding_found", abstention_reason="no_kb_path")],
+        )
+        assert len(result.claim_verdicts) == 2
+        assert all(isinstance(cv, ClaimVerdict) for cv in result.claim_verdicts)
+        assert result.claim_verdicts[0].claim_id == "c1"
+        assert result.claim_verdicts[0].claim is c1
+        assert result.claim_verdicts[0].verdict == "verified"
+        assert result.claim_verdicts[0].abstention_reason is None
+        assert result.claim_verdicts[1].verdict == "no_grounding_found"
+        assert result.claim_verdicts[1].abstention_reason == "no_kb_path"
+
+    def test_claim_verdicts_match_per_claim_verdicts_dict(self):
+        agg = Aggregator()
+        claims = [_claim(f"c{i}") for i in range(3)]
+        results = [_walk_result("verified"),
+                   _walk_result("contradicted"),
+                   _walk_result("verified_given_assertion")]
+        vr = agg.aggregate(claims, results)
+        # Both representations carry the same verdicts; the list is
+        # iteration-friendly, the dict is keyed by claim_id.
+        for cv in vr.claim_verdicts:
+            assert vr.per_claim_verdicts[cv.claim_id] == cv.verdict
+
+    def test_empty_claims_empty_claim_verdicts(self):
+        agg = Aggregator()
+        vr = agg.aggregate([], [])
+        assert vr.claim_verdicts == []
 
 
 # ---------------------------------------------------------------------------
