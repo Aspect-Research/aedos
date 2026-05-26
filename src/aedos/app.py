@@ -135,7 +135,19 @@ async def chat(request: ChatRequest) -> JSONResponse:
     response = _chat_wrapper.respond(request.message, conversation_context=ctx)
     return JSONResponse({
         "final_message": response.final_message,
+        # Phase 10.5 Session 2 Item 1: 3-value top-level
+        # (pass_through / intervene / decline) plus the new per-claim
+        # action list. The 4-value rollup (CORRECT / ABSTAIN) is gone;
+        # callers that need per-claim detail read `per_claim_actions`.
         "intervention_type": response.intervention_type,
+        "per_claim_actions": [
+            {
+                "claim_id": a.claim_id,
+                "action_type": a.action_type.value,
+                "annotation": a.annotation,
+            }
+            for a in response.intervention_plan.per_claim_actions
+        ],
         "verification_id": response.verification_id,
     })
 

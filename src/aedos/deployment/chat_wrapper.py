@@ -9,56 +9,167 @@ from typing import Any, Optional
 from ..layer1_extraction.extractor import ExtractionContext
 from ..layer1_extraction.triage import TriageDecision
 from ..layer4_sources.walker import VerificationContext
-from ..layer5_result.aggregator import VerificationResult
+from ..layer5_result.aggregator import (
+    ClaimVerdict,
+    VerificationResult,
+    base_verdict_of,
+)
 from ..llm.client import ChatMessage
 
 
 class InterventionType(str, Enum):
+    """Top-level intervention shape for the chat-wrapper response.
+
+    Phase 10.5 Session 2 Item 1 redesign: the previous 4-value enum
+    (PASS_THROUGH / ABSTAIN / CORRECT / DECLINE) rolled multiple
+    claim-level verdicts into a single response-level type, silently
+    dropping per-claim information when a draft had mixed problems
+    (one contradicted AND one abstained → CORRECT only, abstain
+    invisible). The new 3-value enum separates the *shape* of the
+    response (pass-through, per-claim intervention, refuse) from the
+    *per-claim actions* (carried in `InterventionPlan.per_claim_actions`).
+    """
     PASS_THROUGH = "pass_through"
-    ABSTAIN = "abstain"
-    CORRECT = "correct"
+    INTERVENE = "intervene"
     DECLINE = "decline"
+
+
+class ClaimActionType(str, Enum):
+    """Per-claim action shape. Each problematic claim gets one action of
+    one of these types when the overall intervention is INTERVENE."""
+    CORRECT = "correct"
+    ABSTAIN = "abstain"
+
+
+@dataclass(frozen=True)
+class ClaimAction:
+    """One per-claim intervention. `annotation` is the user-facing text
+    the chat-wrapper composes into the response."""
+    claim_id: str
+    action_type: ClaimActionType
+    annotation: str
+
+
+@dataclass(frozen=True)
+class InterventionPlan:
+    """The full intervention shape: top-level direction + per-claim actions
+    (empty when overall is PASS_THROUGH or DECLINE)."""
+    overall: InterventionType
+    per_claim_actions: tuple[ClaimAction, ...] = ()
 
 
 @dataclass
 class ChatResponse:
     final_message: str
-    intervention_type: str
+    intervention_plan: InterventionPlan
     verification_result: VerificationResult
     verification_id: str
     draft_message: str = ""
 
-
-def select_intervention(vr: VerificationResult) -> InterventionType:
-    """Deterministic intervention selection from VerificationResult."""
-    meta = vr.aggregate_metadata
-    total = meta.get("claim_count", 0)
-    if total == 0:
-        return InterventionType.PASS_THROUGH
-
-    contradicted = meta.get("contradicted", 0)
-    abstained = meta.get("abstained", 0)
-
-    if contradicted + abstained > total * 0.5:
-        return InterventionType.DECLINE
-    if contradicted > 0:
-        return InterventionType.CORRECT
-    if abstained > 0:
-        return InterventionType.ABSTAIN
-    return InterventionType.PASS_THROUGH
+    @property
+    def intervention_type(self) -> str:
+        """Backwards-compatibility accessor: returns the top-level
+        intervention value (one of pass_through / intervene / decline).
+        Callers that need the per-claim actions read `intervention_plan`
+        directly."""
+        return self.intervention_plan.overall.value
 
 
-def build_response(draft: str, intervention_type: InterventionType, vr: VerificationResult) -> str:
-    """Build the final response text based on intervention type."""
-    if intervention_type == InterventionType.PASS_THROUGH:
+def _format_correction(cv: ClaimVerdict) -> str:
+    """Generic correction annotation for a contradicted claim. v0.15 surfaces
+    the claim's S/P/O without the contradicting grounding value; v0.16
+    enrichment plumbs the contradicting value out of the trace edges
+    (deferred per the Session 2 design)."""
+    polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
+    return (
+        f"Aedos found a contradicting source for: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
+    )
+
+
+def _format_abstention(cv: ClaimVerdict) -> str:
+    """Generic abstention annotation for a claim without grounding. The
+    `abstention_reason` (if present) gives operators a hook; the
+    user-facing text remains concise."""
+    polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
+    return (
+        f"Aedos could not verify: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
+    )
+
+
+def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan:
+    """Deterministic per-claim intervention selection.
+
+    Phase 10.5 Session 2 Item 1 (per-claim intervention) replaces the
+    previous count-based `select_intervention` with a per-claim
+    structure. The policy:
+
+    - Empty claim list → PASS_THROUGH (nothing to verify, nothing to
+      intervene on; a draft with no extracted claims goes to the user
+      unchanged).
+    - All claims have a `verified`-family base verdict → PASS_THROUGH.
+    - At least one problematic claim, AND at least one verified claim
+      OR only one problematic claim → INTERVENE with per-claim
+      annotations for each problematic claim.
+    - Zero verified claims AND ≥ 2 problematic claims → DECLINE. This
+      is the genuinely-dominated case: the draft contains nothing the
+      system can vouch for, and per-claim annotations would amount to
+      a long list of problems against zero verified content. The
+      refusal is the honest response. (The previous policy escalated
+      to DECLINE at the >50% problematic threshold including the
+      single-problematic-claim case, which dropped useful per-claim
+      annotations on the floor.)
+
+    Dual-designation verdicts (`*_given_assertion`) collapse to their
+    base verdict via `base_verdict_of` before the policy fires; the
+    `_given_assertion` qualifier is observability metadata, not a
+    user-facing distinction.
+    """
+    if not claim_verdicts:
+        return InterventionPlan(InterventionType.PASS_THROUGH)
+
+    actions: list[ClaimAction] = []
+    verified_count = 0
+    for cv in claim_verdicts:
+        base = base_verdict_of(cv.verdict)
+        if base == "verified":
+            verified_count += 1
+            continue
+        if base == "contradicted":
+            actions.append(ClaimAction(
+                claim_id=cv.claim_id,
+                action_type=ClaimActionType.CORRECT,
+                annotation=_format_correction(cv),
+            ))
+        else:  # no_grounding_found (and its dual abstained_given_assertion)
+            actions.append(ClaimAction(
+                claim_id=cv.claim_id,
+                action_type=ClaimActionType.ABSTAIN,
+                annotation=_format_abstention(cv),
+            ))
+
+    if not actions:
+        return InterventionPlan(InterventionType.PASS_THROUGH)
+    if verified_count == 0 and len(actions) >= 2:
+        return InterventionPlan(InterventionType.DECLINE)
+    return InterventionPlan(InterventionType.INTERVENE, tuple(actions))
+
+
+def build_response(draft: str, plan: InterventionPlan) -> str:
+    """Compose the user-facing response from the draft + intervention plan.
+
+    Format A (Phase 10.5 Session 2 Item 1c): pass-through returns the
+    draft unchanged; decline returns a generic refusal; intervene
+    returns the draft followed by an "Aedos verification notes:"
+    section listing each per-claim annotation as a bullet."""
+    if plan.overall == InterventionType.PASS_THROUGH:
         return draft
-    if intervention_type == InterventionType.ABSTAIN:
-        return draft + "\n\n[Note: some claims could not be verified.]"
-    if intervention_type == InterventionType.CORRECT:
-        return draft + "\n\n[Note: some claims were corrected based on verified sources.]"
-    if intervention_type == InterventionType.DECLINE:
+    if plan.overall == InterventionType.DECLINE:
         return "I'm unable to provide a response I cannot verify."
-    return draft
+    # INTERVENE
+    notes = "\n".join(f"- {a.annotation}" for a in plan.per_claim_actions)
+    return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
 class ChatWrapper:
@@ -173,18 +284,18 @@ class ChatWrapper:
             text_input={"message": user_message, "draft": draft},
         )
 
-        # 5. Intervention selection
-        intervention = select_intervention(vr)
+        # 5. Intervention selection (per-claim plan)
+        plan = select_interventions(vr.claim_verdicts)
 
-        # 6. Build response
-        final = build_response(draft, intervention, vr)
+        # 6. Build response (Format A: draft + per-claim notes)
+        final = build_response(draft, plan)
 
         verification_id = str(uuid.uuid4())
         self._verification_store[verification_id] = vr
 
         return ChatResponse(
             final_message=final,
-            intervention_type=intervention.value,
+            intervention_plan=plan,
             verification_result=vr,
             verification_id=verification_id,
             draft_message=draft,
