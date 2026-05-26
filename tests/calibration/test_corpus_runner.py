@@ -73,9 +73,19 @@ def _load_corpus(name: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class _Harness:
-    """Lazily builds a live Aedos pipeline for one corpus run."""
+    """Lazily builds a live Aedos pipeline for one corpus run.
 
-    def __init__(self):
+    Phase H Cluster 3 (2026-05-26): `seeded` controls whether the
+    in-memory DB loads `seeds/predicate_translation.json` at open
+    time. Seeded mode measures the in-vocabulary path production
+    deployments take when the extractor produces a known predicate;
+    cold-start mode (the default; matches pre-Cluster-3 behavior)
+    measures the LLM oracle's generation quality on novel
+    predicates. The two are reported separately per the dual-
+    measurement framing (docs/phase_H/cluster_3_validation.md).
+    """
+
+    def __init__(self, seeded: bool = False):
         # F-040 residual: an earlier F3 commit tried to load `.env` here
         # so the operator wouldn't have to source it in shell. That
         # broke unit tests that construct `_ComparisonHarness(_Harness)`
@@ -88,6 +98,7 @@ class _Harness:
         # call `aedos.utils.env.load_dotenv_if_present()` explicitly from
         # their entry points (app.py lifespan, benchmark.py __main__,
         # phase_e_comparison's _load_env).
+        self._seeded = seeded
         self._db = None
         self._client = None
         self._kb = None
@@ -100,7 +111,7 @@ class _Harness:
     def db(self):
         if self._db is None:
             from aedos.database import open_memory_db
-            self._db = open_memory_db()
+            self._db = open_memory_db(load_seeds=self._seeded)
         return self._db
 
     @property

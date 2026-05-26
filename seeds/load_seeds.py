@@ -5,113 +5,40 @@ Usage:
     python seeds/load_seeds.py [--db-path PATH]
 
 Defaults to $AEDOS_DB_PATH or aedos.db in the current directory.
-The load is idempotent: existing rows with the same aedos_predicate are
-replaced (INSERT OR REPLACE), preserving row semantics.
+The load is idempotent: existing rows matching (aedos_predicate,
+kb_namespace) are replaced (INSERT OR REPLACE), preserving row
+semantics.
+
+Phase H Cluster 3 (2026-05-26): the loading logic moved into
+`src/aedos/seed_loader.py` so `database.create_schema(load_seeds=True)`
+can auto-load at DB-open time. This script remains the CLI entry
+point for explicit operator-initiated seed loads.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
-_SEEDS_FILE = Path(__file__).parent / "predicate_translation.json"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+from aedos.seed_loader import load_seeds_into_connection  # noqa: E402
+
 _SEED_VERSION_FILE = Path(__file__).parent / "SEED_VERSION.txt"
-
-_REQUIRED_FIELDS = {
-    "aedos_predicate",
-    "object_type",
-    "user_subject_required",
-    "routing_hint",
-    "kb_namespace",
-    "kb_property",
-    "slot_to_qualifier",
-    "single_valued",
-    "reason",
-}
-
-_VALID_ROUTING_HINTS = {"user_authoritative", "kb_resolvable", "python", "abstain"}
-
-
-def _validate_entry(entry: dict, idx: int) -> None:
-    missing = _REQUIRED_FIELDS - entry.keys()
-    if missing:
-        raise ValueError(f"Entry {idx}: missing fields {missing}")
-    if entry["routing_hint"] not in _VALID_ROUTING_HINTS:
-        raise ValueError(
-            f"Entry {idx}: invalid routing_hint {entry['routing_hint']!r}"
-        )
-    if not entry.get("aedos_predicate"):
-        raise ValueError(f"Entry {idx}: empty aedos_predicate")
 
 
 def load_seeds(db_path: str) -> int:
-    seeds_data = json.loads(_SEEDS_FILE.read_text(encoding="utf-8"))
-    now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    loaded = 0
     try:
-        for idx, entry in enumerate(seeds_data):
-            _validate_entry(entry, idx)
-            slot_json = (
-                json.dumps(entry["slot_to_qualifier"])
-                if entry["slot_to_qualifier"] is not None
-                else None
-            )
-            # Phase G D33 (2026-05-23): seed pack may carry subject_entity_types
-            # / object_entity_types. Absence (or None) means no filtering for
-            # that slot; the wikidata adapter no-ops the filter when empty.
-            subject_types = entry.get("subject_entity_types")
-            object_types = entry.get("object_entity_types")
-            subject_types_json = (
-                json.dumps(subject_types) if subject_types else None
-            )
-            object_types_json = (
-                json.dumps(object_types) if object_types else None
-            )
-            kb_namespace = entry.get("kb_namespace")
-            # SQLite NULL != NULL in UNIQUE checks, so INSERT OR REPLACE won't
-            # deduplicate rows where kb_namespace IS NULL. Delete first instead.
-            if kb_namespace is None:
-                conn.execute(
-                    "DELETE FROM predicate_translation WHERE aedos_predicate = ? AND kb_namespace IS NULL",
-                    (entry["aedos_predicate"],),
-                )
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO predicate_translation
-                    (aedos_predicate, object_type, user_subject_required, distinct_slots,
-                     routing_hint, kb_namespace, kb_property, slot_to_qualifier,
-                     single_valued, subject_entity_types, object_entity_types,
-                     reason, created_at, used_count, last_consulted_at, retracted_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
-                """,
-                (
-                    entry["aedos_predicate"],
-                    entry["object_type"],
-                    int(entry["user_subject_required"]),
-                    entry.get("distinct_slots"),
-                    entry["routing_hint"],
-                    kb_namespace,
-                    entry.get("kb_property"),
-                    slot_json,
-                    int(entry["single_valued"]),
-                    subject_types_json,
-                    object_types_json,
-                    entry.get("reason", ""),
-                    now,
-                ),
-            )
-            loaded += 1
-        conn.commit()
+        n = load_seeds_into_connection(conn)
     finally:
         conn.close()
-    return loaded
+    return n
 
 
 def main() -> None:
