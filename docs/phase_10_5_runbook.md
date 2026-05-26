@@ -199,15 +199,40 @@ loads each corpus, runs every case through the responsible component, computes
 per-corpus accuracy, and asserts it against the threshold below — the runner
 fails the test if accuracy is under threshold, so no manual grading is needed.
 
-**Substrate state.** The runner uses an in-memory database
-(`open_memory_db()`) per case-suite — **NOT** the `$AEDOS_DB_PATH`
-database populated by Steps 2 and 3. This is intentional: calibration
-measures the LLM's *cold-start* substrate-row generation quality, so
-seeded rows would mask the signal. Every predicate the corpus references
-triggers an inline `predicate_translation` LLM call; that latency is the
-"cold-start expensive" path the runbook's runtime estimates account for.
-Step 2 and Step 3's substrate populate the Step 6 benchmark, not this
-step (see "What `AEDOS_DB_PATH` affects" in Step 1).
+**Substrate state — dual-measurement framing (Phase H Cluster 3, 2026-05-26).**
+The corpus runner's `_Harness` accepts a `seeded: bool` parameter
+that controls whether `open_memory_db()` loads the seed pack at
+construction time. Phase 10.5 runs each corpus in BOTH modes per the
+dual-measurement discipline:
+
+- **Seeded mode (primary).** `_Harness(seeded=True)`. The seed pack
+  populates `predicate_translation` before the first case fires;
+  walker's Stage 1 lookup hits the seeded metadata directly.
+  Production deployments behave this way for predicates in the
+  seeded vocabulary. The number reported here is the canonical
+  Aedos v0.15 measurement for in-vocabulary cases.
+- **Cold-start mode (secondary).** `_Harness(seeded=False)`. The
+  pre-Cluster-3 default — every predicate triggers a cold LLM
+  consultation. This measures the system's robustness on novel
+  predicates the seed pack doesn't anticipate. Production
+  deployments behave this way the first time they see a new
+  predicate; subsequent calls cache the LLM's judgment.
+
+The two numbers measure different system properties; neither is
+"the" Aedos number alone. Phase 10.5's release-decision criteria
+address both. A large seeded-vs-cold-start gap suggests v0.16 work
+on the predicate-translation oracle; a small gap suggests the LLM
+oracle is doing well on novel vocabulary and the seed pack is
+mostly a performance/determinism optimization.
+
+Step 2 and Step 3's `$AEDOS_DB_PATH` substrate populate the Step 6
+benchmark, not this step (see "What `AEDOS_DB_PATH` affects" in
+Step 1).
+
+(The D37 v0.16 item — "honor `AEDOS_DB_PATH` from the runner" — was
+made obsolete by Cluster 3's explicit `seeded` parameter on the
+harness; Phase 10.5 controls the measurement mode at the runner
+level rather than via env-var sleight-of-hand.)
 
 Gating:
 - The runner is collected only with `--run-calibration`.
@@ -228,19 +253,29 @@ truth) by `tests/unit/test_runbook_thresholds.py`, which fails CI if the
 two diverge. The per-Phase sub-sections below restate the same thresholds as
 operator narrative.
 
-| Corpus (`-k` filter) | Runner threshold | Plan bar |
-|---|---|---|
-| `extraction_corpus` | 90% | ≥ 90% |
-| `predicate_metadata_corpus` | 85% | ≥ 85% |
-| `temporal_scope_corpus` | 90% | extraction ≥ 90%, lookup 100% |
-| `entity_resolution_corpus` | 90% | ≥ 90% (live KB) |
-| `kb_mapping_corpus` | 90% | ≥ 90% (live KB) |
-| `subsumption_corpus` | 80% | ≥ 90% KB-mediated, ≥ 80% substrate |
-| `predicate_distribution_corpus` | 85% | ≥ 85% |
-| `derivation_corpus` | 80% | ≥ 80% (live KB) |
-| `python_verification_corpus` | 85% | ≥ 85% |
-| `consistency_check_corpus` | 100% | 100% detection + circuit breaker |
-| `intervention_corpus` | 90% | ≥ 90% |
+| Corpus (`-k` filter) | Runner threshold | Plan bar | Dual-measurement? |
+|---|---|---|---|
+| `extraction_corpus` | 90% | ≥ 90% | no (no substrate dependence) |
+| `predicate_metadata_corpus` | 85% | ≥ 85% | no (this corpus IS the cold-start oracle test) |
+| `temporal_scope_corpus` | 90% | extraction ≥ 90%, lookup 100% | no |
+| `entity_resolution_corpus` | 90% | ≥ 90% (live KB) | yes |
+| `kb_mapping_corpus` | 90% | ≥ 90% (live KB) | yes |
+| `subsumption_corpus` | 80% | ≥ 90% KB-mediated, ≥ 80% substrate | no (subsumption rows seeded per-case) |
+| `predicate_distribution_corpus` | 85% | ≥ 85% | no (this corpus IS the cold-start oracle test) |
+| `derivation_corpus` | 80% | ≥ 80% (live KB) | **yes — primary** |
+| `python_verification_corpus` | 85% | ≥ 85% | no |
+| `consistency_check_corpus` | 100% | 100% detection + circuit breaker | no (self-contained scenarios) |
+| `intervention_corpus` | 90% | ≥ 90% | no |
+
+"Dual-measurement" indicates the corpus is run in both seeded
+(`_Harness(seeded=True)`) and cold-start (`_Harness(seeded=False)`)
+modes per Cluster 3's framing. `derivation_corpus` is the primary
+dual-measurement target — its multi-hop walker depends on
+`predicate_translation` substrate at every Stage-1-or-3 lookup, so
+the seeded-vs-cold-start contrast is most informative there. The
+entity_resolution and kb_mapping corpora also benefit but their
+predicate-metadata dependence is bounded to a single oracle
+consultation per case, so the contrast is smaller.
 
 ### Phase 1 — Extraction corpus
 
@@ -330,9 +365,34 @@ py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "su
 py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "derivation_corpus"
 ```
 
-**Expected runtime:** 30-90 minutes (50 cases; multi-hop walks).
+**Expected runtime:** 30-90 minutes (50 cases; multi-hop walks) per mode.
 
-**Acceptance threshold:** ≥ 80% (live KB).
+**Acceptance threshold:** ≥ 80% (live KB) for the seeded mode (primary).
+Cold-start mode is reported as the secondary measurement; no separate
+ship-gate threshold — the cold-start number's role is to characterize
+the cold-start LLM oracle's robustness on novel vocabulary and to
+inform v0.16 priority on D56 (oracle calibration iteration).
+
+**Dual-measurement.** Run the corpus in BOTH modes per Phase H
+Cluster 3's framing. The harness wrapper at
+`scripts/cluster_3_validation.py` runs each mode and emits a
+per-mode JSON; the runbook's release-decision data records both
+numbers with a range (D49 variance discipline, 2-3 runs per mode):
+
+```bash
+# Seeded mode (primary, the v0.15 in-vocabulary measurement)
+py scripts/cluster_3_validation.py --mode seeded --runs 3
+# Cold-start mode (secondary)
+py scripts/cluster_3_validation.py --mode cold-start --runs 3
+# Or both in one invocation (sequential)
+py scripts/cluster_3_validation.py --mode both --runs 3
+```
+
+Report the seeded median + range as the primary derivation_corpus
+number; report the cold-start median + range alongside with explicit
+context "cold-start (novel-vocabulary) measurement, secondary." If
+the seeded-vs-cold-start gap is large (>15pp), capture it in the
+release narrative and flag for v0.16 D56.
 
 ### Phase 7 — Python verification corpus
 
@@ -374,9 +434,16 @@ py -m pytest tests/calibration/test_corpus_runner.py -q --run-calibration -k "in
 
 **Purpose:** Verify correctness on a fresh substrate with no seeds loaded.
 
+Phase H Cluster 3 (2026-05-26): the cold-start mode is now also
+exercised systematically by Step 4's calibration corpora via
+`scripts/cluster_3_validation.py --mode cold-start`. This standalone
+zero-seed test is the smaller 10-claim probe focused on
+first-claim latency; the corpus-runner cold-start is the broader
+accuracy measurement.
+
 ```bash
-# Initialize a separate zero-seed database
-py -c "from aedos.database import open_db; open_db('aedos_zero_seed.db')"
+# Initialize a separate zero-seed database (load_seeds=False)
+py -c "from aedos.database import open_db; open_db('aedos_zero_seed.db', load_seeds=False)"
 AEDOS_DB_PATH=aedos_zero_seed.db py -m pytest tests/cold_start/ -v
 ```
 
