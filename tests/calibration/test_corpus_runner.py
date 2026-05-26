@@ -577,15 +577,17 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
     # then fires correctly when the case's extracted claim contradicts
     # one of them.
     #
-    # Phase H Cluster 3 step 7 (2026-05-26): pass `bypass_normalizer=True`
-    # for seed writes. The corpus author already provides canonical
-    # subject / object values; running the Wikipedia normalizer over
-    # `source_text='seed'` produced subtly different canonical forms
-    # than the subsequent extractor's promotion writes whose source_text
-    # was the actual claim text — two rows resulted for the same intended
-    # subject, and the walker matched the asserted_unverified promotion
-    # row instead of the externally_verified seed (der_revision_004
-    # ceiling).
+    # Phase H Cluster 3 step 7 fixup (2026-05-26): pass the case's
+    # actual text as source_text to the seed writes so the Wikipedia
+    # normalizer sees the same context the extractor's promotion will
+    # see. Pre-fixup, seed writes passed source_text='seed' which
+    # produced a different normalizer output than the extractor's
+    # promotion writes whose source_text was the actual claim text;
+    # two rows resulted for the same intended subject, and the walker
+    # matched the asserted_unverified promotion row instead of the
+    # externally_verified seed (der_revision_003/004 ceilings). Sharing
+    # source_text makes both writes canonicalize identically.
+    seed_source_text = inp.get("text") or "seed"
     for key in ("tier_u", "tier_u_prior"):
         entries = inp.get(key) or []
         if isinstance(entries, dict):
@@ -594,12 +596,12 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
             tier_u.write(
                 Claim(
                     claim_id="seed", subject=e["subject"], predicate=e["predicate"],
-                    object=e["object"], polarity=e.get("polarity", 1), source_text="seed",
+                    object=e["object"], polarity=e.get("polarity", 1),
+                    source_text=seed_source_text,
                     asserting_party="calibration", triage_decision=TriageDecision.VERIFY,
                     valid_from=e.get("valid_from"),
                 ),
                 status="externally_verified",
-                bypass_normalizer=True,
             )
     # Seed subsumption rows from taxonomic context_premises.
     for prem in inp.get("context_premises") or []:
