@@ -56,7 +56,7 @@ def _ctx():
 
 
 class _MockTierU:
-    def lookup(self, claim, current_time=None):
+    def lookup(self, claim, current_time=None, exclude_row_ids=None):
         return LookupResult(found=False)
 
     def lookup_object_conflict(self, claim, current_time=None):

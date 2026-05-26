@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Optional
 from pathlib import Path
 
 import pytest
@@ -575,6 +576,16 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
     # `status='externally_verified'`. The §"KB wins" cross-source rule
     # then fires correctly when the case's extracted claim contradicts
     # one of them.
+    #
+    # Phase H Cluster 3 step 7 (2026-05-26): pass `bypass_normalizer=True`
+    # for seed writes. The corpus author already provides canonical
+    # subject / object values; running the Wikipedia normalizer over
+    # `source_text='seed'` produced subtly different canonical forms
+    # than the subsequent extractor's promotion writes whose source_text
+    # was the actual claim text — two rows resulted for the same intended
+    # subject, and the walker matched the asserted_unverified promotion
+    # row instead of the externally_verified seed (der_revision_004
+    # ceiling).
     for key in ("tier_u", "tier_u_prior"):
         entries = inp.get(key) or []
         if isinstance(entries, dict):
@@ -588,6 +599,7 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
                     valid_from=e.get("valid_from"),
                 ),
                 status="externally_verified",
+                bypass_normalizer=True,
             )
     # Seed subsumption rows from taxonomic context_premises.
     for prem in inp.get("context_premises") or []:
@@ -652,7 +664,20 @@ def _run_derivation(h: _Harness, case: dict) -> bool:
             trace=JustificationTrace(root=TraceNode("claim")),
         )
     else:
-        result = walker.walk(claims[0], ctx)
+        # Phase H Cluster 3 step 7 (2026-05-26): exclude the just-promoted
+        # row from the walker's Stage 1 lookup so polarity/object-conflict
+        # belief-revision paths can fire against priors. Idempotent
+        # promotions don't get filtered — the row pre-dates this walk's
+        # promotion attempt, so the walker should still match it.
+        excluded: Optional[set[int]] = None
+        wr = primary_promotion.write_result
+        if (
+            primary_promotion.tier_u_row_id is not None
+            and wr is not None
+            and not wr.was_idempotent
+        ):
+            excluded = {primary_promotion.tier_u_row_id}
+        result = walker.walk(claims[0], ctx, excluded_tier_u_row_ids=excluded)
     expected_verdict = expected.get("verdict")
     # Phase H Cluster 2 step 5: the verdict set is now six-way (three
     # base + three *_given_assertion). The corpus uses dual designations
