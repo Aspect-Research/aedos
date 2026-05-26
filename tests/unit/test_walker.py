@@ -63,7 +63,7 @@ class MockTierU:
         self._found = found
         self._historical = historical_only
 
-    def lookup(self, claim, current_time=None):
+    def lookup(self, claim, current_time=None, exclude_row_ids=None):
         return LookupResult(found=self._found, historical_only=self._historical)
 
     def lookup_object_conflict(self, claim, current_time=None):

@@ -183,7 +183,25 @@ class Walker:
         claim: Claim,
         context: VerificationContext,
         budget: Optional[WalkerBudget] = None,
+        excluded_tier_u_row_ids: Optional[set[int]] = None,
     ) -> WalkResult:
+        """Verify `claim` against the three typed sources of belief.
+
+        Phase H Cluster 3 step 7 (2026-05-26): `excluded_tier_u_row_ids`
+        lets the caller suppress specific Tier U rows from the lookup —
+        used by the promote-then-walk corpus runner / chat-wrapper to
+        prevent the walker from matching the claim's own freshly-promoted
+        asserted_unverified row at Stage 1. With the row filtered out,
+        the polarity-conflict and object-conflict belief-revision paths
+        in `_direct_lookup` become reachable for cases like
+        `der_revision_003` ("Asa is not a student") where the corpus
+        relies on the walker finding the prior of opposite polarity.
+        Empty / None means no filtering (pre-step-7 behavior; idempotent
+        promotions don't get filtered because the row pre-dates this
+        walk's promotion attempt — those cases the walker should still
+        match).
+        """
+        self._excluded_tier_u_row_ids: set[int] = excluded_tier_u_row_ids or set()
         if budget is None:
             # Build a budget from the Walker's config-driven defaults
             # (F3 §5.1). Each field falls back to the dataclass default
@@ -338,7 +356,15 @@ class Walker:
         llm_delta = 0
 
         # Tier U lookup (positive match)
-        tier_u_result = self._tier_u.lookup(node, current_time=context.current_time)
+        # Phase H Cluster 3 step 7: filter out the walk's own promoted row
+        # so polarity/object-conflict belief-revision paths can fire when
+        # the prior is in Tier U but has a different polarity / object
+        # than the just-promoted claim.
+        tier_u_result = self._tier_u.lookup(
+            node,
+            current_time=context.current_time,
+            exclude_row_ids=getattr(self, "_excluded_tier_u_row_ids", None) or None,
+        )
         if tier_u_result.found:
             # Defensive: a mock TierU may report `found=True` without a
             # populated rows list. Fall back to the asserted_unverified
@@ -403,7 +429,11 @@ class Walker:
         # polarity for the same (party, subject, predicate, object) — the
         # authoritative prior contradicts the claim.
         flipped = _claim_from_parts(node, polarity=1 - node.polarity)
-        flipped_result = self._tier_u.lookup(flipped, current_time=context.current_time)
+        flipped_result = self._tier_u.lookup(
+            flipped,
+            current_time=context.current_time,
+            exclude_row_ids=getattr(self, "_excluded_tier_u_row_ids", None) or None,
+        )
         if flipped_result.found:
             flipped_row = flipped_result.rows[0] if flipped_result.rows else {}
             flipped_status = flipped_row.get("status", "asserted_unverified")

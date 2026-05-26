@@ -94,6 +94,7 @@ class TierU:
         claim: Claim,
         source_context: Optional[dict] = None,
         status: str = "asserted_unverified",
+        bypass_normalizer: bool = False,
     ) -> WriteResult:
         """Write claim to Tier U.
 
@@ -137,20 +138,55 @@ class TierU:
         # canonical form, so cross-utterance references to the same entity
         # collapse to one row. When the normalizer is not wired the
         # canonical form equals the surface form and behavior is unchanged.
-        subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
-        object_canonical = self._normalize_slot(claim.object, claim, "object")
+        #
+        # Phase H Cluster 3 step 7 (2026-05-26): `bypass_normalizer=True`
+        # skips the Wikipedia normalizer for callers that already know
+        # the canonical form (corpus runner seed writes; load_seeds; any
+        # explicit operator seeding). Pre-Cluster-3-step-7 the seed write
+        # passed claim.source_text='seed', which produced subtly different
+        # canonical forms than the extractor's subsequent promotion writes
+        # whose source_text was the actual claim text — two rows resulted
+        # for the same intended subject and the walker matched the
+        # asserted_unverified promotion row instead of the externally_verified
+        # seed (der_revision_004 ceiling).
+        if bypass_normalizer:
+            subject_canonical = claim.subject
+            object_canonical = claim.object
+        else:
+            subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
+            object_canonical = self._normalize_slot(claim.object, claim, "object")
 
-        # Idempotency: exact match on asserting_party + subject + predicate + object + polarity
-        existing = self._db.execute(
-            """SELECT id FROM tier_u
+        # Idempotency: exact match on asserting_party + subject + predicate +
+        # object + polarity + scope (valid_from, valid_until). Phase H Cluster
+        # 3 step 7 (2026-05-26): scope is now part of the idempotency key.
+        # Pre-step-7 the idempotency check ignored scope, so a new claim with
+        # a different valid_from than a prior row was silently treated as a
+        # no-op write — `der_revision_006` ("Asa joined Google in 2020" with
+        # prior employed_by valid_from=2019) hit this path and the walker
+        # returned `verified` (matching the prior) instead of detecting the
+        # scope conflict. Now the new write is recognized as scope-conflicting
+        # and routed through the §"KB wins" mechanism (when the prior is
+        # externally_verified) or written as a new row that the walker can
+        # surface as a belief revision.
+        existing_rows = self._db.execute(
+            """SELECT id, status, valid_from, valid_until FROM tier_u
                WHERE asserting_party=? AND subject=? AND predicate=? AND object=?
                AND polarity=? AND retracted_at IS NULL
-               ORDER BY id LIMIT 1""",
+               ORDER BY id""",
             (claim.asserting_party, subject_canonical, claim.predicate,
              object_canonical, claim.polarity),
-        ).fetchone()
-        if existing is not None:
-            return WriteResult(row_id=existing["id"], was_idempotent=True)
+        ).fetchall()
+        # Truly idempotent: matching key AND matching scope.
+        for r in existing_rows:
+            if (
+                r["valid_from"] == claim.valid_from
+                and r["valid_until"] == claim.valid_until
+            ):
+                return WriteResult(row_id=r["id"], was_idempotent=True)
+        # Same key but different scope → scope_conflict candidates. If any
+        # is externally_verified, the §"KB wins" mechanism fires the same
+        # way it does for object_conflict / direct_negation closures.
+        scope_conflict_rows = list(existing_rows)
 
         # (a) Direct negation: a prior row with the SAME object at the opposite
         #     polarity. Closed regardless of predicate cardinality.
@@ -201,6 +237,19 @@ class TierU:
                         closed_row_ids.append(r["id"])
             else:
                 parallel_assertion = True
+
+        # Phase H Cluster 3 step 7 (2026-05-26): scope_conflict closure.
+        # A prior row with the SAME key (subject, predicate, object, polarity)
+        # but a different scope (valid_from / valid_until) is a temporal
+        # contradiction — the asserting party previously stated the relation
+        # began/ended at one time and now states a different one. Closes the
+        # prior on asserted_unverified; defers to §"KB wins" on
+        # externally_verified.
+        for r in scope_conflict_rows:
+            if r["status"] == "externally_verified":
+                cross_source_conflict_ids.append(r["id"])
+            else:
+                closed_row_ids.append(r["id"])
 
         # If §"KB wins" fires, override the requested status. The new row
         # is still written (audit trail of what the user said) but flagged
@@ -305,13 +354,23 @@ class TierU:
         self,
         claim: Claim,
         current_time: Optional[str] = None,
+        exclude_row_ids: Optional[set[int]] = None,
     ) -> LookupResult:
-        """Three-stage lookup against Tier U rows."""
+        """Three-stage lookup against Tier U rows.
+
+        Phase H Cluster 3 step 7 (2026-05-26): `exclude_row_ids` lets the
+        caller filter out specific rows from the lookup — used by the
+        walker to skip the row written by the current walk's own promotion,
+        so the polarity-conflict / object-conflict belief-revision paths
+        become reachable even when promote-then-walk would otherwise let
+        the walker match its own freshly-written assertion at Stage 1.
+        Empty / None means no filtering (pre-step-7 behavior).
+        """
         if current_time is None:
             current_time = _NOW()
 
         # Stage 1: literal match
-        result = self._stage1(claim, current_time)
+        result = self._stage1(claim, current_time, exclude_row_ids=exclude_row_ids)
         if result.found:
             return result
 
@@ -513,12 +572,18 @@ class TierU:
         except Exception:
             return False
 
-    def _stage1(self, claim: Claim, current_time: str) -> LookupResult:
+    def _stage1(
+        self,
+        claim: Claim,
+        current_time: str,
+        exclude_row_ids: Optional[set[int]] = None,
+    ) -> LookupResult:
         subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
         object_canonical = self._normalize_slot(claim.object, claim, "object")
         rows = self._query_current(
             claim.asserting_party, subject_canonical, claim.predicate,
             object_canonical, claim.polarity, current_time,
+            exclude_row_ids=exclude_row_ids,
         )
         if rows:
             return LookupResult(found=True, rows=rows, stage=1)
@@ -571,20 +636,30 @@ class TierU:
         object_val: str,
         polarity: int,
         current_time: str,
+        exclude_row_ids: Optional[set[int]] = None,
     ) -> list[dict]:
         """Return non-retracted, currently-valid rows matching all given fields.
 
         Phase H Cluster 2 step 1: `contradicted_by_externally_verified`
         rows are excluded — they record what the user said but cannot
         ground a verdict (the KB-wins decision is preserved).
+
+        Phase H Cluster 3 step 7 (2026-05-26): `exclude_row_ids` filters
+        specific row ids out — used by the walker to skip the current
+        walk's own promoted row.
         """
-        rows = self._db.execute(
-            """SELECT * FROM tier_u
-               WHERE asserting_party=? AND subject=? AND predicate=? AND object=?
-               AND polarity=? AND retracted_at IS NULL
-               AND status != 'contradicted_by_externally_verified'
-               AND (valid_until IS NULL OR (valid_until != ? AND valid_until > ?))""",
-            (asserting_party, subject, predicate, object_val, polarity,
-             BEFORE_PRESENT, current_time),
-        ).fetchall()
+        sql = (
+            "SELECT * FROM tier_u "
+            "WHERE asserting_party=? AND subject=? AND predicate=? AND object=? "
+            "AND polarity=? AND retracted_at IS NULL "
+            "AND status != 'contradicted_by_externally_verified' "
+            "AND (valid_until IS NULL OR (valid_until != ? AND valid_until > ?))"
+        )
+        params: list = [asserting_party, subject, predicate, object_val, polarity,
+                        BEFORE_PRESENT, current_time]
+        if exclude_row_ids:
+            placeholders = ",".join("?" * len(exclude_row_ids))
+            sql += f" AND id NOT IN ({placeholders})"
+            params.extend(exclude_row_ids)
+        rows = self._db.execute(sql, params).fetchall()
         return [dict(r) for r in rows]

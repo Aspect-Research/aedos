@@ -176,6 +176,46 @@ class TestBeliefRevisionStatusAwareness:
         assert result.trace.chain_includes_assertion is False
 
 
+class TestCluster3Step7ExcludedPromotion:
+    """Phase H Cluster 3 step 7 (2026-05-26): walker accepts
+    `excluded_tier_u_row_ids` so polarity-conflict and object-conflict
+    belief-revision paths fire even when the promote-then-walk pattern
+    has just inserted a row for the same claim. der_revision_003
+    (polarity_conflict against an externally_verified prior) is the
+    motivating case.
+    """
+
+    def test_polarity_conflict_reachable_after_promoting_opposite_polarity(self):
+        import time
+        # Externally-verified prior with polarity=1, then a fresh
+        # promotion of polarity=0 (the user's "is not a..." claim).
+        # Without exclusion, the walker matches the polarity=0 row and
+        # returns verified_given_assertion. With exclusion of the
+        # promotion's row id, the flipped lookup finds the prior and
+        # returns plain contradicted (because the prior is
+        # externally_verified).
+        walker, tier_u, _ = _build()
+        tier_u.write(_claim(polarity=1), status="externally_verified")
+        time.sleep(0.01)
+        promotion = tier_u.write(_claim(polarity=0))  # fresh promotion
+        result = walker.walk(
+            _claim(polarity=0), _ctx(),
+            excluded_tier_u_row_ids={promotion.row_id},
+        )
+        assert result.verdict == "contradicted"
+        assert result.trace.chain_includes_assertion is False
+
+    def test_default_no_exclusion_preserves_pre_step7_behavior(self):
+        # Without exclusion, walker matches own promotion → verified.
+        # This pins the pre-step-7 behavior so callers that haven't
+        # been updated keep their existing semantics.
+        walker, tier_u, _ = _build()
+        tier_u.write(_claim(polarity=1), status="externally_verified")
+        result = walker.walk(_claim(polarity=1), _ctx())
+        # Matches externally_verified prior → plain verified.
+        assert result.verdict == "verified"
+
+
 # ---------------------------------------------------------------------------
 # TestQUserAuth — user_authoritative route always produces *_given_assertion
 # ---------------------------------------------------------------------------
