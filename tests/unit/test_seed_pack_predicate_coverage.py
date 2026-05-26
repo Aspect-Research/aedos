@@ -58,46 +58,31 @@ _COLD_START_CORPORA = {
 _ARCHIVED_CORPORA = {"extraction_corpus_v0.jsonl"}
 
 # Known drift in reference corpora — predicates that use a name not
-# matching the seed pack's canonical form. Each entry is (predicate,
-# corpus_filename) and is captured as a v0.16 normalization task (D46
-# candidate). The allowlist exists so this test catches *new* drift while
-# the existing drift is documented and triaged separately. Operator
-# decisions on each row (rename in corpus vs add alias to seed pack) are
-# the v0.16 work.
+# matching the seed pack's canonical form. Phase H Cluster 3
+# (2026-05-26): the majority of the original D46 drift list was
+# closed by adding alias rows to the seed pack (one row per
+# corpus-observed surface form, sharing kb_property + slot semantics
+# with the canonical entry). Walker Stage 3 already broadens
+# predicate lookup via the predicate_translation oracle's
+# kb_property, so the alias pattern is bridge-equivalent to literal
+# canonicalization without an extraction-time rewrite.
+#
+# The entries below are surface forms that map to a Wikidata property
+# Aedos does not yet seed (P37 official_language, P576 dissolved,
+# P749 parent_organization, P800 notable_work) or that require new
+# semantic modeling (co_founded as a multi-author variant of
+# founded_by). Each is captured as a v0.16 candidate; the allowlist
+# documents the gap so this test catches *new* drift while these
+# stay triaged.
 _KNOWN_DRIFT: set[tuple[str, str]] = {
-    # consistency_check_corpus uses position-shaped predicate names
-    ("award_received", "consistency_check_corpus.jsonl"),  # vs seeded `awarded`
-    ("birthplace_is", "consistency_check_corpus.jsonl"),   # vs `born_in`
-    ("death_place_is", "consistency_check_corpus.jsonl"),  # vs `died_in`
-    ("held_position", "consistency_check_corpus.jsonl"),   # vs `holds_role`
-    ("occupied_position", "consistency_check_corpus.jsonl"),  # vs `holds_role`
-    ("part_of_region", "consistency_check_corpus.jsonl"),  # vs `part_of`
-    ("won_award", "consistency_check_corpus.jsonl"),       # vs `awarded`
-    ("works_at", "consistency_check_corpus.jsonl"),        # vs `employed_by`
-    # entity_resolution / extraction / kb_mapping corpora — passive/active form
-    ("authored", "entity_resolution_corpus.jsonl"),         # vs `authored_by`
-    ("authored", "extraction_corpus.jsonl"),                # norm_015 expects `authored` (active form)
-    ("authored", "kb_mapping_corpus.jsonl"),
-    ("co_founded", "extraction_corpus.jsonl"),              # canonical predicate not in seed pack
+    # v0.16: needs a new seed entry — predicate maps to a Wikidata
+    # property not yet covered by the seed pack.
+    ("co_founded", "extraction_corpus.jsonl"),              # multi-author variant of founded_by; needs distinct modeling
     ("co_founded", "kb_mapping_corpus.jsonl"),
-    ("graduated_from", "consistency_check_corpus.jsonl"),   # synonym shape (was `educated_at` family)
-    ("graduated_from", "extraction_corpus.jsonl"),
-    ("received_award", "entity_resolution_corpus.jsonl"),   # vs `awarded`
-    ("received_award", "extraction_corpus.jsonl"),
-    ("received_award", "kb_mapping_corpus.jsonl"),
-    # kb_mapping_corpus uses Wikidata-shaped property names
-    ("date_of_birth", "kb_mapping_corpus.jsonl"),          # vs `born_on` (both → P569)
-    ("date_of_death", "kb_mapping_corpus.jsonl"),          # vs `died_on`
-    ("dissolved_in", "kb_mapping_corpus.jsonl"),           # no seed analogue
-    ("founded_in", "entity_resolution_corpus.jsonl"),      # vs `founded_in_year` (similar)
-    ("has_population", "kb_mapping_corpus.jsonl"),         # vs `population_of`
-    ("inception_date", "kb_mapping_corpus.jsonl"),         # vs `founded_in_year`
-    ("notable_work", "kb_mapping_corpus.jsonl"),           # no seed analogue
-    ("official_language", "kb_mapping_corpus.jsonl"),      # vs `language`
-    ("parent_organization", "kb_mapping_corpus.jsonl"),    # vs `part_of`
-    ("shares_border_with", "kb_mapping_corpus.jsonl"),     # vs `adjacent_to`
-    ("spouse", "kb_mapping_corpus.jsonl"),                 # vs `spouse_of`
-    ("successor_of", "kb_mapping_corpus.jsonl"),           # vs `has_successor`
+    ("dissolved_in", "kb_mapping_corpus.jsonl"),           # P576 (date of dissolution) — not yet seeded
+    ("notable_work", "kb_mapping_corpus.jsonl"),           # P800 (notable work) — not yet seeded
+    ("official_language", "kb_mapping_corpus.jsonl"),      # P37 (official language) — distinct from P407 `language`
+    ("parent_organization", "kb_mapping_corpus.jsonl"),    # P749 (parent organization) — distinct from P361 `part_of`
 }
 
 

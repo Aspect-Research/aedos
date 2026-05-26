@@ -37,6 +37,13 @@ _FUNCTIONAL_PREDICATES = {
     "status",        # one current status per entity (revisable)
     # Phase G D23 (2026-05-23) correction (was single_valued=0):
     "lives_in",      # one current residence per person (revisable on relocation)
+    # Phase H Cluster 3 (2026-05-26) — functional aliases:
+    "birthplace_is",     # alias of born_in (P19)
+    "death_place_is",    # alias of died_in (P20)
+    "date_of_birth",     # alias of born_on (P569)
+    "date_of_death",     # alias of died_on (P570)
+    "founded_in",        # alias of founded_in_year (P571)
+    "inception_date",    # alias of founded_in_year (P571)
 }
 
 

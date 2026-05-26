@@ -113,3 +113,37 @@ class TestAdversarialForms:
         result = normalize_predicate("résides dans")
         assert isinstance(result, str)
         assert len(result) > 0
+
+
+class TestUnderscoredInput:
+    """Phase H Cluster 3 (2026-05-26): underscored surface forms should
+    canonicalize equivalently to their space-separated counterparts.
+    Pre-Cluster-3 an extractor that produced `works_at` would emit that
+    string verbatim (snake_case fallback), bypassing the canonical map's
+    `works at` → `employed_by` rule. Post-Cluster-3, both forms produce
+    `employed_by`."""
+
+    def test_works_at_underscored(self):
+        assert normalize_predicate("works_at") == "employed_by"
+
+    def test_works_at_spaced(self):
+        assert normalize_predicate("works at") == "employed_by"
+
+    def test_underscored_equivalent_to_spaced(self):
+        for surface in ["works at", "is employed by", "was born in", "died in",
+                         "is located in", "is a", "won the", "graduated from"]:
+            underscored = surface.replace(" ", "_")
+            assert normalize_predicate(surface) == normalize_predicate(underscored), (
+                f"divergence for {surface!r} vs {underscored!r}"
+            )
+
+    def test_already_canonical_passthrough(self):
+        # A name that's already in canonical form (and not in the map) falls
+        # through to the snake_case fallback unchanged.
+        assert normalize_predicate("employed_by") == "employed_by"
+        assert normalize_predicate("located_in") == "located_in"
+
+    def test_aux_prefix_with_underscores(self):
+        # "is_employed_by" → space form "is employed by" → aux strip →
+        # "employed by" → map hit → "employed_by".
+        assert normalize_predicate("is_employed_by") == "employed_by"
