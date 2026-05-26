@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
 from aedos.database import (
     TABLE_NAMES,
     create_schema,
+    open_db,
     open_memory_db,
 )
+
+_SEEDS_FILE = Path(__file__).resolve().parents[2] / "seeds" / "predicate_translation.json"
 
 
 @pytest.fixture
@@ -293,3 +298,127 @@ class TestTierUStatusMigration:
                 "INSERT INTO tier_u (asserting_party, subject, predicate, object, polarity, source_text, asserted_at, status) "
                 "VALUES ('u', 's', 'p', 'o', 1, 'x', '2026-01-01', 'bogus_value')"
             )
+
+
+# ---------------------------------------------------------------------------
+# Phase H Cluster 3 (2026-05-26): seed loading at DB-open with opt-out.
+# ---------------------------------------------------------------------------
+
+def _seed_count() -> int:
+    return len(json.loads(_SEEDS_FILE.read_text(encoding="utf-8")))
+
+
+class TestSeedLoadingOnOpen:
+    """The seed-loading discipline introduced by Cluster 3 step 1.
+
+    - `open_db(path)` defaults to `load_seeds=True` — production deployments
+      get the seed pack on first open. Re-opening is a no-op for the seed
+      table (empty-table gate preserves operator state).
+    - `open_memory_db()` defaults to `load_seeds=False` — the test-fixture
+      convention is a minimal schema-only DB.
+    - Both honor explicit overrides.
+    - A successful auto-load emits a `seeds_loaded` audit event with the
+      seed file path and entry count, useful for trace reconstruction.
+    """
+
+    def test_open_memory_db_default_loads_no_seeds(self):
+        conn = open_memory_db()
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM predicate_translation"
+            ).fetchone()[0]
+            assert count == 0
+        finally:
+            conn.close()
+
+    def test_open_memory_db_with_load_seeds_true_loads_pack(self):
+        conn = open_memory_db(load_seeds=True)
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM predicate_translation"
+            ).fetchone()[0]
+            assert count == _seed_count()
+        finally:
+            conn.close()
+
+    def test_open_db_default_loads_seeds(self, tmp_path):
+        db_file = tmp_path / "default.db"
+        conn = open_db(str(db_file))
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM predicate_translation"
+            ).fetchone()[0]
+            assert count == _seed_count()
+        finally:
+            conn.close()
+
+    def test_open_db_with_load_seeds_false_leaves_empty(self, tmp_path):
+        db_file = tmp_path / "cold.db"
+        conn = open_db(str(db_file), load_seeds=False)
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM predicate_translation"
+            ).fetchone()[0]
+            assert count == 0
+        finally:
+            conn.close()
+
+    def test_seeded_db_carries_expected_rows(self):
+        conn = open_memory_db(load_seeds=True)
+        try:
+            row = conn.execute(
+                "SELECT routing_hint, kb_property FROM predicate_translation "
+                "WHERE aedos_predicate='holds_role'"
+            ).fetchone()
+            assert row is not None
+            assert row["routing_hint"] == "kb_resolvable"
+            assert row["kb_property"] == "P39"
+        finally:
+            conn.close()
+
+    def test_reopen_does_not_clobber_operator_state(self, tmp_path):
+        # First open loads the seeds. Operator retracts one row in-place.
+        # Re-opening must not undo the retraction — the empty-table gate
+        # in _maybe_load_seeds skips loading when rows already exist.
+        db_file = tmp_path / "persist.db"
+        conn = open_db(str(db_file))
+        conn.execute(
+            "UPDATE predicate_translation SET retracted_at='2026-01-01' "
+            "WHERE aedos_predicate='holds_role'"
+        )
+        conn.commit()
+        conn.close()
+
+        conn2 = open_db(str(db_file))
+        try:
+            row = conn2.execute(
+                "SELECT retracted_at FROM predicate_translation "
+                "WHERE aedos_predicate='holds_role'"
+            ).fetchone()
+            assert row["retracted_at"] == "2026-01-01"
+        finally:
+            conn2.close()
+
+    def test_seeds_loaded_audit_event_emitted(self):
+        conn = open_memory_db(load_seeds=True)
+        try:
+            rows = conn.execute(
+                "SELECT event_type, event_data FROM audit_log "
+                "WHERE event_type='seeds_loaded'"
+            ).fetchall()
+            assert len(rows) == 1
+            data = json.loads(rows[0]["event_data"])
+            assert data["entries_loaded"] == _seed_count()
+            assert "predicate_translation.json" in data["seed_file"]
+        finally:
+            conn.close()
+
+    def test_no_audit_event_when_not_loading(self):
+        conn = open_memory_db()  # default load_seeds=False
+        try:
+            rows = conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE event_type='seeds_loaded'"
+            ).fetchone()[0]
+            assert rows == 0
+        finally:
+            conn.close()

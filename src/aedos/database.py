@@ -128,7 +128,26 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log(occurred_at);
 """
 
 
-def create_schema(conn: sqlite3.Connection) -> None:
+def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
+    """Create the v0.15 schema on `conn`. Idempotent.
+
+    Phase H Cluster 3 (2026-05-26): when `load_seeds=True` and the
+    `predicate_translation` table is empty, auto-loads
+    `seeds/predicate_translation.json` and emits a `seeds_loaded`
+    audit event. The empty-table gate preserves operator
+    modifications and retractions across re-opens — re-running
+    `create_schema(load_seeds=True)` on an already-seeded DB is a
+    no-op. Callers wanting to refresh seeds in-place should invoke
+    `aedos.seed_loader.load_seeds_into_connection` directly.
+
+    `open_db(path)` defaults to `load_seeds=True` (production
+    behavior). `open_memory_db()` defaults to `load_seeds=False`
+    (test-fixture convention; tests build their own substrate).
+    The corpus runner explicitly opts in to seeded mode for its
+    in-vocabulary measurement; the cold-start mode (the v0.15
+    default measurement) leaves load_seeds=False so every predicate
+    consultation hits the LLM oracle.
+    """
     conn.executescript(_SCHEMA_SQL)
     # Migration guard (N6): a database created before single_valued was added
     # to predicate_translation lacks the column — CREATE TABLE IF NOT EXISTS
@@ -164,6 +183,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+
+    if load_seeds:
+        _maybe_load_seeds(conn)
     # Phase H Cluster 2 step 1: tier_u.status. Three-value enum tracking
     # provenance of the row — `asserted_unverified` (entered via user
     # assertion promotion), `externally_verified` (either pre-seeded as
@@ -193,19 +215,64 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def open_db(path: str) -> sqlite3.Connection:
+def _maybe_load_seeds(conn: sqlite3.Connection) -> None:
+    """Load the seed pack into `conn` iff `predicate_translation` is empty.
+
+    Emits a `seeds_loaded` audit event on success capturing the seed
+    file path and the number of entries loaded. On an already-seeded
+    DB this is a no-op, so re-opens never clobber operator
+    modifications.
+    """
+    existing = conn.execute(
+        "SELECT COUNT(*) FROM predicate_translation"
+    ).fetchone()[0]
+    if existing > 0:
+        return
+    # Lazy imports — `aedos.audit.log` and `aedos.seed_loader` import
+    # `aedos.database` transitively in some test paths; deferring keeps
+    # the import graph acyclic.
+    from .audit.log import log_event
+    from .seed_loader import DEFAULT_SEED_FILE, load_seeds_into_connection
+    loaded = load_seeds_into_connection(conn)
+    log_event(
+        conn,
+        event_type="seeds_loaded",
+        event_subject="predicate_translation",
+        event_data={
+            "seed_file": str(DEFAULT_SEED_FILE),
+            "entries_loaded": loaded,
+        },
+    )
+
+
+def open_db(path: str, load_seeds: bool = True) -> sqlite3.Connection:
+    """Open a persistent SQLite DB at `path`.
+
+    Defaults to `load_seeds=True` — production deployments expect the
+    seed pack present in `predicate_translation`. The empty-table
+    gate in `create_schema` means re-opening an existing DB is a
+    no-op for the seed table.
+    """
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    create_schema(conn)
+    create_schema(conn, load_seeds=load_seeds)
     return conn
 
 
-def open_memory_db() -> sqlite3.Connection:
+def open_memory_db(load_seeds: bool = False) -> sqlite3.Connection:
+    """Open a fresh in-memory SQLite DB.
+
+    Defaults to `load_seeds=False` — the test-fixture convention is
+    that `open_memory_db()` produces a minimal schema-only DB into
+    which tests insert their own state. Callers wanting production-
+    like seeded behavior (corpus runner's seeded measurement mode)
+    explicitly pass `load_seeds=True`.
+    """
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    create_schema(conn)
+    create_schema(conn, load_seeds=load_seeds)
     return conn
 
 
