@@ -281,12 +281,15 @@ class TestVerdictSetStructuralConsistency:
             assert meta["verified"] + meta["contradicted"] + meta["abstained"] == 1
 
     def test_intervention_collapses_dual_to_base(self):
-        # select_intervention reads only the base counts; for any verdict
-        # mix, replacing each verdict with its base-counterpart must
-        # produce the same intervention. That's the invariant — the
-        # dual designation is transparent to intervention selection.
-        from aedos.deployment.chat_wrapper import select_intervention
-        from aedos.layer5_result.aggregator import base_verdict_of, ALL_VERDICTS
+        # Phase 10.5 Session 2 Item 1 (per-claim intervention): the
+        # invariant is preserved across the API redesign — for any
+        # verdict mix, replacing each verdict with its base-counterpart
+        # must produce the same InterventionPlan. The dual designation
+        # is transparent to intervention selection.
+        from aedos.deployment.chat_wrapper import (
+            InterventionType, select_interventions,
+        )
+        from aedos.layer5_result.aggregator import ALL_VERDICTS, base_verdict_of
         agg = Aggregator()
 
         # Exhaustive 1-of-6 single-claim check: every dual matches its base.
@@ -294,14 +297,20 @@ class TestVerdictSetStructuralConsistency:
             c = _claim("c1")
             dual_vr = agg.aggregate([c], [_walk_result(v)])
             base_vr = agg.aggregate([c], [_walk_result(base_verdict_of(v))])
-            assert select_intervention(dual_vr) == select_intervention(base_vr), (
-                f"intervention diverged for verdict {v!r} vs its base "
-                f"{base_verdict_of(v)!r}"
+            dual_plan = select_interventions(dual_vr.claim_verdicts)
+            base_plan = select_interventions(base_vr.claim_verdicts)
+            assert dual_plan.overall == base_plan.overall, (
+                f"intervention overall diverged for verdict {v!r} vs its "
+                f"base {base_verdict_of(v)!r}"
+            )
+            assert len(dual_plan.per_claim_actions) == len(base_plan.per_claim_actions), (
+                f"per-claim action count diverged for verdict {v!r}"
             )
 
         # Multi-claim mixed batch: 3 verified_given_assertion + 1
-        # contradicted_given_assertion should match 3 verified + 1
-        # contradicted (a CORRECT — contradicted present but minority).
+        # contradicted_given_assertion. Under the per-claim plan this is
+        # INTERVENE with one CORRECT action (three verified + one
+        # problematic). Same shape applies for the base equivalent.
         claims = [_claim(f"c{i}") for i in range(4)]
         dual_results = [_walk_result(v) for v in (
             "verified_given_assertion", "verified_given_assertion",
@@ -312,8 +321,11 @@ class TestVerdictSetStructuralConsistency:
         )]
         dual_vr = agg.aggregate(claims, dual_results)
         base_vr = agg.aggregate(claims, base_results)
-        assert select_intervention(dual_vr) == select_intervention(base_vr)
-        assert select_intervention(dual_vr).value == "correct"
+        dual_plan = select_interventions(dual_vr.claim_verdicts)
+        base_plan = select_interventions(base_vr.claim_verdicts)
+        assert dual_plan.overall == base_plan.overall == InterventionType.INTERVENE
+        assert len(dual_plan.per_claim_actions) == len(base_plan.per_claim_actions) == 1
+        assert dual_plan.per_claim_actions[0].action_type.value == "correct"
 
     def test_trace_serialization_round_trip_carries_assertion_flag(self):
         # JustificationTrace.chain_includes_assertion survives trace_to_json.

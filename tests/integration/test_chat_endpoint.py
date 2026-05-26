@@ -91,11 +91,29 @@ class TestChatEndpoint:
         assert body["final_message"]
 
     def test_post_chat_returns_intervention_type(self):
+        # Phase 10.5 Session 2 Item 1: 3-value top-level
+        # (pass_through / intervene / decline). The per-claim CORRECT
+        # and ABSTAIN have moved into `per_claim_actions[].action_type`.
         client = _make_test_app()
         resp = client.post("/chat", json={"message": "Tell me about the sky."})
         body = resp.json()
         assert "intervention_type" in body
-        assert body["intervention_type"] in ("pass_through", "abstain", "correct", "decline")
+        assert body["intervention_type"] in ("pass_through", "intervene", "decline")
+
+    def test_post_chat_returns_per_claim_actions(self):
+        # Phase 10.5 Session 2 Item 1: the response now carries the
+        # per-claim action list. Empty for pass_through / decline; one
+        # entry per problematic claim for intervene.
+        client = _make_test_app()
+        resp = client.post("/chat", json={"message": "Tell me about the sky."})
+        body = resp.json()
+        assert "per_claim_actions" in body
+        assert isinstance(body["per_claim_actions"], list)
+        for action in body["per_claim_actions"]:
+            assert "claim_id" in action
+            assert "action_type" in action
+            assert action["action_type"] in ("correct", "abstain")
+            assert "annotation" in action
 
     def test_post_chat_returns_verification_id(self):
         client = _make_test_app()
