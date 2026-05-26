@@ -1,0 +1,923 @@
+{
+  "timestamp": "20260526T182317Z",
+  "modes": [
+    "seeded"
+  ],
+  "runs_per_mode": 1,
+  "runs_total": 1,
+  "runs": [
+    {
+      "mode": "seeded",
+      "seeded": true,
+      "predicate_translation_row_count_at_start": 83,
+      "run_index": 0,
+      "started_at": "2026-05-26T18:23:17.372593+00:00",
+      "finished_at": "2026-05-26T18:32:32.350869+00:00",
+      "case_count": 50,
+      "runner_passed": 24,
+      "accuracy_pct": 48.0,
+      "per_case": [
+        {
+          "case_id": "der_multihop_001",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_002",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_003",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 10
+        },
+        {
+          "case_id": "der_multihop_004",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_multihop_005",
+          "category": "multi_hop_distribution",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_006",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_007",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_008",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_009",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_multihop_010",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_multihop_011",
+          "category": "multi_hop_distribution",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 1,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_multihop_012",
+          "category": "multi_hop_distribution",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "contradicted",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 23
+        },
+        {
+          "case_id": "der_cross_001",
+          "category": "cross_source",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 1,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_cross_002",
+          "category": "cross_source",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "externally_verified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_cross_003",
+          "category": "cross_source",
+          "rule": "R1",
+          "judgment": false,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_cross_004",
+          "category": "cross_source",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_cross_005",
+          "category": "cross_source",
+          "rule": "R1",
+          "judgment": false,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_cross_006",
+          "category": "cross_source",
+          "rule": "R1",
+          "judgment": false,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 1,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_cross_007",
+          "category": "cross_source",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 1,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_cross_008",
+          "category": "cross_source",
+          "rule": "R1",
+          "judgment": false,
+          "expected_verdict": "verified",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_cross_009",
+          "category": "cross_source",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_cross_010",
+          "category": "cross_source",
+          "rule": "R1",
+          "judgment": false,
+          "expected_verdict": "no_grounding_found",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_disambiguation_001",
+          "category": "entity_disambiguation",
+          "rule": "NON_STANDARD",
+          "judgment": true,
+          "expected_verdict": "verified_with_correct_entity",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_disambiguation_002",
+          "category": "entity_disambiguation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_disambiguation_003",
+          "category": "entity_disambiguation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_disambiguation_004",
+          "category": "entity_disambiguation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_disambiguation_005",
+          "category": "entity_disambiguation",
+          "rule": "NON_STANDARD",
+          "judgment": true,
+          "expected_verdict": "<non-standard>",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_disambiguation_006",
+          "category": "entity_disambiguation",
+          "rule": "NON_STANDARD",
+          "judgment": true,
+          "expected_verdict": "verified_with_correct_entity",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_disambiguation_007",
+          "category": "entity_disambiguation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 1,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_disambiguation_008",
+          "category": "entity_disambiguation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_predicate_translation_001",
+          "category": "predicate_translation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_predicate_translation_002",
+          "category": "predicate_translation",
+          "rule": "OVERRIDE",
+          "judgment": true,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_predicate_translation_003",
+          "category": "predicate_translation",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "externally_verified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_predicate_translation_004",
+          "category": "predicate_translation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 1,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 2
+        },
+        {
+          "case_id": "der_predicate_translation_005",
+          "category": "predicate_translation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_predicate_translation_006",
+          "category": "predicate_translation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_predicate_translation_007",
+          "category": "predicate_translation",
+          "rule": "NON_STANDARD",
+          "judgment": true,
+          "expected_verdict": "needs_tier_u_or_kb",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_predicate_translation_008",
+          "category": "predicate_translation",
+          "rule": "R2",
+          "judgment": true,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified",
+          "runner_passed": true,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_revision_001",
+          "category": "belief_revision",
+          "rule": "R4",
+          "judgment": true,
+          "expected_verdict": "contradicted",
+          "actual_verdict": null,
+          "runner_passed": true,
+          "chain_includes_assertion": null,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 1,
+            "walker_skipped": 1
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_revision_002",
+          "category": "belief_revision",
+          "rule": "R4",
+          "judgment": true,
+          "expected_verdict": "contradicted",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_revision_003",
+          "category": "belief_revision",
+          "rule": "R4",
+          "judgment": true,
+          "expected_verdict": "contradicted",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_revision_004",
+          "category": "belief_revision",
+          "rule": "R4",
+          "judgment": false,
+          "expected_verdict": "verified",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_revision_005",
+          "category": "belief_revision",
+          "rule": "R4",
+          "judgment": true,
+          "expected_verdict": "contradicted",
+          "actual_verdict": "abstained_given_assertion",
+          "runner_passed": false,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_revision_006",
+          "category": "belief_revision",
+          "rule": "R4",
+          "judgment": true,
+          "expected_verdict": "contradicted",
+          "actual_verdict": "verified",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": "externally_verified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_abstain_001",
+          "category": "abstention",
+          "rule": "R6",
+          "judgment": false,
+          "expected_verdict": "no_grounding_found",
+          "actual_verdict": null,
+          "runner_passed": true,
+          "chain_includes_assertion": null,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_abstain_002",
+          "category": "abstention",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_abstain_003",
+          "category": "abstention",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_abstain_004",
+          "category": "abstention",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "verified_given_assertion",
+          "runner_passed": true,
+          "chain_includes_assertion": true,
+          "first_tier_u_premise_status": "asserted_unverified",
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 1
+        },
+        {
+          "case_id": "der_abstain_005",
+          "category": "abstention",
+          "rule": "R6",
+          "judgment": false,
+          "expected_verdict": "no_grounding_found",
+          "actual_verdict": null,
+          "runner_passed": true,
+          "chain_includes_assertion": null,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        },
+        {
+          "case_id": "der_abstain_006",
+          "category": "abstention",
+          "rule": "R3",
+          "judgment": false,
+          "expected_verdict": "verified_given_assertion",
+          "actual_verdict": "no_grounding_found",
+          "runner_passed": false,
+          "chain_includes_assertion": false,
+          "first_tier_u_premise_status": null,
+          "audit_event_deltas": {
+            "upgrade": 0,
+            "cross_source": 0,
+            "walker_skipped": 0
+          },
+          "error": null,
+          "walk_edges_count": 0
+        }
+      ]
+    }
+  ]
+}
