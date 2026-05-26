@@ -243,6 +243,42 @@ runs would confirm the median.
 **Estimated v0.15 work to close:** 1.5-2 days for steps 7-8 + ~$6-12
 in additional API for re-validation. Within the session budget.
 
+## Step 7 implementation note — first-cut over-aggression
+
+The initial Step 7 implementation excluded the walk's own promoted
+row from Stage 1 lookup directly, on the theory that polarity-conflict
+and object-conflict were Stage-1-miss-only paths. The intermediate
+seeded probe (`cluster_3_validation_run_20260526T193658Z.json`,
+walltime ~17 min) showed this was over-aggressive: R3 cases
+(`der_multihop_001` etc.) regressed from PASS to MISS because the
+walker could no longer match its own promotion as the legitimate
+in-vocabulary grounding source. Total accuracy dropped to 16/50 =
+32%.
+
+The fixup restructures `_direct_lookup` to check belief-revision
+paths AGAINST PRIORS first (with own-promotion excluded from the
+flipped lookup specifically), then fall through to normal Stage 1
+(no exclusion) for the in-vocabulary grounding case. This preserves
+both:
+
+- R3 verified_given_assertion (Stage 1 still matches own promotion
+  when no conflicting prior exists)
+- R4 contradicted (polarity-conflict / object-conflict now reachable
+  even when promote-then-walk has already written the claim's
+  polarity)
+
+The intermediate-probe data is preserved at
+`cluster_3_validation_run_20260526T193658Z.json` for v0.16 reference
+— "what 'simple exclude' looks like when it bypasses the legitimate
+self-match grounding path".
+
+This is also a useful audit pattern: a walker change that surfaces
+correctly in unit tests (the polarity-conflict-reachable test passed
+with the over-aggressive exclusion) can still regress in
+corpus-level integration. The intermediate probe is the catch.
+Bounded code work doesn't always mean bounded behavior surface;
+corpus validation between steps remains the discipline.
+
 ## Investigation methodology pattern
 
 This diagnostic used:

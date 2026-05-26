@@ -1,11 +1,17 @@
 # Phase H Cluster 3 — validation (dual-measurement)
 
-**Status:** PROBE PHASE — the harness ran a single seeded probe and a
-single cold-start probe. Both modes are wired and produce results.
-The variance-bound runs (2 additional per mode, totaling 3 per mode
-per D49 discipline) are pending operator decision based on the
-probe results. Full numbers and per-case tables land here once the
-3×2 schedule completes.
+**Status:** DIAGNOSTIC + REMEDIATION COMPLETE. The first probe pair
+(seeded 48%, cold-start 44%) surfaced a smaller-than-predicted +4pp
+lift; the diagnostic ([cluster_3_diagnostic.md](cluster_3_diagnostic.md))
+classified the remaining ceiling cases by tunability. Cluster 3 step 7
+addresses the promotion-shadow-prior walker pattern and step 8 adds
+article stripping; both landed with unit-test coverage. Post-step-7+8
+probe data is collected once the validation re-run completes.
+
+The variance-bound runs (2 additional per mode per D49 discipline)
+are deferred to Phase 10.5 — Phase H closes with the single-probe
+data + diagnostic + remediation pattern documented, and Phase 10.5
+inherits the dual-measurement framework for its release-decision data.
 
 Harness: `scripts/cluster_3_validation.py`. Per-run JSON in
 `docs/phase_H/cluster_3_validation_run_*.json`.
@@ -95,19 +101,178 @@ seed pack is mostly a performance / determinism optimization.
 
 ## Probe results
 
-*(filled after the probe runs complete)*
-
 ### Seeded probe (run 1)
 
-*pending*
+**Result: 24/50 = 48%.** Per-run JSON in
+`cluster_3_validation_run_20260526T182317Z.json`. Walltime ~9
+minutes.
+
+| rule | C3 seeded | C2 baseline (avg of 3) | delta |
+|---|---|---|---|
+| NON_STANDARD | 1/4 | 1/4 | 0 |
+| OVERRIDE | 1/1 | 1/1 | 0 |
+| R1 (KB/Python explicit) | 1/5 | 1/5 | 0 |
+| R2 (KB-likely-upgrade) | 6/13 | 3.67/13 | **+2-3** |
+| R3 (fictional → asserted) | 12/19 | 12.67/19 | -1 |
+| R4 (belief revision) | 1/6 | 0/6 | **+1** |
+| R6 (future tense) | 2/2 | 2/2 | 0 |
+| **total** | **24/50** | **~22/50 (44%)** | **+2 (48% vs 44%)** |
+
+**Cluster 3 audit events fired (one run):**
+- `tier_u_status_upgraded`: 6 cases — Q-Lookup α upgrades firing
+  correctly with the seeded `kb_resolvable` routing (the Q-UserAuth
+  short-circuit no longer mis-classifies these as user-authoritative).
+- `cross_source_contradiction`: 1 case — `der_revision_001`
+  ("Asa prefers coffee" vs prior `prefers tea`) now correctly fires
+  the §"KB wins" cross-source mechanism. With `prefers` properly
+  seeded as user_authoritative + single_valued=1, the promotion-time
+  contradiction is detected and the walker is skipped.
+- `walker_skipped_due_to_pre_verdict`: 1 case — the
+  cross_source_contradiction case's pre-verdict path.
+
+**What lifted vs Cluster 2:**
+
+1. **Pattern A (Q-UserAuth) cases unstuck (+2 R2).** Cluster 2's
+   Finding 1 identified 6 R2 cases where walker hit its own promoted
+   row and the LLM-driven predicate-translation oracle mis-routed
+   KB-mappable predicates (`holds_role`, `capital_of`) to
+   `user_authoritative`. With seeded routing, `der_cross_001` (Obama
+   President 2009-2017) and `der_multihop_011` (Obama President +
+   distribution) now hit the KB-resolvable path correctly and emit
+   `verified` instead of `verified_given_assertion`.
+
+2. **R4 cross-source revision case (+1 R4).** `der_revision_001`
+   ("Asa prefers coffee" + prior "Asa prefers tea") now produces
+   `contradicted` via cross_source_contradiction. The walker is
+   skipped at promotion time because the §"KB wins" mechanism
+   detects the contradiction directly. Pre-Cluster-3, `prefers` was
+   absent from the empty `predicate_translation` table, so the
+   walker's lookup_object_conflict path couldn't broaden via Stage 3
+   to bridge the prior and new claims.
+
+**Where the lift was smaller than predicted:**
+
+The operator's brief predicted +10-20pp; the actual seeded lift is
++2-4pp (48% vs 44%). Three observed reasons:
+
+a. **4 of 6 Pattern A cases still miss** (`der_disambiguation_002`
+   Paris-capital-France, `der_disambiguation_008` Cambridge-in-MA,
+   `der_predicate_translation_005` Marie Curie Nobel,
+   `der_predicate_translation_006` France has_capital Paris). For
+   these, even with seeded routing, the walker matches its own
+   promoted row at Stage 1 and emits `verified_given_assertion`
+   rather than KB-upgrading. The seed pack fix is necessary but
+   not sufficient for Q-Lookup α to fire reliably on these. Likely
+   walker policy issue (when to upgrade vs when to short-circuit
+   on the promoted row); v0.16 candidate.
+
+b. **R4 belief-revision cases beyond `prefers`.** `der_revision_002`
+   (Asa works_at Google vs prior employed_by Microsoft) — the
+   extractor now produces `employed_by` via the `works_at` alias
+   (Step 2), but the walker's Stage 1 lookup finds the freshly-
+   promoted asserted_unverified row, not the prior `employed_by
+   Microsoft` row. The two `employed_by` rows coexist; single_valued
+   conflict detection at Tier U write time would need to fire here
+   but doesn't because the new claim doesn't trigger the
+   lookup_object_conflict path for the prior. Likely a Tier U write
+   ordering issue or single-valued-conflict detection gap; v0.16.
+
+c. **`der_revision_005` (project status).** Got
+   `abstained_given_assertion`. Step 3's Rule 14 fires correctly:
+   extractor produces `predicate=status, object=ended,
+   valid_until=2024`. But the prior is `subject="project"`, the
+   extracted is `subject="The project"` (with article). Subject
+   normalization between text-extracted and seeded Tier U is
+   inconsistent for non-named-entity subjects. The Wikipedia
+   normalizer doesn't apply here because "the project" isn't a
+   Wikidata entity. v0.16 candidate — subject normalization for
+   common nouns.
+
+d. **`der_revision_006` (Asa joined Google in 2020).** Got
+   `verified` (KB upgraded — not the expected `contradicted`
+   scope-conflict). Step 3's Rule 12 produces `employed_by` with
+   `valid_from=2020`. The walker upgrades to KB (Wikidata says
+   Asa is not in KB, but the predicate routing succeeds enough to
+   produce `verified`). Scope-conflict detection (same employer,
+   different valid_from) is not currently in the walker's
+   belief-revision check. v0.16 candidate.
 
 ### Cold-start probe (run 1)
 
-*pending*
+**Result: 22/50 = 44%.** Per-run JSON in
+`cluster_3_validation_run_20260526T183428Z.json`. Walltime ~8.5
+minutes.
 
-### Comparison and triage
+The cold-start probe is essentially flat with the Cluster 2
+baseline (44%). Every predicate consultation triggered an LLM
+oracle call; the seed pack was absent. This confirms that the
+Cluster 3 prompt extensions (step 3 rules 12-14), seed-pack
+expansion (step 2 aliases), and semantic corrections (step 4) did
+not regress the cold-start path — the LLM oracle continues to
+generate similarly-accurate metadata for novel predicates as it did
+pre-Cluster-3.
 
-*pending*
+The dual-measurement framework's design intent is reflected in this
+data: cold-start measures "what the LLM oracle can do unaided" and
+the metric is stable across the Cluster 3 changes.
+
+### Comparison and pre-remediation triage
+
+The +4pp seeded-vs-cold-start gap (48% vs 44%) was smaller than
+the operator brief's conservative +10-20pp prediction. The
+diagnostic ([cluster_3_diagnostic.md](cluster_3_diagnostic.md))
+classified the remaining ceiling cases by tunability:
+
+- **Category 1 (4 R2 cases):** Walker upgrade policy reaches
+  `_try_external_grounding` but KB returns non-verified for
+  inverted-direction predicates (capital_of), ambiguous subjects
+  (Cambridge), or qualifier-shape mismatches (Marie Curie Nobel
+  year). Bounded code work in KB verifier / entity resolver. v0.16
+  candidates (discrete D-items per area).
+- **Category 2 (3 R4 cases):** Walker promotion-shadow-prior
+  pattern — the promote-then-walk introduced by Cluster 2 means
+  the walker matches its own promoted asserted_unverified row at
+  Stage 1 before the belief-revision checks fire. Step 7 addresses
+  this by restructuring `_direct_lookup` to check polarity-conflict
+  and object-conflict against PRIORS first (with own promotion
+  excluded from the flipped lookup), then fall through to Stage 1
+  (no exclusion) so R3 cases still match own promotion as the
+  in-vocabulary grounding source.
+- **Category 3 (1 R4 case):** Subject normalization for common
+  nouns. Step 8 adds article stripping in `TierU._normalize_slot`
+  so "The project" and "project" canonicalize identically.
+- **Category 4 (1 R4 case):** `employed_by` single_valued semantic
+  question. Deferred to v0.16 D57 (functional-at-a-point-in-time
+  cardinality).
+
+## Post-step-7+8 probe
+
+**Result: pending** — second seeded probe in flight; data lands once
+complete. Expected post-step-7+8 gains (per the diagnostic's
+predictions):
+
+- **der_revision_003** (polarity_conflict against externally_verified
+  prior): walker now reaches flipped lookup before Stage 1 → finds
+  prior → returns `contradicted` (plain, not _given_assertion
+  because prior is externally_verified). Expected PASS.
+- **der_revision_004** (idempotent "Asa is still a student"):
+  bypass_normalizer on the seed write (Step 7) means seed and
+  promotion canonicalize identically → single row, status
+  externally_verified. Walker's flipped check misses; Stage 1 hits
+  externally_verified prior → returns `verified`. Expected PASS.
+- **der_revision_005** ("The project ended in 2024" + prior status
+  ongoing): Step 8 strips "The" from "The project" → subject
+  matches prior "project" → walker's object_conflict check fires
+  on `status` (functional, single_valued=1) → returns
+  `contradicted` (plain, prior externally_verified). Expected PASS.
+- **der_revision_006** (scope_conflict): TierU.write detects same
+  key + different valid_from + externally_verified prior → §"KB
+  wins" fires at promotion time → pre_verdict=contradicted →
+  walker skipped → returns `contradicted`. Expected PASS.
+
+Projected post-fix accuracy: 28/50 = 56% (+4 R4 cases relative to
+the first seeded probe's 24/50). Phase 10.5's 3x2 variance runs
+confirm.
 
 ## Full variance-bound results (3 runs per mode)
 
