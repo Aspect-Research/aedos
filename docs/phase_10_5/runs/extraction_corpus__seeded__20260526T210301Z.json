@@ -1,0 +1,386 @@
+{
+  "corpus": "extraction_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T21:01:40.897617+00:00",
+  "finished_at": "2026-05-26T21:03:01.435348+00:00",
+  "duration_s": 80.5,
+  "case_count": 53,
+  "passed": 52,
+  "accuracy": 0.9811320754716981,
+  "threshold": 0.9,
+  "per_case": [
+    {
+      "case_id": "norm_001",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.624
+    },
+    {
+      "case_id": "norm_002",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.482
+    },
+    {
+      "case_id": "norm_003",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.128
+    },
+    {
+      "case_id": "norm_004",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.434
+    },
+    {
+      "case_id": "norm_005",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.405
+    },
+    {
+      "case_id": "norm_006",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.224
+    },
+    {
+      "case_id": "norm_007",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.156
+    },
+    {
+      "case_id": "norm_008",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.329
+    },
+    {
+      "case_id": "norm_009",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.153
+    },
+    {
+      "case_id": "norm_010",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.26
+    },
+    {
+      "case_id": "norm_011",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.385
+    },
+    {
+      "case_id": "norm_012",
+      "category": "normalization",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.19
+    },
+    {
+      "case_id": "norm_013",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.277
+    },
+    {
+      "case_id": "norm_014",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.206
+    },
+    {
+      "case_id": "norm_015",
+      "category": "normalization",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.143
+    },
+    {
+      "case_id": "decomp_001",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.325
+    },
+    {
+      "case_id": "decomp_002",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.217
+    },
+    {
+      "case_id": "decomp_003",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.49
+    },
+    {
+      "case_id": "decomp_004",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.288
+    },
+    {
+      "case_id": "decomp_005",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.263
+    },
+    {
+      "case_id": "decomp_006",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.379
+    },
+    {
+      "case_id": "decomp_007",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.249
+    },
+    {
+      "case_id": "decomp_009",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.309
+    },
+    {
+      "case_id": "decomp_010",
+      "category": "decomposition",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.275
+    },
+    {
+      "case_id": "temporal_001",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.236
+    },
+    {
+      "case_id": "temporal_002",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.52
+    },
+    {
+      "case_id": "temporal_003",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.225
+    },
+    {
+      "case_id": "temporal_004",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.059
+    },
+    {
+      "case_id": "temporal_005",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.02
+    },
+    {
+      "case_id": "temporal_006",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.311
+    },
+    {
+      "case_id": "temporal_007",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.388
+    },
+    {
+      "case_id": "temporal_008",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.844
+    },
+    {
+      "case_id": "temporal_009",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.329
+    },
+    {
+      "case_id": "temporal_010",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.37
+    },
+    {
+      "case_id": "temporal_011",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.801
+    },
+    {
+      "case_id": "temporal_012",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.354
+    },
+    {
+      "case_id": "temporal_013",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.235
+    },
+    {
+      "case_id": "temporal_014",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.158
+    },
+    {
+      "case_id": "temporal_015",
+      "category": "temporal",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.826
+    },
+    {
+      "case_id": "hardclaim_001",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.165
+    },
+    {
+      "case_id": "hardclaim_002",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.234
+    },
+    {
+      "case_id": "hardclaim_003",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.936
+    },
+    {
+      "case_id": "hardclaim_004",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.151
+    },
+    {
+      "case_id": "hardclaim_005",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.17
+    },
+    {
+      "case_id": "hardclaim_006",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.547
+    },
+    {
+      "case_id": "hardclaim_007",
+      "category": "hard_claim",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.574
+    },
+    {
+      "case_id": "firstperson_001",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.36
+    },
+    {
+      "case_id": "firstperson_003",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.243
+    },
+    {
+      "case_id": "firstperson_004",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 5.781
+    },
+    {
+      "case_id": "firstperson_005",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.831
+    },
+    {
+      "case_id": "firstperson_006",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.288
+    },
+    {
+      "case_id": "firstperson_007",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.295
+    },
+    {
+      "case_id": "firstperson_010",
+      "category": "first_person",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.088
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{
+  "corpus": "consistency_check_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T21:01:18.388196+00:00",
+  "finished_at": "2026-05-26T21:01:19.040058+00:00",
+  "duration_s": 0.7,
+  "case_count": 25,
+  "passed": 24,
+  "accuracy": 0.96,
+  "threshold": 1.0,
+  "per_case": [
+    {
+      "case_id": "cc_conflict_001",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.632
+    },
+    {
+      "case_id": "cc_conflict_002",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.001
+    },
+    {
+      "case_id": "cc_conflict_003",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_conflict_004",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_conflict_005",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.001
+    },
+    {
+      "case_id": "cc_conflict_006",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.001
+    },
+    {
+      "case_id": "cc_conflict_007",
+      "category": "seeded_conflict_detection",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_conflict_008",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.002
+    },
+    {
+      "case_id": "cc_conflict_009",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.001
+    },
+    {
+      "case_id": "cc_conflict_010",
+      "category": "seeded_conflict_detection",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.001
+    },
+    {
+      "case_id": "cc_retract_001",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_002",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_003",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_004",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_005",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_006",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_007",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_retract_008",
+      "category": "retract_and_regenerate",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_001",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_002",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_003",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_004",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_005",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_006",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "cc_cb_007",
+      "category": "circuit_breaker_trigger",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    }
+  ]
+}
