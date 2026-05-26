@@ -78,10 +78,10 @@
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
     "kb_namespace": "wikidata",
-    "kb_property": "P276",
+    "kb_property": "P131",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 0,
-    "reason": "Seed mapping. Wikidata P276 (location) for objects or events. Multi-valued: P276 commonly holds several locations."
+    "reason": "Phase H Cluster 3 (2026-05-26) — corrected from P276 to P131. predicate_metadata_corpus/pred_kb_007 pins P131 (located in the administrative territorial entity); the entity_resolution_corpus cases that route through `located_in` (Williams College, Mount Everest, Paris, Eiffel Tower, etc.) all expect institution-in-place semantics, which Wikidata canonicalizes via P131 rather than the more generic P276 (location). The corrected mapping now matches the `located_at` seed (also P131) — both names are surface forms for the same administrative-territorial relationship. Multi-valued: P131 commonly holds several administrative parents (e.g., a city in a county in a state)."
   },
   {
     "aedos_predicate": "born_in",
@@ -414,10 +414,10 @@
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
     "kb_namespace": "wikidata",
-    "kb_property": "P585",
+    "kb_property": "P276",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 0,
-    "reason": "Seed mapping. Wikidata P585 (point in time) for events. Multi-valued (conservative): events may carry several recorded dates (start/end/point)."
+    "reason": "Phase H Cluster 3 (2026-05-26) — corrected from P585 to P276. P585 is the `point in time` qualifier property and pairs with object_type=date; with object_type=entity the pre-correction mapping was internally inconsistent. The corpus uses `occurred_in` for event-in-location semantics (derivation_corpus der_multihop_003 'The flood occurred in Springfield' + Springfield part_of Illinois → distributes_up; entity_resolution_corpus er_unambiguous_013 'World War II occurred_in <subject>'; predicate_distribution_corpus pd_up_003 pinning the distributes_up over part_of relation). Wikidata P276 (location) is the canonical event-location property. Multi-valued (conservative): events may have multiple recorded locations."
   },
   {
     "aedos_predicate": "located_at",

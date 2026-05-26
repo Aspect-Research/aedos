@@ -194,3 +194,27 @@ def test_seed_pack_contains_phase_g_d39_additions():
             f"the entry is now missing. See docs/v0.16_planning.md D39 for "
             f"the rationale before removing."
         )
+
+
+def test_phase_h_cluster_3_step_4_corrections():
+    """Pin the Phase H Cluster 3 step 4 semantic corrections.
+
+    - `located_in` was P276 (generic location); corrected to P131
+      (administrative territorial entity). All three primary corpora
+      (predicate_metadata pred_kb_007, entity_resolution er_unambiguous_002+,
+      kb_mapping kb_map_006) expect P131 for institution-in-place semantics.
+    - `occurred_in` was P585 (point in time, a qualifier property
+      incompatible with object_type=entity); corrected to P276 (location)
+      for event-location semantics used by derivation_corpus
+      der_multihop_003 and predicate_distribution pd_up_003.
+    """
+    entries = json.loads(_SEED_PATH.read_text(encoding="utf-8"))
+    by_pred = {e["aedos_predicate"]: e for e in entries}
+    assert by_pred["located_in"]["kb_property"] == "P131", (
+        "located_in must map to P131 (administrative territorial entity), "
+        "not P276 (generic location); see Phase H Cluster 3 step 4."
+    )
+    assert by_pred["occurred_in"]["kb_property"] == "P276", (
+        "occurred_in must map to P276 (location), not P585 (point in time); "
+        "P585 is a qualifier and incompatible with object_type=entity."
+    )
