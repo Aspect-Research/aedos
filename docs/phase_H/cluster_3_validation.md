@@ -247,32 +247,78 @@ classified the remaining ceiling cases by tunability:
 
 ## Post-step-7+8 probe
 
-**Result: pending** — second seeded probe in flight; data lands once
-complete. Expected post-step-7+8 gains (per the diagnostic's
-predictions):
+**Result: 27/50 = 54%.** Per-run JSON in
+`cluster_3_validation_run_20260526T200541Z.json`. Walltime ~10
+minutes.
 
-- **der_revision_003** (polarity_conflict against externally_verified
-  prior): walker now reaches flipped lookup before Stage 1 → finds
-  prior → returns `contradicted` (plain, not _given_assertion
-  because prior is externally_verified). Expected PASS.
-- **der_revision_004** (idempotent "Asa is still a student"):
-  bypass_normalizer on the seed write (Step 7) means seed and
-  promotion canonicalize identically → single row, status
-  externally_verified. Walker's flipped check misses; Stage 1 hits
-  externally_verified prior → returns `verified`. Expected PASS.
-- **der_revision_005** ("The project ended in 2024" + prior status
-  ongoing): Step 8 strips "The" from "The project" → subject
-  matches prior "project" → walker's object_conflict check fires
-  on `status` (functional, single_valued=1) → returns
-  `contradicted` (plain, prior externally_verified). Expected PASS.
-- **der_revision_006** (scope_conflict): TierU.write detects same
-  key + different valid_from + externally_verified prior → §"KB
-  wins" fires at promotion time → pre_verdict=contradicted →
-  walker skipped → returns `contradicted`. Expected PASS.
+**+10pp vs Cluster 2 baseline (44%).** At the lower bound of the
+operator brief's conservative +10-20pp prediction. The dual-
+measurement framing's headline numbers for Cluster 3 closure:
 
-Projected post-fix accuracy: 28/50 = 56% (+4 R4 cases relative to
-the first seeded probe's 24/50). Phase 10.5's 3x2 variance runs
-confirm.
+- **Seeded mode (primary): 54%.**
+- **Cold-start mode (secondary): 44%** — unchanged from the
+  pre-Cluster-3 baseline; the Cluster 3 changes did not regress
+  the cold-start path.
+
+**Per-rule pass/miss (seeded post-fix):**
+
+| rule | post-fix | C2 baseline | delta | notes |
+|---|---|---|---|---|
+| NON_STANDARD | 1/4 | 1/4 | 0 | unchanged |
+| OVERRIDE | 1/1 | 1/1 | 0 | unchanged |
+| R1 (KB/Python explicit) | 1/5 | 1/5 | 0 | KB-nondeterminism + categorization heuristic bug (Cluster 2 findings; v0.16) |
+| R2 (KB-likely-upgrade) | 6/13 | 3.67/13 | +2-3 | Q-UserAuth misrouting fixed by seeded mode (Step 1) |
+| R3 (fictional → asserted) | 12/19 | 12.67/19 | -1 | preserved by Step 7 fixup (restructured belief-revision-before-Stage-1) |
+| R4 (belief revision) | 3/6 | 0/6 | **+3** | Step 7+8: 001 (cross-source-contradiction via prefers), 005 (article strip + object_conflict on status), 006 (scope_conflict at write time) |
+| R6 (future tense) | 2/2 | 2/2 | 0 | unchanged |
+| **total** | **27/50** | **~22/50** | **+5 (54% vs 44%)** | |
+
+### R4 wins (Cluster 3 closes these)
+
+- **der_revision_001** (`Asa prefers coffee` + prior `prefers tea`):
+  Step 1 (seeded prefers, user_authoritative + single_valued=1) +
+  Cluster 2's §"KB wins" → pre_verdict=contradicted at promotion
+  time → walker skipped → returns `contradicted`.
+- **der_revision_005** (`The project ended in 2024` + prior `status
+  ongoing`): Step 8 article stripping makes subjects match. Walker
+  finds object_conflict on the functional `status` predicate →
+  returns `contradicted`.
+- **der_revision_006** (`Asa joined Google in 2020` + prior
+  `employed_by Google valid_from=2019`): Step 7 scope_conflict
+  detection at TierU.write time fires §"KB wins" → pre_verdict
+  contradicted → walker skipped → returns `contradicted`.
+
+### R4 remaining misses (deferred to v0.16)
+
+- **der_revision_002** (`Asa works at Google` + prior `employed_by
+  Microsoft`): expected `contradicted` requires `employed_by` to
+  be functional-at-a-point-in-time. Seed pack treats it as
+  multi-valued (career history). Captured as **v0.16 D57**
+  (formal functional-at-a-point-in-time cardinality).
+- **der_revision_003** (`Asa is not a student` + prior
+  `holds_role student` polarity=1): walker fixup correctly routes
+  to polarity-conflict check, but the Wikipedia normalizer
+  produces a different canonical subject for the seed write than
+  for the promotion write (despite the corpus runner's fixup
+  passing matching source_text), so the polarity-conflict lookup
+  doesn't find the externally-verified prior. Captured as **v0.16
+  D58** (normalizer determinism between seed and promotion).
+- **der_revision_004** (idempotent `Asa is still a student` +
+  same prior): same root cause as 003 — seed and promotion
+  canonicalize differently, producing two rows instead of one
+  idempotent. **v0.16 D58**.
+
+### R3 -1 case
+
+`der_predicate_translation_003` got `verified` instead of expected
+`verified_given_assertion`. This is the same cluster-2 pattern
+where the chain composition via Stage 3 broadening reached the KB
+and the upgrade fired — the corpus expectation was that KB
+wouldn't ground, but with the seeded `authored` alias (Step 2) the
+KB path opens. Arguably a corpus-expectation revision rather than
+a regression. Captured implicitly under D46-closure.
+
+## What Cluster 3 closes vs. v0.16 deltas
 
 ## Full variance-bound results (3 runs per mode)
 
@@ -281,25 +327,37 @@ after the probe data is in*
 
 ## What Cluster 3 closes vs. v0.16 deltas
 
-- D46 (calibration corpus vs seed-pack normalization) is largely
-  closed by Step 2's seed-pack aliases. Residual entries (P37, P576,
-  P749, P800, `co_founded`) are captured as v0.16 candidates in the
-  updated D46 entry.
-- Tertiary measurement (hybrid mode) is a new v0.16 candidate.
-- Step 3's prompt rules may surface extractor regressions on edge
-  cases — Phase 10.5's extraction_corpus run validates this.
+- **D46** (calibration corpus vs seed-pack normalization): largely
+  closed by Step 2's seed-pack aliases. Residual entries (P37,
+  P576, P749, P800, `co_founded`) are captured as v0.16 candidates.
+- **D54** (tertiary measurement: hybrid-vocabulary): new v0.16
+  candidate.
+- **D55** (seed-pack semantic correctness audit as standing
+  pre-release pass): pattern captured from Step 4.
+- **D56** (cold-start LLM oracle calibration iteration): triggered
+  by the dual-measurement framework; informed by Phase 10.5 data.
+- **D57** (functional-at-a-point-in-time cardinality): blocks
+  der_revision_002 (`employed_by` semantic).
+- **D58** (TierU normalizer determinism between seed and promotion
+  writes): blocks der_revision_003 and 004.
 
 ## What's NOT closed
 
 - The cold-start LLM oracle's calibration quality on novel predicates
-  is unchanged by Cluster 3. Cold-start measurements still reflect
-  the same LLM-driven generation behavior we measured throughout
-  Phase H. v0.16 may iterate on the predicate-translation oracle's
-  prompt if the cold-start measurement is materially below the
-  seeded number.
+  is unchanged by Cluster 3 (44% — flat with baseline). v0.16 D56
+  may iterate on the predicate-translation oracle's prompt if the
+  Phase 10.5 cold-start measurement is materially below the seeded
+  number.
 - `der_cross_008` (Cluster 2's verdict-family flake) and other
   KB-nondeterminism artifacts are not addressed by Cluster 3 — they
-  affect both modes equally.
+  affect both modes equally. R1 (1/5) stays where Cluster 2 left
+  it.
+- der_revision_002, 003, 004 (R4 ceiling) — v0.16 D57 and D58
+  address these. Cluster 3 closes 3 of 6 R4 cases; the remaining 3
+  need architectural / determinism work.
 - Phase H is closed by Cluster 3 from a *capability* standpoint, but
   the rc.11 tag waits for the Phase 10.5 calibration pass per the
-  operator's standard discipline.
+  operator's standard discipline. The 2-additional-runs-per-mode
+  variance bound (D49) is deferred to Phase 10.5; this single-probe
+  data + diagnostic-driven remediation pattern is the precedent
+  Phase 10.5 inherits.
