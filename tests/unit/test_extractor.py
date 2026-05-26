@@ -157,6 +157,89 @@ class TestExtractionContextDataclass:
 # TestExtractorRoundtrip
 # ---------------------------------------------------------------------------
 
+class TestVerbShapePromptRules:
+    """Phase H Cluster 3 (2026-05-26) step 3: the v5 prompt carries rules
+    12-14 for verb-shape variants on seeded predicates:
+      - Rule 12: 'joined / was hired by / started at' → employed_by with valid_from
+      - Rule 13: 'left / quit / departed / resigned from' → employed_by with valid_until
+      - Rule 14: 'ended / began' on state-bearing subjects → status with valid_*
+
+    These tests pin the rule wording (so a future prompt edit cannot silently
+    drop them) and verify the post-LLM pipeline produces the expected Claim
+    when the LLM returns the rule-prescribed shape. End-to-end LLM-following
+    behavior is validated against the live derivation_corpus in Step 5.
+    """
+
+    def test_prompt_carries_rule_12_employment_start(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "12. EMPLOYMENT EVENTS" in _SYSTEM_PROMPT
+        assert "joined Google" in _SYSTEM_PROMPT
+        assert "employed_by" in _SYSTEM_PROMPT
+
+    def test_prompt_carries_rule_13_employment_termination(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "EMPLOYMENT TERMINATION" in _SYSTEM_PROMPT
+        assert "left Google" in _SYSTEM_PROMPT
+        assert "valid_until" in _SYSTEM_PROMPT
+
+    def test_prompt_carries_rule_14_state_changes(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "STATE CHANGES" in _SYSTEM_PROMPT
+        assert "STATE-BEARING" in _SYSTEM_PROMPT
+        assert "status" in _SYSTEM_PROMPT
+        assert "The project ended in 2024" in _SYSTEM_PROMPT
+
+    def test_prompt_carries_rule_8_event_non_trigger(self):
+        # Rule 14 must not over-apply to historical events — its non-trigger
+        # explicitly cedes 'the war ended in 1945' to Rule 8.
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "the war ended in 1945" in _SYSTEM_PROMPT
+        assert "Rule 8 applies" in _SYSTEM_PROMPT
+
+    def test_pipeline_handles_employment_start_shape(self):
+        # When the LLM follows Rule 12, the post-LLM pipeline produces a
+        # Claim with predicate=employed_by and the year in valid_from.
+        raw = _raw_claim(
+            subject="Asa", predicate="employed_by", object="Google",
+            valid_from="2020", source_text="Asa joined Google in 2020",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa joined Google in 2020", _default_context())
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.predicate == "employed_by"
+        assert c.object == "Google"
+        assert c.valid_from == "2020"
+        assert c.valid_until is None
+
+    def test_pipeline_handles_employment_termination_shape(self):
+        raw = _raw_claim(
+            subject="Asa", predicate="employed_by", object="Microsoft",
+            valid_until="2019", source_text="Asa quit Microsoft in 2019",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa quit Microsoft in 2019", _default_context())
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.predicate == "employed_by"
+        assert c.object == "Microsoft"
+        assert c.valid_until == "2019"
+        assert c.valid_from is None
+
+    def test_pipeline_handles_status_change_shape(self):
+        raw = _raw_claim(
+            subject="The project", predicate="status", object="ended",
+            valid_until="2024", source_text="The project ended in 2024",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("The project ended in 2024", _default_context())
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.predicate == "status"
+        assert c.object == "ended"
+        assert c.valid_until == "2024"
+
+
 class TestExtractorRoundtrip:
     def test_basic_extraction_returns_claim(self):
         raw = _raw_claim()
