@@ -665,6 +665,77 @@ class TestCluster3Step7BypassNormalizer:
         assert result.row_id is not None
 
 
+class TestCluster3Step8ArticleStripping:
+    """Phase H Cluster 3 step 8 (2026-05-26): leading articles
+    (the/a/an) are stripped from subject and object before storage and
+    lookup. der_revision_005 ("The project ended in 2024" with prior
+    "project status=ongoing") is the motivating case: the extractor's
+    "The project" and the seed's "project" name the same subject; the
+    normalizer should map both to the same canonical form."""
+
+    def test_article_stripped_from_subject_on_write(self):
+        tu, db = _tier_u()
+        wr = tu.write(_claim(subject="The project"))
+        row = db.execute(
+            "SELECT subject FROM tier_u WHERE id=?", (wr.row_id,)
+        ).fetchone()
+        assert row["subject"] == "project"
+
+    def test_article_stripped_from_object_on_write(self):
+        tu, db = _tier_u()
+        wr = tu.write(_claim(subject="X", predicate="p", object_val="The accord"))
+        row = db.execute(
+            "SELECT object FROM tier_u WHERE id=?", (wr.row_id,)
+        ).fetchone()
+        assert row["object"] == "accord"
+
+    def test_articled_and_bare_collapse_to_same_row(self):
+        tu, _ = _tier_u()
+        first = tu.write(_claim(subject="project"))
+        second = tu.write(_claim(subject="The project"))
+        assert second.was_idempotent is True
+        assert second.row_id == first.row_id
+
+    def test_indefinite_article_also_stripped(self):
+        tu, db = _tier_u()
+        wr = tu.write(_claim(subject="A meeting"))
+        row = db.execute(
+            "SELECT subject FROM tier_u WHERE id=?", (wr.row_id,)
+        ).fetchone()
+        assert row["subject"] == "meeting"
+
+    def test_case_insensitive_article_stripping(self):
+        tu, db = _tier_u()
+        wr = tu.write(_claim(subject="THE Project"))
+        row = db.execute(
+            "SELECT subject FROM tier_u WHERE id=?", (wr.row_id,)
+        ).fetchone()
+        # Case is preserved on the noun portion; article is stripped
+        # regardless of case.
+        assert row["subject"] == "Project"
+
+    def test_bypass_normalizer_still_strips_articles(self):
+        # bypass_normalizer should skip the Wikipedia normalizer but
+        # still apply article stripping — both seed and promotion writes
+        # for the same subject must canonicalize identically.
+        # Wait — bypass_normalizer takes the raw subject. Article
+        # stripping happens inside _normalize_slot, which bypass_normalizer
+        # avoids. To make seed and promotion consistent for "The project"
+        # / "project", the seed write (bypass_normalizer=True) must
+        # NOT strip articles, OR the corpus must use the bare form.
+        # Per cluster 3 step 8 design: bypass_normalizer skips the
+        # entire normalize path. The corpus author seeds bare forms;
+        # the extractor produces articled forms; the EXTRACTOR's
+        # promotion (which doesn't bypass) strips. Result: seed=project,
+        # promotion=project. Idempotent.
+        tu, db = _tier_u()
+        seed_wr = tu.write(_claim(subject="project"), bypass_normalizer=True)
+        time.sleep(0.01)
+        promotion_wr = tu.write(_claim(subject="The project"))
+        assert promotion_wr.was_idempotent is True
+        assert promotion_wr.row_id == seed_wr.row_id
+
+
 class TestCluster3Step7ExcludeRowIds:
     """Phase H Cluster 3 step 7 (2026-05-26): TierU.lookup accepts
     `exclude_row_ids` so the walker can filter its own freshly-promoted

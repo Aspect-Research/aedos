@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -12,6 +13,22 @@ from ..layer1_extraction.temporal import BEFORE_PRESENT
 from ..layer3_substrate.predicate_translation import PredicateTranslation, PredicateTranslationError
 
 _NOW = lambda: datetime.now(timezone.utc).isoformat()
+
+# Phase H Cluster 3 step 8 (2026-05-26): strip a leading definite/indefinite
+# article from a slot value. "The project" and "project" name the same
+# state-bearing subject; the corpus author's seed may use one and the
+# extractor's output the other. Pre-step-8 the literal Stage 1 lookup
+# missed (der_revision_005 ceiling). The strip happens BEFORE the
+# Wikipedia normalizer, so the normalizer sees the de-articled form and
+# its Wikipedia-redirect resolution still handles proper-noun titles
+# ("Beatles" → "The Beatles" via redirect graph). The strip only
+# materially affects common-noun subjects where the article is
+# semantically vacuous.
+_LEADING_ARTICLE = re.compile(r"^(the|a|an)\s+", re.IGNORECASE)
+
+
+def _strip_leading_article(value: str) -> str:
+    return _LEADING_ARTICLE.sub("", value).strip() or value
 
 
 @dataclass
@@ -68,16 +85,34 @@ class TierU:
         """Phase H D47: return the canonical Wikipedia form for a claim
         slot. No-op when no normalizer is wired or the value is empty;
         also skipped for the asserting party itself (first-person
-        canonicalization output) and synthetic event ids."""
-        if self._normalizer is None or not value:
+        canonicalization output) and synthetic event ids.
+
+        Phase H Cluster 3 step 8 (2026-05-26): always strip a leading
+        definite/indefinite article from the value before normalization.
+        "The project" and "project" refer to the same state-bearing
+        subject; the corpus author's seed may use one form and the
+        extractor's output may use another. Without article stripping
+        the literal Stage 1 lookup misses (der_revision_005 ceiling).
+        The article strip happens BEFORE the Wikipedia normalizer
+        consultation, so the normalizer sees the de-articled form. For
+        proper-noun subjects (`The United States`, `The Beatles`) the
+        normalizer's Wikipedia-redirect resolution still produces the
+        canonical title — Wikipedia handles "Beatles" → "The Beatles"
+        via its redirect graph. The article strip only affects
+        common-noun subjects where the article is semantically vacuous.
+        """
+        if not value:
             return value
         if claim.asserting_party and value == claim.asserting_party:
             return value
         if value.startswith("event_"):
             return value
+        stripped = _strip_leading_article(value)
+        if self._normalizer is None:
+            return stripped
         try:
             result = self._normalizer.normalize(
-                surface_form=value,
+                surface_form=stripped,
                 claim_subject=claim.subject,
                 claim_predicate=claim.predicate,
                 claim_object=claim.object,
@@ -86,8 +121,8 @@ class TierU:
                 claim_id=claim.claim_id,
             )
         except Exception:
-            return value
-        return result.normalized_form or value
+            return stripped
+        return result.normalized_form or stripped
 
     def write(
         self,
