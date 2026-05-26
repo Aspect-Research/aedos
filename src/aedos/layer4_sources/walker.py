@@ -355,15 +355,88 @@ class Walker:
         """
         llm_delta = 0
 
-        # Tier U lookup (positive match)
-        # Phase H Cluster 3 step 7: filter out the walk's own promoted row
-        # so polarity/object-conflict belief-revision paths can fire when
-        # the prior is in Tier U but has a different polarity / object
-        # than the just-promoted claim.
+        # Phase H Cluster 3 step 7 fixup (2026-05-26): check belief-revision
+        # paths against PRIORS first, before Stage 1. Pre-fixup this code
+        # excluded the walk's own promoted row from Stage 1 — but that
+        # broke R3 cases (`der_multihop_001` "Asa lives in Williamstown")
+        # where the promoted row IS the legitimate grounding and the
+        # walker should match it to return verified_given_assertion.
+        #
+        # The restructured flow: first look for a CONFLICTING prior
+        # (opposite polarity OR different object on a functional
+        # predicate) WITH the walk's own promotion excluded; if found,
+        # belief-revision fires and returns `contradicted`. If no
+        # conflict, fall through to normal Stage 1 (no exclusion) so the
+        # walker can match its own promotion as the in-vocabulary
+        # grounding source. Q-Lookup α and external grounding follow as
+        # before.
+        excluded = getattr(self, "_excluded_tier_u_row_ids", None) or None
+
+        # Polarity-conflict belief revision (architecture 8.1): a
+        # currently-valid non-self prior of opposite polarity contradicts
+        # the claim. Exclusion of own promotion prevents the walker from
+        # missing the prior when the promote-then-walk pattern has
+        # already written a row of the claim's polarity.
+        flipped = _claim_from_parts(node, polarity=1 - node.polarity)
+        flipped_result = self._tier_u.lookup(
+            flipped,
+            current_time=context.current_time,
+            exclude_row_ids=excluded,
+        )
+        if flipped_result.found:
+            flipped_row = flipped_result.rows[0] if flipped_result.rows else {}
+            flipped_status = flipped_row.get("status", "asserted_unverified")
+            trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
+            trace.edges.append(TraceEdge(
+                edge_type="premise_lookup",
+                source=trace.root,
+                target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
+                metadata={
+                    "source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted",
+                    "tier_u_row_id": flipped_row.get("id"),
+                    "belief_revision": "polarity_conflict",
+                    "premise_status": flipped_status,
+                },
+            ))
+            if flipped_status == "asserted_unverified":
+                trace.chain_includes_assertion = True
+            return "contradicted", "tier_u", 0
+
+        # Object-conflict belief revision (D16): a functional
+        # (single_valued) predicate admits at most one object value per
+        # subject. lookup_object_conflict already filters to DIFFERENT
+        # objects so it can't return the walk's own promotion — no
+        # exclusion needed.
+        if node.polarity == 1:
+            oc_result = self._tier_u.lookup_object_conflict(
+                node, current_time=context.current_time
+            )
+            if oc_result.found and self._predicate_is_functional(node.predicate):
+                oc_row = oc_result.rows[0] if oc_result.rows else {}
+                oc_status = oc_row.get("status", "asserted_unverified")
+                trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
+                trace.edges.append(TraceEdge(
+                    edge_type="premise_lookup",
+                    source=trace.root,
+                    target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
+                    metadata={
+                        "source": "tier_u", "polarity": node.polarity, "verdict": "contradicted",
+                        "tier_u_row_id": oc_row.get("id"),
+                        "belief_revision": "object_conflict",
+                        "premise_status": oc_status,
+                    },
+                ))
+                if oc_status == "asserted_unverified":
+                    trace.chain_includes_assertion = True
+                return "contradicted", "tier_u", 0
+
+        # Stage 1 literal Tier U lookup. Now that belief-revision paths
+        # against priors have already been checked, the walker is free to
+        # match its own promotion here — this is the Q-UserAuth /
+        # Q-Lookup α grounding path for R3 cases.
         tier_u_result = self._tier_u.lookup(
             node,
             current_time=context.current_time,
-            exclude_row_ids=getattr(self, "_excluded_tier_u_row_ids", None) or None,
         )
         if tier_u_result.found:
             # Defensive: a mock TierU may report `found=True` without a
@@ -424,66 +497,10 @@ class Walker:
             # but does NOT ground a present-tense claim → skip
             pass
 
-        # Belief revision (architecture 8.1): if the claim's exact negation is
-        # asserted in Tier U — a currently-valid, non-retracted row of opposite
-        # polarity for the same (party, subject, predicate, object) — the
-        # authoritative prior contradicts the claim.
-        flipped = _claim_from_parts(node, polarity=1 - node.polarity)
-        flipped_result = self._tier_u.lookup(
-            flipped,
-            current_time=context.current_time,
-            exclude_row_ids=getattr(self, "_excluded_tier_u_row_ids", None) or None,
-        )
-        if flipped_result.found:
-            flipped_row = flipped_result.rows[0] if flipped_result.rows else {}
-            flipped_status = flipped_row.get("status", "asserted_unverified")
-            trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
-            trace.edges.append(TraceEdge(
-                edge_type="premise_lookup",
-                source=trace.root,
-                target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
-                metadata={
-                    "source": "tier_u", "polarity": flipped.polarity, "verdict": "contradicted",
-                    "tier_u_row_id": flipped_row.get("id"),
-                    "belief_revision": "polarity_conflict",
-                    "premise_status": flipped_status,
-                },
-            ))
-            if flipped_status == "asserted_unverified":
-                trace.chain_includes_assertion = True
-            return "contradicted", "tier_u", 0
-
-        # Object-conflict belief revision (D16): a functional (single_valued)
-        # predicate admits at most one object value per subject. A
-        # currently-valid Tier U row positively asserting a DIFFERENT object for
-        # the same (party, subject, predicate) therefore contradicts a positive
-        # claim — the asserting party already stipulated another value.
-        # Multi-valued predicates do not fire this path (a different value is a
-        # parallel assertion). Negated claims do not fire it either: Phase B
-        # keeps the negated-claim direction conservative (fall through to
-        # abstain) rather than deriving the negation from the functional prior.
-        if node.polarity == 1:
-            oc_result = self._tier_u.lookup_object_conflict(
-                node, current_time=context.current_time
-            )
-            if oc_result.found and self._predicate_is_functional(node.predicate):
-                oc_row = oc_result.rows[0] if oc_result.rows else {}
-                oc_status = oc_row.get("status", "asserted_unverified")
-                trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1
-                trace.edges.append(TraceEdge(
-                    edge_type="premise_lookup",
-                    source=trace.root,
-                    target=TraceNode("tier_u_row", {"subject": node.subject, "predicate": node.predicate}),
-                    metadata={
-                        "source": "tier_u", "polarity": node.polarity, "verdict": "contradicted",
-                        "tier_u_row_id": oc_row.get("id"),
-                        "belief_revision": "object_conflict",
-                        "premise_status": oc_status,
-                    },
-                ))
-                if oc_status == "asserted_unverified":
-                    trace.chain_includes_assertion = True
-                return "contradicted", "tier_u", 0
+        # (Belief-revision paths moved BEFORE Stage 1 — see the
+        # Cluster 3 step 7 fixup block at the top of this method.
+        # Reaching here means there is no current Tier U premise of
+        # either polarity / no functional-predicate object_conflict.)
 
         # No Tier U premise. Try KB / Python for standalone external
         # grounding (the §6.5 fallthrough — no upgrade scenario here,

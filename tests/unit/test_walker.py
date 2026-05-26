@@ -59,12 +59,23 @@ class MockTransport:
 
 
 class MockTierU:
-    def __init__(self, found=False, historical_only=False):
+    def __init__(self, found=False, historical_only=False, match_polarity=1):
         self._found = found
         self._historical = historical_only
+        # Phase H Cluster 3 step 7 fixup: the walker now checks the
+        # polarity-flipped lookup FIRST (to detect belief-revision
+        # priors before falling through to Stage 1). The mock needs to
+        # match only the claim's intended polarity — otherwise an
+        # always-found stub fires the polarity_conflict path on every
+        # walk and shadows the Stage 1 verification intent.
+        self._match_polarity = match_polarity
 
     def lookup(self, claim, current_time=None, exclude_row_ids=None):
-        return LookupResult(found=self._found, historical_only=self._historical)
+        if self._found and claim.polarity == self._match_polarity:
+            return LookupResult(found=True, historical_only=self._historical)
+        if self._historical and claim.polarity == self._match_polarity:
+            return LookupResult(found=False, historical_only=True)
+        return LookupResult(found=False)
 
     def lookup_object_conflict(self, claim, current_time=None):
         # No object conflict in these unit fixtures; the walker's
