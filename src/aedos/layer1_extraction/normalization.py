@@ -2,6 +2,16 @@ from __future__ import annotations
 
 import re
 
+# Phase H Cluster 3 (2026-05-26): the map's right-hand side targets the
+# seed-pack canonical names (`seeds/predicate_translation.json`). When a
+# canonical Aedos predicate name is itself the natural surface form (e.g.
+# `instance_of`), the entry maps to itself so callers can normalize without
+# special-casing already-canonical inputs.
+#
+# Lookup accepts both space-separated ("works at") and underscored
+# ("works_at") forms — `normalize_predicate` collapses underscores to
+# spaces before the lookup, so the map only needs to list each surface
+# form once.
 _CANONICAL_MAP: dict[str, str] = {
     "is employed by": "employed_by",
     "works for": "employed_by",
@@ -62,24 +72,38 @@ _AUX_PREFIX = re.compile(
 
 
 def normalize_predicate(raw: str) -> str:
-    """Normalize a predicate to canonical snake_case, tense-neutral, voice-neutral form."""
-    stripped = raw.strip().lower()
+    """Normalize a predicate to canonical snake_case, tense-neutral, voice-neutral form.
 
-    if stripped in _CANONICAL_MAP:
-        return _CANONICAL_MAP[stripped]
+    Phase H Cluster 3: accepts both space-separated ("works at") and
+    underscored ("works_at") surface forms. Underscores are collapsed
+    to spaces before the canonical-map lookup, so an extractor that
+    emits `works_at` and an extractor that emits "works at" both
+    produce `employed_by`.
+    """
+    stripped = raw.strip().lower()
+    if not stripped:
+        return "unknown_predicate"
+
+    # Phase H Cluster 3: treat underscores as equivalent to spaces for
+    # map lookup. An already-snake_case input that doesn't hit the map
+    # still falls through to the snake_case fallback unchanged.
+    space_form = stripped.replace("_", " ")
+
+    if space_form in _CANONICAL_MAP:
+        return _CANONICAL_MAP[space_form]
 
     # Try stripping a leading auxiliary verb once
-    no_aux = _AUX_PREFIX.sub("", stripped).strip()
-    if no_aux != stripped:
+    no_aux = _AUX_PREFIX.sub("", space_form).strip()
+    if no_aux != space_form:
         if no_aux in _CANONICAL_MAP:
             return _CANONICAL_MAP[no_aux]
-        stripped = no_aux
+        space_form = no_aux
 
     # Remove trailing definite/indefinite article
-    stripped = re.sub(r"\s+(the|a|an)$", "", stripped)
+    space_form = re.sub(r"\s+(the|a|an)$", "", space_form)
 
     # snake_case: remove non-word/non-space chars, collapse spaces to underscores
-    result = re.sub(r"[^\w\s]", "_", stripped)
+    result = re.sub(r"[^\w\s]", "_", space_form)
     result = re.sub(r"\s+", "_", result.strip())
     result = re.sub(r"_+", "_", result).strip("_")
 
