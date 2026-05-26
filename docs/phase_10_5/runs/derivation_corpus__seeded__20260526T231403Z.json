@@ -1,0 +1,365 @@
+{
+  "corpus": "derivation_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T23:04:38.517585+00:00",
+  "finished_at": "2026-05-26T23:14:03.988664+00:00",
+  "duration_s": 565.5,
+  "case_count": 50,
+  "passed": 28,
+  "accuracy": 0.56,
+  "threshold": 0.8,
+  "per_case": [
+    {
+      "case_id": "der_multihop_001",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 12.3
+    },
+    {
+      "case_id": "der_multihop_002",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 12.914
+    },
+    {
+      "case_id": "der_multihop_003",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "error": null,
+      "duration_s": 52.151
+    },
+    {
+      "case_id": "der_multihop_004",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 15.476
+    },
+    {
+      "case_id": "der_multihop_005",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 7.873
+    },
+    {
+      "case_id": "der_multihop_006",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 9.991
+    },
+    {
+      "case_id": "der_multihop_007",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 9.228
+    },
+    {
+      "case_id": "der_multihop_008",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 7.196
+    },
+    {
+      "case_id": "der_multihop_009",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 5.921
+    },
+    {
+      "case_id": "der_multihop_010",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "error": null,
+      "duration_s": 12.957
+    },
+    {
+      "case_id": "der_multihop_011",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "error": null,
+      "duration_s": 5.6
+    },
+    {
+      "case_id": "der_multihop_012",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "error": null,
+      "duration_s": 55.416
+    },
+    {
+      "case_id": "der_cross_001",
+      "category": "cross_source",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.077
+    },
+    {
+      "case_id": "der_cross_002",
+      "category": "cross_source",
+      "passed": false,
+      "error": null,
+      "duration_s": 5.649
+    },
+    {
+      "case_id": "der_cross_003",
+      "category": "cross_source",
+      "passed": false,
+      "error": null,
+      "duration_s": 7.374
+    },
+    {
+      "case_id": "der_cross_004",
+      "category": "cross_source",
+      "passed": true,
+      "error": null,
+      "duration_s": 11.027
+    },
+    {
+      "case_id": "der_cross_005",
+      "category": "cross_source",
+      "passed": false,
+      "error": null,
+      "duration_s": 9.928
+    },
+    {
+      "case_id": "der_cross_006",
+      "category": "cross_source",
+      "passed": true,
+      "error": null,
+      "duration_s": 9.884
+    },
+    {
+      "case_id": "der_cross_007",
+      "category": "cross_source",
+      "passed": true,
+      "error": null,
+      "duration_s": 9.971
+    },
+    {
+      "case_id": "der_cross_008",
+      "category": "cross_source",
+      "passed": false,
+      "error": null,
+      "duration_s": 20.207
+    },
+    {
+      "case_id": "der_cross_009",
+      "category": "cross_source",
+      "passed": true,
+      "error": null,
+      "duration_s": 20.067
+    },
+    {
+      "case_id": "der_cross_010",
+      "category": "cross_source",
+      "passed": false,
+      "error": null,
+      "duration_s": 11.925
+    },
+    {
+      "case_id": "der_disambiguation_001",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "error": null,
+      "duration_s": 6.004
+    },
+    {
+      "case_id": "der_disambiguation_002",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "error": null,
+      "duration_s": 14.433
+    },
+    {
+      "case_id": "der_disambiguation_003",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "error": null,
+      "duration_s": 6.766
+    },
+    {
+      "case_id": "der_disambiguation_004",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "error": null,
+      "duration_s": 10.248
+    },
+    {
+      "case_id": "der_disambiguation_005",
+      "category": "entity_disambiguation",
+      "passed": true,
+      "error": null,
+      "duration_s": 5.882
+    },
+    {
+      "case_id": "der_disambiguation_006",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "error": null,
+      "duration_s": 10.288
+    },
+    {
+      "case_id": "der_disambiguation_007",
+      "category": "entity_disambiguation",
+      "passed": true,
+      "error": null,
+      "duration_s": 17.152
+    },
+    {
+      "case_id": "der_disambiguation_008",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "error": null,
+      "duration_s": 4.834
+    },
+    {
+      "case_id": "der_predicate_translation_001",
+      "category": "predicate_translation",
+      "passed": false,
+      "error": null,
+      "duration_s": 10.476
+    },
+    {
+      "case_id": "der_predicate_translation_002",
+      "category": "predicate_translation",
+      "passed": true,
+      "error": null,
+      "duration_s": 11.722
+    },
+    {
+      "case_id": "der_predicate_translation_003",
+      "category": "predicate_translation",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.059
+    },
+    {
+      "case_id": "der_predicate_translation_004",
+      "category": "predicate_translation",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.305
+    },
+    {
+      "case_id": "der_predicate_translation_005",
+      "category": "predicate_translation",
+      "passed": false,
+      "error": null,
+      "duration_s": 15.009
+    },
+    {
+      "case_id": "der_predicate_translation_006",
+      "category": "predicate_translation",
+      "passed": true,
+      "error": null,
+      "duration_s": 8.172
+    },
+    {
+      "case_id": "der_predicate_translation_007",
+      "category": "predicate_translation",
+      "passed": false,
+      "error": null,
+      "duration_s": 15.24
+    },
+    {
+      "case_id": "der_predicate_translation_008",
+      "category": "predicate_translation",
+      "passed": true,
+      "error": null,
+      "duration_s": 19.804
+    },
+    {
+      "case_id": "der_revision_001",
+      "category": "belief_revision",
+      "passed": true,
+      "error": null,
+      "duration_s": 7.17
+    },
+    {
+      "case_id": "der_revision_002",
+      "category": "belief_revision",
+      "passed": false,
+      "error": null,
+      "duration_s": 5.886
+    },
+    {
+      "case_id": "der_revision_003",
+      "category": "belief_revision",
+      "passed": false,
+      "error": null,
+      "duration_s": 11.437
+    },
+    {
+      "case_id": "der_revision_004",
+      "category": "belief_revision",
+      "passed": false,
+      "error": null,
+      "duration_s": 7.772
+    },
+    {
+      "case_id": "der_revision_005",
+      "category": "belief_revision",
+      "passed": true,
+      "error": null,
+      "duration_s": 12.29
+    },
+    {
+      "case_id": "der_revision_006",
+      "category": "belief_revision",
+      "passed": true,
+      "error": null,
+      "duration_s": 7.133
+    },
+    {
+      "case_id": "der_abstain_001",
+      "category": "abstention",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.939
+    },
+    {
+      "case_id": "der_abstain_002",
+      "category": "abstention",
+      "passed": true,
+      "error": null,
+      "duration_s": 7.431
+    },
+    {
+      "case_id": "der_abstain_003",
+      "category": "abstention",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.645
+    },
+    {
+      "case_id": "der_abstain_004",
+      "category": "abstention",
+      "passed": true,
+      "error": null,
+      "duration_s": 14.113
+    },
+    {
+      "case_id": "der_abstain_005",
+      "category": "abstention",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.208
+    },
+    {
+      "case_id": "der_abstain_006",
+      "category": "abstention",
+      "passed": false,
+      "error": null,
+      "duration_s": 8.91
+    }
+  ]
+}
