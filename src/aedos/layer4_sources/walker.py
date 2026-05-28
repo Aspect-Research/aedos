@@ -72,6 +72,40 @@ class BudgetExceeded(Exception):
 _DEFAULT_MAX_DEPTH = 4
 
 
+_VAGUE_CLASS_PREFIXES = ("a ", "an ", "some ", "any ")
+_VAGUE_CLASS_RELCLAUSE = (" that ", " which ", " where ", " whose ", " who ")
+
+
+def _is_vague_class_object(object_value: str) -> bool:
+    """Phase 10.5 Step 6 sub-cause F follow-on: True if the object is a
+    descriptive class reference rather than a specific entity name.
+
+    Triggers on:
+      - Indefinite-article prefix: 'a town in the United States',
+        'an institution founded before 1800'.
+      - Relative-clause structure: 'a state that borders New York',
+        'a country which uses the Euro'.
+
+    Used by the walker's object-conflict path to skip the contradicted
+    return when the claim's object is a class — the specific Tier U
+    premise may instantiate the class (Williamstown IS a town in the
+    US), so the conflict is a subsumption candidate, not a refutation.
+    """
+    if not object_value:
+        return False
+    obj = object_value.strip()
+    if not obj:
+        return False
+    lower = obj.lower()
+    for prefix in _VAGUE_CLASS_PREFIXES:
+        if lower.startswith(prefix):
+            return True
+    for relclause in _VAGUE_CLASS_RELCLAUSE:
+        if relclause in lower:
+            return True
+    return False
+
+
 def _claim_key(claim: Claim) -> str:
     return f"{claim.asserting_party}|{claim.subject}|{claim.predicate}|{claim.object}|{claim.polarity}"
 
@@ -411,7 +445,23 @@ class Walker:
             oc_result = self._tier_u.lookup_object_conflict(
                 node, current_time=context.current_time
             )
-            if oc_result.found and self._predicate_is_functional(node.predicate):
+            if (
+                oc_result.found
+                and self._predicate_is_functional(node.predicate)
+                # Phase 10.5 Step 6 sub-cause F follow-on: skip the
+                # object-conflict contradicted return when the claim's
+                # object is a vague descriptive phrase (indefinite-
+                # article noun-phrase like "a town in the US", "a state
+                # that borders NY"). The specific Tier U premise may be
+                # an INSTANCE of the claim's CLASS — Williamstown is "a
+                # town in the United States" — so the conflict is a
+                # subsumption candidate, not a contradiction. The walker
+                # cannot resolve free-text class references to KB Q-IDs
+                # cheaply at this site (no class-instance oracle in v0.15),
+                # so the §3.2 soundness invariant calls for abstaining
+                # rather than emitting a §3.2-violating false contradiction.
+                and not _is_vague_class_object(node.object)
+            ):
                 oc_row = oc_result.rows[0] if oc_result.rows else {}
                 oc_status = oc_row.get("status", "asserted_unverified")
                 trace.source_breakdown["tier_u"] = trace.source_breakdown.get("tier_u", 0) + 1

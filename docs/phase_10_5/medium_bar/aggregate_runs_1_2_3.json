@@ -1,0 +1,4681 @@
+{
+  "n_runs": 3,
+  "run_files": [
+    "docs\\phase_10_5\\medium_bar\\medium_bar_run_01.json",
+    "docs\\phase_10_5\\medium_bar\\medium_bar_run_02.json",
+    "docs\\phase_10_5\\medium_bar\\medium_bar_run_03.json"
+  ],
+  "per_run": [
+    {
+      "run_id": 1,
+      "started_at": "2026-05-28T08:44:42.456906+00:00",
+      "finished_at": "2026-05-28T10:33:39.553666+00:00",
+      "duration_s": 6537.1,
+      "case_count": 122,
+      "db_path": "aedos_phase10_5.db",
+      "aedos_metrics": {
+        "total": 122,
+        "correct": 34,
+        "accuracy": 0.2786885245901639,
+        "false_verified": 2,
+        "false_verified_rate": 0.01639344262295082,
+        "false_abstain": 70,
+        "false_abstain_rate": 0.8333333333333334,
+        "per_failure_mode": {
+          "multi_hop_distribution": {
+            "total": 20,
+            "correct": 0,
+            "accuracy": 0.0
+          },
+          "cross_source_unification": {
+            "total": 21,
+            "correct": 5,
+            "accuracy": 0.23809523809523808
+          },
+          "entity_disambiguation": {
+            "total": 23,
+            "correct": 3,
+            "accuracy": 0.13043478260869565
+          },
+          "predicate_translation": {
+            "total": 28,
+            "correct": 5,
+            "accuracy": 0.17857142857142858
+          },
+          "belief_revision": {
+            "total": 10,
+            "correct": 3,
+            "accuracy": 0.3
+          },
+          "principled_abstention": {
+            "total": 20,
+            "correct": 18,
+            "accuracy": 0.9
+          }
+        }
+      },
+      "baseline_metrics": {
+        "total": 122,
+        "correct": 96,
+        "accuracy": 0.7868852459016393,
+        "false_verified": 12,
+        "false_verified_rate": 0.09836065573770492,
+        "false_abstain": 9,
+        "false_abstain_rate": 0.10714285714285714,
+        "per_failure_mode": {
+          "multi_hop_distribution": {
+            "total": 20,
+            "correct": 19,
+            "accuracy": 0.95
+          },
+          "cross_source_unification": {
+            "total": 21,
+            "correct": 16,
+            "accuracy": 0.7619047619047619
+          },
+          "entity_disambiguation": {
+            "total": 23,
+            "correct": 22,
+            "accuracy": 0.9565217391304348
+          },
+          "predicate_translation": {
+            "total": 28,
+            "correct": 27,
+            "accuracy": 0.9642857142857143
+          },
+          "belief_revision": {
+            "total": 10,
+            "correct": 2,
+            "accuracy": 0.2
+          },
+          "principled_abstention": {
+            "total": 20,
+            "correct": 10,
+            "accuracy": 0.5
+          }
+        }
+      },
+      "per_case": [
+        {
+          "case_id": "mhd_001",
+          "statement": "Paris is in France and France is in Europe, so Paris is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country\u2192continent chain; distributes_up required",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 370.6100000000006,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7820000000065193
+        },
+        {
+          "case_id": "mhd_002",
+          "statement": "Berlin is in Germany and Germany is in the European Union.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country\u2192supranational org; two-hop KB chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 108.98399999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "mhd_003",
+          "statement": "Williamstown is in Massachusetts and Massachusetts is in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Town\u2192state\u2192country; depends on Tier U for Williamstown location if user-stipulated",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 154.42200000000594,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.014999999999418
+        },
+        {
+          "case_id": "mhd_004",
+          "statement": "Barack Obama is American because he was President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Role\u2192nationality inference via subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 72.79699999999139,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.562999999994645
+        },
+        {
+          "case_id": "mhd_005",
+          "statement": "The Eiffel Tower is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Landmark\u2192city\u2192country\u2192continent; three-hop chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 96.95300000000861,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 3.875
+        },
+        {
+          "case_id": "mhd_006",
+          "statement": "Cambridge, Massachusetts is in North America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192state\u2192country\u2192continent",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 171.32799999999406,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6560000000026776
+        },
+        {
+          "case_id": "mhd_007",
+          "statement": "Williams College is in New England.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "KB institution\u2192administrative region; requires regional subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 57.375,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.4060000000026776
+        },
+        {
+          "case_id": "mhd_008",
+          "statement": "The Thames is in Asia.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "River is in the UK (Europe); contradicted by KB + subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 120.875,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.9529999999940628
+        },
+        {
+          "case_id": "mhd_009",
+          "statement": "Rome is in Germany.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Rome is in Italy; directly contradicted by KB location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 148.68700000000536,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.7820000000065193
+        },
+        {
+          "case_id": "mhd_010",
+          "statement": "The Amazon River is in South America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "River\u2192country (Brazil)\u2192continent",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 79.92199999999139,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "mhd_011",
+          "statement": "Tokyo is in East Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country (Japan)\u2192subregion; regional subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 150.73500000000058,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8129999999946449
+        },
+        {
+          "case_id": "mhd_012",
+          "statement": "The International Space Station orbits Earth in Europe.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "ISS orbits Earth, not located in Europe; contradicted",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 203.06200000000536,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.2029999999940628
+        },
+        {
+          "case_id": "mhd_013",
+          "statement": "Harvard University is in North America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Cambridge, MA \u2192 USA \u2192 North America; three-hop chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 193.625,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5310000000026776
+        },
+        {
+          "case_id": "mhd_014",
+          "statement": "Mount Everest is in Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Peak in Nepal/Tibet \u2192 Asia; geographic containment chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 705.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5780000000086147
+        },
+        {
+          "case_id": "mhd_015",
+          "statement": "The Great Wall of China is in Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "KB landmark \u2192 China \u2192 Asia",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 357.6560000000027,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5309999999881256
+        },
+        {
+          "case_id": "mhd_016",
+          "statement": "The Nile River flows through a country that is in Africa.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Nile \u2192 Egypt \u2192 Africa; containment chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 169.29699999999139,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.6880000000091968
+        },
+        {
+          "case_id": "mhd_017",
+          "statement": "Sydney is in the Southern Hemisphere.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Sydney \u2192 Australia \u2192 Southern Hemisphere; geographic subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 116.26600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 4.202999999994063
+        },
+        {
+          "case_id": "mhd_018",
+          "statement": "The Vatican is in Africa.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Vatican is in Rome, Italy, Europe \u2014 not Africa",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 185.48399999999674,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "mhd_019",
+          "statement": "Monaco is the smallest country in North America.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Monaco is in Europe, not North America; doubly contradicted",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.063000000009197,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.8899999999994179
+        },
+        {
+          "case_id": "mhd_020",
+          "statement": "New Zealand is in the Pacific Ocean region.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Island nation \u2192 Pacific Ocean region; subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.35899999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 3.0160000000032596
+        },
+        {
+          "case_id": "csu_001",
+          "statement": "Asa lives in Williamstown and Williamstown is in Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts); two sources unified",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 146.73500000000058,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5470000000059372
+        },
+        {
+          "case_id": "csu_002",
+          "statement": "5 is greater than 3 and Obama was the 44th President.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python (numeric) + KB (Obama); cross-source verification of two claims",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 618.3429999999935,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        },
+        {
+          "case_id": "csu_003",
+          "statement": "Asa works at a university that was founded before 1800.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williams College) + KB (Williams College founded 1793 < 1800) + Python (1793 < 1800)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 32.61000000000058,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.8430000000080327
+        },
+        {
+          "case_id": "csu_004",
+          "statement": "Obama was President, and 44 is an even number.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Obama 44th President) + Python (44 % 2 == 0)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.375,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5789999999979045
+        },
+        {
+          "case_id": "csu_005",
+          "statement": "Marie Curie won the Nobel Prize and 1903 is a prime number.",
+          "ground_truth": "abstain",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB verified (Nobel) + Python (1903 is prime \u2014 non-trivial, might abstain)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 24.843000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9679999999934807
+        },
+        {
+          "case_id": "csu_006",
+          "statement": "Paris is the capital of France, and France has more than 60 million people.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (capital) + KB (population); single source but two different predicates",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 32.28199999999197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1720000000059372
+        },
+        {
+          "case_id": "csu_007",
+          "statement": "Asa lives in a town in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts\u2192USA); three-source chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.547000000005937,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.5939999999973224
+        },
+        {
+          "case_id": "csu_008",
+          "statement": "The number 7 is less than 10, and Germany is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python (numeric) + KB (geographic)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 108.5,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5939999999973224
+        },
+        {
+          "case_id": "csu_009",
+          "statement": "Obama was born in Hawaii, and Hawaii was the 50th state admitted to the US.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (birth place) + KB (statehood order)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 80.5460000000021,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1560000000026776
+        },
+        {
+          "case_id": "csu_010",
+          "statement": "Albert Einstein was born in Germany and died in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (born_in Ulm/Germany) + KB (died_in Princeton/USA)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 21.093999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.75
+        },
+        {
+          "case_id": "csu_011",
+          "statement": "Marie Curie was born in Warsaw, and Warsaw is the capital of Poland.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Curie birthplace) + KB (Warsaw capital of Poland)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 18.702999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "csu_012",
+          "statement": "10 squared is 100, and 100 is greater than 50.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python chain: two numeric computations unified",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 12.922000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5160000000032596
+        },
+        {
+          "case_id": "csu_013",
+          "statement": "Asa lives in a state that borders New York.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192MA) + KB (Massachusetts shares border with New York)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.422000000005937,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.8899999999994179
+        },
+        {
+          "case_id": "csu_014",
+          "statement": "Obama was President and his wife worked at a hospital in Chicago.",
+          "ground_truth": "abstain",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Obama president) verified; Michelle Obama at hospital \u2014 abstain on unverifiable detail",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 23.937999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2029999999940628
+        },
+        {
+          "case_id": "csu_015",
+          "statement": "The sum of 3 and 4 is 7, and 7 is a prime number.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python chain: arithmetic + primality check",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 12.84299999999348,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.860000000000582
+        },
+        {
+          "case_id": "csu_016",
+          "statement": "Paris has more than 2 million people and is in France.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (population) + KB (location)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 83.9380000000092,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6720000000059372
+        },
+        {
+          "case_id": "csu_017",
+          "statement": "Apple was founded in 1976 and is headquartered in Cupertino.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (founding year) + KB (headquarters); P571 + P159",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 24.98399999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7179999999934807
+        },
+        {
+          "case_id": "csu_018",
+          "statement": "Einstein won the Nobel Prize in Physics. The year was 1921.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB: Nobel Prize awarded 1921 to Einstein for photoelectric effect",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 30.64100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8440000000118744
+        },
+        {
+          "case_id": "ed_001",
+          "statement": "The Mercury spacecraft was the first American spacecraft to carry humans.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Entity disambiguation: Mercury (spacecraft) not Mercury (planet)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.389999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9529999999940628
+        },
+        {
+          "case_id": "ed_002",
+          "statement": "Lincoln was the 16th President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Abraham Lincoln \u2192 P39 (position held)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.2039999999979045,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.062999999994645
+        },
+        {
+          "case_id": "ed_003",
+          "statement": "The Amazon is the world's largest river by discharge.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Amazon (river) vs Amazon (company); resolver must pick river",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.09299999999348,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0780000000086147
+        },
+        {
+          "case_id": "ed_004",
+          "statement": "George Washington was the first President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "George Washington (person) not Washington (state/city); P39",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.328000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.75
+        },
+        {
+          "case_id": "ed_005",
+          "statement": "Churchill was the Prime Minister of the United Kingdom during World War II.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Winston Churchill \u2192 P6 (head of government); temporal scope 1940-1945",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 24.078999999997905,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5619999999908032
+        },
+        {
+          "case_id": "ed_006",
+          "statement": "The Victoria Cross is a military decoration awarded in the United Kingdom.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Victoria Cross (award) not Queen Victoria; P17 (country)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.296000000002095,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8910000000032596
+        },
+        {
+          "case_id": "ed_007",
+          "statement": "Cambridge University is in England.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Cambridge (UK) not Cambridge, MA; P131 (located in administrative territorial entity)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 192.04699999999139,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6089999999967404
+        },
+        {
+          "case_id": "ed_008",
+          "statement": "The Springfield in Illinois was founded in 1821.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Springfield (Illinois) disambiguation; many Springfields exist",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.172000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5940000000118744
+        },
+        {
+          "case_id": "ed_009",
+          "statement": "Paris Hilton was born in New York City.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Paris Hilton (person) not Paris (city); P19 (place of birth)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.610000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        },
+        {
+          "case_id": "ed_010",
+          "statement": "Apple Inc. was founded by Steve Jobs.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Apple (company) not Apple (fruit); P112 (founded by)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 22.437000000005355,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.1410000000032596
+        },
+        {
+          "case_id": "ed_011",
+          "statement": "Washington, D.C. is the capital of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Washington DC not Washington state; P36 (capital)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.140999999988708,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7029999999940628
+        },
+        {
+          "case_id": "ed_012",
+          "statement": "The Jordan River flows through the Middle East.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Jordan (river) not Jordan (country); geographic location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 55.125,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6090000000112923
+        },
+        {
+          "case_id": "ed_013",
+          "statement": "Tesla was a Serbian-American inventor.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Nikola Tesla (person) not Tesla Inc.; P27 (nationality)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.718000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.6409999999887077
+        },
+        {
+          "case_id": "ed_014",
+          "statement": "The Great Wall was built to protect China from invasions.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Great Wall of China (structure); KB purpose/description",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.64100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6399999999994179
+        },
+        {
+          "case_id": "ed_015",
+          "statement": "Apple was founded in 1977.",
+          "ground_truth": "contradicted",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Apple Inc. founded 1976, not 1977; off-by-one KB contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.140999999988708,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.7660000000032596
+        },
+        {
+          "case_id": "ed_016",
+          "statement": "Mercury is the smallest planet in the solar system.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Mercury (planet) not Mercury (spacecraft); P31 + size property",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.078000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "pt_001",
+          "statement": "Obama held the office of the 44th President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "holds_role \u2192 P39 (position held); canonical seed predicate",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 18.156000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5780000000086147
+        },
+        {
+          "case_id": "pt_002",
+          "statement": "Marie Curie was educated at the University of Paris.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "educated_at \u2192 P69; requires slot-to-qualifier mapping",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 13.530999999988126,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0
+        },
+        {
+          "case_id": "pt_003",
+          "statement": "Einstein was employed by the Institute for Advanced Study.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "employed_by \u2192 P108; temporal scope qualifier",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.813000000009197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8129999999946449
+        },
+        {
+          "case_id": "pt_004",
+          "statement": "Williams College is part of the Consortium of Liberal Arts Colleges.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "member_of \u2192 P463; mereological/organizational membership",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 12.843999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0310000000026776
+        },
+        {
+          "case_id": "pt_005",
+          "statement": "Marie Curie was awarded the Nobel Prize in Physics in 1903.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "awarded \u2192 P166 with year qualifier P585",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 17.889999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.875
+        },
+        {
+          "case_id": "pt_006",
+          "statement": "France was founded in the year 843.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_in_year \u2192 P571; inception date for sovereign entity",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.843999999997322,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.5310000000026776
+        },
+        {
+          "case_id": "pt_007",
+          "statement": "Steve Jobs co-founded Apple.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_by \u2192 P112; multiple founders share this property",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.14100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5629999999946449
+        },
+        {
+          "case_id": "pt_008",
+          "statement": "Germany shares a border with France.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "adjacent_to \u2192 P47 (shares border with)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 12.59299999999348,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5460000000020955
+        },
+        {
+          "case_id": "pt_009",
+          "statement": "Einstein had German nationality.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "nationality \u2192 P27 (country of citizenship); multi-value OK",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.26600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.75
+        },
+        {
+          "case_id": "pt_010",
+          "statement": "Obama was a member of the Democratic Party.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "political_party \u2192 P102; temporal scope",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 99.34399999999732,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "pt_011",
+          "statement": "Shakespeare authored Hamlet.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "authored_by \u2192 P50; subject is work, object is person",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 7.218000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6719999999913853
+        },
+        {
+          "case_id": "pt_012",
+          "statement": "The Eiffel Tower is located in Paris.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "located_at \u2192 P131 or P276; standard location predicate",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 86.39100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7030000000086147
+        },
+        {
+          "case_id": "pt_013",
+          "statement": "Tolstoy published War and Peace in 1869.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "published_in_year \u2192 P577; P50 author link",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 41.296999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.2819999999919673
+        },
+        {
+          "case_id": "pt_014",
+          "statement": "Darwin is the founder of evolutionary theory.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "discovered_by/invented_by \u2192 P61; conceptual discovery",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.73399999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 8.125
+        },
+        {
+          "case_id": "pt_015",
+          "statement": "Einstein won the Nobel Prize in Chemistry.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "awarded \u2192 P166; Einstein won in Physics not Chemistry",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 22.860000000000582,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.7970000000059372
+        },
+        {
+          "case_id": "pt_016",
+          "statement": "Marie Curie was born in Germany.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "born_in \u2192 P19; Marie Curie was born in Warsaw, Poland (Russian Empire at the time)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 10.312000000005355,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.875
+        },
+        {
+          "case_id": "pt_017",
+          "statement": "Apple is headquartered in San Francisco.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "headquarters_in \u2192 P159; Apple HQ is in Cupertino, not San Francisco",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 9.26600000000326,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "pt_018",
+          "statement": "Google was founded in 1994.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_in_year \u2192 P571; Google was founded in 1998",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.218999999997322,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.7029999999940628
+        },
+        {
+          "case_id": "br_001",
+          "statement": "Asa lives in Cambridge.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U has Asa\u2192Williamstown; contradiction detection via predicate-level belief revision",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 90.57799999999406,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.8600000000005821
+        },
+        {
+          "case_id": "br_002",
+          "statement": "Asa works at Harvard.",
+          "ground_truth": "abstain",
+          "failure_mode": "belief_revision",
+          "notes": "No Tier U assertion about Asa's employer; abstain (no grounding)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.125,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "br_003",
+          "statement": "Asa lives in Williamstown, Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 40.03100000000268,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.4219999999913853
+        },
+        {
+          "case_id": "br_004",
+          "statement": "The current user is Asa.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U assertion about user identity (asserting_party_id context)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 0.8120000000053551,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.8589999999967404
+        },
+        {
+          "case_id": "br_005",
+          "statement": "Asa is a great programmer.",
+          "ground_truth": "abstain",
+          "failure_mode": "belief_revision",
+          "notes": "Superlative subjective claim \u2014 triage as non-verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.8439999999973224,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5470000000059372
+        },
+        {
+          "case_id": "br_006",
+          "statement": "Asa is not in France.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Negation of Tier U; Asa is in Williamstown (Massachusetts), not France",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.062999999994645,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.0779999999940628
+        },
+        {
+          "case_id": "br_007",
+          "statement": "The person named Asa lives in Boston.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U: Asa lives in Williamstown, not Boston; cross-context contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 80.04700000000594,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.360000000000582
+        },
+        {
+          "case_id": "br_008",
+          "statement": "Williamstown, Massachusetts is a city with more than 1 million residents.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Williamstown population ~7000; KB population contradicts claim",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 9.264999999999418,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.8899999999994179
+        },
+        {
+          "case_id": "br_009",
+          "statement": "Asa went to college in Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (Asa\u2192Williams College in Williamstown, MA) + KB (Williamstown\u2192Massachusetts)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 15.14100000000326,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.2660000000032596
+        },
+        {
+          "case_id": "br_010",
+          "statement": "The user's hometown is in a state that borders Connecticut.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (user\u2192MA) + KB (Massachusetts borders Connecticut)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.671999999991385,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.875
+        },
+        {
+          "case_id": "pa_001",
+          "statement": "Asa is the best software engineer in the world.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Superlative subjective \u2014 no grounding; triage as non-verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.687000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.625
+        },
+        {
+          "case_id": "pa_002",
+          "statement": "It will rain in Paris tomorrow.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future prediction \u2014 no KB grounding; triage as future_rejection",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.485000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.7030000000086147
+        },
+        {
+          "case_id": "pa_003",
+          "statement": "The current stock price of Apple is $150.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Dynamic fact not in KB; no grounding",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 12.59299999999348,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.2029999999940628
+        },
+        {
+          "case_id": "pa_004",
+          "statement": "The best restaurant in New York City is Nobu.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Preference/opinion claim; no verifiable grounding",
+          "aedos_verdict": "abstained_given_assertion",
+          "aedos_latency_s": 8.53200000000652,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.2970000000059372
+        },
+        {
+          "case_id": "pa_005",
+          "statement": "The next President of the United States will be popular.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future + opinion; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2960000000020955,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.875
+        },
+        {
+          "case_id": "pa_006",
+          "statement": "Quantum computing will replace classical computing within 10 years.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future prediction about technology trends; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2189999999973224,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.562999999994645
+        },
+        {
+          "case_id": "pa_007",
+          "statement": "This is the greatest novel ever written.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Superlative aesthetic opinion \u2014 not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.047000000005937,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.5929999999934807
+        },
+        {
+          "case_id": "pa_008",
+          "statement": "The universe is infinite.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Open cosmological question; no KB grounding available",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.125,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.7030000000086147
+        },
+        {
+          "case_id": "pa_009",
+          "statement": "Life exists on other planets.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Unresolved scientific question; no KB grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 29.171999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.4839999999967404
+        },
+        {
+          "case_id": "pa_010",
+          "statement": "Somewhere in the world, a person is currently happy.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Existential claim \u2014 not verifiable via KB or Tier U",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2030000000086147,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.625
+        },
+        {
+          "case_id": "pa_011",
+          "statement": "The most popular programming language is Python.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Popularity is dynamic/subjective; no KB grounding for 'most popular'",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.015999999988708,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.6719999999913853
+        },
+        {
+          "case_id": "pa_012",
+          "statement": "Climate change will cause sea levels to rise by 2 meters by 2100.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future scientific projection; no deterministic grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2970000000059372,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.9690000000118744
+        },
+        {
+          "case_id": "pa_013",
+          "statement": "The meaning of life is 42.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Philosophical/humorous claim; not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 25.406000000002678,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.6409999999887077
+        },
+        {
+          "case_id": "pa_014",
+          "statement": "There are more stars in the universe than grains of sand on Earth.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Astronomical estimate; no precise KB grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8899999999994179
+        },
+        {
+          "case_id": "pa_015",
+          "statement": "Artificial intelligence will become sentient within 5 years.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future speculative prediction; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.1869999999908032,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.8130000000091968
+        },
+        {
+          "case_id": "pa_016",
+          "statement": "The current temperature in London is 15\u00b0C.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Real-time dynamic data not in KB",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.547000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0779999999940628
+        },
+        {
+          "case_id": "pa_017",
+          "statement": "Dogs make better pets than cats.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Subjective preference claim; not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.468999999997322,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.187000000005355
+        },
+        {
+          "case_id": "pa_018",
+          "statement": "The best way to learn programming is by building projects.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Pedagogical opinion; no objective grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2660000000032596,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.437999999994645
+        },
+        {
+          "case_id": "pa_019",
+          "statement": "Happiness is more important than wealth.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Value judgment \u2014 philosophical claim; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.796000000002095,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5310000000026776
+        },
+        {
+          "case_id": "pa_020",
+          "statement": "The number of grains of sand on all Earth's beaches exceeds 7 quintillion.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Scientific estimate with too much uncertainty; abstain rather than guess",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 7.4689999999973224,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.687999999994645
+        },
+        {
+          "case_id": "bonus_001",
+          "statement": "Obama was born in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: P19 (born in Hawaii) \u2192 P131 (Hawaii in United States)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 11.172000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "bonus_002",
+          "statement": "France is a republic.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: P31 (instance of) \u2192 republic; government form claim",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 19.812999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5939999999973224
+        },
+        {
+          "case_id": "bonus_003",
+          "statement": "The Mona Lisa was painted by Leonardo da Vinci.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Mona Lisa \u2192 P170 (creator) \u2192 Leonardo da Vinci",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 13.75,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "bonus_004",
+          "statement": "Albert Einstein was born in 1879.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: P569 (date of birth); year extraction from date value",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 8.937999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        },
+        {
+          "case_id": "bonus_005",
+          "statement": "The speed of light is approximately 300,000 km/s.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Physics constant; KB or Python path (comparison within tolerance)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 8.718000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8280000000086147
+        },
+        {
+          "case_id": "bonus_006",
+          "statement": "Isaac Newton was born before Albert Einstein.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Newton P569: 1643) + KB (Einstein P569: 1879) + Python (1643 < 1879)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 9.218999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.235000000000582
+        },
+        {
+          "case_id": "bonus_007",
+          "statement": "The Great Wall of China is in China.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Great Wall \u2192 P131 \u2192 China; straightforward location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 99.14100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6089999999967404
+        },
+        {
+          "case_id": "bonus_008",
+          "statement": "Shakespeare was born in England.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Shakespeare P19 (Stratford-upon-Avon) \u2192 England",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 10.639999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5470000000059372
+        },
+        {
+          "case_id": "bonus_009",
+          "statement": "The United States has 51 states.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "US has 50 states; off-by-one contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 3.875,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.7969999999913853
+        },
+        {
+          "case_id": "bonus_010",
+          "statement": "Neil Armstrong was the first human to walk on the Moon.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Neil Armstrong \u2192 first Moon walker (Apollo 11, 1969)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 31.671999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2030000000086147
+        },
+        {
+          "case_id": "bonus_011",
+          "statement": "The Python programming language was created by Guido van Rossum.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Python (language) not Python (snake); P61 (discoverer or inventor)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 17.469000000011874,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.25
+        },
+        {
+          "case_id": "bonus_012",
+          "statement": "Mt. Everest is the tallest mountain on Earth by elevation above sea level.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Everest \u2192 P2044 (elevation) \u2192 highest value; requires comparison",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 22.48399999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7659999999887077
+        },
+        {
+          "case_id": "bonus_013",
+          "statement": "The Berlin Wall fell in 1989.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Berlin Wall \u2192 P582 (end time) = 1989",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 21.968999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7810000000026776
+        },
+        {
+          "case_id": "bonus_014",
+          "statement": "Napoleon was French.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Napoleon Bonaparte \u2192 P27 (country of citizenship = France)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.827999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6720000000059372
+        },
+        {
+          "case_id": "bonus_015",
+          "statement": "The first moon landing was in 1969.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Apollo 11 \u2192 P585 (point in time) = July 1969",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.453000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "bonus_016",
+          "statement": "Marie Curie won the Nobel Prize twice.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Marie Curie \u2192 P166 (award received) with two values (Physics 1903, Chemistry 1911)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 23.046999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.187000000005355
+        },
+        {
+          "case_id": "bonus_017",
+          "statement": "The Eiffel Tower is 330 meters tall.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Eiffel Tower \u2192 height property \u2248 330m (including antenna)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.906000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 4.9689999999973224
+        },
+        {
+          "case_id": "bonus_018",
+          "statement": "The population of China exceeds 1 billion people.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (P1082 > 1,000,000,000) + Python comparison; large number verification",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 4.562999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6560000000026776
+        },
+        {
+          "case_id": "bonus_019",
+          "statement": "The Pacific Ocean is the largest ocean on Earth.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Pacific Ocean \u2192 P2046 (area) \u2192 largest; requires comparison across ocean entities",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.343000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        },
+        {
+          "case_id": "bonus_020",
+          "statement": "Abraham Lincoln was assassinated in 1865.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Lincoln \u2192 P570 (date of death) = April 1865; cause = assassination",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.156999999991967,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6560000000026776
+        }
+      ],
+      "derived": {
+        "aedos": {
+          "fp_correction": 5,
+          "fp_abstention": 70,
+          "fn_miss": 0,
+          "fv_on_abstain": 2
+        },
+        "baseline": {
+          "fp_correction": 2,
+          "fp_abstention": 9,
+          "fn_miss": 0,
+          "fv_on_abstain": 12
+        },
+        "case_agreement": {
+          "aedos_wins": 14,
+          "aedos_hurts": 76,
+          "both_correct": 20,
+          "both_wrong": 12,
+          "total": 122
+        }
+      },
+      "aedos_latency": {
+        "count": 122,
+        "median": 13.296999999998661,
+        "p95": 185.48399999999674,
+        "max": 705.875,
+        "sum": 6392.656999999992
+      },
+      "baseline_latency": {
+        "count": 122,
+        "median": 0.8899999999994179,
+        "p95": 2.062999999994645,
+        "max": 8.125,
+        "sum": 145.53100000000268
+      }
+    },
+    {
+      "run_id": 2,
+      "started_at": "2026-05-28T16:26:50.528149+00:00",
+      "finished_at": "2026-05-28T17:58:10.645757+00:00",
+      "duration_s": 5480.1,
+      "case_count": 122,
+      "db_path": "aedos_phase10_5.db",
+      "aedos_metrics": {
+        "total": 122,
+        "correct": 47,
+        "accuracy": 0.38524590163934425,
+        "false_verified": 0,
+        "false_verified_rate": 0.0,
+        "false_abstain": 63,
+        "false_abstain_rate": 0.75,
+        "per_failure_mode": {
+          "multi_hop_distribution": {
+            "total": 20,
+            "correct": 6,
+            "accuracy": 0.3
+          },
+          "cross_source_unification": {
+            "total": 21,
+            "correct": 5,
+            "accuracy": 0.23809523809523808
+          },
+          "entity_disambiguation": {
+            "total": 23,
+            "correct": 7,
+            "accuracy": 0.30434782608695654
+          },
+          "predicate_translation": {
+            "total": 28,
+            "correct": 7,
+            "accuracy": 0.25
+          },
+          "belief_revision": {
+            "total": 10,
+            "correct": 2,
+            "accuracy": 0.2
+          },
+          "principled_abstention": {
+            "total": 20,
+            "correct": 20,
+            "accuracy": 1.0
+          }
+        }
+      },
+      "baseline_metrics": {
+        "total": 122,
+        "correct": 94,
+        "accuracy": 0.7704918032786885,
+        "false_verified": 16,
+        "false_verified_rate": 0.13114754098360656,
+        "false_abstain": 8,
+        "false_abstain_rate": 0.09523809523809523,
+        "per_failure_mode": {
+          "multi_hop_distribution": {
+            "total": 20,
+            "correct": 19,
+            "accuracy": 0.95
+          },
+          "cross_source_unification": {
+            "total": 21,
+            "correct": 16,
+            "accuracy": 0.7619047619047619
+          },
+          "entity_disambiguation": {
+            "total": 23,
+            "correct": 22,
+            "accuracy": 0.9565217391304348
+          },
+          "predicate_translation": {
+            "total": 28,
+            "correct": 28,
+            "accuracy": 1.0
+          },
+          "belief_revision": {
+            "total": 10,
+            "correct": 2,
+            "accuracy": 0.2
+          },
+          "principled_abstention": {
+            "total": 20,
+            "correct": 7,
+            "accuracy": 0.35
+          }
+        }
+      },
+      "per_case": [
+        {
+          "case_id": "mhd_001",
+          "statement": "Paris is in France and France is in Europe, so Paris is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country\u2192continent chain; distributes_up required",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 795.0149999999994,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0469999999913853
+        },
+        {
+          "case_id": "mhd_002",
+          "statement": "Berlin is in Germany and Germany is in the European Union.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country\u2192supranational org; two-hop KB chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 124.65699999999197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8440000000118744
+        },
+        {
+          "case_id": "mhd_003",
+          "statement": "Williamstown is in Massachusetts and Massachusetts is in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Town\u2192state\u2192country; depends on Tier U for Williamstown location if user-stipulated",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 29.218000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.375
+        },
+        {
+          "case_id": "mhd_004",
+          "statement": "Barack Obama is American because he was President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Role\u2192nationality inference via subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 28.531999999991967,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.7189999999973224
+        },
+        {
+          "case_id": "mhd_005",
+          "statement": "The Eiffel Tower is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Landmark\u2192city\u2192country\u2192continent; three-hop chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 183.92200000000594,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7649999999994179
+        },
+        {
+          "case_id": "mhd_006",
+          "statement": "Cambridge, Massachusetts is in North America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192state\u2192country\u2192continent",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 45.40600000000268,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5939999999973224
+        },
+        {
+          "case_id": "mhd_007",
+          "statement": "Williams College is in New England.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "KB institution\u2192administrative region; requires regional subsumption",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 19.171999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7660000000032596
+        },
+        {
+          "case_id": "mhd_008",
+          "statement": "The Thames is in Asia.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "River is in the UK (Europe); contradicted by KB + subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 55.65600000000268,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.1560000000026776
+        },
+        {
+          "case_id": "mhd_009",
+          "statement": "Rome is in Germany.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Rome is in Italy; directly contradicted by KB location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 205.85899999999674,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.9379999999946449
+        },
+        {
+          "case_id": "mhd_010",
+          "statement": "The Amazon River is in South America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "River\u2192country (Brazil)\u2192continent",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 90.26600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.875
+        },
+        {
+          "case_id": "mhd_011",
+          "statement": "Tokyo is in East Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country (Japan)\u2192subregion; regional subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 72.42200000000594,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "mhd_012",
+          "statement": "The International Space Station orbits Earth in Europe.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "ISS orbits Earth, not located in Europe; contradicted",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 208.82799999999406,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.3439999999973224
+        },
+        {
+          "case_id": "mhd_013",
+          "statement": "Harvard University is in North America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Cambridge, MA \u2192 USA \u2192 North America; three-hop chain",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 13.937000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.264999999999418
+        },
+        {
+          "case_id": "mhd_014",
+          "statement": "Mount Everest is in Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Peak in Nepal/Tibet \u2192 Asia; geographic containment chain",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 377.78199999999197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5629999999946449
+        },
+        {
+          "case_id": "mhd_015",
+          "statement": "The Great Wall of China is in Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "KB landmark \u2192 China \u2192 Asia",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 45.71800000000803,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5620000000053551
+        },
+        {
+          "case_id": "mhd_016",
+          "statement": "The Nile River flows through a country that is in Africa.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Nile \u2192 Egypt \u2192 Africa; containment chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 164.96899999999732,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0
+        },
+        {
+          "case_id": "mhd_017",
+          "statement": "Sydney is in the Southern Hemisphere.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Sydney \u2192 Australia \u2192 Southern Hemisphere; geographic subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 51.64100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5789999999979045
+        },
+        {
+          "case_id": "mhd_018",
+          "statement": "The Vatican is in Africa.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Vatican is in Rome, Italy, Europe \u2014 not Africa",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 109.375,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.139999999999418
+        },
+        {
+          "case_id": "mhd_019",
+          "statement": "Monaco is the smallest country in North America.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Monaco is in Europe, not North America; doubly contradicted",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.139999999999418,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.437999999994645
+        },
+        {
+          "case_id": "mhd_020",
+          "statement": "New Zealand is in the Pacific Ocean region.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Island nation \u2192 Pacific Ocean region; subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 34.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9840000000112923
+        },
+        {
+          "case_id": "csu_001",
+          "statement": "Asa lives in Williamstown and Williamstown is in Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts); two sources unified",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 101.36000000000058,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.4529999999940628
+        },
+        {
+          "case_id": "csu_002",
+          "statement": "5 is greater than 3 and Obama was the 44th President.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python (numeric) + KB (Obama); cross-source verification of two claims",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 19.656000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7810000000026776
+        },
+        {
+          "case_id": "csu_003",
+          "statement": "Asa works at a university that was founded before 1800.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williams College) + KB (Williams College founded 1793 < 1800) + Python (1793 < 1800)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 19.23399999999674,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.9689999999973224
+        },
+        {
+          "case_id": "csu_004",
+          "statement": "Obama was President, and 44 is an even number.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Obama 44th President) + Python (44 % 2 == 0)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.421999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1410000000032596
+        },
+        {
+          "case_id": "csu_005",
+          "statement": "Marie Curie won the Nobel Prize and 1903 is a prime number.",
+          "ground_truth": "abstain",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB verified (Nobel) + Python (1903 is prime \u2014 non-trivial, might abstain)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 98.89100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.1560000000026776
+        },
+        {
+          "case_id": "csu_006",
+          "statement": "Paris is the capital of France, and France has more than 60 million people.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (capital) + KB (population); single source but two different predicates",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 15.062000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7969999999913853
+        },
+        {
+          "case_id": "csu_007",
+          "statement": "Asa lives in a town in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts\u2192USA); three-source chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.64100000000326,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.5470000000059372
+        },
+        {
+          "case_id": "csu_008",
+          "statement": "The number 7 is less than 10, and Germany is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python (numeric) + KB (geographic)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 113.54699999999139,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8279999999940628
+        },
+        {
+          "case_id": "csu_009",
+          "statement": "Obama was born in Hawaii, and Hawaii was the 50th state admitted to the US.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (birth place) + KB (statehood order)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 186.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0160000000032596
+        },
+        {
+          "case_id": "csu_010",
+          "statement": "Albert Einstein was born in Germany and died in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (born_in Ulm/Germany) + KB (died_in Princeton/USA)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 96.18700000000536,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7649999999994179
+        },
+        {
+          "case_id": "csu_011",
+          "statement": "Marie Curie was born in Warsaw, and Warsaw is the capital of Poland.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Curie birthplace) + KB (Warsaw capital of Poland)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 30.235000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.875
+        },
+        {
+          "case_id": "csu_012",
+          "statement": "10 squared is 100, and 100 is greater than 50.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python chain: two numeric computations unified",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 19.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2970000000059372
+        },
+        {
+          "case_id": "csu_013",
+          "statement": "Asa lives in a state that borders New York.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192MA) + KB (Massachusetts shares border with New York)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 22.561999999990803,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1719999999913853
+        },
+        {
+          "case_id": "csu_014",
+          "statement": "Obama was President and his wife worked at a hospital in Chicago.",
+          "ground_truth": "abstain",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Obama president) verified; Michelle Obama at hospital \u2014 abstain on unverifiable detail",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.172000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1089999999967404
+        },
+        {
+          "case_id": "csu_015",
+          "statement": "The sum of 3 and 4 is 7, and 7 is a prime number.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python chain: arithmetic + primality check",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.452999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.3440000000118744
+        },
+        {
+          "case_id": "csu_016",
+          "statement": "Paris has more than 2 million people and is in France.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (population) + KB (location)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 50.375,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9689999999973224
+        },
+        {
+          "case_id": "csu_017",
+          "statement": "Apple was founded in 1976 and is headquartered in Cupertino.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (founding year) + KB (headquarters); P571 + P159",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 8.547000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.75
+        },
+        {
+          "case_id": "csu_018",
+          "statement": "Einstein won the Nobel Prize in Physics. The year was 1921.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB: Nobel Prize awarded 1921 to Einstein for photoelectric effect",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 37.26600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9060000000026776
+        },
+        {
+          "case_id": "ed_001",
+          "statement": "The Mercury spacecraft was the first American spacecraft to carry humans.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Entity disambiguation: Mercury (spacecraft) not Mercury (planet)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.10899999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.7189999999973224
+        },
+        {
+          "case_id": "ed_002",
+          "statement": "Lincoln was the 16th President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Abraham Lincoln \u2192 P39 (position held)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.64100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        },
+        {
+          "case_id": "ed_003",
+          "statement": "The Amazon is the world's largest river by discharge.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Amazon (river) vs Amazon (company); resolver must pick river",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.171999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.9840000000112923
+        },
+        {
+          "case_id": "ed_004",
+          "statement": "George Washington was the first President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "George Washington (person) not Washington (state/city); P39",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.797000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8129999999946449
+        },
+        {
+          "case_id": "ed_005",
+          "statement": "Churchill was the Prime Minister of the United Kingdom during World War II.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Winston Churchill \u2192 P6 (head of government); temporal scope 1940-1945",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 15.812000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5929999999934807
+        },
+        {
+          "case_id": "ed_006",
+          "statement": "The Victoria Cross is a military decoration awarded in the United Kingdom.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Victoria Cross (award) not Queen Victoria; P17 (country)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 32.39099999998871,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9070000000065193
+        },
+        {
+          "case_id": "ed_007",
+          "statement": "Cambridge University is in England.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Cambridge (UK) not Cambridge, MA; P131 (located in administrative territorial entity)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 45.09300000000803,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5929999999934807
+        },
+        {
+          "case_id": "ed_008",
+          "statement": "The Springfield in Illinois was founded in 1821.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Springfield (Illinois) disambiguation; many Springfields exist",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.5319999999919673,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.3440000000118744
+        },
+        {
+          "case_id": "ed_009",
+          "statement": "Paris Hilton was born in New York City.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Paris Hilton (person) not Paris (city); P19 (place of birth)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.687000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8129999999946449
+        },
+        {
+          "case_id": "ed_010",
+          "statement": "Apple Inc. was founded by Steve Jobs.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Apple (company) not Apple (fruit); P112 (founded by)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 17.76600000000326,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.187000000005355
+        },
+        {
+          "case_id": "ed_011",
+          "statement": "Washington, D.C. is the capital of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Washington DC not Washington state; P36 (capital)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0779999999940628
+        },
+        {
+          "case_id": "ed_012",
+          "statement": "The Jordan River flows through the Middle East.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Jordan (river) not Jordan (country); geographic location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 55.65600000000268,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5310000000026776
+        },
+        {
+          "case_id": "ed_013",
+          "statement": "Tesla was a Serbian-American inventor.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Nikola Tesla (person) not Tesla Inc.; P27 (nationality)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.640999999988708,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.735000000000582
+        },
+        {
+          "case_id": "ed_014",
+          "statement": "The Great Wall was built to protect China from invasions.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Great Wall of China (structure); KB purpose/description",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 60.35900000001129,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.125
+        },
+        {
+          "case_id": "ed_015",
+          "statement": "Apple was founded in 1977.",
+          "ground_truth": "contradicted",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Apple Inc. founded 1976, not 1977; off-by-one KB contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.7809999999881256,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.4060000000026776
+        },
+        {
+          "case_id": "ed_016",
+          "statement": "Mercury is the smallest planet in the solar system.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Mercury (planet) not Mercury (spacecraft); P31 + size property",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.953000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5309999999881256
+        },
+        {
+          "case_id": "pt_001",
+          "statement": "Obama held the office of the 44th President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "holds_role \u2192 P39 (position held); canonical seed predicate",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.078999999997905,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7970000000059372
+        },
+        {
+          "case_id": "pt_002",
+          "statement": "Marie Curie was educated at the University of Paris.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "educated_at \u2192 P69; requires slot-to-qualifier mapping",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.406000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "pt_003",
+          "statement": "Einstein was employed by the Institute for Advanced Study.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "employed_by \u2192 P108; temporal scope qualifier",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 14.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2339999999967404
+        },
+        {
+          "case_id": "pt_004",
+          "statement": "Williams College is part of the Consortium of Liberal Arts Colleges.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "member_of \u2192 P463; mereological/organizational membership",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.23399999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0630000000091968
+        },
+        {
+          "case_id": "pt_005",
+          "statement": "Marie Curie was awarded the Nobel Prize in Physics in 1903.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "awarded \u2192 P166 with year qualifier P585",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 53.36000000000058,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7969999999913853
+        },
+        {
+          "case_id": "pt_006",
+          "statement": "France was founded in the year 843.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_in_year \u2192 P571; inception date for sovereign entity",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 2.1710000000020955,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.9680000000080327
+        },
+        {
+          "case_id": "pt_007",
+          "statement": "Steve Jobs co-founded Apple.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_by \u2192 P112; multiple founders share this property",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.860000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5789999999979045
+        },
+        {
+          "case_id": "pt_008",
+          "statement": "Germany shares a border with France.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "adjacent_to \u2192 P47 (shares border with)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 6.7189999999973224,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5310000000026776
+        },
+        {
+          "case_id": "pt_009",
+          "statement": "Einstein had German nationality.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "nationality \u2192 P27 (country of citizenship); multi-value OK",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.4210000000020955,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.264999999999418
+        },
+        {
+          "case_id": "pt_010",
+          "statement": "Obama was a member of the Democratic Party.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "political_party \u2192 P102; temporal scope",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 268.51600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6569999999919673
+        },
+        {
+          "case_id": "pt_011",
+          "statement": "Shakespeare authored Hamlet.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "authored_by \u2192 P50; subject is work, object is person",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.265999999988708,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7180000000080327
+        },
+        {
+          "case_id": "pt_012",
+          "statement": "The Eiffel Tower is located in Paris.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "located_at \u2192 P131 or P276; standard location predicate",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 21.297000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7969999999913853
+        },
+        {
+          "case_id": "pt_013",
+          "statement": "Tolstoy published War and Peace in 1869.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "published_in_year \u2192 P577; P50 author link",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 68.96799999999348,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 3.4530000000086147
+        },
+        {
+          "case_id": "pt_014",
+          "statement": "Darwin is the founder of evolutionary theory.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "discovered_by/invented_by \u2192 P61; conceptual discovery",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.125,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7189999999973224
+        },
+        {
+          "case_id": "pt_015",
+          "statement": "Einstein won the Nobel Prize in Chemistry.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "awarded \u2192 P166; Einstein won in Physics not Chemistry",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 46.75,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.0470000000059372
+        },
+        {
+          "case_id": "pt_016",
+          "statement": "Marie Curie was born in Germany.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "born_in \u2192 P19; Marie Curie was born in Warsaw, Poland (Russian Empire at the time)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 28.64100000000326,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.0469999999913853
+        },
+        {
+          "case_id": "pt_017",
+          "statement": "Apple is headquartered in San Francisco.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "headquarters_in \u2192 P159; Apple HQ is in Cupertino, not San Francisco",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 17.453000000008615,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.7339999999967404
+        },
+        {
+          "case_id": "pt_018",
+          "statement": "Google was founded in 1994.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_in_year \u2192 P571; Google was founded in 1998",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2029999999940628,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.6880000000091968
+        },
+        {
+          "case_id": "br_001",
+          "statement": "Asa lives in Cambridge.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U has Asa\u2192Williamstown; contradiction detection via predicate-level belief revision",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 124.46899999999732,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.4839999999967404
+        },
+        {
+          "case_id": "br_002",
+          "statement": "Asa works at Harvard.",
+          "ground_truth": "abstain",
+          "failure_mode": "belief_revision",
+          "notes": "No Tier U assertion about Asa's employer; abstain (no grounding)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 17.10899999999674,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "br_003",
+          "statement": "Asa lives in Williamstown, Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 48.078000000008615,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.25
+        },
+        {
+          "case_id": "br_004",
+          "statement": "The current user is Asa.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U assertion about user identity (asserting_party_id context)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 0.7969999999913853,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.187000000005355
+        },
+        {
+          "case_id": "br_005",
+          "statement": "Asa is a great programmer.",
+          "ground_truth": "abstain",
+          "failure_mode": "belief_revision",
+          "notes": "Superlative subjective claim \u2014 triage as non-verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.688000000009197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2969999999913853
+        },
+        {
+          "case_id": "br_006",
+          "statement": "Asa is not in France.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Negation of Tier U; Asa is in Williamstown (Massachusetts), not France",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 20.811999999990803,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.3130000000091968
+        },
+        {
+          "case_id": "br_007",
+          "statement": "The person named Asa lives in Boston.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U: Asa lives in Williamstown, not Boston; cross-context contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 96.34400000001187,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.3439999999973224
+        },
+        {
+          "case_id": "br_008",
+          "statement": "Williamstown, Massachusetts is a city with more than 1 million residents.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Williamstown population ~7000; KB population contradicts claim",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 20.5,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.687000000005355
+        },
+        {
+          "case_id": "br_009",
+          "statement": "Asa went to college in Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (Asa\u2192Williams College in Williamstown, MA) + KB (Williamstown\u2192Massachusetts)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.327999999994063,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.9059999999881256
+        },
+        {
+          "case_id": "br_010",
+          "statement": "The user's hometown is in a state that borders Connecticut.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (user\u2192MA) + KB (Massachusetts borders Connecticut)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.125,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.0630000000091968
+        },
+        {
+          "case_id": "pa_001",
+          "statement": "Asa is the best software engineer in the world.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Superlative subjective \u2014 no grounding; triage as non-verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.110000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.1719999999913853
+        },
+        {
+          "case_id": "pa_002",
+          "statement": "It will rain in Paris tomorrow.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future prediction \u2014 no KB grounding; triage as future_rejection",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.4210000000020955,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.2180000000080327
+        },
+        {
+          "case_id": "pa_003",
+          "statement": "The current stock price of Apple is $150.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Dynamic fact not in KB; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.296999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.235000000000582
+        },
+        {
+          "case_id": "pa_004",
+          "statement": "The best restaurant in New York City is Nobu.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Preference/opinion claim; no verifiable grounding",
+          "aedos_verdict": "abstained_given_assertion",
+          "aedos_latency_s": 12.344000000011874,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.4369999999908032
+        },
+        {
+          "case_id": "pa_005",
+          "statement": "The next President of the United States will be popular.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future + opinion; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.4059999999881256,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.3440000000118744
+        },
+        {
+          "case_id": "pa_006",
+          "statement": "Quantum computing will replace classical computing within 10 years.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future prediction about technology trends; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.6570000000065193,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.1559999999881256
+        },
+        {
+          "case_id": "pa_007",
+          "statement": "This is the greatest novel ever written.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Superlative aesthetic opinion \u2014 not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.10899999999674,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 2.688000000009197
+        },
+        {
+          "case_id": "pa_008",
+          "statement": "The universe is infinite.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Open cosmological question; no KB grounding available",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 20.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.6719999999913853
+        },
+        {
+          "case_id": "pa_009",
+          "statement": "Life exists on other planets.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Unresolved scientific question; no KB grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 28.687000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5940000000118744
+        },
+        {
+          "case_id": "pa_010",
+          "statement": "Somewhere in the world, a person is currently happy.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Existential claim \u2014 not verifiable via KB or Tier U",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.25,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.7809999999881256
+        },
+        {
+          "case_id": "pa_011",
+          "statement": "The most popular programming language is Python.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Popularity is dynamic/subjective; no KB grounding for 'most popular'",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.781999999991967,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.0780000000086147
+        },
+        {
+          "case_id": "pa_012",
+          "statement": "Climate change will cause sea levels to rise by 2 meters by 2100.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future scientific projection; no deterministic grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.5780000000086147,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.985000000000582
+        },
+        {
+          "case_id": "pa_013",
+          "statement": "The meaning of life is 42.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Philosophical/humorous claim; not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 34.6869999999908,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5469999999913853
+        },
+        {
+          "case_id": "pa_014",
+          "statement": "There are more stars in the universe than grains of sand on Earth.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Astronomical estimate; no precise KB grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.922000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2340000000112923
+        },
+        {
+          "case_id": "pa_015",
+          "statement": "Artificial intelligence will become sentient within 5 years.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future speculative prediction; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.2970000000059372,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.7029999999940628
+        },
+        {
+          "case_id": "pa_016",
+          "statement": "The current temperature in London is 15\u00b0C.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Real-time dynamic data not in KB",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.280999999988126,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9689999999973224
+        },
+        {
+          "case_id": "pa_017",
+          "statement": "Dogs make better pets than cats.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Subjective preference claim; not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.89100000000326,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.9220000000059372
+        },
+        {
+          "case_id": "pa_018",
+          "statement": "The best way to learn programming is by building projects.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Pedagogical opinion; no objective grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.9060000000026776,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.75
+        },
+        {
+          "case_id": "pa_019",
+          "statement": "Happiness is more important than wealth.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Value judgment \u2014 philosophical claim; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.5,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.75
+        },
+        {
+          "case_id": "pa_020",
+          "statement": "The number of grains of sand on all Earth's beaches exceeds 7 quintillion.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Scientific estimate with too much uncertainty; abstain rather than guess",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.985000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.25
+        },
+        {
+          "case_id": "bonus_001",
+          "statement": "Obama was born in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: P19 (born in Hawaii) \u2192 P131 (Hawaii in United States)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 43.26499999999942,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8589999999967404
+        },
+        {
+          "case_id": "bonus_002",
+          "statement": "France is a republic.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: P31 (instance of) \u2192 republic; government form claim",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 21.297000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9060000000026776
+        },
+        {
+          "case_id": "bonus_003",
+          "statement": "The Mona Lisa was painted by Leonardo da Vinci.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Mona Lisa \u2192 P170 (creator) \u2192 Leonardo da Vinci",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.85899999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.485000000000582
+        },
+        {
+          "case_id": "bonus_004",
+          "statement": "Albert Einstein was born in 1879.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: P569 (date of birth); year extraction from date value",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 14.062999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5619999999908032
+        },
+        {
+          "case_id": "bonus_005",
+          "statement": "The speed of light is approximately 300,000 km/s.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Physics constant; KB or Python path (comparison within tolerance)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.031000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.3910000000032596
+        },
+        {
+          "case_id": "bonus_006",
+          "statement": "Isaac Newton was born before Albert Einstein.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Newton P569: 1643) + KB (Einstein P569: 1879) + Python (1643 < 1879)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 13.577999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5939999999973224
+        },
+        {
+          "case_id": "bonus_007",
+          "statement": "The Great Wall of China is in China.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Great Wall \u2192 P131 \u2192 China; straightforward location",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 49.75,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6090000000112923
+        },
+        {
+          "case_id": "bonus_008",
+          "statement": "Shakespeare was born in England.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Shakespeare P19 (Stratford-upon-Avon) \u2192 England",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 43.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1559999999881256
+        },
+        {
+          "case_id": "bonus_009",
+          "statement": "The United States has 51 states.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "US has 50 states; off-by-one contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 3.938000000009197,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.7970000000059372
+        },
+        {
+          "case_id": "bonus_010",
+          "statement": "Neil Armstrong was the first human to walk on the Moon.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Neil Armstrong \u2192 first Moon walker (Apollo 11, 1969)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.936999999990803,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7189999999973224
+        },
+        {
+          "case_id": "bonus_011",
+          "statement": "The Python programming language was created by Guido van Rossum.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Python (language) not Python (snake); P61 (discoverer or inventor)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.563000000009197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9220000000059372
+        },
+        {
+          "case_id": "bonus_012",
+          "statement": "Mt. Everest is the tallest mountain on Earth by elevation above sea level.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Everest \u2192 P2044 (elevation) \u2192 highest value; requires comparison",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 48.59399999999732,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9060000000026776
+        },
+        {
+          "case_id": "bonus_013",
+          "statement": "The Berlin Wall fell in 1989.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Berlin Wall \u2192 P582 (end time) = 1989",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.4529999999940628,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.125
+        },
+        {
+          "case_id": "bonus_014",
+          "statement": "Napoleon was French.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Napoleon Bonaparte \u2192 P27 (country of citizenship = France)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "bonus_015",
+          "statement": "The first moon landing was in 1969.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Apollo 11 \u2192 P585 (point in time) = July 1969",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.139999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5779999999940628
+        },
+        {
+          "case_id": "bonus_016",
+          "statement": "Marie Curie won the Nobel Prize twice.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Marie Curie \u2192 P166 (award received) with two values (Physics 1903, Chemistry 1911)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 33.48500000000058,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0780000000086147
+        },
+        {
+          "case_id": "bonus_017",
+          "statement": "The Eiffel Tower is 330 meters tall.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Eiffel Tower \u2192 height property \u2248 330m (including antenna)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.609000000011292,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.202999999994063
+        },
+        {
+          "case_id": "bonus_018",
+          "statement": "The population of China exceeds 1 billion people.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (P1082 > 1,000,000,000) + Python comparison; large number verification",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6879999999946449
+        },
+        {
+          "case_id": "bonus_019",
+          "statement": "The Pacific Ocean is the largest ocean on Earth.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Pacific Ocean \u2192 P2046 (area) \u2192 largest; requires comparison across ocean entities",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.890999999988708,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.014999999999418
+        },
+        {
+          "case_id": "bonus_020",
+          "statement": "Abraham Lincoln was assassinated in 1865.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Lincoln \u2192 P570 (date of death) = April 1865; cause = assassination",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.3430000000080327,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5630000000091968
+        }
+      ],
+      "derived": {
+        "aedos": {
+          "fp_correction": 0,
+          "fp_abstention": 63,
+          "fn_miss": 0,
+          "fv_on_abstain": 0
+        },
+        "baseline": {
+          "fp_correction": 2,
+          "fp_abstention": 8,
+          "fn_miss": 0,
+          "fv_on_abstain": 16
+        },
+        "case_agreement": {
+          "aedos_wins": 17,
+          "aedos_hurts": 64,
+          "both_correct": 30,
+          "both_wrong": 11,
+          "total": 122
+        }
+      },
+      "aedos_latency": {
+        "count": 122,
+        "median": 15.437000000005355,
+        "p95": 164.96899999999732,
+        "max": 795.0149999999994,
+        "sum": 5336.889999999999
+      },
+      "baseline_latency": {
+        "count": 122,
+        "median": 1.055000000007567,
+        "p95": 2.1560000000026776,
+        "max": 3.4530000000086147,
+        "sum": 143.22000000000116
+      }
+    },
+    {
+      "run_id": 3,
+      "started_at": "2026-05-28T21:31:49.960505+00:00",
+      "finished_at": "2026-05-28T22:42:29.596513+00:00",
+      "duration_s": 4239.6,
+      "case_count": 122,
+      "db_path": "aedos_phase10_5.db",
+      "aedos_metrics": {
+        "total": 122,
+        "correct": 53,
+        "accuracy": 0.4344262295081967,
+        "false_verified": 0,
+        "false_verified_rate": 0.0,
+        "false_abstain": 58,
+        "false_abstain_rate": 0.6904761904761905,
+        "per_failure_mode": {
+          "multi_hop_distribution": {
+            "total": 20,
+            "correct": 7,
+            "accuracy": 0.35
+          },
+          "cross_source_unification": {
+            "total": 21,
+            "correct": 7,
+            "accuracy": 0.3333333333333333
+          },
+          "entity_disambiguation": {
+            "total": 23,
+            "correct": 8,
+            "accuracy": 0.34782608695652173
+          },
+          "predicate_translation": {
+            "total": 28,
+            "correct": 6,
+            "accuracy": 0.21428571428571427
+          },
+          "belief_revision": {
+            "total": 10,
+            "correct": 5,
+            "accuracy": 0.5
+          },
+          "principled_abstention": {
+            "total": 20,
+            "correct": 20,
+            "accuracy": 1.0
+          }
+        }
+      },
+      "baseline_metrics": {
+        "total": 122,
+        "correct": 92,
+        "accuracy": 0.7540983606557377,
+        "false_verified": 14,
+        "false_verified_rate": 0.11475409836065574,
+        "false_abstain": 10,
+        "false_abstain_rate": 0.11904761904761904,
+        "per_failure_mode": {
+          "multi_hop_distribution": {
+            "total": 20,
+            "correct": 19,
+            "accuracy": 0.95
+          },
+          "cross_source_unification": {
+            "total": 21,
+            "correct": 15,
+            "accuracy": 0.7142857142857143
+          },
+          "entity_disambiguation": {
+            "total": 23,
+            "correct": 22,
+            "accuracy": 0.9565217391304348
+          },
+          "predicate_translation": {
+            "total": 28,
+            "correct": 26,
+            "accuracy": 0.9285714285714286
+          },
+          "belief_revision": {
+            "total": 10,
+            "correct": 3,
+            "accuracy": 0.3
+          },
+          "principled_abstention": {
+            "total": 20,
+            "correct": 7,
+            "accuracy": 0.35
+          }
+        }
+      },
+      "per_case": [
+        {
+          "case_id": "mhd_001",
+          "statement": "Paris is in France and France is in Europe, so Paris is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country\u2192continent chain; distributes_up required",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 446.64100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8910000000032596
+        },
+        {
+          "case_id": "mhd_002",
+          "statement": "Berlin is in Germany and Germany is in the European Union.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country\u2192supranational org; two-hop KB chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 119.26600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6710000000020955
+        },
+        {
+          "case_id": "mhd_003",
+          "statement": "Williamstown is in Massachusetts and Massachusetts is in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Town\u2192state\u2192country; depends on Tier U for Williamstown location if user-stipulated",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 29.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7350000000005821
+        },
+        {
+          "case_id": "mhd_004",
+          "statement": "Barack Obama is American because he was President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Role\u2192nationality inference via subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 24.531000000002678,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.0939999999973224
+        },
+        {
+          "case_id": "mhd_005",
+          "statement": "The Eiffel Tower is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Landmark\u2192city\u2192country\u2192continent; three-hop chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 175.88999999999942,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6560000000026776
+        },
+        {
+          "case_id": "mhd_006",
+          "statement": "Cambridge, Massachusetts is in North America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192state\u2192country\u2192continent",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 45.51600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6089999999967404
+        },
+        {
+          "case_id": "mhd_007",
+          "statement": "Williams College is in New England.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "KB institution\u2192administrative region; requires regional subsumption",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 21.030999999988126,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0470000000059372
+        },
+        {
+          "case_id": "mhd_008",
+          "statement": "The Thames is in Asia.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "River is in the UK (Europe); contradicted by KB + subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 198.82800000000861,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.1409999999887077
+        },
+        {
+          "case_id": "mhd_009",
+          "statement": "Rome is in Germany.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Rome is in Italy; directly contradicted by KB location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 162.875,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.1090000000112923
+        },
+        {
+          "case_id": "mhd_010",
+          "statement": "The Amazon River is in South America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "River\u2192country (Brazil)\u2192continent",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 88.75,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5939999999973224
+        },
+        {
+          "case_id": "mhd_011",
+          "statement": "Tokyo is in East Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "City\u2192country (Japan)\u2192subregion; regional subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 236.40699999999197,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.75
+        },
+        {
+          "case_id": "mhd_012",
+          "statement": "The International Space Station orbits Earth in Europe.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "ISS orbits Earth, not located in Europe; contradicted",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 58.187000000005355,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.514999999999418
+        },
+        {
+          "case_id": "mhd_013",
+          "statement": "Harvard University is in North America.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Cambridge, MA \u2192 USA \u2192 North America; three-hop chain",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 45.937999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 4.656999999991967
+        },
+        {
+          "case_id": "mhd_014",
+          "statement": "Mount Everest is in Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Peak in Nepal/Tibet \u2192 Asia; geographic containment chain",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 272.7030000000086,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5310000000026776
+        },
+        {
+          "case_id": "mhd_015",
+          "statement": "The Great Wall of China is in Asia.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "KB landmark \u2192 China \u2192 Asia",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 41.73399999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5160000000032596
+        },
+        {
+          "case_id": "mhd_016",
+          "statement": "The Nile River flows through a country that is in Africa.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Nile \u2192 Egypt \u2192 Africa; containment chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 17.906000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.014999999999418
+        },
+        {
+          "case_id": "mhd_017",
+          "statement": "Sydney is in the Southern Hemisphere.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Sydney \u2192 Australia \u2192 Southern Hemisphere; geographic subsumption",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 210.86000000000058,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6100000000005821
+        },
+        {
+          "case_id": "mhd_018",
+          "statement": "The Vatican is in Africa.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Vatican is in Rome, Italy, Europe \u2014 not Africa",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 186.20299999999406,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.187000000005355
+        },
+        {
+          "case_id": "mhd_019",
+          "statement": "Monaco is the smallest country in North America.",
+          "ground_truth": "contradicted",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Monaco is in Europe, not North America; doubly contradicted",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.75,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.9689999999973224
+        },
+        {
+          "case_id": "mhd_020",
+          "statement": "New Zealand is in the Pacific Ocean region.",
+          "ground_truth": "verified",
+          "failure_mode": "multi_hop_distribution",
+          "notes": "Island nation \u2192 Pacific Ocean region; subsumption chain",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.687000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1560000000026776
+        },
+        {
+          "case_id": "csu_001",
+          "statement": "Asa lives in Williamstown and Williamstown is in Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts); two sources unified",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 20.860000000000582,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.125
+        },
+        {
+          "case_id": "csu_002",
+          "statement": "5 is greater than 3 and Obama was the 44th President.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python (numeric) + KB (Obama); cross-source verification of two claims",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 22.046999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0159999999887077
+        },
+        {
+          "case_id": "csu_003",
+          "statement": "Asa works at a university that was founded before 1800.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williams College) + KB (Williams College founded 1793 < 1800) + Python (1793 < 1800)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 16.656000000002678,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.0
+        },
+        {
+          "case_id": "csu_004",
+          "statement": "Obama was President, and 44 is an even number.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Obama 44th President) + Python (44 % 2 == 0)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.812000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0930000000080327
+        },
+        {
+          "case_id": "csu_005",
+          "statement": "Marie Curie won the Nobel Prize and 1903 is a prime number.",
+          "ground_truth": "abstain",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB verified (Nobel) + Python (1903 is prime \u2014 non-trivial, might abstain)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 50.421999999991385,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.2189999999973224
+        },
+        {
+          "case_id": "csu_006",
+          "statement": "Paris is the capital of France, and France has more than 60 million people.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (capital) + KB (population); single source but two different predicates",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 15.125,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "csu_007",
+          "statement": "Asa lives in a town in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts\u2192USA); three-source chain",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 5.547000000005937,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "csu_008",
+          "statement": "The number 7 is less than 10, and Germany is in Europe.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python (numeric) + KB (geographic)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 96.5,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "csu_009",
+          "statement": "Obama was born in Hawaii, and Hawaii was the 50th state admitted to the US.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (birth place) + KB (statehood order)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 28.952999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.360000000000582
+        },
+        {
+          "case_id": "csu_010",
+          "statement": "Albert Einstein was born in Germany and died in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (born_in Ulm/Germany) + KB (died_in Princeton/USA)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 89.42200000000594,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9529999999940628
+        },
+        {
+          "case_id": "csu_011",
+          "statement": "Marie Curie was born in Warsaw, and Warsaw is the capital of Poland.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Curie birthplace) + KB (Warsaw capital of Poland)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 17.718999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8910000000032596
+        },
+        {
+          "case_id": "csu_012",
+          "statement": "10 squared is 100, and 100 is greater than 50.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python chain: two numeric computations unified",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.35899999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5460000000020955
+        },
+        {
+          "case_id": "csu_013",
+          "statement": "Asa lives in a state that borders New York.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Tier U (Asa\u2192MA) + KB (Massachusetts shares border with New York)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 9.375,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.9689999999973224
+        },
+        {
+          "case_id": "csu_014",
+          "statement": "Obama was President and his wife worked at a hospital in Chicago.",
+          "ground_truth": "abstain",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Obama president) verified; Michelle Obama at hospital \u2014 abstain on unverifiable detail",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 14.422000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.4689999999973224
+        },
+        {
+          "case_id": "csu_015",
+          "statement": "The sum of 3 and 4 is 7, and 7 is a prime number.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Python chain: arithmetic + primality check",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 22.89100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.312000000005355
+        },
+        {
+          "case_id": "csu_016",
+          "statement": "Paris has more than 2 million people and is in France.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (population) + KB (location)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 42.625,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "csu_017",
+          "statement": "Apple was founded in 1976 and is headquartered in Cupertino.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (founding year) + KB (headquarters); P571 + P159",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 9.0,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7189999999973224
+        },
+        {
+          "case_id": "csu_018",
+          "statement": "Einstein won the Nobel Prize in Physics. The year was 1921.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB: Nobel Prize awarded 1921 to Einstein for photoelectric effect",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 30.014999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "ed_001",
+          "statement": "The Mercury spacecraft was the first American spacecraft to carry humans.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Entity disambiguation: Mercury (spacecraft) not Mercury (planet)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.9689999999973224,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.4220000000059372
+        },
+        {
+          "case_id": "ed_002",
+          "statement": "Lincoln was the 16th President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Abraham Lincoln \u2192 P39 (position held)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 13.827999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "ed_003",
+          "statement": "The Amazon is the world's largest river by discharge.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Amazon (river) vs Amazon (company); resolver must pick river",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.860000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0469999999913853
+        },
+        {
+          "case_id": "ed_004",
+          "statement": "George Washington was the first President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "George Washington (person) not Washington (state/city); P39",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 12.843000000008033,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9060000000026776
+        },
+        {
+          "case_id": "ed_005",
+          "statement": "Churchill was the Prime Minister of the United Kingdom during World War II.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Winston Churchill \u2192 P6 (head of government); temporal scope 1940-1945",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 52.51600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5939999999973224
+        },
+        {
+          "case_id": "ed_006",
+          "statement": "The Victoria Cross is a military decoration awarded in the United Kingdom.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Victoria Cross (award) not Queen Victoria; P17 (country)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 20.702999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1720000000059372
+        },
+        {
+          "case_id": "ed_007",
+          "statement": "Cambridge University is in England.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Cambridge (UK) not Cambridge, MA; P131 (located in administrative territorial entity)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 36.82799999999406,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6560000000026776
+        },
+        {
+          "case_id": "ed_008",
+          "statement": "The Springfield in Illinois was founded in 1821.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Springfield (Illinois) disambiguation; many Springfields exist",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.9690000000118744,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6559999999881256
+        },
+        {
+          "case_id": "ed_009",
+          "statement": "Paris Hilton was born in New York City.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Paris Hilton (person) not Paris (city); P19 (place of birth)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 10.843999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8280000000086147
+        },
+        {
+          "case_id": "ed_010",
+          "statement": "Apple Inc. was founded by Steve Jobs.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Apple (company) not Apple (fruit); P112 (founded by)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 12.077999999994063,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.2969999999913853
+        },
+        {
+          "case_id": "ed_011",
+          "statement": "Washington, D.C. is the capital of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Washington DC not Washington state; P36 (capital)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 12.0,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7030000000086147
+        },
+        {
+          "case_id": "ed_012",
+          "statement": "The Jordan River flows through the Middle East.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Jordan (river) not Jordan (country); geographic location",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 49.437000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5629999999946449
+        },
+        {
+          "case_id": "ed_013",
+          "statement": "Tesla was a Serbian-American inventor.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Nikola Tesla (person) not Tesla Inc.; P27 (nationality)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.625,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.125
+        },
+        {
+          "case_id": "ed_014",
+          "statement": "The Great Wall was built to protect China from invasions.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Great Wall of China (structure); KB purpose/description",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.781999999991967,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.812000000005355
+        },
+        {
+          "case_id": "ed_015",
+          "statement": "Apple was founded in 1977.",
+          "ground_truth": "contradicted",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Apple Inc. founded 1976, not 1977; off-by-one KB contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 2.125,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.2969999999913853
+        },
+        {
+          "case_id": "ed_016",
+          "statement": "Mercury is the smallest planet in the solar system.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "Mercury (planet) not Mercury (spacecraft); P31 + size property",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.359000000011292,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.75
+        },
+        {
+          "case_id": "pt_001",
+          "statement": "Obama held the office of the 44th President of the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "holds_role \u2192 P39 (position held); canonical seed predicate",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.546999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.75
+        },
+        {
+          "case_id": "pt_002",
+          "statement": "Marie Curie was educated at the University of Paris.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "educated_at \u2192 P69; requires slot-to-qualifier mapping",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 10.703000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.0940000000118744
+        },
+        {
+          "case_id": "pt_003",
+          "statement": "Einstein was employed by the Institute for Advanced Study.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "employed_by \u2192 P108; temporal scope qualifier",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 11.093999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.9379999999946449
+        },
+        {
+          "case_id": "pt_004",
+          "statement": "Williams College is part of the Consortium of Liberal Arts Colleges.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "member_of \u2192 P463; mereological/organizational membership",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.218999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7339999999967404
+        },
+        {
+          "case_id": "pt_005",
+          "statement": "Marie Curie was awarded the Nobel Prize in Physics in 1903.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "awarded \u2192 P166 with year qualifier P585",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.812000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7339999999967404
+        },
+        {
+          "case_id": "pt_006",
+          "statement": "France was founded in the year 843.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_in_year \u2192 P571; inception date for sovereign entity",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 2.2969999999913853,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 2.547000000005937
+        },
+        {
+          "case_id": "pt_007",
+          "statement": "Steve Jobs co-founded Apple.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_by \u2192 P112; multiple founders share this property",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.953000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5470000000059372
+        },
+        {
+          "case_id": "pt_008",
+          "statement": "Germany shares a border with France.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "adjacent_to \u2192 P47 (shares border with)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 6.8439999999973224,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7189999999973224
+        },
+        {
+          "case_id": "pt_009",
+          "statement": "Einstein had German nationality.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "nationality \u2192 P27 (country of citizenship); multi-value OK",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.264999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2810000000026776
+        },
+        {
+          "case_id": "pt_010",
+          "statement": "Obama was a member of the Democratic Party.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "political_party \u2192 P102; temporal scope",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 165.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        },
+        {
+          "case_id": "pt_011",
+          "statement": "Shakespeare authored Hamlet.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "authored_by \u2192 P50; subject is work, object is person",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.187999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7810000000026776
+        },
+        {
+          "case_id": "pt_012",
+          "statement": "The Eiffel Tower is located in Paris.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "located_at \u2192 P131 or P276; standard location predicate",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 16.26600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7029999999940628
+        },
+        {
+          "case_id": "pt_013",
+          "statement": "Tolstoy published War and Peace in 1869.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "published_in_year \u2192 P577; P50 author link",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 30.46799999999348,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 2.3280000000086147
+        },
+        {
+          "case_id": "pt_014",
+          "statement": "Darwin is the founder of evolutionary theory.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "discovered_by/invented_by \u2192 P61; conceptual discovery",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 18.578000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2819999999919673
+        },
+        {
+          "case_id": "pt_015",
+          "statement": "Einstein won the Nobel Prize in Chemistry.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "awarded \u2192 P166; Einstein won in Physics not Chemistry",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 36.15699999999197,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.9530000000086147
+        },
+        {
+          "case_id": "pt_016",
+          "statement": "Marie Curie was born in Germany.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "born_in \u2192 P19; Marie Curie was born in Warsaw, Poland (Russian Empire at the time)",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 12.437000000005355,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.9689999999973224
+        },
+        {
+          "case_id": "pt_017",
+          "statement": "Apple is headquartered in San Francisco.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "headquarters_in \u2192 P159; Apple HQ is in Cupertino, not San Francisco",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 15.202999999994063,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.6870000000053551
+        },
+        {
+          "case_id": "pt_018",
+          "statement": "Google was founded in 1994.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "founded_in_year \u2192 P571; Google was founded in 1998",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.9530000000086147,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "br_001",
+          "statement": "Asa lives in Cambridge.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U has Asa\u2192Williamstown; contradiction detection via predicate-level belief revision",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 7.937999999994645,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.1559999999881256
+        },
+        {
+          "case_id": "br_002",
+          "statement": "Asa works at Harvard.",
+          "ground_truth": "abstain",
+          "failure_mode": "belief_revision",
+          "notes": "No Tier U assertion about Asa's employer; abstain (no grounding)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 14.23399999999674,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.110000000000582
+        },
+        {
+          "case_id": "br_003",
+          "statement": "Asa lives in Williamstown, Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (Asa\u2192Williamstown) + KB (Williamstown\u2192Massachusetts)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 6.26600000000326,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.187000000005355
+        },
+        {
+          "case_id": "br_004",
+          "statement": "The current user is Asa.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U assertion about user identity (asserting_party_id context)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 0.7189999999973224,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.9850000000005821
+        },
+        {
+          "case_id": "br_005",
+          "statement": "Asa is a great programmer.",
+          "ground_truth": "abstain",
+          "failure_mode": "belief_revision",
+          "notes": "Superlative subjective claim \u2014 triage as non-verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.234000000011292,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.8279999999940628
+        },
+        {
+          "case_id": "br_006",
+          "statement": "Asa is not in France.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Negation of Tier U; Asa is in Williamstown (Massachusetts), not France",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 12.905999999988126,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.375
+        },
+        {
+          "case_id": "br_007",
+          "statement": "The person named Asa lives in Boston.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U: Asa lives in Williamstown, not Boston; cross-context contradiction",
+          "aedos_verdict": "contradicted",
+          "aedos_latency_s": 6.110000000000582,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.4840000000112923
+        },
+        {
+          "case_id": "br_008",
+          "statement": "Williamstown, Massachusetts is a city with more than 1 million residents.",
+          "ground_truth": "contradicted",
+          "failure_mode": "belief_revision",
+          "notes": "Williamstown population ~7000; KB population contradicts claim",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 18.953000000008615,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 1.187999999994645
+        },
+        {
+          "case_id": "br_009",
+          "statement": "Asa went to college in Massachusetts.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (Asa\u2192Williams College in Williamstown, MA) + KB (Williamstown\u2192Massachusetts)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 14.85899999999674,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.25
+        },
+        {
+          "case_id": "br_010",
+          "statement": "The user's hometown is in a state that borders Connecticut.",
+          "ground_truth": "verified",
+          "failure_mode": "belief_revision",
+          "notes": "Tier U (user\u2192MA) + KB (Massachusetts borders Connecticut)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.25,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.9379999999946449
+        },
+        {
+          "case_id": "pa_001",
+          "statement": "Asa is the best software engineer in the world.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Superlative subjective \u2014 no grounding; triage as non-verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.64100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.4220000000059372
+        },
+        {
+          "case_id": "pa_002",
+          "statement": "It will rain in Paris tomorrow.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future prediction \u2014 no KB grounding; triage as future_rejection",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.25
+        },
+        {
+          "case_id": "pa_003",
+          "statement": "The current stock price of Apple is $150.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Dynamic fact not in KB; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.296999999991385,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.4679999999934807
+        },
+        {
+          "case_id": "pa_004",
+          "statement": "The best restaurant in New York City is Nobu.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Preference/opinion claim; no verifiable grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.625,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2190000000118744
+        },
+        {
+          "case_id": "pa_005",
+          "statement": "The next President of the United States will be popular.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future + opinion; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.25,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.4839999999967404
+        },
+        {
+          "case_id": "pa_006",
+          "statement": "Quantum computing will replace classical computing within 10 years.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future prediction about technology trends; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.1720000000059372,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.3439999999973224
+        },
+        {
+          "case_id": "pa_007",
+          "statement": "This is the greatest novel ever written.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Superlative aesthetic opinion \u2014 not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.812000000005355,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.110000000000582
+        },
+        {
+          "case_id": "pa_008",
+          "statement": "The universe is infinite.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Open cosmological question; no KB grounding available",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 18.921999999991385,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.1089999999967404
+        },
+        {
+          "case_id": "pa_009",
+          "statement": "Life exists on other planets.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Unresolved scientific question; no KB grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 25.51600000000326,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 0.6720000000059372
+        },
+        {
+          "case_id": "pa_010",
+          "statement": "Somewhere in the world, a person is currently happy.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Existential claim \u2014 not verifiable via KB or Tier U",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.4679999999934807,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.6719999999913853
+        },
+        {
+          "case_id": "pa_011",
+          "statement": "The most popular programming language is Python.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Popularity is dynamic/subjective; no KB grounding for 'most popular'",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 17.15700000000652,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.437000000005355
+        },
+        {
+          "case_id": "pa_012",
+          "statement": "Climate change will cause sea levels to rise by 2 meters by 2100.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future scientific projection; no deterministic grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.7339999999967404,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.485000000000582
+        },
+        {
+          "case_id": "pa_013",
+          "statement": "The meaning of life is 42.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Philosophical/humorous claim; not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 20.093999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.562000000005355
+        },
+        {
+          "case_id": "pa_014",
+          "statement": "There are more stars in the universe than grains of sand on Earth.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Astronomical estimate; no precise KB grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.514999999999418,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.3589999999967404
+        },
+        {
+          "case_id": "pa_015",
+          "statement": "Artificial intelligence will become sentient within 5 years.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Future speculative prediction; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.5319999999919673
+        },
+        {
+          "case_id": "pa_016",
+          "statement": "The current temperature in London is 15\u00b0C.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Real-time dynamic data not in KB",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.578000000008615,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2180000000080327
+        },
+        {
+          "case_id": "pa_017",
+          "statement": "Dogs make better pets than cats.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Subjective preference claim; not verifiable",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.76600000000326,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 1.5469999999913853
+        },
+        {
+          "case_id": "pa_018",
+          "statement": "The best way to learn programming is by building projects.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Pedagogical opinion; no objective grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.3589999999967404,
+          "baseline_verdict": "no_grounding_found",
+          "baseline_latency_s": 2.813000000009197
+        },
+        {
+          "case_id": "pa_019",
+          "statement": "Happiness is more important than wealth.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Value judgment \u2014 philosophical claim; no grounding",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.687999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.514999999999418
+        },
+        {
+          "case_id": "pa_020",
+          "statement": "The number of grains of sand on all Earth's beaches exceeds 7 quintillion.",
+          "ground_truth": "abstain",
+          "failure_mode": "principled_abstention",
+          "notes": "Scientific estimate with too much uncertainty; abstain rather than guess",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.14100000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 2.8910000000032596
+        },
+        {
+          "case_id": "bonus_001",
+          "statement": "Obama was born in the United States.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: P19 (born in Hawaii) \u2192 P131 (Hawaii in United States)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 45.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6879999999946449
+        },
+        {
+          "case_id": "bonus_002",
+          "statement": "France is a republic.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: P31 (instance of) \u2192 republic; government form claim",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 18.296000000002095,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5620000000053551
+        },
+        {
+          "case_id": "bonus_003",
+          "statement": "The Mona Lisa was painted by Leonardo da Vinci.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Mona Lisa \u2192 P170 (creator) \u2192 Leonardo da Vinci",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 11.218999999997322,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.6879999999946449
+        },
+        {
+          "case_id": "bonus_004",
+          "statement": "Albert Einstein was born in 1879.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: P569 (date of birth); year extraction from date value",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 2.485000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "bonus_005",
+          "statement": "The speed of light is approximately 300,000 km/s.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "Physics constant; KB or Python path (comparison within tolerance)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.5,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0
+        },
+        {
+          "case_id": "bonus_006",
+          "statement": "Isaac Newton was born before Albert Einstein.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (Newton P569: 1643) + KB (Einstein P569: 1879) + Python (1643 < 1879)",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 13.35899999999674,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.2810000000026776
+        },
+        {
+          "case_id": "bonus_007",
+          "statement": "The Great Wall of China is in China.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Great Wall \u2192 P131 \u2192 China; straightforward location",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 44.875,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5149999999994179
+        },
+        {
+          "case_id": "bonus_008",
+          "statement": "Shakespeare was born in England.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Shakespeare P19 (Stratford-upon-Avon) \u2192 England",
+          "aedos_verdict": "verified",
+          "aedos_latency_s": 42.78100000000268,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7819999999919673
+        },
+        {
+          "case_id": "bonus_009",
+          "statement": "The United States has 51 states.",
+          "ground_truth": "contradicted",
+          "failure_mode": "predicate_translation",
+          "notes": "US has 50 states; off-by-one contradiction",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.5,
+          "baseline_verdict": "contradicted",
+          "baseline_latency_s": 0.8430000000080327
+        },
+        {
+          "case_id": "bonus_010",
+          "statement": "Neil Armstrong was the first human to walk on the Moon.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Neil Armstrong \u2192 first Moon walker (Apollo 11, 1969)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 5.172000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7819999999919673
+        },
+        {
+          "case_id": "bonus_011",
+          "statement": "The Python programming language was created by Guido van Rossum.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Python (language) not Python (snake); P61 (discoverer or inventor)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.327999999994063,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "bonus_012",
+          "statement": "Mt. Everest is the tallest mountain on Earth by elevation above sea level.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Everest \u2192 P2044 (elevation) \u2192 highest value; requires comparison",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 8.156000000002678,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8590000000112923
+        },
+        {
+          "case_id": "bonus_013",
+          "statement": "The Berlin Wall fell in 1989.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Berlin Wall \u2192 P582 (end time) = 1989",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 2.687999999994645,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.0469999999913853
+        },
+        {
+          "case_id": "bonus_014",
+          "statement": "Napoleon was French.",
+          "ground_truth": "verified",
+          "failure_mode": "entity_disambiguation",
+          "notes": "KB: Napoleon Bonaparte \u2192 P27 (country of citizenship = France)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 7.25,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.8439999999973224
+        },
+        {
+          "case_id": "bonus_015",
+          "statement": "The first moon landing was in 1969.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Apollo 11 \u2192 P585 (point in time) = July 1969",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 6.76600000000326,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.625
+        },
+        {
+          "case_id": "bonus_016",
+          "statement": "Marie Curie won the Nobel Prize twice.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Marie Curie \u2192 P166 (award received) with two values (Physics 1903, Chemistry 1911)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 37.21799999999348,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 1.1560000000026776
+        },
+        {
+          "case_id": "bonus_017",
+          "statement": "The Eiffel Tower is 330 meters tall.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Eiffel Tower \u2192 height property \u2248 330m (including antenna)",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 9.172000000005937,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5780000000086147
+        },
+        {
+          "case_id": "bonus_018",
+          "statement": "The population of China exceeds 1 billion people.",
+          "ground_truth": "verified",
+          "failure_mode": "cross_source_unification",
+          "notes": "KB (P1082 > 1,000,000,000) + Python comparison; large number verification",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 4.9060000000026776,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.7189999999973224
+        },
+        {
+          "case_id": "bonus_019",
+          "statement": "The Pacific Ocean is the largest ocean on Earth.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Pacific Ocean \u2192 P2046 (area) \u2192 largest; requires comparison across ocean entities",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 10.110000000000582,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5149999999994179
+        },
+        {
+          "case_id": "bonus_020",
+          "statement": "Abraham Lincoln was assassinated in 1865.",
+          "ground_truth": "verified",
+          "failure_mode": "predicate_translation",
+          "notes": "KB: Lincoln \u2192 P570 (date of death) = April 1865; cause = assassination",
+          "aedos_verdict": "no_grounding_found",
+          "aedos_latency_s": 1.7189999999973224,
+          "baseline_verdict": "verified",
+          "baseline_latency_s": 0.5469999999913853
+        }
+      ],
+      "derived": {
+        "aedos": {
+          "fp_correction": 2,
+          "fp_abstention": 58,
+          "fn_miss": 0,
+          "fv_on_abstain": 0
+        },
+        "baseline": {
+          "fp_correction": 3,
+          "fp_abstention": 10,
+          "fn_miss": 0,
+          "fv_on_abstain": 14
+        },
+        "case_agreement": {
+          "aedos_wins": 20,
+          "aedos_hurts": 59,
+          "both_correct": 33,
+          "both_wrong": 10,
+          "total": 122
+        }
+      },
+      "aedos_latency": {
+        "count": 122,
+        "median": 12.038999999997031,
+        "p95": 165.875,
+        "max": 446.64100000000326,
+        "sum": 4105.0320000000065
+      },
+      "baseline_latency": {
+        "count": 122,
+        "median": 0.9689999999973224,
+        "p95": 2.125,
+        "max": 4.656999999991967,
+        "sum": 134.59399999999732
+      }
+    }
+  ],
+  "across_runs": {
+    "aedos": {
+      "accuracy": {
+        "median": 0.38524590163934425,
+        "min": 0.2786885245901639,
+        "max": 0.4344262295081967,
+        "n": 3
+      },
+      "false_verified_rate": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.01639344262295082,
+        "n": 3
+      },
+      "false_abstain_rate": {
+        "median": 0.75,
+        "min": 0.6904761904761905,
+        "max": 0.8333333333333334,
+        "n": 3
+      },
+      "per_failure_mode": {
+        "belief_revision": {
+          "median": 0.3,
+          "min": 0.2,
+          "max": 0.5,
+          "n": 3
+        },
+        "cross_source_unification": {
+          "median": 0.23809523809523808,
+          "min": 0.23809523809523808,
+          "max": 0.3333333333333333,
+          "n": 3
+        },
+        "entity_disambiguation": {
+          "median": 0.30434782608695654,
+          "min": 0.13043478260869565,
+          "max": 0.34782608695652173,
+          "n": 3
+        },
+        "multi_hop_distribution": {
+          "median": 0.3,
+          "min": 0.0,
+          "max": 0.35,
+          "n": 3
+        },
+        "predicate_translation": {
+          "median": 0.21428571428571427,
+          "min": 0.17857142857142858,
+          "max": 0.25,
+          "n": 3
+        },
+        "principled_abstention": {
+          "median": 1.0,
+          "min": 0.9,
+          "max": 1.0,
+          "n": 3
+        }
+      },
+      "fp_correction": {
+        "median": 2,
+        "min": 0,
+        "max": 5,
+        "n": 3
+      },
+      "fp_abstention": {
+        "median": 63,
+        "min": 58,
+        "max": 70,
+        "n": 3
+      },
+      "fn_miss": {
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "n": 3
+      },
+      "fv_on_abstain": {
+        "median": 0,
+        "min": 0,
+        "max": 2,
+        "n": 3
+      }
+    },
+    "baseline": {
+      "accuracy": {
+        "median": 0.7704918032786885,
+        "min": 0.7540983606557377,
+        "max": 0.7868852459016393,
+        "n": 3
+      },
+      "false_verified_rate": {
+        "median": 0.11475409836065574,
+        "min": 0.09836065573770492,
+        "max": 0.13114754098360656,
+        "n": 3
+      },
+      "false_abstain_rate": {
+        "median": 0.10714285714285714,
+        "min": 0.09523809523809523,
+        "max": 0.11904761904761904,
+        "n": 3
+      },
+      "per_failure_mode": {
+        "belief_revision": {
+          "median": 0.2,
+          "min": 0.2,
+          "max": 0.3,
+          "n": 3
+        },
+        "cross_source_unification": {
+          "median": 0.7619047619047619,
+          "min": 0.7142857142857143,
+          "max": 0.7619047619047619,
+          "n": 3
+        },
+        "entity_disambiguation": {
+          "median": 0.9565217391304348,
+          "min": 0.9565217391304348,
+          "max": 0.9565217391304348,
+          "n": 3
+        },
+        "multi_hop_distribution": {
+          "median": 0.95,
+          "min": 0.95,
+          "max": 0.95,
+          "n": 3
+        },
+        "predicate_translation": {
+          "median": 0.9642857142857143,
+          "min": 0.9285714285714286,
+          "max": 1.0,
+          "n": 3
+        },
+        "principled_abstention": {
+          "median": 0.35,
+          "min": 0.35,
+          "max": 0.5,
+          "n": 3
+        }
+      },
+      "fp_correction": {
+        "median": 2,
+        "min": 2,
+        "max": 3,
+        "n": 3
+      },
+      "fp_abstention": {
+        "median": 9,
+        "min": 8,
+        "max": 10,
+        "n": 3
+      },
+      "fn_miss": {
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "n": 3
+      },
+      "fv_on_abstain": {
+        "median": 14,
+        "min": 12,
+        "max": 16,
+        "n": 3
+      }
+    },
+    "case_agreement": {
+      "aedos_wins": {
+        "median": 17,
+        "min": 14,
+        "max": 20,
+        "n": 3
+      },
+      "aedos_hurts": {
+        "median": 64,
+        "min": 59,
+        "max": 76,
+        "n": 3
+      },
+      "both_correct": {
+        "median": 30,
+        "min": 20,
+        "max": 33,
+        "n": 3
+      },
+      "both_wrong": {
+        "median": 11,
+        "min": 10,
+        "max": 12,
+        "n": 3
+      }
+    },
+    "duration_s": {
+      "median": 5480.1,
+      "min": 4239.6,
+      "max": 6537.1,
+      "n": 3
+    }
+  },
+  "acceptance": {
+    "criterion_1_fv_le_5": {
+      "pass": true,
+      "value": 0.0,
+      "threshold": 0.05
+    },
+    "criterion_2_acc_ge_baseline_plus_15": {
+      "pass": false,
+      "value": -0.38524590163934425,
+      "threshold": 0.15
+    },
+    "criterion_3_no_regression": {
+      "pass": false,
+      "regressions": 4,
+      "per_mode": {
+        "belief_revision": {
+          "aedos": 0.3,
+          "baseline": 0.2,
+          "delta": 0.09999999999999998,
+          "regressed": false,
+          "big_gain": false
+        },
+        "cross_source_unification": {
+          "aedos": 0.23809523809523808,
+          "baseline": 0.7619047619047619,
+          "delta": -0.5238095238095237,
+          "regressed": true,
+          "big_gain": false
+        },
+        "entity_disambiguation": {
+          "aedos": 0.30434782608695654,
+          "baseline": 0.9565217391304348,
+          "delta": -0.6521739130434783,
+          "regressed": true,
+          "big_gain": false
+        },
+        "multi_hop_distribution": {
+          "aedos": 0.3,
+          "baseline": 0.95,
+          "delta": -0.6499999999999999,
+          "regressed": true,
+          "big_gain": false
+        },
+        "predicate_translation": {
+          "aedos": 0.21428571428571427,
+          "baseline": 0.9642857142857143,
+          "delta": -0.75,
+          "regressed": true,
+          "big_gain": false
+        },
+        "principled_abstention": {
+          "aedos": 1.0,
+          "baseline": 0.35,
+          "delta": 0.65,
+          "regressed": false,
+          "big_gain": true
+        }
+      }
+    },
+    "criterion_4_big_gain_4_of_6": {
+      "pass": false,
+      "big_gains": 1,
+      "needed": 4,
+      "total_modes": 6
+    }
+  }
+}
