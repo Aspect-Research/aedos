@@ -272,6 +272,31 @@ class PredicateTranslation:
             event_data={"reason": reason},
         )
 
+    def _borrow_seed_slot_to_qualifier(
+        self, kb_namespace: str, kb_property: str
+    ) -> Optional[dict]:
+        """Phase 10.5 Step 6 sub-cause C: return any active well-formed
+        slot_to_qualifier mapping for (kb_namespace, kb_property). Used
+        to backfill an oracle-generated row whose sq is missing — the
+        oracle named the right KB property but didn't (or couldn't)
+        spell the slot mapping, and another predicate's seed already has
+        the validated form. Returns None when no such peer exists.
+        """
+        row = self._db.execute(
+            "SELECT slot_to_qualifier FROM predicate_translation "
+            "WHERE kb_namespace=? AND kb_property=? "
+            "AND slot_to_qualifier IS NOT NULL "
+            "AND retracted_at IS NULL "
+            "ORDER BY id LIMIT 1",
+            (kb_namespace, kb_property),
+        ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        try:
+            return json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            return None
+
     def query_neighbors(self, aedos_predicate: str) -> list[PredicateMetadata]:
         """Return rows whose kb_property matches the given predicate's kb_property."""
         subject = self._fetch(aedos_predicate)
@@ -347,6 +372,23 @@ class PredicateTranslation:
         now = _NOW()
         effective_kb_namespace = raw.get("kb_namespace") or kb_namespace
         distinct_slots_raw = raw.get("distinct_slots")
+
+        # Phase 10.5 Step 6 sub-cause C: when the oracle declared a
+        # kb_property but provided no slot_to_qualifier (the common
+        # malformed-runtime shape that motivated Fix 1's consistency-check
+        # skip), borrow the slot_to_qualifier from any well-formed seed or
+        # prior runtime row that maps to the same (kb_namespace,
+        # kb_property). Predicates sharing a KB property are aliases at the
+        # KB layer; the seed's hand-validated sq is the right mapping. This
+        # turns the oracle's runtime additions from "kb_property is right
+        # but walker can't look up via NULL sq" into "kb_property is right
+        # AND walker uses the seed's validated slot map."
+        if raw.get("kb_property") and effective_kb_namespace and not raw.get("slot_to_qualifier"):
+            borrowed_sq = self._borrow_seed_slot_to_qualifier(
+                effective_kb_namespace, raw["kb_property"]
+            )
+            if borrowed_sq is not None:
+                raw["slot_to_qualifier"] = borrowed_sq
         slot_to_qualifier_raw = raw.get("slot_to_qualifier")
         subject_types_raw = raw.get("subject_entity_types")
         object_types_raw = raw.get("object_entity_types")
