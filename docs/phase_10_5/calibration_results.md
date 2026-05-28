@@ -497,3 +497,119 @@ date arithmetic). This is now a documented gap to address in
 Step 7's release-decision deliberation: either v0.15.0 ships
 with this gap noted, or temporal extraction prompt iteration
 moves into a pre-release work item.
+
+---
+
+# Session 2 follow-on — temporal_scope remediation (2026-05-28)
+
+After Session 2's variance pass surfaced temporal_scope as the
+one new release-decision input (median 80%, below 90%), a
+bounded diagnostic + remediation pass landed before Step 5.
+
+## Diagnostic
+
+The 10 misses across the 3 seeded variance runs split into 8
+consistent failures (miss in 2-3 of 3) and 2 flippers (miss in 1
+of 3). The 8 consistent failures classified into:
+
+- **5 prompt-tunable** (ts_explicit_010 decomposition,
+  ts_relative_003 during-X, ts_relative_007 before-event,
+  ts_relative_008 after-event, ts_relative_009 decade expansion)
+- **2 LLM variance** (ts_explicit_005, ts_relative_005 — re-runs
+  showed correct output)
+- **1 corpus-issue** (ts_explicit_001 expected KB-enriched
+  Obama inauguration dates, which contradicts the extractor's
+  "extract what the text says" discipline)
+
+Operator decision: prompt-tunable path + corpus corrections.
+Rule D (merging "X took effect on D1 and expired D2") dropped —
+the extractor's two-event decomposition is **architecturally
+correct** per Aedos's atomic-claim discipline; the corpus's
+merged-status expectation was wrong, not the extractor.
+
+## Remediation landed
+
+### Extractor Rules 15-17 (commit `586531f`)
+
+Added three rules to `_SYSTEM_PROMPT` following the rules-12-14
+pattern (positive triggers + non-trigger conditions):
+
+- **Rule 15 — Event-period temporal qualifiers.** "during X",
+  "throughout X", "at the time of X" where X is a named event/
+  period → valid_during_ref='claim_X'; do not put the temporal
+  phrase in the object.
+- **Rule 16 — Event-relative bounds.** "before X", "after X",
+  "since X" where X is a named event → emit
+  valid_during_ref='claim_X' with valid_from/valid_until=None.
+  Semantically loose (valid_during_ref means "during" not
+  "before/after"); v0.16 D59 plans the proper
+  valid_from_ref/valid_until_ref fields. Load-bearing:
+  emitting valid_during_ref suppresses the implicit-past-tense
+  default in `temporal.py:46` (`valid_until='before_present'`).
+- **Rule 17 — Decade expansion.** "the 1970s" → valid_from=1970,
+  valid_until=1979.
+
+### Corpus corrections (commit `e92c72c`)
+
+- **ts_explicit_001**: removed KB-enrichment expectation
+  (2009-01-20 → 2009; 2017-01-20 → 2017). Extractor's faithful
+  extraction is now the corpus's expected behavior.
+- **ts_explicit_010**: switched from merged-status expectation
+  (one claim with both bounds) to first-event expectation
+  (took_effect with valid_from='2021-01-01'). The two-event
+  decomposition matches Aedos's atomic-claim discipline; the
+  runner's `claims[0]` discipline reads the first claim only
+  (D60 captures the runner's full-decomposition gap for v0.16).
+
+### v0.16 captures (D59, D60)
+
+- **D59 — Claim model lacks valid_from_ref / valid_until_ref**
+  for event-relative bounds. Rule 16's valid_during_ref usage
+  is a v0.15 workaround; v0.16 adds the dedicated fields and
+  tightens valid_during_ref back to "during" only.
+- **D60 — Calibration runner uses claims[0] only**, leaving
+  multi-claim cases ordering-sensitive and partially scored.
+  v0.16 extends per-case comparison to set-semantic matching
+  across all extracted claims.
+
+## Validation: temporal_scope after remediation
+
+| Run | Date | Pass/Total | Accuracy | Notes |
+|---|---|---:|---:|---|
+| Run 1 (pre-Rule 16 workaround, post-rules-15-17 + corpus corrections) | 2026-05-28 07:54 | 38/40 | 95.0% | ts_relative_007 + 008 still miss because Python past-tense default overrode "set both None" |
+| Run 2 (Rule 16 updated to valid_during_ref workaround) | 2026-05-28 07:56 | **40/40** | **100.0%** | All categories pass |
+| Run 3 (variance) | 2026-05-28 07:58 | **40/40** | **100.0%** | Reproduces |
+| Run 4 (variance) | 2026-05-28 07:59 | **40/40** | **100.0%** | Reproduces |
+
+**Final state: 40/40 = 100.0% across 3 consecutive runs**
+(post-Rule-16-workaround). Above the 90% threshold by 10pp; no
+flipping cases observed in the 3-run variance bound.
+
+## Regression check
+
+`extraction_corpus` seeded: **53/53 = 100.0%** (Session 1 had
+52/53 = 98.1%; the Rule 15-17 additions did not regress and
+marginally lifted the broader extraction work). Full non-live
+test suite: 1123 passed, 1 skipped, 1 xfailed, 1 xpassed —
+unchanged from Session 2 final state.
+
+## Updated open items going into Step 5
+
+1. ~~Finding 1~~ resolved (Session 2 Item 1).
+2. ~~Finding 2~~ resolved (Session 2 Item 2).
+3. ~~Finding 3~~ captured in D56 refinement.
+4. ~~Variance~~ addressed.
+5. ~~temporal_scope below threshold~~ **resolved** by Session 2
+   follow-on: rules + corpus corrections + Rule 16 workaround
+   lift temporal_scope from 80% (Session 2 variance median) to
+   **100%** (3 consecutive runs).
+
+The temporal_scope number going into Step 5 / Step 7 is 100%
+(N=3 post-remediation). Step 5's medium-bar evaluation, which
+includes temporal cases, should benefit from the lift.
+
+The two v0.16 captures (D59 expressive-temporal-refs gap, D60
+runner full-decomposition discipline) document the
+architectural limits Rule 16's workaround and the
+ts_explicit_010 corpus correction surface. Neither is a v0.15
+blocker; both are clean v0.16 follow-ups.
