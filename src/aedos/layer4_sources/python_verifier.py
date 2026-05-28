@@ -42,7 +42,13 @@ PYTHON_VERIFY_TOOL: dict[str, Any] = {
             "code": {
                 "type": "string",
                 "description": (
-                    "Python code defining: def verify(subject: str, predicate: str, obj: str) -> bool"
+                    "Python code defining: def verify(subject: str, predicate: str, obj: str) "
+                    "-> Optional[bool]. Return True if the claim deterministically holds, "
+                    "False if it deterministically does not, or None if verification is "
+                    "inherently uncertain — speculative numerical estimates, time-varying "
+                    "values without timestamps, contested claims, or anything you cannot "
+                    "compute from the allowed stdlib alone. Phase 10.5 §3.2 soundness "
+                    "invariant: prefer None over a guessed True/False."
                 ),
             },
             "reasoning": {
@@ -57,9 +63,17 @@ PYTHON_VERIFY_TOOL: dict[str, Any] = {
 _SYSTEM_PROMPT = (
     "You are a Python code generator for factual claim verification. "
     "Given a claim (subject, predicate, object), write a Python function "
-    "that returns True if the claim holds, False if it does not. "
+    "that returns True if the claim holds, False if it does not, or "
+    "None if the claim is inherently uncertain. Examples of None-eligible "
+    "claims: speculative numerical estimates (\"grains of sand exceeds 7 "
+    "quintillion\"), time-varying values without a timestamp (\"current "
+    "stock price\"), or anything you cannot deterministically compute. "
+    "Soundness invariant: prefer None over a guessed True/False — the "
+    "downstream system will route uncertainty to abstention, which is "
+    "always safer than a fabricated verdict. "
     "Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. "
-    "No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool"
+    "No other imports. Function signature: "
+    "def verify(subject: str, predicate: str, obj: str) -> Optional[bool]"
 )
 
 _SANDBOX_TIMEOUT = 5
@@ -123,11 +137,21 @@ class PythonVerifier:
 
         code = _extract_code_block(raw_code)
 
-        # Build harness
+        # Build harness — distinguishes None (uncertain → no_terminal_result)
+        # from truthy (verified) and falsy non-None (contradicted) so the
+        # verify function can honestly abstain on speculative or unverifiable
+        # claims. Pre-Phase-10.5 behavior treated None as falsy → contradicted,
+        # which forced the generator into a fabricated False on uncertainty
+        # (§3.2 soundness violation); the None branch corrects that.
         harness = (
             f"{code}\n"
             f"_result = verify({claim.subject!r}, {claim.predicate!r}, {claim.object!r})\n"
-            "print('TRUE' if _result else 'FALSE')\n"
+            "if _result is None:\n"
+            "    print('NONE')\n"
+            "elif _result:\n"
+            "    print('TRUE')\n"
+            "else:\n"
+            "    print('FALSE')\n"
         )
 
         sandbox_result = run_code(harness, timeout_seconds=_SANDBOX_TIMEOUT)
@@ -168,6 +192,8 @@ class PythonVerifier:
             verdict = "verified"
         elif raw_out == "FALSE":
             verdict = "contradicted"
+        elif raw_out == "NONE":
+            verdict = "no_terminal_result"
         else:
             verdict = "no_terminal_result"
             runtime_metadata["unexpected_output"] = raw_out

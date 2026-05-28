@@ -245,6 +245,24 @@ class KBVerifier:
 
         value_unresolved = meta.object_type == "entity" and not value_resolved
 
+        # Phase 10.5 Step 5 root-cause: try subsumption upgrade on any
+        # scope-compatible mismatch — functional or not. A KB statement value
+        # that is a specialization of the claimed value (e.g. Honolulu when
+        # the claim says "United States"; Île-de-France when the claim says
+        # "France") VERIFIES the claim rather than contradicting / abstaining —
+        # the more-specific KB fact entails the more-general claim. Only run
+        # for entity-typed values that resolved to KB IDs; literal comparisons
+        # (numbers, dates, strings) don't subsume.
+        if (
+            scope_mismatch is not None
+            and meta.object_type == "entity"
+            and value_resolved
+            and isinstance(scope_mismatch.value, str)
+            and isinstance(expected_value, str)
+            and self._subsumption_upgrades(scope_mismatch.value, expected_value)
+        ):
+            return KBVerdictType.VERIFIED, scope_mismatch, None
+
         if scope_mismatch is not None and meta.single_valued:
             if value_unresolved:
                 # N1: the expected-value reference never resolved — the mismatch
@@ -254,6 +272,30 @@ class KBVerifier:
 
         reason = "value_unresolved" if value_unresolved else "no_matching_statement"
         return KBVerdictType.NO_MATCH, None, reason
+
+    def _subsumption_upgrades(self, kb_value: str, expected_value: str) -> bool:
+        """Phase 10.5 Step 5 root-cause helper: query the KB for whether the
+        KB statement value (specific) is subsumed by the claim's expected
+        value (general). Tries `part_of` (geographic / location containment,
+        Wikidata P131/P361) and `is_a` (taxonomic, Wikidata P31/P279). The
+        first that returns `a_subsumed_by_b` or `equivalent` upgrades the
+        verdict to VERIFIED.
+
+        Fails closed on error — unknown relation types, invalid Q-IDs, or KB
+        outages fall through to no-upgrade, preserving the prior CONTRADICTED
+        verdict. Never promotes to VERIFIED on uncertainty (architecture §3.2
+        soundness-over-completeness).
+        """
+        if kb_value == expected_value:
+            return True
+        for relation_type in ("part_of", "is_a"):
+            try:
+                r = self._kb.subsumption(kb_value, expected_value, relation_type)
+            except Exception:
+                continue
+            if r.verdict in ("a_subsumed_by_b", "equivalent"):
+                return True
+        return False
 
 
 def _lookup_targets(claim: Claim, meta) -> Optional[tuple[str, str, bool]]:

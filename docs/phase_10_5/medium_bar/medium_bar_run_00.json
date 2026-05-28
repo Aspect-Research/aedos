@@ -1,0 +1,85 @@
+{
+  "run_id": 0,
+  "started_at": "2026-05-28T08:33:15.683040+00:00",
+  "finished_at": "2026-05-28T08:42:25.513359+00:00",
+  "duration_s": 549.8,
+  "case_count": 3,
+  "db_path": "aedos_phase10_5.db",
+  "aedos_metrics": {
+    "total": 3,
+    "correct": 1,
+    "accuracy": 0.3333333333333333,
+    "false_verified": 0,
+    "false_verified_rate": 0.0,
+    "false_abstain": 1,
+    "false_abstain_rate": 1.0,
+    "per_failure_mode": {
+      "multi_hop_distribution": {
+        "total": 2,
+        "correct": 0,
+        "accuracy": 0.0
+      },
+      "cross_source_unification": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    }
+  },
+  "baseline_metrics": {
+    "total": 3,
+    "correct": 2,
+    "accuracy": 0.6666666666666666,
+    "false_verified": 1,
+    "false_verified_rate": 0.3333333333333333,
+    "false_abstain": 0,
+    "false_abstain_rate": 0.0,
+    "per_failure_mode": {
+      "multi_hop_distribution": {
+        "total": 2,
+        "correct": 2,
+        "accuracy": 1.0
+      },
+      "cross_source_unification": {
+        "total": 1,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "mhd_001",
+      "statement": "Paris is in France and France is in Europe, so Paris is in Europe.",
+      "ground_truth": "verified",
+      "failure_mode": "multi_hop_distribution",
+      "notes": "City\u2192country\u2192continent chain; distributes_up required",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 406.26600000000326,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.9059999999881256
+    },
+    {
+      "case_id": "mhd_008",
+      "statement": "The Thames is in Asia.",
+      "ground_truth": "contradicted",
+      "failure_mode": "multi_hop_distribution",
+      "notes": "River is in the UK (Europe); contradicted by KB + subsumption chain",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 111.26499999999942,
+      "baseline_verdict": "contradicted",
+      "baseline_latency_s": 0.9380000000091968
+    },
+    {
+      "case_id": "csu_005",
+      "statement": "Marie Curie won the Nobel Prize and 1903 is a prime number.",
+      "ground_truth": "abstain",
+      "failure_mode": "cross_source_unification",
+      "notes": "KB verified (Nobel) + Python (1903 is prime \u2014 non-trivial, might abstain)",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 29.51600000000326,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.9529999999940628
+    }
+  ]
+}

@@ -311,12 +311,19 @@ class LLMClient:
         if self._anthropic_client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         t0 = time.monotonic()
-        response = self._anthropic_client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": m.role, "content": m.content} for m in messages],
-        )
+        # Anthropic rejects cache_control on empty text blocks (req fails with
+        # 400 "system.0: cache_control cannot be set for empty text blocks"), so
+        # omit the system block entirely when no system prompt is provided.
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+        }
+        if system:
+            kwargs["system"] = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+            ]
+        response = self._anthropic_client.messages.create(**kwargs)
         self._record(purpose, model, response, (time.monotonic() - t0) * 1000)
         return _first_text(response)
 

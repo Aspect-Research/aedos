@@ -355,6 +355,23 @@ class Extractor:
         if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
             return None
 
+        # Phase 10.5 Step 5 root-cause: reject self-referential triples
+        # (subject == object after trim/case-fold). The extractor
+        # occasionally emits these when it fails to parse a non-entity
+        # object — e.g. "Einstein was born in 1879" → (Einstein, born_in,
+        # Einstein), copying the subject when the year token couldn't bind
+        # to a predicate. Self-referential triples are rarely meaningful
+        # for relational predicates (born_in / located_in / works_at all
+        # describe distinct entities); the few self-referential predicates
+        # that do exist (`is`, `equals`) route to abstain anyway, so
+        # dropping them costs nothing and prevents the walker from
+        # contradicting a true claim via a malformed self-reference.
+        if (
+            raw_subject.strip().casefold() == raw_object.strip().casefold()
+            and raw_subject.strip()
+        ):
+            return None
+
         verb_tense = raw.get("verb_tense", "present")
         scope = extract_temporal_scope(
             verb_tense=verb_tense,
