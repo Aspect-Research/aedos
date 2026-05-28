@@ -1,0 +1,193 @@
+{
+  "run_id": 99,
+  "started_at": "2026-05-28T15:27:55.113415+00:00",
+  "finished_at": "2026-05-28T15:43:14.584677+00:00",
+  "duration_s": 919.5,
+  "case_count": 11,
+  "db_path": "aedos_phase10_5.db",
+  "aedos_metrics": {
+    "total": 11,
+    "correct": 3,
+    "accuracy": 0.2727272727272727,
+    "false_verified": 0,
+    "false_verified_rate": 0.0,
+    "false_abstain": 7,
+    "false_abstain_rate": 0.6363636363636364,
+    "per_failure_mode": {
+      "multi_hop_distribution": {
+        "total": 2,
+        "correct": 0,
+        "accuracy": 0.0
+      },
+      "cross_source_unification": {
+        "total": 2,
+        "correct": 1,
+        "accuracy": 0.5
+      },
+      "entity_disambiguation": {
+        "total": 4,
+        "correct": 2,
+        "accuracy": 0.5
+      },
+      "predicate_translation": {
+        "total": 3,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    }
+  },
+  "baseline_metrics": {
+    "total": 11,
+    "correct": 11,
+    "accuracy": 1.0,
+    "false_verified": 0,
+    "false_verified_rate": 0.0,
+    "false_abstain": 0,
+    "false_abstain_rate": 0.0,
+    "per_failure_mode": {
+      "multi_hop_distribution": {
+        "total": 2,
+        "correct": 2,
+        "accuracy": 1.0
+      },
+      "cross_source_unification": {
+        "total": 2,
+        "correct": 2,
+        "accuracy": 1.0
+      },
+      "entity_disambiguation": {
+        "total": 4,
+        "correct": 4,
+        "accuracy": 1.0
+      },
+      "predicate_translation": {
+        "total": 3,
+        "correct": 3,
+        "accuracy": 1.0
+      }
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "mhd_001",
+      "statement": "Paris is in France and France is in Europe, so Paris is in Europe.",
+      "ground_truth": "verified",
+      "failure_mode": "multi_hop_distribution",
+      "notes": "City\u00e2\u2020\u2019country\u00e2\u2020\u2019continent chain; distributes_up required",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 310.125,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 1.1720000000059372
+    },
+    {
+      "case_id": "mhd_005",
+      "statement": "The Eiffel Tower is in Europe.",
+      "ground_truth": "verified",
+      "failure_mode": "multi_hop_distribution",
+      "notes": "Landmark\u00e2\u2020\u2019city\u00e2\u2020\u2019country\u00e2\u2020\u2019continent; three-hop chain",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 101.84300000000803,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.7969999999913853
+    },
+    {
+      "case_id": "csu_009",
+      "statement": "Obama was born in Hawaii, and Hawaii was the 50th state admitted to the US.",
+      "ground_truth": "verified",
+      "failure_mode": "cross_source_unification",
+      "notes": "KB (birth place) + KB (statehood order)",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 258.56299999999464,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.9370000000053551
+    },
+    {
+      "case_id": "csu_010",
+      "statement": "Albert Einstein was born in Germany and died in the United States.",
+      "ground_truth": "verified",
+      "failure_mode": "cross_source_unification",
+      "notes": "KB (born_in Ulm/Germany) + KB (died_in Princeton/USA)",
+      "aedos_verdict": "verified",
+      "aedos_latency_s": 88.82800000000861,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.9379999999946449
+    },
+    {
+      "case_id": "ed_001",
+      "statement": "The Mercury spacecraft was the first American spacecraft to carry humans.",
+      "ground_truth": "verified",
+      "failure_mode": "entity_disambiguation",
+      "notes": "Entity disambiguation: Mercury (spacecraft) not Mercury (planet)",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 10.265999999988708,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 1.437000000005355
+    },
+    {
+      "case_id": "ed_005",
+      "statement": "Churchill was the Prime Minister of the United Kingdom during World War II.",
+      "ground_truth": "verified",
+      "failure_mode": "entity_disambiguation",
+      "notes": "Winston Churchill \u00e2\u2020\u2019 P6 (head of government); temporal scope 1940-1945",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 6.703000000008615,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.5939999999973224
+    },
+    {
+      "case_id": "pt_001",
+      "statement": "Obama held the office of the 44th President of the United States.",
+      "ground_truth": "verified",
+      "failure_mode": "predicate_translation",
+      "notes": "holds_role \u00e2\u2020\u2019 P39 (position held); canonical seed predicate",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 7.8439999999973224,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.5160000000032596
+    },
+    {
+      "case_id": "pt_005",
+      "statement": "Marie Curie was awarded the Nobel Prize in Physics in 1903.",
+      "ground_truth": "verified",
+      "failure_mode": "predicate_translation",
+      "notes": "awarded \u00e2\u2020\u2019 P166 with year qualifier P585",
+      "aedos_verdict": "no_grounding_found",
+      "aedos_latency_s": 24.937000000005355,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.5939999999973224
+    },
+    {
+      "case_id": "bonus_001",
+      "statement": "Obama was born in the United States.",
+      "ground_truth": "verified",
+      "failure_mode": "entity_disambiguation",
+      "notes": "KB: P19 (born in Hawaii) \u00e2\u2020\u2019 P131 (Hawaii in United States)",
+      "aedos_verdict": "verified",
+      "aedos_latency_s": 43.780999999988126,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.8899999999994179
+    },
+    {
+      "case_id": "bonus_004",
+      "statement": "Albert Einstein was born in 1879.",
+      "ground_truth": "verified",
+      "failure_mode": "predicate_translation",
+      "notes": "KB: P569 (date of birth); year extraction from date value",
+      "aedos_verdict": "contradicted",
+      "aedos_latency_s": 12.797000000005937,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.5160000000032596
+    },
+    {
+      "case_id": "bonus_008",
+      "statement": "Shakespeare was born in England.",
+      "ground_truth": "verified",
+      "failure_mode": "entity_disambiguation",
+      "notes": "KB: Shakespeare P19 (Stratford-upon-Avon) \u00e2\u2020\u2019 England",
+      "aedos_verdict": "verified",
+      "aedos_latency_s": 44.84399999999732,
+      "baseline_verdict": "verified",
+      "baseline_latency_s": 0.5469999999913853
+    }
+  ]
+}
