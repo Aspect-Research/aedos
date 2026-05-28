@@ -15,6 +15,16 @@ _FIRST_PERSON = re.compile(
     r"^(I|me|my|mine|myself|we|us|our|ours|ourselves)$", re.IGNORECASE
 )
 
+# Phase 10.5 Step 6 sub-cause F enforcement: Rule 18 (RESIDENCE VOCABULARY)
+# says "lives in" / "lived in" / "resides in" should produce predicate
+# 'lives_in', not 'located_in'. The extractor LLM has a strong "located_in"
+# prior on these inputs and ignores Rule 18 about half the time. This regex
+# matches the source-text verb form and the post-extraction normalizer
+# rewrites `located_in` → `lives_in` when the source has a residence verb.
+_RESIDENCE_VERB = re.compile(
+    r"\b(lives?|lived|resides?|residing)\s+in\b", re.IGNORECASE
+)
+
 EXTRACTION_TOOL: dict[str, Any] = {
     "name": "extract_claims",
     "description": (
@@ -290,6 +300,72 @@ medieval period') — those are not decade-scale and may warrant Rule 15's \
 valid_during_ref treatment.
     - A specific year within the decade is named ('1973 in the 1970s'): \
 the specific year takes precedence (valid_from='1973').
+
+18. RESIDENCE VOCABULARY — when the verb is a residence verb (live, \
+lives, lived, reside, resides, residing) referring to where a person \
+makes their home, use predicate='lives_in' with the location in the \
+object slot. Do NOT use 'located_in' for personal residence.
+    - 'Asa lives in Williamstown' → predicate='lives_in', \
+object='Williamstown'.
+    - 'Mary resides in Paris' → predicate='lives_in', object='Paris'.
+    - 'I lived in Tokyo for five years' → predicate='lives_in', \
+object='Tokyo' (past-tense scoping is handled by Rule 7/8 if a date is \
+present; otherwise default past-tense applies).
+    DO NOT apply Rule 18 when:
+    - The verb is 'is in' / 'is located in' / 'is from' — those describe \
+general location, not residence. 'Paris is in France' → predicate='located_in'.
+    - The subject is not a person ('The company lives at this address' is \
+metaphorical; emit the literal claim or skip).
+    - The verb describes a temporary stay ('Asa is staying in Boston this \
+week') — that's not residence; emit the literal claim or skip.
+
+19. INSTANCE-OF FOR INDEFINITE-IDENTITY CLAIMS — when the pattern is \
+'X is a Y' or 'X was a Y' (indefinite article + bare type noun like \
+person, river, country, language, scientist, river, city), use \
+predicate='instance_of' with object=Y. This routes to Wikidata P31 \
+verification. Stripping the article from Y is correct.
+    - 'The Amazon is a river' → predicate='instance_of', object='river'.
+    - 'Einstein was a physicist' → predicate='instance_of', \
+object='physicist'.
+    - 'Python is a programming language' → predicate='instance_of', \
+object='programming language'.
+    DO NOT apply Rule 19 when:
+    - The object is an attribute or transient state ('X was happy', \
+'X is tired', 'X was high') — keep predicate='was' or 'is'.
+    - The object is a definite-article identity ('X is the king', \
+'X was the Nth Y') — Rule 20 applies if it's a role/position; otherwise \
+keep as 'is'/'was'.
+    - The object is a comparative ('X is larger', 'X is the largest \
+river') — comparison predicates are out of Rule 19's scope; keep as 'is'.
+    - The subject is itself a class ('A river is a body of water' is a \
+definitional statement, not an instance claim).
+
+20. HOLDS-ROLE FOR DEFINITE-POSITION CLAIMS — when the pattern is \
+'X is/was the [optional Nth] [Position] of [Org]' or 'X is/was the \
+[Position]' where the position is a publicly-known role (President, \
+Prime Minister, CEO, Chancellor, Pope, King, Queen, Senator, Mayor, \
+Governor, etc.), use predicate='holds_role' with object containing the \
+position-of-org compounded ('President of the United States', 'Prime \
+Minister of the United Kingdom'). This routes to Wikidata P39 \
+verification.
+    - 'Lincoln was the 16th President of the United States' → \
+subject='Lincoln', predicate='holds_role', \
+object='President of the United States'. (The '16th' ordinal does NOT \
+go into the object slot — it modifies the position but doesn't change \
+its identity in Wikidata; verification matches Lincoln's P39 = \
+President of the United States.)
+    - 'Churchill was the Prime Minister of the United Kingdom' → \
+predicate='holds_role', object='Prime Minister of the United Kingdom'.
+    - 'Obama is the 44th President' → predicate='holds_role', \
+object='President of the United States' (infer 'of the United States' \
+from context only when the position name is unambiguous in the world; \
+otherwise keep the object verbatim as 'President').
+    DO NOT apply Rule 20 when:
+    - The role is a private or non-public-record position ('X was the \
+team captain' — too local for Wikidata).
+    - The pattern is Rule 12 employment ('X joined Y in 2020').
+    - The verb is 'became' ('X became President in 2009') — that's a \
+state-change event; use 'holds_role' with valid_from for the start date.
 """
 
 
@@ -387,6 +463,16 @@ class Extractor:
         object_value = raw_object
         polarity = int(raw.get("polarity", 1))
         source_text = raw.get("source_text", "")
+
+        # Phase 10.5 Step 6 sub-cause F enforcement: when the source-text
+        # verb is a residence verb (lives/lived/resides/residing + in)
+        # but the LLM emitted predicate='located_in', rewrite to
+        # predicate='lives_in'. The extractor prompt's Rule 18 makes this
+        # the canonical extraction, but the LLM ignores it when its prior
+        # on 'located_in' is strong; the substring check on source_text
+        # makes the rewrite deterministic.
+        if predicate == "located_in" and _RESIDENCE_VERB.search(source_text):
+            predicate = "lives_in"
 
         triage_decision = triage(
             predicate=predicate,
