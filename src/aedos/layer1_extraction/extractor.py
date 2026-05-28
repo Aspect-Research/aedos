@@ -218,6 +218,78 @@ the summit, the conference): Rule 8 applies — keep the verb as the \
 predicate ('the war ended in 1945' → predicate='ended', valid_until='1945').
     - The subject is a person undertaking an activity ('Asa started \
 swimming'): emit the literal claim.
+
+15. EVENT-PERIOD TEMPORAL QUALIFIERS — when a claim is scoped by a \
+prepositional phrase referencing a NAMED EVENT or PERIOD (not a date), \
+extract the qualifier as valid_during_ref with a generated id and do NOT \
+put the temporal phrase in the object slot. Triggers: "during X", \
+"throughout X", "at the time of X", "in the X period", "in the era of X" \
+where X is a noun phrase referring to a named event, war, era, regime, \
+crisis, period, etc.
+    - 'France was in a recession during the war' → subject='France', \
+predicate='in_a_recession', object='', valid_during_ref='claim_war'. \
+The phrase "during the war" is a temporal qualifier, not part of the object.
+    - 'The policy was in effect at the time of the merger' → \
+subject='The policy', predicate='in_effect', object='', \
+valid_during_ref='claim_merger'.
+    - 'Inflation was high throughout the recession' → subject='Inflation', \
+predicate='was', object='high', valid_during_ref='claim_recession'.
+    DO NOT apply Rule 15 when:
+    - X is a date, year, or decade — Rules 7, 8, and 17 handle those. \
+'during 1985' → valid_from='1985'; 'during the 1970s' → Rule 17 expansion.
+    - X is the actual object of the verb. 'Asa lived during the 1990s' — \
+"the 1990s" is the temporal scope (Rule 17), not the object of 'lived'.
+    - The text is a subordinate clause "A when B" — Rule 9 applies \
+(emit B as a separate claim and reference it).
+
+16. EVENT-RELATIVE BOUNDS — when the text bounds a claim by a NAMED EVENT \
+("before X", "after X", "until X", "since X" where X is a named event, \
+not a date), set valid_during_ref to a generated id referencing the \
+event AND leave valid_from / valid_until as None. The v0.15 Claim \
+shape lacks dedicated valid_from_ref / valid_until_ref fields for \
+event-relative bounds, so valid_during_ref carries the event reference \
+as the in-vocabulary representation. (Semantically "before X" and \
+"after X" differ from "during X"; the v0.16 plan adds valid_from_ref / \
+valid_until_ref to disambiguate. v0.15 expresses all three via \
+valid_during_ref to preserve the event reference.)
+    - 'The team had five members before the acquisition' → \
+subject='The team', predicate='had', object='five members', \
+valid_during_ref='claim_acquisition', valid_from=None, valid_until=None.
+    - 'After the election, she was President' → subject='she', \
+predicate='was', object='President', valid_during_ref='claim_election', \
+valid_from=None, valid_until=None.
+    - 'Since the merger, performance improved' → subject='performance', \
+predicate='improved', valid_during_ref='claim_merger', valid_from=None, \
+valid_until=None.
+    Emitting valid_during_ref is load-bearing: it suppresses the \
+implicit-past-tense default (valid_until='before_present') that would \
+otherwise fire for past-tense verbs without other temporal signals.
+    DO NOT apply Rule 16 when:
+    - X is a date or year. 'before 2020' → valid_until='2020' (Rule 8 \
+shape); 'after 1990' → valid_from='1990' (Rule 7 shape); 'since 2010' \
+→ valid_from='2010'.
+    - The text is a plain past-tense statement with no event reference. \
+'She was President' (no "after the election") → standard past-tense \
+handling applies; do not invoke Rule 16.
+    - The text has a subordinate clause Rule 9 can express ("she was \
+President when Bush was President") — Rule 9 emits a referenced claim id.
+
+17. DECADE EXPANSION — when the text references a decade ("the 1970s", \
+"the 70s", "the 2010s", "the nineties"), expand to explicit \
+valid_from / valid_until rather than treating the decade as a relative \
+reference. A decade is a CALCULABLE date range, not a named period.
+    - 'During the 1970s, inflation was high' → subject='inflation', \
+predicate='was', object='high', valid_from='1970', valid_until='1979'.
+    - 'In the 90s, the internet became mainstream' → valid_from='1990', \
+valid_until='1999'.
+    - 'Throughout the 2010s, smartphones dominated' → valid_from='2010', \
+valid_until='2019'.
+    DO NOT apply Rule 17 when:
+    - The reference is a century or longer ('the 20th century', 'the \
+medieval period') — those are not decade-scale and may warrant Rule 15's \
+valid_during_ref treatment.
+    - A specific year within the decade is named ('1973 in the 1970s'): \
+the specific year takes precedence (valid_from='1973').
 """
 
 
