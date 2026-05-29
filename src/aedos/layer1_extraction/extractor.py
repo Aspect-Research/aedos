@@ -601,6 +601,21 @@ class Extractor:
         ):
             return None
 
+        # Phase 10.5 Step 6 Batch 8+: also drop claims where the
+        # PREDICATE equals the object (after trim/case-fold). This is
+        # the "verb repeated into the object slot" mis-extraction —
+        # e.g. "The Berlin Wall fell in 1989" → (Berlin Wall, fell,
+        # fell), where the LLM put the verb token into both the
+        # predicate and the object instead of recognizing the
+        # implicit subject-as-object Rule 7 convention OR leaving the
+        # object empty. The walker would then look up the predicate's
+        # KB property and find the verb token isn't a Wikidata entity,
+        # potentially producing a §3.2 false-contradiction shape.
+        raw_pred_check = (raw.get("predicate") or "").strip().casefold()
+        raw_obj_check = raw_object.strip().casefold()
+        if raw_pred_check and raw_obj_check and raw_pred_check == raw_obj_check:
+            return None
+
         verb_tense = raw.get("verb_tense", "present")
         scope = extract_temporal_scope(
             verb_tense=verb_tense,
