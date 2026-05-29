@@ -36,6 +36,24 @@ _NATIONALITY_PATTERN = re.compile(
     r"\b(has|had|have)\s+([A-Z][a-zA-Z]+)\s+nationality\b"
 )
 
+# Phase 10.5 Step 6 Tier A2: population comparison patterns. When the
+# source text contains "has more/less than N [people-like-noun]", route
+# to the kb_quantitative predicate so the walker can query P1082
+# (population) and compare numerically. The unit noun list covers the
+# population synonyms the medium-bar uses: people, residents,
+# inhabitants, citizens. Generic count nouns (states, members, etc.)
+# need their own pattern + kb_property — out of A2's surgical scope.
+_POPULATION_MORE_PATTERN = re.compile(
+    r"\b(?:has|have|had|with|of)\s+more\s+than\s+([\d.,]+\s*(?:million|billion|thousand|k|m|bn)?)"
+    r"\s*(?:people|persons|residents|inhabitants|citizens|population)\b",
+    re.IGNORECASE,
+)
+_POPULATION_LESS_PATTERN = re.compile(
+    r"\b(?:has|have|had|with|of)\s+(?:less|fewer)\s+than\s+([\d.,]+\s*(?:million|billion|thousand|k|m|bn)?)"
+    r"\s*(?:people|persons|residents|inhabitants|citizens|population)\b",
+    re.IGNORECASE,
+)
+
 # Phase 10.5 Step 6 Batch 7+: demonym → country normalization for the
 # "X is [Demonym]" nationality pattern. When the extractor emits
 # generic `is`/`was` with a bare demonym as object, the walker abstains
@@ -669,6 +687,23 @@ class Extractor:
         ):
             predicate = "has_nationality"
             object_value = _DEMONYM_TO_COUNTRY[object_value.strip()]
+
+        # Phase 10.5 Step 6 Tier A2: population-comparison canonicalization.
+        # When the source text matches "has more/less than N [people-like
+        # noun]" and the LLM emitted a generic `has`/`is`/`have` predicate
+        # with a descriptive object, rewrite to the canonical
+        # `population_greater_than` / `population_less_than` predicate
+        # with just the numeric quantity in the object slot. The walker's
+        # kb_quantitative routing then queries P1082 and compares.
+        if predicate in {"has", "have", "had", "is", "was", "with"}:
+            m_more = _POPULATION_MORE_PATTERN.search(source_text)
+            m_less = _POPULATION_LESS_PATTERN.search(source_text)
+            if m_more:
+                predicate = "population_greater_than"
+                object_value = m_more.group(1).strip()
+            elif m_less:
+                predicate = "population_less_than"
+                object_value = m_less.group(1).strip()
 
 
         triage_decision = triage(
