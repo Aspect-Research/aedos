@@ -32,6 +32,22 @@ CONTINENT_QIDS: frozenset[str] = frozenset([
     "Q46", "Q48", "Q15", "Q49", "Q18", "Q55643", "Q51", "Q3960",
 ])
 
+# Phase 10.5 Step 6 Batch 11 (Tier A1) + B2 fix: KB properties whose
+# semantics are GEOGRAPHIC location-containment, for which the
+# location-disjoint check is sound. Non-geographic relational
+# predicates (employed_by P108, member_of P463, child_of P40, etc.)
+# must NOT use the disjoint check — two distinct entities can both
+# satisfy a multi-valued relational predicate without contradicting
+# each other.
+_LOCATION_KB_PROPERTIES: frozenset[str] = frozenset([
+    "P131",  # located in the administrative territorial entity
+    "P17",   # country
+    "P30",   # continent
+    "P361",  # part of (used for geographic part_of)
+    "P206",  # located in body of water
+    "P276",  # location
+])
+
 
 class KBVerdictType(str, Enum):
     VERIFIED = "verified"
@@ -327,30 +343,23 @@ class KBVerifier:
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
         # Phase 10.5 Step 6 Batch 11 (Tier A1): conservative DISJOINT
-        # verdict for non-functional location predicates. Two paths:
-        #
-        # (a) Continent-level (CONTINENT_QIDS) — claim asserts a continent
-        # (e.g. "Thames in Asia", "Vatican in Africa") and KB statement
-        # value's containment chain (P131/P361/P30/P206/P17) confidently
-        # subsumes under a DIFFERENT continent. Positive KB evidence of
-        # disjoint location.
-        #
-        # (b) Country-level — claim asserts a country (e.g. "Rome in
-        # Germany"), KB statement value is also a country (e.g. Italy),
-        # and KB confirms mutual non-containment via subsumption returning
-        # `unrelated` in BOTH directions. Countries at the same admin
-        # level are pairwise disjoint when neither contains the other,
-        # so unrelated-both-ways IS positive evidence of distinct
-        # countries (unlike the brittle general "unrelated means
-        # disjoint" trap — countries are a structurally clean case).
-        #
-        # Both paths fall through to NO_MATCH (abstain) on uncertainty.
+        # verdict for non-functional LOCATION predicates only. The
+        # check uses the part_of subsumption alternation (P131/P361/
+        # P30/P206/P17) which is geographic in nature; firing on
+        # non-geographic predicates like `employed_by` (P108) or
+        # `member_of` (P463) misfires because two distinct entities
+        # in the same continent are NOT semantically disjoint with
+        # respect to the predicate (Einstein was employed by both
+        # IAS in the US AND ETH Zurich in Switzerland; neither
+        # contradicts the other). The kb_property gate restricts
+        # the disjoint check to location predicates.
         if (
             scope_mismatch is not None
             and meta.object_type == "entity"
             and value_resolved
             and isinstance(scope_mismatch.value, str)
             and isinstance(expected_value, str)
+            and meta.kb_property in _LOCATION_KB_PROPERTIES
             and self._location_disjoint(scope_mismatch.value, expected_value)
         ):
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
