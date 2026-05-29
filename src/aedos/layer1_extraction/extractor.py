@@ -462,6 +462,26 @@ class Extractor:
         if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
             return None
 
+        # Phase 10.5 Step 6 Batch 6: reject standalone event-occurrence
+        # claims with no verifiable content. When the LLM mis-decomposes
+        # a temporal qualifier ("Churchill was PM during World War II")
+        # by emitting BOTH the primary claim AND a standalone
+        # `(World War II, occurred, '')` event claim, the event claim
+        # has empty object and routes through a predicate the walker
+        # can't ground. The compound aggregator then drags the overall
+        # verdict to abstain even when the primary claim verified. The
+        # right architectural fix is Rule 15 compliance (valid_during_ref
+        # qualifier on the primary), but until the extractor reliably
+        # applies it, filtering these content-less event claims preserves
+        # the primary's verdict.
+        raw_pred_check = (raw.get("predicate") or "").strip().lower()
+        if (
+            raw_pred_check in {"occurred", "happened", "took_place", "took place"}
+            and not raw_object.strip()
+            and not reified_id
+        ):
+            return None
+
         # Phase 10.5 Step 6 Batch 4: year-aware predicate rewrite — done
         # BEFORE the self-ref check below so the rewrite can rescue
         # claims that would otherwise be dropped as malformed. When the
