@@ -224,6 +224,40 @@ class EntityResolver:
             # resolution. The normalizer's own audit-log path records the
             # failure; the resolver keeps moving with the surface form.
             return reference, None
+
+        # Phase 10.5 Step 6 Batch 7+: leading-"the" retry. The extractor
+        # often emits references like "the Nobel Prize in Physics", "the
+        # Institute for Advanced Study" — Wikipedia's redirect system
+        # doesn't always redirect the article-prefixed form to the
+        # canonical title, so Stage A returns not_found and Stage B's
+        # wbsearchentities ranks the canonical Q-id too low for Stage C.
+        # If the initial normalization produced no selected_qid, retry
+        # with the leading lowercase "the " stripped. Capital-T "The "
+        # is preserved because it indicates the article is part of the
+        # canonical name (e.g. "The Beatles", "The Hague").
+        if (
+            result.selected_qid is None
+            and len(reference) > 4
+            and reference[:4] == "the "
+        ):
+            stripped = reference[4:].strip()
+            if stripped:
+                try:
+                    retry = self._normalizer.normalize(
+                        surface_form=stripped,
+                        claim_subject=local_context.claim_subject,
+                        claim_predicate=local_context.claim_predicate or local_context.predicate,
+                        claim_object=local_context.claim_object,
+                        source_text=local_context.source_text,
+                        slot_position=local_context.slot_position,
+                        claim_id=local_context.claim_id,
+                        expected_entity_types=list(local_context.expected_entity_types or []),
+                    )
+                except Exception:
+                    retry = None
+                if retry is not None and retry.selected_qid is not None:
+                    return (retry.normalized_form or stripped, retry.selected_qid)
+
         return (result.normalized_form or reference, result.selected_qid)
 
     def select(

@@ -36,6 +36,60 @@ _NATIONALITY_PATTERN = re.compile(
     r"\b(has|had|have)\s+([A-Z][a-zA-Z]+)\s+nationality\b"
 )
 
+# Phase 10.5 Step 6 Batch 7+: demonym → country normalization for the
+# "X is [Demonym]" nationality pattern. When the extractor emits
+# generic `is`/`was` with a bare demonym as object, the walker abstains
+# (predicate `is` routes to abstain). Rewriting to `has_nationality`
+# with the country name as object (e.g. "American" → "United States")
+# routes the claim through P27 (country of citizenship). The set is
+# the standard short list of common-in-English demonyms; v0.16 can
+# generalize via a Wikidata P1549 (demonym) lookup.
+_DEMONYM_TO_COUNTRY: dict[str, str] = {
+    "American": "United States",
+    "British": "United Kingdom",
+    "English": "United Kingdom",
+    "Scottish": "United Kingdom",
+    "Welsh": "United Kingdom",
+    "Irish": "Ireland",
+    "French": "France",
+    "German": "Germany",
+    "Italian": "Italy",
+    "Spanish": "Spain",
+    "Portuguese": "Portugal",
+    "Dutch": "Netherlands",
+    "Belgian": "Belgium",
+    "Swiss": "Switzerland",
+    "Austrian": "Austria",
+    "Polish": "Poland",
+    "Russian": "Russia",
+    "Greek": "Greece",
+    "Turkish": "Turkey",
+    "Japanese": "Japan",
+    "Chinese": "China",
+    "Korean": "South Korea",
+    "Indian": "India",
+    "Pakistani": "Pakistan",
+    "Australian": "Australia",
+    "Canadian": "Canada",
+    "Mexican": "Mexico",
+    "Brazilian": "Brazil",
+    "Argentine": "Argentina",
+    "Egyptian": "Egypt",
+    "Israeli": "Israel",
+    "Saudi": "Saudi Arabia",
+    "Iranian": "Iran",
+    "Iraqi": "Iraq",
+    "Syrian": "Syria",
+    "Lebanese": "Lebanon",
+    "South African": "South Africa",
+    "Nigerian": "Nigeria",
+    "Kenyan": "Kenya",
+    "Vietnamese": "Vietnam",
+    "Thai": "Thailand",
+    "Filipino": "Philippines",
+    "Indonesian": "Indonesia",
+}
+
 # Phase 10.5 Step 6 Batch 4: year-aware predicate canonicalization. When
 # the LLM follows Rule 7 (year → valid_from) but keeps the place-form
 # predicate (e.g. `born_in` for "Einstein was born in 1879" instead of
@@ -585,6 +639,21 @@ class Extractor:
             if m:
                 predicate = "has_nationality"
                 object_value = m.group(2)  # the demonym, e.g. "German"
+
+        # Phase 10.5 Step 6 Batch 7+: demonym normalization for "X is
+        # [Demonym]" nationality claims. When predicate is `is`/`was`
+        # and object is a bare demonym in the curated map, rewrite to
+        # `has_nationality` with the canonical country name in the
+        # object slot. The walker then routes to P27 (country of
+        # citizenship). Only fires for bare-demonym objects (no
+        # trailing words) to avoid hijacking unrelated `is`/`was`
+        # claims like "X is American spacecraft".
+        if (
+            predicate in {"is", "was"}
+            and object_value.strip() in _DEMONYM_TO_COUNTRY
+        ):
+            predicate = "has_nationality"
+            object_value = _DEMONYM_TO_COUNTRY[object_value.strip()]
 
 
         triage_decision = triage(
