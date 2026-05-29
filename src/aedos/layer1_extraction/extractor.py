@@ -25,6 +25,37 @@ _RESIDENCE_VERB = re.compile(
     r"\b(lives?|lived|resides?|residing)\s+in\b", re.IGNORECASE
 )
 
+# Phase 10.5 Step 6 Batch 4: year-aware predicate canonicalization. When
+# the LLM follows Rule 7 (year → valid_from) but keeps the place-form
+# predicate (e.g. `born_in` for "Einstein was born in 1879" instead of
+# `born_on`), the walker routes to the WRONG KB property — P19 (place
+# of birth) returns Ulm and the verifier finds Ulm ≠ "Einstein" (the
+# self-referenced object), producing a §3.2 false-contradiction (which
+# the strict Fix 4 currently drops by rejecting the claim entirely). The
+# right fix is at extraction: rewrite the predicate to its year-aware
+# variant (`born_on` → P569 date of birth, `founded_in_year` → P571
+# inception, `died_on` → P570 date of death) when valid_from looks like
+# a year. The walker then checks the date directly and the extraction
+# carries the year-as-content rather than the year-as-temporal-scope.
+_BARE_YEAR_RE_EXTRACT = re.compile(r"^[+-]?\d{1,4}$")
+_YEAR_AWARE_REWRITES = {
+    "born_in": "born_on",
+    "born": "born_on",
+    "was_born": "born_on",
+    "died_in": "died_on",
+    "died": "died_on",
+    "was_killed_in": "died_on",
+    "passed_away_in": "died_on",
+    "founded": "founded_in_year",
+    "was_founded": "founded_in_year",
+    "established": "founded_in_year",
+    "incepted": "founded_in_year",
+    "started": "founded_in_year",
+    "launched_in": "founded_in_year",
+    "published_in": "published_in_year",
+    "released_in": "released_in_year",
+}
+
 EXTRACTION_TOOL: dict[str, Any] = {
     "name": "extract_claims",
     "description": (
@@ -431,6 +462,31 @@ class Extractor:
         if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
             return None
 
+        # Phase 10.5 Step 6 Batch 4: year-aware predicate rewrite — done
+        # BEFORE the self-ref check below so the rewrite can rescue
+        # claims that would otherwise be dropped as malformed. When the
+        # LLM emitted a place-form predicate (born_in / founded /
+        # died_in) but Rule 7 fired and the year is in valid_from, the
+        # object slot is often the self-reference (per Rule 7's example
+        # convention). The rewrite moves the year into the object slot
+        # and switches the predicate to its year-aware variant
+        # (born_on → P569, founded_in_year → P571, died_on → P570),
+        # so the walker checks the date directly rather than routing
+        # to the place property.
+        raw_pred_pre = normalize_predicate(raw.get("predicate", ""))
+        valid_from_pre = raw.get("valid_from")
+        if (
+            raw_pred_pre in _YEAR_AWARE_REWRITES
+            and valid_from_pre
+            and _BARE_YEAR_RE_EXTRACT.match(str(valid_from_pre).strip().lstrip("+"))
+            and raw_subject.strip().casefold() == raw_object.strip().casefold()
+        ):
+            # Rewrite in the raw dict so downstream construction picks it up.
+            raw = dict(raw)
+            raw["predicate"] = _YEAR_AWARE_REWRITES[raw_pred_pre]
+            raw["object"] = str(valid_from_pre).strip().lstrip("+").lstrip("-")
+            raw_object = raw["object"]
+
         # Phase 10.5 Step 5 root-cause: reject self-referential triples
         # (subject == object after trim/case-fold). The extractor
         # occasionally emits these when it fails to parse a non-entity
@@ -442,6 +498,18 @@ class Extractor:
         # that do exist (`is`, `equals`) route to abstain anyway, so
         # dropping them costs nothing and prevents the walker from
         # contradicting a true claim via a malformed self-reference.
+        #
+        # Phase 10.5 Step 6 evaluated relaxing this for inception-style
+        # claims with valid_from set (Rule 7 example: 'Google was founded
+        # in 1994' → subject=='Google', object=='Google'). The relaxation
+        # was reverted: the walker would then look up the
+        # extracted predicate's KB property (P112 founder for `founded`,
+        # P19 birthplace for `born_in`) and find subject != KB-value,
+        # yielding a §3.2 false-contradiction. The year in valid_from is
+        # not consulted as the primary verification value. Until the
+        # extractor produces year-aware predicates (`founded_in_year` →
+        # P571, `born_on` → P569) directly, the strict drop preserves
+        # soundness at the cost of accuracy on these cases.
         if (
             raw_subject.strip().casefold() == raw_object.strip().casefold()
             and raw_subject.strip()
@@ -473,6 +541,7 @@ class Extractor:
         # makes the rewrite deterministic.
         if predicate == "located_in" and _RESIDENCE_VERB.search(source_text):
             predicate = "lives_in"
+
 
         triage_decision = triage(
             predicate=predicate,
