@@ -175,6 +175,43 @@ class KBVerifier:
         # Step 5: look up KB statements for (lookup entity, kb_property).
         statements = self._kb.lookup_statements(lookup_subject_id, meta.kb_property)
         if not statements:
+            # Phase 10.5 Step 6 Tier A3: no-statements subsumption fallback.
+            # Some entity classes don't carry the specific kb_property the
+            # predicate maps to — rivers don't have P131 (located_in admin
+            # entity); they're related to geography via P17 (country),
+            # P206 (located in body of water), or directly via P30
+            # (continent) on the country chain. For an entity-typed
+            # resolved expected value, query the subsumption oracle
+            # directly: is the lookup_subject geographically subsumed
+            # by the claim's expected value? The `part_of` alternation
+            # (P131/P361/P30/P206/P17) catches the chain Wikidata
+            # actually uses. Soundness: only fires when both subject
+            # and expected resolve to KB Q-ids, and subsumption returns
+            # a positive verdict (a_subsumed_by_b or equivalent) — never
+            # promotes to VERIFIED on uncertainty.
+            if (
+                meta.object_type == "entity"
+                and value_resolved
+                and isinstance(lookup_subject_id, str)
+                and isinstance(expected_value, str)
+                and self._subsumption_upgrades(lookup_subject_id, expected_value)
+            ):
+                pos_verdict = KBVerdictType.VERIFIED
+                final_verdict = _apply_polarity(pos_verdict, claim.polarity)
+                return KBVerdict(
+                    verdict=final_verdict,
+                    matched_statement=None,
+                    subject_kb_id=lookup_subject_id,
+                    trace={
+                        "entity": lookup_subject_id,
+                        "value_entity": expected_value,
+                        "value_resolved": True,
+                        "polarity": claim.polarity,
+                        "positive_verdict": pos_verdict.value,
+                        "lookup_inverted": lookup_inverted,
+                        "no_statements_subsumption_fallback": True,
+                    },
+                )
             # NO_MATCH is polarity-invariant — absence of evidence is not evidence.
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
