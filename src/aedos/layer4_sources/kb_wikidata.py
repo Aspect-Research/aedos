@@ -126,10 +126,23 @@ def _build_label_type_search_query(
 # Subsumption relation-type → SPARQL property-path alternation.
 # Per architecture §9.1 and F2 design §6:
 #   is_a    → P31 (instance of), P279 (subclass of)
-#   part_of → P131 (located in admin entity), P361 (part of)
+#   part_of → P131 (located in admin entity), P361 (part of),
+#             P30  (continent — for country/region → continent chains),
+#             P206 (located in body of water — for landmark → river/ocean),
+#             P17  (country — for city → country fallback when P131 chain
+#                   doesn't reach the country directly).
+#
+# Phase 10.5 Step 6 sub-cause B fix: P30 lets the walker verify
+# "France ⊂ Europe" directly (France P30 Europe) and chains through
+# P131 → P30 to verify city-to-continent ("Paris ⊂ Europe" via
+# Paris P131 Île-de-France → ... → France P30 Europe). Pre-fix,
+# part_of stopped at P131/P361 which deepest-runs out at the country
+# level; many country→continent statements in Wikidata are only
+# expressed via P30, so the chain truncated and the walker abstained
+# on multi-hop geographic claims.
 _SUBSUMPTION_PROPERTIES = {
     "is_a": ("P31", "P279"),
-    "part_of": ("P131", "P361"),
+    "part_of": ("P131", "P361", "P30", "P206", "P17"),
 }
 
 # Phase H D5: default property set for KB neighbor enumeration. The
