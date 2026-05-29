@@ -122,13 +122,10 @@ _DEMONYM_TO_COUNTRY: dict[str, str] = {
 # carries the year-as-content rather than the year-as-temporal-scope.
 _BARE_YEAR_RE_EXTRACT = re.compile(r"^[+-]?\d{1,4}$")
 _YEAR_AWARE_REWRITES = {
+    # valid_from family (point-in-time inception / birth / creation)
     "born_in": "born_on",
     "born": "born_on",
     "was_born": "born_on",
-    "died_in": "died_on",
-    "died": "died_on",
-    "was_killed_in": "died_on",
-    "passed_away_in": "died_on",
     "founded": "founded_in_year",
     "was_founded": "founded_in_year",
     "established": "founded_in_year",
@@ -137,7 +134,33 @@ _YEAR_AWARE_REWRITES = {
     "launched_in": "founded_in_year",
     "published_in": "published_in_year",
     "released_in": "released_in_year",
+    # valid_from OR valid_until family (point-in-time death / destruction)
+    "died_in": "died_on",
+    "died": "died_on",
+    "was_killed_in": "died_on",
+    "passed_away_in": "died_on",
+    "fell": "dissolved_in_year",
+    "fell_in": "dissolved_in_year",
+    "dissolved": "dissolved_in_year",
+    "destroyed": "dissolved_in_year",
+    "demolished": "dissolved_in_year",
+    "abolished": "dissolved_in_year",
+    "ended": "dissolved_in_year",
+    # Generic point-in-time event predicates. Triggered only when
+    # object is empty / descriptive AND a year is present — guards
+    # against hijacking unrelated `was` / `is` claims.
+    "was": "occurred_in_year",
+    "is": "occurred_in_year",
+    "occurred": "occurred_in_year",
+    "happened": "occurred_in_year",
+    "took_place": "occurred_in_year",
 }
+
+# Objects that signal the LLM put descriptive context (location, agent)
+# into the object slot rather than the inception value itself. Triggers
+# the year-aware rewrite even when subject != object (i.e. the object
+# isn't the Rule 7 self-reference convention).
+_DESCRIPTIVE_OBJECT_PREFIXES = ("in ", "from ", "by ", "at ", "during ", "on ")
 
 EXTRACTION_TOOL: dict[str, Any] = {
     "name": "extract_claims",
@@ -578,16 +601,38 @@ class Extractor:
         # to the place property.
         raw_pred_pre = normalize_predicate(raw.get("predicate", ""))
         valid_from_pre = raw.get("valid_from")
+        valid_until_pre = raw.get("valid_until")
+        # Pick the year-shaped temporal slot. For "born/founded" the LLM
+        # uses valid_from (inception). For "fell/dissolved/ended" the
+        # LLM uses valid_until (end of existence). Either is a year-aware
+        # rewrite trigger.
+        year_value = None
+        for cand in (valid_from_pre, valid_until_pre):
+            if cand and _BARE_YEAR_RE_EXTRACT.match(str(cand).strip().lstrip("+")):
+                year_value = str(cand).strip().lstrip("+").lstrip("-")
+                break
+        # Trigger conditions: predicate matches AND a year is present AND
+        # either (a) the object is the Rule 7 self-reference, or (b) the
+        # object is a descriptive locative/agent phrase ("in Illinois",
+        # "by the British", etc.) — those signal the LLM didn't put the
+        # inception value itself in the object slot.
+        object_lower = raw_object.strip().lower()
+        object_is_self_ref = (
+            raw_subject.strip().casefold() == raw_object.strip().casefold()
+            and raw_subject.strip()
+        )
+        object_is_descriptive = any(
+            object_lower.startswith(p) for p in _DESCRIPTIVE_OBJECT_PREFIXES
+        )
         if (
             raw_pred_pre in _YEAR_AWARE_REWRITES
-            and valid_from_pre
-            and _BARE_YEAR_RE_EXTRACT.match(str(valid_from_pre).strip().lstrip("+"))
-            and raw_subject.strip().casefold() == raw_object.strip().casefold()
+            and year_value
+            and (object_is_self_ref or object_is_descriptive or not raw_object.strip())
         ):
             # Rewrite in the raw dict so downstream construction picks it up.
             raw = dict(raw)
             raw["predicate"] = _YEAR_AWARE_REWRITES[raw_pred_pre]
-            raw["object"] = str(valid_from_pre).strip().lstrip("+").lstrip("-")
+            raw["object"] = year_value
             raw_object = raw["object"]
 
         # Phase 10.5 Step 5 root-cause: reject self-referential triples
