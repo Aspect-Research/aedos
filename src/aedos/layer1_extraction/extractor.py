@@ -106,6 +106,26 @@ _DEMONYM_TO_COUNTRY: dict[str, str] = {
     "Thai": "Thailand",
     "Filipino": "Philippines",
     "Indonesian": "Indonesia",
+    # Phase 10.5 Step 6 Tier B3: additional demonyms surfaced by the
+    # medium-bar test set.
+    "Serbian": "Serbia",
+    "Croatian": "Croatia",
+    "Bosnian": "Bosnia and Herzegovina",
+    "Slovenian": "Slovenia",
+    "Hungarian": "Hungary",
+    "Czech": "Czech Republic",
+    "Slovak": "Slovakia",
+    "Romanian": "Romania",
+    "Bulgarian": "Bulgaria",
+    "Ukrainian": "Ukraine",
+    "Norwegian": "Norway",
+    "Swedish": "Sweden",
+    "Danish": "Denmark",
+    "Finnish": "Finland",
+    "Icelandic": "Iceland",
+    "Welsh": "Wales",
+    "Albanian": "Albania",
+    "Macedonian": "North Macedonia",
 }
 
 # Phase 10.5 Step 6 Batch 4: year-aware predicate canonicalization. When
@@ -555,7 +575,26 @@ class Extractor:
             claim = self._build_claim(raw, text, context)
             if claim is not None:
                 claims.append(claim)
-        return claims
+
+        # Phase 10.5 Step 6 Tier B3: compound-demonym + profession
+        # decomposition. When an instance_of claim's object is shaped
+        # "[Demonym]-[Demonym] [Profession]" (e.g. "Serbian-American
+        # inventor"), emit additional has_nationality claims for each
+        # demonym and rewrite the instance_of claim's object to just
+        # the profession noun. The compound form doesn't resolve
+        # cleanly via P31 (Wikidata doesn't have a Q-id for "Serbian-
+        # American inventor"); the decomposition into atomic claims
+        # routes through P27 (nationality) and P31 (instance of) for
+        # the bare profession noun.
+        decomposed: list[Claim] = []
+        for c in claims:
+            extra = self._decompose_compound_demonym(c, context)
+            if extra:
+                decomposed.append(extra[0])  # replacement instance_of
+                decomposed.extend(extra[1:])  # additional has_nationality
+            else:
+                decomposed.append(c)
+        return decomposed
 
     def _build_claim(
         self, raw: dict, text: str, context: ExtractionContext
@@ -774,6 +813,68 @@ class Extractor:
             valid_during_ref=scope.valid_during_ref,
             reified_event_id=reified_id,
         )
+
+    def _decompose_compound_demonym(
+        self, claim: Claim, context: ExtractionContext
+    ) -> list[Claim]:
+        """Phase 10.5 Step 6 Tier B3: when an instance_of claim's object
+        is "[Demonym]-[Demonym] [Profession]" (e.g. "Serbian-American
+        inventor"), decompose into:
+          (1) A rewritten instance_of claim with just the profession
+              noun in the object slot (e.g. instance_of inventor),
+          (2) One has_nationality claim per demonym, with the country
+              name resolved via _DEMONYM_TO_COUNTRY.
+        Returns an empty list when the pattern does not match — the
+        caller keeps the original claim.
+        """
+        if claim.predicate != "instance_of":
+            return []
+        obj = (claim.object or "").strip()
+        if not obj:
+            return []
+        # Pattern: "D1-D2 [Noun ...]". Split on hyphen-with-no-spaces.
+        m = re.match(
+            r"^([A-Z][a-zA-Z]+)-([A-Z][a-zA-Z]+)\s+(.+)$", obj,
+        )
+        if not m:
+            return []
+        d1, d2, profession = m.group(1), m.group(2), m.group(3).strip()
+        if d1 not in _DEMONYM_TO_COUNTRY or d2 not in _DEMONYM_TO_COUNTRY:
+            return []
+        # Build the rewritten instance_of (object = profession)
+        instance_claim = Claim(
+            claim_id=str(uuid.uuid4()),
+            subject=claim.subject,
+            predicate="instance_of",
+            object=profession,
+            polarity=claim.polarity,
+            source_text=claim.source_text,
+            asserting_party=claim.asserting_party,
+            triage_decision=claim.triage_decision,
+            valid_from=claim.valid_from,
+            valid_until=claim.valid_until,
+            valid_during_ref=claim.valid_during_ref,
+            reified_event_id=claim.reified_event_id,
+        )
+        # Build a has_nationality claim per demonym
+        nationality_claims: list[Claim] = []
+        for demonym in (d1, d2):
+            country = _DEMONYM_TO_COUNTRY[demonym]
+            nationality_claims.append(Claim(
+                claim_id=str(uuid.uuid4()),
+                subject=claim.subject,
+                predicate="has_nationality",
+                object=country,
+                polarity=claim.polarity,
+                source_text=claim.source_text,
+                asserting_party=claim.asserting_party,
+                triage_decision=claim.triage_decision,
+                valid_from=claim.valid_from,
+                valid_until=claim.valid_until,
+                valid_during_ref=claim.valid_during_ref,
+                reified_event_id=claim.reified_event_id,
+            ))
+        return [instance_claim] + nationality_claims
 
     def _canonicalize(self, subject: str, asserting_party: str) -> str:
         """Replace first-person pronouns with the asserting party identifier."""
