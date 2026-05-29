@@ -581,6 +581,20 @@ class Walker:
         identity, per the operator's audit-detail confirmation in
         step 1.
         """
+        # Phase 10.5 Step 6 Batch 8+: skip KB verification when the
+        # claim's subject is a known user persona stipulated in Tier U
+        # (via a "user identity X" row). Otherwise the entity resolver
+        # may resolve the persona name (e.g. "Asa") to an unrelated
+        # Wikidata entity (Asa, King of Judah; or a different person
+        # named Asa entirely), and the kb_verifier's polarity-aware
+        # branch will emit verified/contradicted on facts about that
+        # wrong entity. For negation claims ("Asa is not in France")
+        # this produces a §3.2 false-contradiction when the misresolved
+        # entity happens to be in France. The persona's true
+        # verification is in Tier U; KB is the wrong source.
+        if self._is_persona_subject(node):
+            return None, "", 0, {}
+
         # KB verification
         if self._kb_verifier is not None:
             kb_result = self._kb_verifier.verify(
@@ -658,6 +672,40 @@ class Walker:
                 return py_result.verdict, "python", 0, grounding
 
         return None, "", 0, {}
+
+    def _is_persona_subject(self, claim: Claim) -> bool:
+        """Phase 10.5 Step 6 Batch 8+: True when the claim's subject is
+        a known user persona stipulated in Tier U via a `user identity X`
+        row. Used by `_direct_lookup` to skip KB verification — the
+        entity resolver would otherwise resolve the persona name to an
+        unrelated Wikidata entity (e.g. "Asa" → Asa, King of Judah) and
+        the kb_verifier's polarity-aware branch would emit
+        verified/contradicted on facts about that wrong entity.
+
+        Specifically catches: rows of the shape
+        `(asserting_party, 'user', 'identity', X, polarity=1)` where X
+        matches the claim's subject. The asserting_party check is the
+        claim's asserting_party so the persona is scoped to who's
+        asking — different parties can stipulate different personas.
+        """
+        if not claim.subject:
+            return False
+        # Defensive: a mock TierU might not expose this attribute.
+        try:
+            db = self._tier_u._db  # type: ignore[attr-defined]
+        except AttributeError:
+            return False
+        try:
+            row = db.execute(
+                """SELECT 1 FROM tier_u
+                   WHERE asserting_party=? AND subject='user'
+                     AND predicate='identity' AND object=?
+                     AND polarity=1 AND retracted_at IS NULL""",
+                (claim.asserting_party, claim.subject),
+            ).fetchone()
+        except Exception:
+            return False
+        return row is not None
 
     def _predicate_routing(self, predicate: str) -> Optional[str]:
         """Routing hint for `predicate` per the predicate translation oracle.
