@@ -368,24 +368,43 @@ class WikipediaNormalizer:
         # to surface. Future v0.16 work: a generalizable
         # "Wikipedia article title → Q-id" path via MediaWiki API.
         normalized = surface_form.strip() if isinstance(surface_form, str) else surface_form
-        if normalized and normalized in _KNOWN_ROLE_TITLES:
-            qid = _KNOWN_ROLE_TITLES[normalized]
-            result = NormalizationResult(
-                surface_form=surface_form,
-                normalized_form=normalized,
-                stage_a_outcome=OUTCOME_SKIPPED_KB_IDENTIFIER,
-                selected_qid=qid,
-            )
-            self._log_audit_event(
-                result,
-                claim_id=claim_id,
-                slot_position=slot_position,
-                claim_subject=claim_subject,
-                claim_predicate=claim_predicate,
-                claim_object=claim_object,
-                source_text=source_text,
-            )
-            return result
+        # Phase 10.5 Step 6 Batch 7+: leading "the " article stripping.
+        # The extractor often emits references like "the Nobel Prize in
+        # Physics", "the Institute for Advanced Study", "the United
+        # States" — Wikipedia's redirect system doesn't always redirect
+        # the "the"-prefixed form to the canonical article title, so
+        # Stage A returns not_found and the resolution cascades to a
+        # negative cache. Try both the original AND the "the"-stripped
+        # form for the known-title short-circuit; if the original isn't
+        # in the map but the stripped form is, use the stripped form.
+        # (The full Stage A/B/C also receives the "the"-stripped form
+        # via the recursion below.)
+        candidates = [normalized] if normalized else []
+        if (
+            normalized
+            and len(normalized) > 4
+            and normalized[:4].lower() == "the "
+        ):
+            candidates.append(normalized[4:].strip())
+        for candidate in candidates:
+            if candidate in _KNOWN_ROLE_TITLES:
+                qid = _KNOWN_ROLE_TITLES[candidate]
+                result = NormalizationResult(
+                    surface_form=surface_form,
+                    normalized_form=candidate,
+                    stage_a_outcome=OUTCOME_SKIPPED_KB_IDENTIFIER,
+                    selected_qid=qid,
+                )
+                self._log_audit_event(
+                    result,
+                    claim_id=claim_id,
+                    slot_position=slot_position,
+                    claim_subject=claim_subject,
+                    claim_predicate=claim_predicate,
+                    claim_object=claim_object,
+                    source_text=source_text,
+                )
+                return result
 
         # Memo key includes expected_entity_types because Stage C's type
         # filter behavior depends on it — same (surface, context) with
