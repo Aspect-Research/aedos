@@ -88,6 +88,15 @@ ALLOWED_MODULES: frozenset[str] = frozenset([
     "re",
     "unicodedata",
     "string",
+    # Phase 10.5 Step 6: typing is purely a type-annotation helper used
+    # by the post-Fix-3 Python verifier prompt that introduced
+    # `-> Optional[bool]` return-type signatures. typing has no runtime
+    # capability that violates the sandbox's threat model — Optional,
+    # Union, etc. are passive annotations evaluated to typing class
+    # objects, never invoked, never escape the function. Allowing it
+    # unblocks Python verifier code generation that uses the canonical
+    # type signature.
+    "typing",
 ])
 
 # Builtin names that are unsafe in the verifier's threat model — see the

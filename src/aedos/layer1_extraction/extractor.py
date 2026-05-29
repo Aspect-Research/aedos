@@ -25,6 +25,17 @@ _RESIDENCE_VERB = re.compile(
     r"\b(lives?|lived|resides?|residing)\s+in\b", re.IGNORECASE
 )
 
+# Phase 10.5 Step 6 sub-cause C enforcement: nationality vocabulary. When
+# the source verb-phrase is "[has|had] [adjective] nationality", the LLM
+# often emits predicate='has'/'had' with object="[adjective] nationality"
+# rather than predicate='has_nationality' with object="[adjective]". The
+# extracted form abstains because `had` is too generic to route, while
+# `has_nationality` is seeded to P27 with proper sq. Rewrite to the
+# canonical form post-extraction.
+_NATIONALITY_PATTERN = re.compile(
+    r"\b(has|had|have)\s+([A-Z][a-zA-Z]+)\s+nationality\b"
+)
+
 # Phase 10.5 Step 6 Batch 4: year-aware predicate canonicalization. When
 # the LLM follows Rule 7 (year → valid_from) but keeps the place-form
 # predicate (e.g. `born_in` for "Einstein was born in 1879" instead of
@@ -561,6 +572,19 @@ class Extractor:
         # makes the rewrite deterministic.
         if predicate == "located_in" and _RESIDENCE_VERB.search(source_text):
             predicate = "lives_in"
+
+        # Phase 10.5 Step 6 Batch 7: nationality vocabulary rewrite.
+        # When predicate is generic 'has'/'had'/'have' and source matches
+        # "[has|had] [Adjective] nationality", rewrite to predicate
+        # 'has_nationality' with object set to the adjective (the
+        # nationality label, e.g., "German"). The extracted object's
+        # trailing "nationality" word is dropped so the walker resolves
+        # the demonym to a country Q-id (P27 lookups expect country).
+        if predicate in {"has", "had", "have"}:
+            m = _NATIONALITY_PATTERN.search(source_text)
+            if m:
+                predicate = "has_nationality"
+                object_value = m.group(2)  # the demonym, e.g. "German"
 
 
         triage_decision = triage(
