@@ -76,6 +76,54 @@ _VAGUE_CLASS_PREFIXES = ("a ", "an ", "some ", "any ")
 _VAGUE_CLASS_RELCLAUSE = (" that ", " which ", " where ", " whose ", " who ")
 
 
+# Phase 10.5 Step 6 Tier A2: helpers for the kb_quantitative path.
+import re as _re_quant
+
+_QUANT_NUMBER_RE = _re_quant.compile(
+    r"([-+]?\d[\d,]*\.?\d*)\s*(million|billion|thousand|hundred|m|bn|k)?",
+    _re_quant.IGNORECASE,
+)
+_QUANT_MULTIPLIERS = {
+    "thousand": 1_000, "k": 1_000,
+    "million": 1_000_000, "m": 1_000_000,
+    "billion": 1_000_000_000, "bn": 1_000_000_000,
+    "hundred": 100,
+}
+
+
+def _parse_quantity(s: str) -> Optional[float]:
+    """Parse the leading numeric quantity from a string. Handles
+    "60 million", "1.5 billion", "67000000", "1,000,000", etc.
+    Returns None if no quantity can be extracted."""
+    if not s:
+        return None
+    text = str(s).strip()
+    m = _QUANT_NUMBER_RE.search(text)
+    if not m:
+        return None
+    num_str = m.group(1).replace(",", "")
+    unit = (m.group(2) or "").lower()
+    try:
+        value = float(num_str)
+    except ValueError:
+        return None
+    multiplier = _QUANT_MULTIPLIERS.get(unit, 1)
+    return value * multiplier
+
+
+def _apply_polarity_str(verdict: str, polarity: int) -> str:
+    """Polarity-invert a string verdict. Used by the kb_quantitative
+    path (which returns string verdicts) — parallels kb_verifier's
+    _apply_polarity for KBVerdictType."""
+    if polarity == 1:
+        return verdict
+    if verdict == "verified":
+        return "contradicted"
+    if verdict == "contradicted":
+        return "verified"
+    return verdict
+
+
 def _is_vague_class_object(object_value: str) -> bool:
     """Phase 10.5 Step 6 sub-cause F follow-on: True if the object is a
     descriptive class reference rather than a specific entity name.
@@ -595,6 +643,21 @@ class Walker:
         if self._is_persona_subject(node):
             return None, "", 0, {}
 
+        # Phase 10.5 Step 6 Tier A2: kb_quantitative comparison path.
+        # When the predicate's routing_hint is "kb_quantitative", the
+        # claim asserts a numeric comparison against a KB-derivable
+        # quantity (e.g. "France has more than 60 million people" →
+        # P1082 (population) > 60000000). The walker queries KB, parses
+        # the claim's object as a threshold, and compares.
+        if self._predicate_routing(node.predicate) == "kb_quantitative":
+            verdict = self._verify_kb_quantitative(node, context, trace)
+            if verdict is not None:
+                trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+                return verdict, "kb_quantitative", 0, {
+                    "source": "kb_quantitative",
+                    "predicate": node.predicate,
+                }
+
         # KB verification
         if self._kb_verifier is not None:
             kb_result = self._kb_verifier.verify(
@@ -672,6 +735,110 @@ class Walker:
                 return py_result.verdict, "python", 0, grounding
 
         return None, "", 0, {}
+
+    def _verify_kb_quantitative(self, claim: Claim, context: VerificationContext, trace) -> Optional[str]:
+        """Phase 10.5 Step 6 Tier A2: verify a kb_quantitative claim by
+        querying KB for the subject's value of the predicate's
+        kb_property and comparing against the claim's object as a
+        numeric threshold.
+
+        Predicates with routing_hint=kb_quantitative encode the
+        comparator in their name (population_greater_than vs
+        population_less_than). The kb_property is the canonical
+        Wikidata property (P1082 for population, etc.).
+
+        Object parsing: extracts the largest numeric value from the
+        object string, handling abbreviated units like "60 million"
+        / "1.5 billion". Returns None (no terminal verdict, walker
+        falls through to next stage) on parse failures or KB lookup
+        failures — §3.2 soundness, never fabricate a verdict on
+        uncertainty.
+        """
+        # Parse threshold from claim.object
+        threshold = _parse_quantity(claim.object)
+        if threshold is None:
+            return None
+
+        # Determine comparator from predicate name
+        pred = claim.predicate.lower()
+        if "greater_than" in pred or "more_than" in pred or "above" in pred:
+            comparator = "gt"
+        elif "less_than" in pred or "below" in pred or "fewer_than" in pred:
+            comparator = "lt"
+        else:
+            return None
+
+        # Look up predicate metadata (already cached at this point)
+        try:
+            meta = self._substrate.predicate_translation.consult(claim.predicate)
+        except Exception:
+            return None
+        if not meta.kb_property:
+            return None
+
+        # Resolve the subject to a KB Q-id via the kb_verifier's
+        # resolver (which wires up the Wikipedia normalizer for D47
+        # robustness). Fail closed if the resolver is unwired.
+        if self._kb_verifier is None or not hasattr(self._kb_verifier, "_resolver"):
+            return None
+        resolver = self._kb_verifier._resolver
+        lookup_ctx = LocalContext(
+            predicate=claim.predicate,
+            slot_position="subject",
+            asserting_party=claim.asserting_party,
+            source_text=context.source_text,
+            claim_subject=claim.subject,
+            claim_predicate=claim.predicate,
+            claim_object=claim.object,
+            claim_id=claim.claim_id,
+        )
+        resolved = resolver.select(
+            resolver.resolve(claim.subject, lookup_ctx), lookup_ctx
+        )
+        if resolved is None:
+            return None
+
+        # Fetch KB statements for the property
+        try:
+            statements = self._kb.lookup_statements(resolved, meta.kb_property)
+        except Exception:
+            return None
+        if not statements:
+            return None
+
+        # Take the most-recent / preferred value. P1082 (population) is
+        # multi-valued historically — Wikidata stores a series of point-
+        # in-time-qualified statements (e.g. "100M in 1990", "67M in 2024").
+        # Strategy:
+        #   1. Prefer the "preferred"-ranked statement if any exists
+        #      (Wikidata marks the current/canonical value as preferred).
+        #   2. Otherwise take the maximum across non-deprecated values —
+        #      population generally grows over time so the largest value
+        #      is typically the most recent; this is also the most
+        #      conservative answer for the comparator semantics
+        #      ("greater than 60M"): a recent value of 67M correctly
+        #      verifies, an older 1900 value would not.
+        candidate_values = []
+        preferred_value = None
+        for stmt in statements:
+            if getattr(stmt, "rank", "normal") == "deprecated":
+                continue
+            v = _parse_quantity(str(stmt.value))
+            if v is None:
+                continue
+            if getattr(stmt, "rank", "normal") == "preferred" and preferred_value is None:
+                preferred_value = v
+            candidate_values.append(v)
+        if not candidate_values:
+            return None
+        kb_value = preferred_value if preferred_value is not None else max(candidate_values)
+
+        if comparator == "gt":
+            verified = kb_value > threshold
+        else:  # lt
+            verified = kb_value < threshold
+        verdict = "verified" if verified else "contradicted"
+        return _apply_polarity_str(verdict, claim.polarity)
 
     def _is_persona_subject(self, claim: Claim) -> bool:
         """Phase 10.5 Step 6 Batch 8+: True when the claim's subject is
