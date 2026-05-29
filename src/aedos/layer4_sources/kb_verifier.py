@@ -14,6 +14,24 @@ from .kb_protocol import KBEntityID, KBProtocol, LocalContext, Statement
 
 _NOW = lambda: datetime.now(timezone.utc).isoformat()
 
+# Phase 10.5 Step 6 Batch 11 (Tier A1): canonical Q-ids for the seven
+# continents + the principal supercontinent groupings the medium-bar
+# test set uses. Used by _disjoint_continent to confidently flag KB-
+# grounded "X is in [wrong continent]" claims as CONTRADICTED rather
+# than abstaining on the non-functional-predicate NO_MATCH path.
+# Hand-validated against Wikidata's canonical labels:
+#   Europe         Q46
+#   Asia           Q48
+#   Africa         Q15
+#   North America  Q49
+#   South America  Q18
+#   Oceania        Q55643
+#   Antarctica     Q51
+#   Australia      Q3960   (continent; the country is Q408)
+CONTINENT_QIDS: frozenset[str] = frozenset([
+    "Q46", "Q48", "Q15", "Q49", "Q18", "Q55643", "Q51", "Q3960",
+])
+
 
 class KBVerdictType(str, Enum):
     VERIFIED = "verified"
@@ -271,8 +289,102 @@ class KBVerifier:
                 return KBVerdictType.NO_MATCH, None, "value_unresolved"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
+        # Phase 10.5 Step 6 Batch 11 (Tier A1): conservative DISJOINT
+        # verdict for non-functional location predicates. Two paths:
+        #
+        # (a) Continent-level (CONTINENT_QIDS) — claim asserts a continent
+        # (e.g. "Thames in Asia", "Vatican in Africa") and KB statement
+        # value's containment chain (P131/P361/P30/P206/P17) confidently
+        # subsumes under a DIFFERENT continent. Positive KB evidence of
+        # disjoint location.
+        #
+        # (b) Country-level — claim asserts a country (e.g. "Rome in
+        # Germany"), KB statement value is also a country (e.g. Italy),
+        # and KB confirms mutual non-containment via subsumption returning
+        # `unrelated` in BOTH directions. Countries at the same admin
+        # level are pairwise disjoint when neither contains the other,
+        # so unrelated-both-ways IS positive evidence of distinct
+        # countries (unlike the brittle general "unrelated means
+        # disjoint" trap — countries are a structurally clean case).
+        #
+        # Both paths fall through to NO_MATCH (abstain) on uncertainty.
+        if (
+            scope_mismatch is not None
+            and meta.object_type == "entity"
+            and value_resolved
+            and isinstance(scope_mismatch.value, str)
+            and isinstance(expected_value, str)
+            and self._location_disjoint(scope_mismatch.value, expected_value)
+        ):
+            return KBVerdictType.CONTRADICTED, scope_mismatch, None
+
         reason = "value_unresolved" if value_unresolved else "no_matching_statement"
         return KBVerdictType.NO_MATCH, None, reason
+
+    def _location_disjoint(self, kb_value: str, expected_value: str) -> bool:
+        """Phase 10.5 Step 6 Batch 11 (Tier A1): True when KB confirms
+        the KB statement value is geographically disjoint from the
+        claim's expected value.
+
+        Two paths, both requiring positive KB evidence (a continent
+        ancestor confirmed by subsumption):
+
+        (a) Continent-level. expected_value is itself a known continent
+            (CONTINENT_QIDS) and the KB value is subsumed by a DIFFERENT
+            continent. Direct evidence of disjoint continent.
+            Targets "Thames in Asia" / "Vatican in Africa".
+
+        (b) Shared-continent sub-region. Both values are subsumed by the
+            SAME continent AND subsumption is `unrelated` in both
+            directions between them. Two sub-regions sharing a continent
+            ancestor with no mutual containment are structurally disjoint
+            within that continent (Italy and Germany are both in Europe;
+            neither contains the other; therefore they're disjoint
+            countries). Targets "Rome in Germany" — KB returns Rome's
+            P131 = Lazio (a sub-region of Italy), Italy's continent is
+            Europe, Germany's continent is Europe, and Lazio is unrelated
+            to Germany in both subsumption directions.
+
+        Fails closed on error: any uncertainty preserves NO_MATCH
+        (abstain). §3.2 soundness-over-completeness.
+        """
+        if not isinstance(kb_value, str) or not isinstance(expected_value, str):
+            return False
+        if kb_value == expected_value:
+            return False
+
+        # (a) Continent-level path
+        if expected_value in CONTINENT_QIDS:
+            for continent in CONTINENT_QIDS:
+                if continent == expected_value:
+                    continue
+                try:
+                    r = self._kb.subsumption(kb_value, continent, "part_of")
+                except Exception:
+                    continue
+                if r.verdict in ("a_subsumed_by_b", "equivalent"):
+                    return True
+            return False
+
+        # (b) Shared-continent sub-region path
+        for continent in CONTINENT_QIDS:
+            try:
+                kb_in = self._kb.subsumption(kb_value, continent, "part_of").verdict
+                exp_in = self._kb.subsumption(expected_value, continent, "part_of").verdict
+            except Exception:
+                continue
+            kb_in_ok = kb_in in ("a_subsumed_by_b", "equivalent")
+            exp_in_ok = exp_in in ("a_subsumed_by_b", "equivalent")
+            if not (kb_in_ok and exp_in_ok):
+                continue
+            # Both confirmed in the same continent; check mutual non-containment
+            try:
+                fwd = self._kb.subsumption(kb_value, expected_value, "part_of").verdict
+                rev = self._kb.subsumption(expected_value, kb_value, "part_of").verdict
+            except Exception:
+                return False
+            return fwd == "unrelated" and rev == "unrelated"
+        return False
 
     def _subsumption_upgrades(self, kb_value: str, expected_value: str) -> bool:
         """Phase 10.5 Step 5 root-cause helper: query the KB for whether the
