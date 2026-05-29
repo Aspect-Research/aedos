@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -369,13 +370,54 @@ def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:
     return pos_verdict
 
 
+_YEAR_RE = re.compile(r"^[+-]?(\d{4})(?:-\d{2}(?:-\d{2})?)?(?:T.*)?$")
+_BARE_YEAR_RE = re.compile(r"^[+-]?\d{4}$")
+
+
+def _normalize_date_value(value: str) -> Optional[str]:
+    """Phase 10.5 Step 6 sub-cause C / Pattern C fix: extract the year
+    from a date-shaped value. Returns the 4-digit year string for inputs
+    like '1998', '1998-09-04', '+1998-09-04T00:00:00Z', etc., or None for
+    non-date inputs. Used by `_value_matches` to compare year-level
+    claims (e.g. 'Google founded in 1994') against KB's precise dates
+    (P571 = '1998-09-04T00:00:00Z'). Without normalization the literal
+    string compare always fails — even when the years genuinely differ,
+    the verifier returns NO_MATCH instead of CONTRADICTED, and the
+    walker abstains instead of catching the falsehood.
+    """
+    if value is None:
+        return None
+    s = str(value).strip().lstrip("+")
+    m = _YEAR_RE.match(s)
+    if m:
+        year = m.group(1).lstrip("-")
+        if len(year) == 4 and year.isdigit():
+            return year
+    return None
+
+
 def _value_matches(kb_value, claim_object: str) -> bool:
-    """Loose equality: Q-number match or case-insensitive string match."""
+    """Loose equality: Q-number match, case-insensitive string match, or
+    date-year match. Phase 10.5 Step 6: year-aware date comparison —
+    when both values normalize to a 4-digit year, compare years rather
+    than literal strings ('1998' vs '1998-09-04T00:00:00Z' should match
+    when the claim only specifies the year)."""
     if kb_value is None:
         return False
     kb_str = str(kb_value).strip()
     claim_str = claim_object.strip()
-    return kb_str.lower() == claim_str.lower()
+    if kb_str.lower() == claim_str.lower():
+        return True
+    # Date-year normalized comparison: only fire when the claim looks
+    # like a bare year (4 digits) — that's the common pattern in the
+    # medium-bar's "founded in YYYY", "born in YYYY", "occurred in YYYY".
+    # Comparing two full ISO timestamps via year-only would be incorrect
+    # (1998-09-04 ≠ 1998-01-01 for precise temporal claims).
+    if _BARE_YEAR_RE.match(claim_str):
+        kb_year = _normalize_date_value(kb_str)
+        if kb_year == claim_str.lstrip("+").lstrip("-"):
+            return True
+    return False
 
 
 def _scope_compatible(stmt: Statement, claim: Claim, current_time: str) -> bool:
