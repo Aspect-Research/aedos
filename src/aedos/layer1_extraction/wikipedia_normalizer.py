@@ -80,6 +80,28 @@ from ..utils.rate_limit import RateLimiter
 # wasted LLM/HTTP cost. Skip Q-ids at entry.
 _QID_PATTERN = re.compile(r"^Q\d+$")
 
+# Phase 10.5 Step 6 Fix #14: known-title short-circuit map. Public-role
+# position titles whose canonical Wikidata Q-IDs the multi-stage
+# normalizer struggles to surface (Stage B wbsearchentities ranks them
+# too low; Stage C LLM-selection has variance). Direct mapping here is
+# the minimum-viable fix; v0.16 will pursue a generalizable
+# Wikipedia-article-title-to-Q path via the MediaWiki API.
+_KNOWN_ROLE_TITLES: dict[str, str] = {
+    # United States political roles
+    "President of the United States": "Q11696",
+    "President of the United States of America": "Q11696",
+    "Vice President of the United States": "Q11699",
+    # United Kingdom political roles
+    "Prime Minister of the United Kingdom": "Q14211",
+    "Prime Minister of Great Britain": "Q14211",
+    # Religious roles
+    "Pope": "Q19546",
+    # Generic positions that resolve well already are NOT in this map —
+    # this is a list of titles known to have low wbsearchentities
+    # ranking for their canonical Q-id (validated empirically against
+    # the medium-bar Pattern B cases).
+}
+
 # Phase H D53 step 2: Stage C tool — closed-set selection over Wikidata
 # Q-id candidates. The model picks a Q-id (not a label, not a Wikipedia
 # article title) so downstream KB lookup is keyed on the canonical
@@ -321,6 +343,38 @@ class WikipediaNormalizer:
                 normalized_form=surface_form,
                 stage_a_outcome=OUTCOME_SKIPPED_KB_IDENTIFIER,
                 selected_qid=surface_form,  # Q-id surface form IS the canonical id
+            )
+            self._log_audit_event(
+                result,
+                claim_id=claim_id,
+                slot_position=slot_position,
+                claim_subject=claim_subject,
+                claim_predicate=claim_predicate,
+                claim_object=claim_object,
+                source_text=source_text,
+            )
+            return result
+
+        # Phase 10.5 Step 6 Fix #14: known-title short-circuit. For a
+        # small allow-list of public-role position titles whose canonical
+        # Wikidata Q-IDs the multi-stage normalizer struggles to surface
+        # consistently ("President of the United States" → Q11696, "Prime
+        # Minister of the United Kingdom" → Q14211, etc.), resolve them
+        # directly without the Stage A/B/C round-trip. The walker can
+        # then match Lincoln's P39 = Q11696 against the canonical Q-ID.
+        # This is the minimum-viable fix for the Pattern B
+        # holds_role-of-org cases that Fix 8's Rule 20 successfully
+        # extracts but Stage B's wbsearchentities ranks Q11696 too low
+        # to surface. Future v0.16 work: a generalizable
+        # "Wikipedia article title → Q-id" path via MediaWiki API.
+        normalized = surface_form.strip() if isinstance(surface_form, str) else surface_form
+        if normalized and normalized in _KNOWN_ROLE_TITLES:
+            qid = _KNOWN_ROLE_TITLES[normalized]
+            result = NormalizationResult(
+                surface_form=surface_form,
+                normalized_form=normalized,
+                stage_a_outcome=OUTCOME_SKIPPED_KB_IDENTIFIER,
+                selected_qid=qid,
             )
             self._log_audit_event(
                 result,
