@@ -25,16 +25,11 @@ _RESIDENCE_VERB = re.compile(
     r"\b(lives?|lived|resides?|residing)\s+in\b", re.IGNORECASE
 )
 
-# Phase 10.5 Step 6 sub-cause C enforcement: nationality vocabulary. When
-# the source verb-phrase is "[has|had] [adjective] nationality", the LLM
-# often emits predicate='has'/'had' with object="[adjective] nationality"
-# rather than predicate='has_nationality' with object="[adjective]". The
-# extracted form abstains because `had` is too generic to route, while
-# `has_nationality` is seeded to P27 with proper sq. Rewrite to the
-# canonical form post-extraction.
-_NATIONALITY_PATTERN = re.compile(
-    r"\b(has|had|have)\s+([A-Z][a-zA-Z]+)\s+nationality\b"
-)
+# (S1b) Nationality recognition moved to the extraction prompt (Rule 21):
+# the LLM emits has_nationality(X, "<demonym>") directly. The demonym object
+# ("German", "American") is resolved to a country Q-id at verification time by
+# the adapter's P1549 reverse lookup (see WikidataAdapter._resolve_demonym_to_
+# country), so no hardcoded demonym table or post-extraction regex remains.
 
 # Phase 10.5 Step 6 Tier A2: population comparison patterns. When the
 # source text contains "has more/less than N [people-like-noun]", route
@@ -54,79 +49,10 @@ _POPULATION_LESS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Phase 10.5 Step 6 Batch 7+: demonym → country normalization for the
-# "X is [Demonym]" nationality pattern. When the extractor emits
-# generic `is`/`was` with a bare demonym as object, the walker abstains
-# (predicate `is` routes to abstain). Rewriting to `has_nationality`
-# with the country name as object (e.g. "American" → "United States")
-# routes the claim through P27 (country of citizenship). The set is
-# the standard short list of common-in-English demonyms; v0.16 can
-# generalize via a Wikidata P1549 (demonym) lookup.
-_DEMONYM_TO_COUNTRY: dict[str, str] = {
-    "American": "United States",
-    "British": "United Kingdom",
-    "English": "United Kingdom",
-    "Scottish": "United Kingdom",
-    "Welsh": "United Kingdom",
-    "Irish": "Ireland",
-    "French": "France",
-    "German": "Germany",
-    "Italian": "Italy",
-    "Spanish": "Spain",
-    "Portuguese": "Portugal",
-    "Dutch": "Netherlands",
-    "Belgian": "Belgium",
-    "Swiss": "Switzerland",
-    "Austrian": "Austria",
-    "Polish": "Poland",
-    "Russian": "Russia",
-    "Greek": "Greece",
-    "Turkish": "Turkey",
-    "Japanese": "Japan",
-    "Chinese": "China",
-    "Korean": "South Korea",
-    "Indian": "India",
-    "Pakistani": "Pakistan",
-    "Australian": "Australia",
-    "Canadian": "Canada",
-    "Mexican": "Mexico",
-    "Brazilian": "Brazil",
-    "Argentine": "Argentina",
-    "Egyptian": "Egypt",
-    "Israeli": "Israel",
-    "Saudi": "Saudi Arabia",
-    "Iranian": "Iran",
-    "Iraqi": "Iraq",
-    "Syrian": "Syria",
-    "Lebanese": "Lebanon",
-    "South African": "South Africa",
-    "Nigerian": "Nigeria",
-    "Kenyan": "Kenya",
-    "Vietnamese": "Vietnam",
-    "Thai": "Thailand",
-    "Filipino": "Philippines",
-    "Indonesian": "Indonesia",
-    # Phase 10.5 Step 6 Tier B3: additional demonyms surfaced by the
-    # medium-bar test set.
-    "Serbian": "Serbia",
-    "Croatian": "Croatia",
-    "Bosnian": "Bosnia and Herzegovina",
-    "Slovenian": "Slovenia",
-    "Hungarian": "Hungary",
-    "Czech": "Czech Republic",
-    "Slovak": "Slovakia",
-    "Romanian": "Romania",
-    "Bulgarian": "Bulgaria",
-    "Ukrainian": "Ukraine",
-    "Norwegian": "Norway",
-    "Swedish": "Sweden",
-    "Danish": "Denmark",
-    "Finnish": "Finland",
-    "Icelandic": "Iceland",
-    "Welsh": "Wales",
-    "Albanian": "Albania",
-    "Macedonian": "North Macedonia",
-}
+# (S1b) The hand-curated _DEMONYM_TO_COUNTRY map is gone. Demonym → country
+# resolution is sourced from Wikidata P1549 (demonym) at verification time
+# (WikidataAdapter._resolve_demonym_to_country), gated on a country-typed
+# (Q6256) object slot. This generalizes to every demonym Wikidata records.
 
 # Phase 10.5 Step 6 Batch 4: year-aware predicate canonicalization. When
 # the LLM follows Rule 7 (year → valid_from) but keeps the place-form
@@ -523,6 +449,33 @@ team captain' — too local for Wikidata).
     - The pattern is Rule 12 employment ('X joined Y in 2020').
     - The verb is 'became' ('X became President in 2009') — that's a \
 state-change event; use 'holds_role' with valid_from for the start date.
+
+21. NATIONALITY — when the claim states a person's nationality, whether as \
+'X is [Demonym]' (a nationality adjective: American, German, Serbian) or \
+'X has [Demonym] nationality / citizenship', use predicate='has_nationality' \
+with object=[Demonym] — the bare demonym word ('German', 'American'). Do NOT \
+convert the demonym to a country name; keep the demonym (verification \
+resolves it to the country).
+    - 'Einstein had German nationality.' → predicate='has_nationality', \
+object='German'.
+    - 'Obama is American.' → predicate='has_nationality', object='American'.
+    DO NOT apply Rule 21 when:
+    - The adjective modifies a noun rather than standing alone ('X is an \
+American spacecraft' — 'American' attributes 'spacecraft', not nationality; \
+emit the literal claim or skip).
+    - The word names a language/ethnicity used non-nationally ('X speaks \
+German' → predicate='speaks', object='German').
+
+22. COMPOUND NATIONALITY — when a person is described with a compound \
+nationality-and-profession phrase '[Demonym]-[Demonym] [Profession]' \
+('Serbian-American inventor', 'British-Indian author'), emit ONE instance_of \
+claim for the profession plus ONE has_nationality claim per demonym:
+    - 'Tesla was a Serbian-American inventor.' → THREE claims: \
+(Tesla, instance_of, 'inventor'), (Tesla, has_nationality, 'Serbian'), \
+(Tesla, has_nationality, 'American').
+    Keep each demonym as the bare demonym word. Apply only when both \
+hyphenated tokens are nationality demonyms; a hyphenated proper name that is \
+not a nationality stays intact.
 """
 
 
@@ -576,25 +529,11 @@ class Extractor:
             if claim is not None:
                 claims.append(claim)
 
-        # Phase 10.5 Step 6 Tier B3: compound-demonym + profession
-        # decomposition. When an instance_of claim's object is shaped
-        # "[Demonym]-[Demonym] [Profession]" (e.g. "Serbian-American
-        # inventor"), emit additional has_nationality claims for each
-        # demonym and rewrite the instance_of claim's object to just
-        # the profession noun. The compound form doesn't resolve
-        # cleanly via P31 (Wikidata doesn't have a Q-id for "Serbian-
-        # American inventor"); the decomposition into atomic claims
-        # routes through P27 (nationality) and P31 (instance of) for
-        # the bare profession noun.
-        decomposed: list[Claim] = []
-        for c in claims:
-            extra = self._decompose_compound_demonym(c, context)
-            if extra:
-                decomposed.append(extra[0])  # replacement instance_of
-                decomposed.extend(extra[1:])  # additional has_nationality
-            else:
-                decomposed.append(c)
-        return decomposed
+        # (S1b) Compound-demonym decomposition ("Serbian-American inventor" →
+        # instance_of(inventor) + has_nationality(Serbian) +
+        # has_nationality(American)) moved to the extraction prompt (Rule 22).
+        # Each demonym object resolves via Wikidata P1549 at verification time.
+        return claims
 
     def _build_claim(
         self, raw: dict, text: str, context: ExtractionContext
@@ -744,33 +683,11 @@ class Extractor:
         if predicate == "located_in" and _RESIDENCE_VERB.search(source_text):
             predicate = "lives_in"
 
-        # Phase 10.5 Step 6 Batch 7: nationality vocabulary rewrite.
-        # When predicate is generic 'has'/'had'/'have' and source matches
-        # "[has|had] [Adjective] nationality", rewrite to predicate
-        # 'has_nationality' with object set to the adjective (the
-        # nationality label, e.g., "German"). The extracted object's
-        # trailing "nationality" word is dropped so the walker resolves
-        # the demonym to a country Q-id (P27 lookups expect country).
-        if predicate in {"has", "had", "have"}:
-            m = _NATIONALITY_PATTERN.search(source_text)
-            if m:
-                predicate = "has_nationality"
-                object_value = m.group(2)  # the demonym, e.g. "German"
-
-        # Phase 10.5 Step 6 Batch 7+: demonym normalization for "X is
-        # [Demonym]" nationality claims. When predicate is `is`/`was`
-        # and object is a bare demonym in the curated map, rewrite to
-        # `has_nationality` with the canonical country name in the
-        # object slot. The walker then routes to P27 (country of
-        # citizenship). Only fires for bare-demonym objects (no
-        # trailing words) to avoid hijacking unrelated `is`/`was`
-        # claims like "X is American spacecraft".
-        if (
-            predicate in {"is", "was"}
-            and object_value.strip() in _DEMONYM_TO_COUNTRY
-        ):
-            predicate = "has_nationality"
-            object_value = _DEMONYM_TO_COUNTRY[object_value.strip()]
+        # (S1b) Nationality recognition is handled by the extraction prompt
+        # (Rule 21): "X is [Demonym]" / "X has [Demonym] nationality" already
+        # arrive as has_nationality(X, "<demonym>"). The demonym object is
+        # resolved to a country at verification time via Wikidata P1549 — no
+        # post-extraction rewrite or hardcoded demonym table here.
 
         # Phase 10.5 Step 6 Tier A2: population-comparison canonicalization.
         # When the source text matches "has more/less than N [people-like
@@ -813,68 +730,6 @@ class Extractor:
             valid_during_ref=scope.valid_during_ref,
             reified_event_id=reified_id,
         )
-
-    def _decompose_compound_demonym(
-        self, claim: Claim, context: ExtractionContext
-    ) -> list[Claim]:
-        """Phase 10.5 Step 6 Tier B3: when an instance_of claim's object
-        is "[Demonym]-[Demonym] [Profession]" (e.g. "Serbian-American
-        inventor"), decompose into:
-          (1) A rewritten instance_of claim with just the profession
-              noun in the object slot (e.g. instance_of inventor),
-          (2) One has_nationality claim per demonym, with the country
-              name resolved via _DEMONYM_TO_COUNTRY.
-        Returns an empty list when the pattern does not match — the
-        caller keeps the original claim.
-        """
-        if claim.predicate != "instance_of":
-            return []
-        obj = (claim.object or "").strip()
-        if not obj:
-            return []
-        # Pattern: "D1-D2 [Noun ...]". Split on hyphen-with-no-spaces.
-        m = re.match(
-            r"^([A-Z][a-zA-Z]+)-([A-Z][a-zA-Z]+)\s+(.+)$", obj,
-        )
-        if not m:
-            return []
-        d1, d2, profession = m.group(1), m.group(2), m.group(3).strip()
-        if d1 not in _DEMONYM_TO_COUNTRY or d2 not in _DEMONYM_TO_COUNTRY:
-            return []
-        # Build the rewritten instance_of (object = profession)
-        instance_claim = Claim(
-            claim_id=str(uuid.uuid4()),
-            subject=claim.subject,
-            predicate="instance_of",
-            object=profession,
-            polarity=claim.polarity,
-            source_text=claim.source_text,
-            asserting_party=claim.asserting_party,
-            triage_decision=claim.triage_decision,
-            valid_from=claim.valid_from,
-            valid_until=claim.valid_until,
-            valid_during_ref=claim.valid_during_ref,
-            reified_event_id=claim.reified_event_id,
-        )
-        # Build a has_nationality claim per demonym
-        nationality_claims: list[Claim] = []
-        for demonym in (d1, d2):
-            country = _DEMONYM_TO_COUNTRY[demonym]
-            nationality_claims.append(Claim(
-                claim_id=str(uuid.uuid4()),
-                subject=claim.subject,
-                predicate="has_nationality",
-                object=country,
-                polarity=claim.polarity,
-                source_text=claim.source_text,
-                asserting_party=claim.asserting_party,
-                triage_decision=claim.triage_decision,
-                valid_from=claim.valid_from,
-                valid_until=claim.valid_until,
-                valid_during_ref=claim.valid_during_ref,
-                reified_event_id=claim.reified_event_id,
-            ))
-        return [instance_claim] + nationality_claims
 
     def _canonicalize(self, subject: str, asserting_party: str) -> str:
         """Replace first-person pronouns with the asserting party identifier."""
