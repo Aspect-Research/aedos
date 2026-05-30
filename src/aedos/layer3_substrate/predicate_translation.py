@@ -164,6 +164,28 @@ kb_resolvable (they fail safe by checking a different source); prefer
 kb_resolvable over abstain (kb-not-found yields a clean abstention at
 verification time, while routing_hint=abstain forecloses verification entirely).
 
+DATATYPE CONSISTENCY (kb_resolvable only): the kb_property you choose must
+return values whose Wikidata datatype matches object_type. An
+object_type=entity predicate must map to a wikibase-item property (P50 author,
+P112 founder, P19 place of birth) — never to a time property (P571 inception,
+P585 point in time) or a quantity property. An object_type=time predicate must
+map to a time property; an object_type=quantity predicate to a quantity
+property. Example of the error to avoid: "published" in "X published work Y"
+has object_type=entity (the work) and maps to P50 (author) — NOT P585 (point
+in time); the year is a temporal scope, not the object.
+
+INVERSE / DIRECTIONAL MAPPINGS: some predicates store their KB statement on
+the OBJECT's side, not the subject's. Authorship and creation are the common
+case: "X wrote / published / created / authored Y" is stored in Wikidata as
+(Y, P50, X) — the work Y carries the author statement; founder is the same
+shape, "X founded Y(org)" is (Y, P112, X). For these set
+slot_to_qualifier = {"subject": "statement_value", "object": "statement_subject"}
+so the Aedos subject is matched against the statement value and the Aedos
+object is the looked-up statement subject (the same inverse shape used by
+capital_of→P36 and mother_of→P25). Standard (non-inverse) predicates omit
+slot_to_qualifier or set {"subject": "statement_subject", "object":
+"statement_value"}.
+
 single_valued: set 1 only for functional predicates where a subject has at
 most one true object (place_of_birth, date_of_death, capital). Set 0 for
 multi-valued predicates (position_held, occupation, award_received,

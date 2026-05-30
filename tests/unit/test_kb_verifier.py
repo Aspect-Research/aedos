@@ -408,3 +408,38 @@ class TestKBVerifierInverseMapping:
         result = verifier.verify(_claim())
         assert result.verdict == KBVerdictType.NO_KB_PATH
         assert result.trace.get("reason") == "unsupported_slot_to_qualifier"
+
+
+# ---------------------------------------------------------------------------
+# TestKBVerifierValueTypeGuard  (S3 generalization: a value mismatch only
+# contradicts when the KB statement's datatype is compatible with the
+# predicate's object_type. A predicate mis-mapped to a wrong-datatype property
+# abstains instead of fabricating a contradiction — this is the general
+# replacement for the hand-curated published→P50 row.)
+# ---------------------------------------------------------------------------
+
+class TestKBVerifierValueTypeGuard:
+    def test_type_mismatched_statement_abstains_not_contradicts(self):
+        # single_valued entity predicate, but the looked-up statement is a DATE
+        # (as it would be if the oracle mis-mapped the predicate to P585 point-
+        # in-time). The expected value resolves (Honolulu→Q18094) so this is not
+        # a resolution-failure abstain; without the guard the functional branch
+        # would return CONTRADICTED on the entity-vs-date mismatch.
+        stmts = [Statement(value="1869-01-01T00:00:00Z", value_type="date")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P585"
+        )
+        result = verifier.verify(_claim(object_val="Honolulu"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "value_type_object_type_mismatch"
+
+    def test_compatible_type_still_contradicts(self):
+        # Control: same functional entity predicate, but the statement value is
+        # an ENTITY that doesn't match the (resolved) expected value. The guard
+        # permits the contradiction — types are compatible.
+        stmts = [Statement(value="Q60", value_type="entity")]  # New York City
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P19"
+        )
+        result = verifier.verify(_claim(object_val="Honolulu"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
