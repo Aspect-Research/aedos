@@ -1,0 +1,61 @@
+
+========================================================================
+Cluster 3 validation — mode='seeded' — run 1 — started 2026-05-26T19:36:58.455100+00:00
+========================================================================
+
+  predicate_translation row count at start: 83 (expected >=64)
+  [ 1/50] der_multihop_001                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [ 2/50] der_multihop_002                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [ 3/50] der_multihop_003                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [ 4/50] der_multihop_004                    R3             MISS  exp=verified_given_assertion            got=contradicted_given_assertion       
+  [ 5/50] der_multihop_005                    R2             OK   exp=verified                            got=verified                           
+  [ 6/50] der_multihop_006                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [ 7/50] der_multihop_007                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [ 8/50] der_multihop_008                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [ 9/50] der_multihop_009                    R3             MISS  exp=verified_given_assertion            got=abstained_given_assertion          
+  [10/50] der_multihop_010                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [11/50] der_multihop_011                    R2             OK   exp=verified                            got=verified                           
+  [12/50] der_multihop_012                    R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [13/50] der_cross_001                       R2             OK   exp=verified                            got=verified                           
+  [14/50] der_cross_002                       R3             MISS  exp=verified_given_assertion            got=verified                           
+  [15/50] der_cross_003                       R1             MISS  exp=verified                            got=no_grounding_found                 
+  [16/50] der_cross_004                       R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [17/50] der_cross_005                       R1             MISS  exp=verified                            got=no_grounding_found                 
+  [18/50] der_cross_006                       R1             OK   exp=verified                            got=verified                           
+  [19/50] der_cross_007                       R3             MISS  exp=verified_given_assertion            got=verified                           
+  [20/50] der_cross_008                       R1             MISS  exp=verified                            got=no_grounding_found                 
+  [21/50] der_cross_009                       R3             MISS  exp=verified_given_assertion            got=abstained_given_assertion          
+  [22/50] der_cross_010                       R1             OK   exp=no_grounding_found                  got=no_grounding_found                 
+  [23/50] der_disambiguation_001              NON_STANDARD   MISS  exp=verified_with_correct_entity        got=no_grounding_found                 
+  [24/50] der_disambiguation_002              R2             MISS  exp=verified                            got=no_grounding_found                 
+  [25/50] der_disambiguation_003              R2             MISS  exp=verified                            got=contradicted                       
+  [26/50] der_disambiguation_004              R2             MISS  exp=verified                            got=no_grounding_found                 
+  [27/50] der_disambiguation_005              NON_STANDARD   OK   exp=<non-standard>                      got=no_grounding_found                 
+  [28/50] der_disambiguation_006              NON_STANDARD   MISS  exp=verified_with_correct_entity        got=no_grounding_found                 
+  [29/50] der_disambiguation_007              R2             OK   exp=verified                            got=verified                           
+  [30/50] der_disambiguation_008              R2             OK   exp=verified                            got=verified                           
+  [31/50] der_predicate_translation_001       R2             MISS  exp=verified                            got=no_grounding_found                 
+  [32/50] der_predicate_translation_002       OVERRIDE       MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [33/50] der_predicate_translation_003       R3             MISS  exp=verified_given_assertion            got=verified                           
+  [34/50] der_predicate_translation_004       R2             OK   exp=verified                            got=verified                           
+  [35/50] der_predicate_translation_005       R2             MISS  exp=verified                            got=no_grounding_found                 
+  [36/50] der_predicate_translation_006       R2             OK   exp=verified                            got=verified                           
+  [37/50] der_predicate_translation_007       NON_STANDARD   MISS  exp=needs_tier_u_or_kb                  got=no_grounding_found                 
+  [38/50] der_predicate_translation_008       R2             OK   exp=verified                            got=verified                           
+  [39/50] der_revision_001                    R4             OK   exp=contradicted                        got=None                               
+  [40/50] der_revision_002                    R4             MISS  exp=contradicted                        got=no_grounding_found                 
+  [41/50] der_revision_003                    R4             MISS  exp=contradicted                        got=no_grounding_found                 
+  [42/50] der_revision_004                    R4             MISS  exp=verified                            got=no_grounding_found                 
+  [43/50] der_revision_005                    R4             OK   exp=contradicted                        got=None                               
+  [44/50] der_revision_006                    R4             OK   exp=contradicted                        got=None                               
+  [45/50] der_abstain_001                     R6             OK   exp=no_grounding_found                  got=None                               
+  [46/50] der_abstain_002                     R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [47/50] der_abstain_003                     R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [48/50] der_abstain_004                     R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+  [49/50] der_abstain_005                     R6             OK   exp=no_grounding_found                  got=None                               
+  [50/50] der_abstain_006                     R3             MISS  exp=verified_given_assertion            got=no_grounding_found                 
+
+  Mode: seeded  Accuracy: 16/50 (32.0%)
+  Run finished at 2026-05-26T19:53:32.851417+00:00
+
+Wrote C:\code\aedos\docs\phase_H\cluster_3_validation_run_20260526T193658Z.json

@@ -1,0 +1,46 @@
+========================================================================
+D53 step 4 — focused entity-normalization validation
+========================================================================
+
+  [der_cross_001                      ] 'Obama'      expected=Q76     got=Q76        ✓
+     stage_a=clean_redirect             stage_b_query='Barack Obama'
+     stage_b_count=20  stage_c_shortcut=False  stage_c_llm=True
+     reasoning: 'The claim states "Obama holds_role President," and Q76 (Barack Obama) is the only candidate who actually served as President of the United S'
+     runner passed=False err=None
+
+  [der_cross_008                      ] 'Obama'      expected=Q76     got=Q76        ✓
+     stage_a=clean_redirect             stage_b_query='Barack Obama'
+     stage_b_count=20  stage_c_shortcut=False  stage_c_llm=True
+     reasoning: 'The source text states "Obama was President" which clearly refers to Barack Obama, who served as president of the United States from 2009 to'
+     runner passed=False err=None
+
+  [der_predicate_translation_001      ] 'Obama'      expected=Q76     got=Q76        ✓
+     stage_a=clean_redirect             stage_b_query='Barack Obama'
+     stage_b_count=20  stage_c_shortcut=False  stage_c_llm=True
+     reasoning: 'The source text states "Obama was President from 2009 to 2017," which directly matches Q76 (Barack Obama) whose description explicitly state'
+     runner passed=False err=None
+
+  [der_disambiguation_003             ] 'Apple'      expected=Q312    got=Q312       ✓
+     stage_a=canonical_no_redirect      stage_b_query='Apple'
+     stage_b_count=20  stage_c_shortcut=True  stage_c_llm=False
+     reasoning: 'single_candidate_shortcut'
+     runner passed=False err=None
+
+  [der_disambiguation_004             ] 'Einstein'   expected=Q937    got=Q937       ✓
+     stage_a=clean_redirect             stage_b_query='Albert Einstein'
+     stage_b_count=20  stage_c_shortcut=False  stage_c_llm=True
+     reasoning: 'The claim states "Einstein received_award Nobel Prize," which refers to a person receiving an award. Q937 is Albert Einstein, the famous ger'
+     runner passed=True err=None
+
+  [der_disambiguation_006             ] 'Amazon'     expected=Q3783   got=Q3783      ✓
+     stage_a=disambiguation_page        stage_b_query='Amazon'
+     stage_b_count=20  stage_c_shortcut=False  stage_c_llm=True
+     reasoning: 'The source text explicitly states "Amazon is the world\'s largest river by discharge." Q3783 is the Wikidata entity for Amazon the river in S'
+     runner passed=False err=None
+
+
+========================================================================
+Summary: 6/6 selected_qid matches expected; 1/6 runner-passed (verdict matches expected_output)
+========================================================================
+
+Wrote C:\code\aedos\docs\phase_H\d53_validation.json

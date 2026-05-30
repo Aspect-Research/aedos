@@ -1,0 +1,23 @@
+{
+  "searchinfo": {"search": "Google"},
+  "search": [
+    {
+      "id": "Q95",
+      "title": "Q95",
+      "pageid": 95,
+      "url": "//www.wikidata.org/wiki/Q95",
+      "description": "American multinational technology company",
+      "label": "Google",
+      "match": {"type": "label", "language": "en", "text": "Google"}
+    },
+    {
+      "id": "Q7583",
+      "title": "Q7583",
+      "pageid": 7583,
+      "url": "//www.wikidata.org/wiki/Q7583",
+      "description": "Google Inc., former name",
+      "label": "Google Inc.",
+      "match": {"type": "alias", "language": "en", "text": "Google"}
+    }
+  ]
+}

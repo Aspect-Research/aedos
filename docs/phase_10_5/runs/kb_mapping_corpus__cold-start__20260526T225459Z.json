@@ -1,0 +1,295 @@
+{
+  "corpus": "kb_mapping_corpus",
+  "mode": "cold-start",
+  "seeded": false,
+  "predicate_translation_row_count_at_start": 0,
+  "started_at": "2026-05-26T22:53:46.897068+00:00",
+  "finished_at": "2026-05-26T22:54:59.925205+00:00",
+  "duration_s": 73.0,
+  "case_count": 40,
+  "passed": 30,
+  "accuracy": 0.75,
+  "threshold": 0.9,
+  "per_case": [
+    {
+      "case_id": "kb_map_001",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.447
+    },
+    {
+      "case_id": "kb_map_002",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.377
+    },
+    {
+      "case_id": "kb_map_003",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.141
+    },
+    {
+      "case_id": "kb_map_004",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.303
+    },
+    {
+      "case_id": "kb_map_005",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.624
+    },
+    {
+      "case_id": "kb_map_006",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.285
+    },
+    {
+      "case_id": "kb_map_007",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.205
+    },
+    {
+      "case_id": "kb_map_008",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.809
+    },
+    {
+      "case_id": "kb_map_009",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.212
+    },
+    {
+      "case_id": "kb_map_010",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.63
+    },
+    {
+      "case_id": "kb_map_011",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.309
+    },
+    {
+      "case_id": "kb_map_012",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.256
+    },
+    {
+      "case_id": "kb_map_013",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.944
+    },
+    {
+      "case_id": "kb_map_014",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.513
+    },
+    {
+      "case_id": "kb_map_015",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.455
+    },
+    {
+      "case_id": "kb_map_016",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.209
+    },
+    {
+      "case_id": "kb_map_017",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.221
+    },
+    {
+      "case_id": "kb_map_018",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.597
+    },
+    {
+      "case_id": "kb_map_019",
+      "category": "kb_resolvable",
+      "passed": false,
+      "error": null,
+      "duration_s": 2.76
+    },
+    {
+      "case_id": "kb_map_020",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.068
+    },
+    {
+      "case_id": "kb_map_021",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.767
+    },
+    {
+      "case_id": "kb_map_022",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.318
+    },
+    {
+      "case_id": "kb_map_023",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.203
+    },
+    {
+      "case_id": "kb_map_024",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.487
+    },
+    {
+      "case_id": "kb_map_025",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.982
+    },
+    {
+      "case_id": "kb_map_026",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.043
+    },
+    {
+      "case_id": "kb_map_027",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.682
+    },
+    {
+      "case_id": "kb_map_028",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.224
+    },
+    {
+      "case_id": "kb_map_029",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.889
+    },
+    {
+      "case_id": "kb_map_030",
+      "category": "kb_resolvable",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.061
+    },
+    {
+      "case_id": "kb_map_qualifier_001",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_002",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_003",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_004",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_005",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_006",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_007",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_008",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_009",
+      "category": "qualifier_mapping",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "kb_map_qualifier_010",
+      "category": "qualifier_mapping",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "target_cases": {
+    "der_predicate_translation_004": {
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "kb_neighbor_edges_count": 0,
+      "kb_neighbor_edges": [],
+      "all_edge_types": []
+    },
+    "der_predicate_translation_008": {
+      "passed": true,
+      "verdict": "verified",
+      "kb_neighbor_edges_count": 0,
+      "kb_neighbor_edges": [],
+      "all_edge_types": [
+        "premise_lookup"
+      ]
+    }
+  },
+  "total_kb_live_neighbors_audit_events": 86,
+  "audit_event_sample_entities": [
+    "Q3305213",
+    "Q11189879",
+    "Q93184",
+    "Q11189879",
+    "Q116474095",
+    "Q11189879",
+    "Q18761202",
+    "Q134556",
+    "Q18562909",
+    "Q108346082"
+  ],
+  "timestamp": "2026-05-24T04:40:19.350215+00:00"
+}

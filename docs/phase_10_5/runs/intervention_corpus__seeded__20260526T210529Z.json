@@ -1,0 +1,225 @@
+{
+  "corpus": "intervention_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T21:05:29.262954+00:00",
+  "finished_at": "2026-05-26T21:05:29.902802+00:00",
+  "duration_s": 0.6,
+  "case_count": 30,
+  "passed": 23,
+  "accuracy": 0.7666666666666667,
+  "threshold": 0.9,
+  "per_case": [
+    {
+      "case_id": "int_pass_001",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.631
+    },
+    {
+      "case_id": "int_pass_002",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_003",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_004",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_005",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_006",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_007",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_008",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_009",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_pass_010",
+      "category": "pass_through",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_001",
+      "category": "abstain",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_002",
+      "category": "abstain",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_003",
+      "category": "abstain",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_004",
+      "category": "abstain",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_005",
+      "category": "abstain",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_006",
+      "category": "abstain",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_007",
+      "category": "abstain",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_abstain_008",
+      "category": "abstain",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_001",
+      "category": "correct",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_002",
+      "category": "correct",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_003",
+      "category": "correct",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_004",
+      "category": "correct",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_005",
+      "category": "correct",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_006",
+      "category": "correct",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_correct_007",
+      "category": "correct",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_decline_001",
+      "category": "decline",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_decline_002",
+      "category": "decline",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_decline_003",
+      "category": "decline",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_decline_004",
+      "category": "decline",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    },
+    {
+      "case_id": "int_decline_005",
+      "category": "decline",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.0
+    }
+  ]
+}

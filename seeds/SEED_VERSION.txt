@@ -1,0 +1,4 @@
+version: 1.1.0
+date_reviewed: 2026-05-26
+kb_namespace: wikidata
+entry_count: 83

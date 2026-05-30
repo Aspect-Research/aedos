@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Q76": {
+      "type": "item",
+      "id": "Q76",
+      "labels": {
+        "en": {"language": "en", "value": "Barack Obama"}
+      },
+      "descriptions": {
+        "en": {"language": "en", "value": "44th president of the United States"}
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "datavalue": {"value": {"entity-type": "item", "id": "Q5"}, "type": "wikibase-entityid"}
+            },
+            "type": "statement",
+            "rank": "normal"
+          }
+        ],
+        "P39": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P39",
+              "datavalue": {"value": {"entity-type": "item", "id": "Q11696"}, "type": "wikibase-entityid"}
+            },
+            "type": "statement",
+            "rank": "normal",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "datavalue": {"value": {"time": "+2009-01-20T00:00:00Z", "precision": 11}, "type": "time"}
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "datavalue": {"value": {"time": "+2017-01-20T00:00:00Z", "precision": 11}, "type": "time"}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

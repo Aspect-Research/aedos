@@ -1,0 +1,690 @@
+
+=== [1/6] der_cross_001 ===
+    text: 'Obama holds_role President'
+    --- stage 2 call 1 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)', 'President (education)', 'President (government title)', 'President (grape)', 'President (narrowboat)', 'President Township, Pennsylvania', 'Presidential (disambiguation)', 'Presidents (film)', 'Präsident', 'Præsidenten', 'Président (brand)', 'Président (typeface)', 'SS President', 'Sinclair President', 'Sipapu Bridge', 'Studebaker President', 'The President (1928 film)', 'The President (1961 film)', 'The President (2014 film)', 'The President (Palestinian TV series)', 'The President (Rick and Morty)', 'The President (South Korean TV series)', 'The President (mountain)', 'The President (play)', 'The President (tree)', 'The President Show', 'The Presidents (American soul band)', 'The Presidents (film)', 'The Presidents of the United States of America (band)', 'VinFast President', 'Wayne Horvitz']
+        selection     : 'President (government title)'
+        reasoning     : 'The claim states "Obama holds_role President," which clearly indicates a government or political role. Among the candidates, "President (government title)" is the most appropriate match, as it specifically refers to the titular role of president in government, which is what Obama held as the 44th President of the United States.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+    -> passed=False error=None
+
+=== [2/6] der_cross_008 ===
+    text: 'Obama was President AND is human'
+    --- stage 2 call 1 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)', 'President (education)', 'President (government title)', 'President (grape)', 'President (narrowboat)', 'President Township, Pennsylvania', 'Presidential (disambiguation)', 'Presidents (film)', 'Präsident', 'Præsidenten', 'Président (brand)', 'Président (typeface)', 'SS President', 'Sinclair President', 'Sipapu Bridge', 'Studebaker President', 'The President (1928 film)', 'The President (1961 film)', 'The President (2014 film)', 'The President (Palestinian TV series)', 'The President (Rick and Morty)', 'The President (South Korean TV series)', 'The President (mountain)', 'The President (play)', 'The President (tree)', 'The President Show', 'The Presidents (American soul band)', 'The Presidents (film)', 'The Presidents of the United States of America (band)', 'VinFast President', 'Wayne Horvitz']
+        selection     : 'President (government title)'
+        reasoning     : 'The source text "Obama was President" refers to Obama\'s government position. The phrase directly indicates a government office/title held by Obama, making "President (government title)" the most appropriate candidate from the list.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President AND is human'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)', 'President (education)', 'President (government title)', 'President (grape)', 'President (narrowboat)', 'President Township, Pennsylvania', 'Presidential (disambiguation)', 'Presidents (film)', 'Präsident', 'Præsidenten', 'Président (brand)', 'Président (typeface)', 'SS President', 'Sinclair President', 'Sipapu Bridge', 'Studebaker President', 'The President (1928 film)', 'The President (1961 film)', 'The President (2014 film)', 'The President (Palestinian TV series)', 'The President (Rick and Morty)', 'The President (South Korean TV series)', 'The President (mountain)', 'The President (play)', 'The President (tree)', 'The President Show', 'The Presidents (American soul band)', 'The Presidents (film)', 'The Presidents of the United States of America (band)', 'VinFast President', 'Wayne Horvitz']
+        selection     : 'President (government title)'
+        reasoning     : 'The source text states "Obama was President AND is human," referring to Obama\'s role as a government official. The phrase "President" in this context refers to a political office/government title, which directly matches the candidate "President (government title)" rather than any other meaning of "President" (ships, films, brands, etc.).'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (government title)' normalized='President (government title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+    -> passed=False error=None
+
+=== [3/6] der_predicate_translation_001 ===
+    text: 'Obama was President from 2009 to 2017'
+    --- stage 2 call 1 ---
+        surface form  : 'United States'
+        claim         : Obama -> president -> United States
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['United States', 'SS United States', 'SS United States (1864)', 'USS United States', 'American (disambiguation)', 'American republic (disambiguation)', 'Demonyms for the United States', 'Ian McLagan', 'List of countries that include United States in their name', 'List of ships named United States', 'Scandinavian America Line', 'The United States of America (disambiguation)', 'U.S. state', 'United Arab States', 'United Kingdom (disambiguation)', 'United Provinces (disambiguation)', 'United State (disambiguation)', 'United States (TV series)', 'United States (album)', 'United States of Belgium', 'United States of Brazil', 'United States of Central America', 'United States of China', 'United States of Colombia', 'United States of Europe', 'United States of Indonesia', 'United States of Latin Africa', 'United States of Matsya', 'United States of Mexico', 'United States of North America (disambiguation)', 'United States of Stellaland', 'United States of Venezuela', 'United States of the Ionian Islands', 'Vehicles of the President of the United States', 'Zeitgeist (The Smashing Pumpkins album)']
+        selection     : 'United States'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," which clearly refers to Obama being President of the United States. The claim is that Obama → president → United States, and the source text confirms he held the presidential office in the United States. The first candidate "United States" is the straightforward country reference that matches this context, not any of the other disambiguation options like ships, TV series, or other entities with "United States" in their name.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='United States' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='United States' normalized='United States'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+    -> passed=False error=None
+
+=== [4/6] der_disambiguation_003 ===
+    text: 'Apple was founded in California'
+    --- stage 2 call 1 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> California
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple was founded in California," which clearly refers to the technology company Apple Inc. While the generic entry "Apple" is also available, the context of founding in California specifically points to Apple Inc., the multinational corporation, which was indeed founded in California in 1976.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'California'
+        claim         : Apple -> founded_in -> California
+        source_text   : 'Apple was founded in California'
+        candidates    : ['California', '"Awaken, My Love!"', '13 Unlucky Numbers', '1 California (disambiguation)', '341 California', 'ARM California', 'Against the World', 'Alta California (disambiguation)', 'Art Angels', 'Baja California (disambiguation)', "Bet You Think I'm Lonely", 'Big Plain, Ohio', 'Califon, New Jersey', 'California, Bedfordshire', 'California, Berkshire', 'California, Birmingham', 'California, Buckinghamshire', 'California, Cincinnati', 'California, Derby', 'California, Falkirk', 'California, Ipswich', 'California, Kentucky', 'California, Louisville', 'California, Maine', 'California, Maryland', 'California, Missouri', 'California, Norfolk', 'California, Ontario', 'California, Pennsylvania', 'California, Santander', 'California, Trinidad and Tobago', 'California, Ubay', 'California, Usulután', 'California, West Virginia', 'California-class cruiser', 'California (1927 film)', 'California (1947 film)', 'California (1963 film)', 'California (1977 film)', 'California (Amelia Lily song)', 'California (American Music Club album)', 'California (Belinda Carlisle song)', 'California (Big & Rich song)', 'California (Blink-182 album)', 'California (Datarock EP)', 'California (Delta Spirit song)', 'California (Diplo EP)', 'California (Gianna Nannini album)', 'California (Joni Mitchell song)', 'California (Lenny Kravitz song)', 'California (Mr. Bungle album)', 'California (Mylène Farmer song)', 'California (Phantom Planet song)', 'California (The Electric Prunes album)', 'California (Usher song)', 'California (Wave song)', 'California (Wilson Phillips album)', 'California (novel)', 'California (sculpture)', 'California City, California', 'California Department', 'California Golden Bears', 'California High School (San Ramon, California)', 'California High School (Whittier, California)', 'California Molefe', 'California Nebula', 'California Odha Zertuche Díaz', 'California Republic', 'California Star (disambiguation)', 'California Township, Madison County, Arkansas', 'California Township, Michigan', 'California Township, Starke County, Indiana', 'California University of Pennsylvania', 'California University of Science and Medicine', 'California Vulcans', 'California macrophylla', 'California magazine', 'California station (CTA Blue Line)', 'California station (CTA Congress Line)', 'California station (CTA Green Line)', 'California station (CTA Pink Line)', 'Californian (disambiguation)', 'Californios', 'Californium', 'Californië (disambiguation)', 'Califórnia, Paraná', 'Chevrolet Corvette (C3)', 'Cowboy Tears', 'Damn Country Music', "Don't Tease Me with a Good Time", 'Feeling Strangely Fine', 'Ferrari 250 GT California Spyder', 'Ferrari 365 California', 'Ferrari California', 'Generation Rx', 'Gulf of California', 'Hit Parade 1', 'Hopalong Cassidy', 'Hotel California (disambiguation)', 'Island of California']
+        selection     : 'California'
+        reasoning     : 'The source text states "Apple was founded in California," referring to the U.S. state of California where Apple Inc. was founded. The first candidate "California" in the list represents the state itself, which is the correct match for this claim about Apple\'s founding location.'
+        error         : None
+    --- stage 2 call 3 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q195467
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company Apple Inc., the only company among the candidates that was founded in California. This directly matches the claim about being founded in a specific location (Q195467 is California).'
+        error         : None
+    --- stage 2 call 4 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q196014
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which is referring to the technology company Apple Inc. Apple Inc. is the only entity among the candidates that was founded in California. The claim indicates a founding location (Q196014 corresponds to California), which directly matches Apple Inc.\'s well-known founding in California in 1976.'
+        error         : None
+    --- stage 2 call 5 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q203159
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple was founded in California," which clearly refers to the technology company Apple Inc. The source text\'s mention of founding in California is a defining characteristic of Apple Inc., the multinational corporation founded in 1976 in California.'
+        error         : None
+    --- stage 2 call 6 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q211386
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple → founded_in → Q211386" and the source text says "Apple was founded in California." This refers to the technology company Apple, which is canonically known as Apple Inc. Q211386 is the Wikidata identifier for Apple Inc., the multinational technology company founded in California.'
+        error         : None
+    --- stage 2 call 7 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q213205
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company Apple Inc., which was indeed founded in California. This is the most plausible match among the candidates for a claim about where Apple was founded.'
+        error         : None
+    --- stage 2 call 8 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q218438
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which is describing the founding of a company. The claim indicates a relationship with Q218438 (the Wikidata ID for California). Apple Inc. is the technology company founded in California, making it the most plausible match among the candidates for this context about founding location.'
+        error         : None
+    --- stage 2 call 9 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q222898
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple was founded in California," which matches Apple Inc., the technology company founded in California. This is the only candidate among the list that fits the founding context described in the source text.'
+        error         : None
+    --- stage 2 call 10 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q225150
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple was founded in California" and relates Apple to Q225150 (a founding location). Apple Inc. is the major technology company famously founded in California, making it the most plausible candidate. The source text\'s mention of "founded in California" strongly supports Apple Inc. rather than any other candidate on this list.'
+        error         : None
+    --- stage 2 call 11 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q225706
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company Apple Inc. This matches the claim about a founding location (Q225706 refers to California). While the generic "Apple" candidate could theoretically work, the context of being founded in a specific location most clearly points to Apple Inc., the well-known company.'
+        error         : None
+    --- stage 2 call 12 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q232264
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple was founded in California" and asks about what it was founded in (Q232264, which is California). This clearly refers to the technology company Apple Inc., as it is the most famous company named Apple that was indeed founded in California. No other Apple candidate in the list (like the fruit, the band, the programming language, or various other uses) would be described as being "founded in California" with such prominence.'
+        error         : None
+    --- stage 2 call 13 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q250311
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states that Apple was founded in California. Apple Inc., the technology company, is the entity famously founded in California. The phrase "Apple was founded in California" directly refers to the founding of the company, making Apple Inc. the clear referent.'
+        error         : None
+    --- stage 2 call 14 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q250621
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which clearly refers to the technology company Apple Inc., the only major company/organization founded in California among the candidates. This is supported by the property "founded_in" in the claim, which indicates an organizational founding rather than other types of Apple references.'
+        error         : None
+    --- stage 2 call 15 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q251360
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which describes the founding of the company Apple. The claim indicates the founding location is Q251360 (which is California). Among the candidates, "Apple Inc." is the most appropriate match, as it refers to the technology company that was indeed founded in California, not any other entity with the name "Apple."'
+        error         : None
+    --- stage 2 call 16 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q256822
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states "Apple was founded in California," which clearly refers to the technology company. Apple Inc. is the only candidate that matches a company that was founded in California. The source text\'s reference to "founded in California" specifically indicates Apple Inc., the well-known technology corporation headquartered in Cupertino, California.'
+        error         : None
+    --- stage 2 call 17 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q258517
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The claim states that "Apple was founded in California." Q258517 is the Wikidata identifier for Apple Inc., the technology company. While the source text doesn\'t explicitly say "Apple Inc.", the reference to being "founded in California" is the defining characteristic of Apple Inc. (the computer company founded in 1976), not any other entity named Apple in the candidates list. This context clearly indicates the technology company rather than any other Apple.'
+        error         : None
+    --- stage 2 call 18 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q259558
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company. Apple Inc. is the only candidate that fits this description, as it is the company founded in California. The claim about being "founded_in" California clearly indicates this is referring to Apple Inc., the multinational technology corporation.'
+        error         : None
+    --- stage 2 call 19 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q263064
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company Apple Inc. that was founded in California. This is the only candidate that matches both the subject (Apple as a company) and the context (being founded in a specific location).'
+        error         : None
+    --- stage 2 call 20 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q267973
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company founded in California. Q267973 corresponds to Apple Inc. Among the candidates, "Apple Inc." is the only one that matches a major company founded in California, making it the most plausible candidate despite "Apple" itself also being in the candidates list.'
+        error         : None
+    --- stage 2 call 21 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q271601
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," and the claim asserts Apple was founded in Q271601 (which refers to California). This clearly refers to the technology company Apple Inc., which was famously founded in California. Among the candidates, "Apple Inc." is the only one that matches this context of a company being founded in a specific location.'
+        error         : None
+    --- stage 2 call 22 ---
+        surface form  : 'Apple'
+        claim         : Apple -> founded_in -> Q271609
+        source_text   : 'Apple was founded in California'
+        candidates    : ['Apple', "Adam's apple (disambiguation)", 'Apel (disambiguation)', 'Appel (disambiguation)', 'Apple, Oklahoma', 'Apple (1910s automobile)', 'Apple (A. G. Cook album)', 'Apple (Mother Love Bone album)', 'Apple (artwork)', 'Apple (band)', 'Apple (name)', 'Apple (programming language)', 'Apple (song)', 'Apple Bank', 'Apple Comics', 'Apple Corps', 'Apple Creek (disambiguation)', 'Apple Cup', 'Apple Daily', 'Apple Daily (Taiwan)', 'Apple FM', 'Apple Fire', 'Apple I', 'Apple II', 'Apple III', 'Apple II (original)', 'Apple Inc.', 'Apple Island (disambiguation)', 'Apple Leisure Group', 'Apple Pugetsound Program Library Exchange', 'Apple Records', 'Apple River (disambiguation)', 'Apple Store', 'Apple Store (disambiguation)', 'Apple TV (disambiguation)', 'Apple car project', 'Apples, Vaud', 'Apples (album)', 'Apples (card game)', 'Apples (film)', 'Apples (novel)', 'Apples in mythology', 'Ariane Passenger Payload Experiment', 'Big Apple (disambiguation)', 'Candy Apples', 'Cashew apple', 'Crabapple (disambiguation)', 'Custard apple', 'HP Apple', 'Hedge apple', 'Inner Monologue Part 1', 'List of The Good Doctor episodes', 'Love apple', 'Mammee apple', 'May apple', 'No Shame (Lily Allen album)', 'Oak apple', 'Party of Free Democrats', 'Rose apple', 'Song of the Sirens', 'The Apple (1980 film)', 'The Apple (1998 film)', 'The Apple (Star Trek: The Original Series)', 'The Apples (Israeli band)', 'The Apples (Scottish band)', 'The Apples in Stereo', 'Thornapple (disambiguation)', 'Wax apple', 'Yabloko']
+        selection     : 'Apple Inc.'
+        reasoning     : 'The source text states "Apple was founded in California," which refers to the technology company founded in California. Q271609 is the Wikidata identifier for Apple Inc. The context of founding a company in California clearly indicates this is referring to Apple Inc., the multinational technology corporation, rather than any other meaning of "Apple" in the candidates list.'
+        error         : None
+    --- audit log: 317 entity_normalization events ---
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271609' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271609'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q271601' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q271601'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q267973' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q267973'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q263064' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q263064'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q259558' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q259558'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q258517' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q258517'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q256822' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q256822'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q251360' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q251360'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250621' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250621'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q250311' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q250311'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q232264' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q232264'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225706' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225706'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q225150' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q225150'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q222898' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q222898'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q218438' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q218438'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q213205' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q213205'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q211386' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q211386'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q203159' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q203159'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q196014' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q196014'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Q195467' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q195467'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='California' normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=True source_text_present=True selection='Apple Inc.' normalized='Apple Inc.'
+    -> passed=False error=None
+
+=== [5/6] der_disambiguation_004 ===
+    text: 'Einstein received_award Nobel Prize'
+    (no Stage 2 invocations during this case)
+    --- audit log: 50 entity_normalization events ---
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=skipped_kb_identifier stage2_invoked=False source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+    -> passed=False error=None
+
+=== [6/6] der_disambiguation_006 ===
+    text: "Amazon is the world's largest river by discharge"
+    --- stage 2 call 1 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> the world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)', 'Amazon Basin (sedimentary basin)', 'Amazon Bookstore Cooperative', 'Amazon Creek', 'Amazon Delta', 'Amazon Eve', 'Amazon Reef', 'Amazon River', 'Amazon basin', 'Amazon parrot', 'Amazon rainforest', 'Amazonas (disambiguation)', 'Amazonen-Werke', 'Amazonia (disambiguation)', 'Amazonian (disambiguation)', 'Amazonian Guard', 'Amazonis Planitia', 'Amazonka', 'Amazons', 'Amazons!', 'Amazons (1984 film)', 'Amazons (1986 film)', 'Amazons (DC Comics)', 'Amazons (Japanese group)', 'Amazons (novel)', 'Amazons (solitaire)', 'Amazons Company', 'Amazonsaurus', 'Amyzon (disambiguation)', 'COD United Amazons F.C.', 'Café Amazon', 'Dahomey Amazons', 'Diablo II', 'French submarine Amazone (1916)', 'GWR 3031 Class', 'GWR Iron Duke Class', 'Game of the Amazons', 'HMS Amazon', 'Kamen Rider Amazon', 'Lesa Lewis', 'Los Angeles Amazons', 'Man-Killer', 'Mary Celeste', 'Nasarawa Amazons F.C.', 'Pro Wrestling (NES video game)', 'RMS Amazon', 'SMS Amazone', 'SMS Amazone (1843)', 'Swallows and Amazons series', 'Takembeng', 'The Amazon (film)', 'The Amazon (novella)', 'The Amazons (1917 film)', 'The Amazons (album)', 'The Amazons (band)', 'The Amazons (play)', 'USS Amazon (1861)', 'Vancouver Amazons', 'Volvo Amazon', 'War Goddess']
+        selection     : 'Amazon River'
+        reasoning     : 'The source text explicitly states "Amazon is the world\'s largest river by discharge." This directly describes the Amazon River, making "Amazon River" the clear match among the candidates.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+        surface="the world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="the world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='Amazon River' normalized='Amazon River'
+    -> passed=False error=None
+
+Wrote C:\code\aedos\docs\phase_H\cluster_1_stage_2_audit.json
+
+
+=== Summary ===
+case_id                             stage2_calls   classification
+der_cross_001                       1              Stage 2 picked (check correctness — Mech D candidate?)
+der_cross_008                       2              Stage 2 picked (check correctness — Mech D candidate?)
+der_predicate_translation_001       1              Stage 2 picked (check correctness — Mech D candidate?)
+der_disambiguation_003              22             Stage 2 picked (check correctness — Mech D candidate?)
+der_disambiguation_004              0              other ({'skipped_kb_identifier', 'canonical_no_redirect', 'clean_redirect'})
+der_disambiguation_006              1              Stage 2 picked (check correctness — Mech D candidate?)

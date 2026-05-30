@@ -1,0 +1,365 @@
+{
+  "corpus": "predicate_distribution_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T21:08:41.649459+00:00",
+  "finished_at": "2026-05-26T21:09:48.555753+00:00",
+  "duration_s": 66.9,
+  "case_count": 50,
+  "passed": 44,
+  "accuracy": 0.88,
+  "threshold": 0.85,
+  "per_case": [
+    {
+      "case_id": "pd_up_001",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.23
+    },
+    {
+      "case_id": "pd_up_002",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.897
+    },
+    {
+      "case_id": "pd_up_003",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.772
+    },
+    {
+      "case_id": "pd_up_004",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.612
+    },
+    {
+      "case_id": "pd_up_005",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.035
+    },
+    {
+      "case_id": "pd_up_006",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.941
+    },
+    {
+      "case_id": "pd_up_007",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.98
+    },
+    {
+      "case_id": "pd_up_008",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.003
+    },
+    {
+      "case_id": "pd_up_009",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.809
+    },
+    {
+      "case_id": "pd_up_010",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.046
+    },
+    {
+      "case_id": "pd_up_011",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.81
+    },
+    {
+      "case_id": "pd_up_012",
+      "category": "distributes_up",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.606
+    },
+    {
+      "case_id": "pd_down_001",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.57
+    },
+    {
+      "case_id": "pd_down_002",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.778
+    },
+    {
+      "case_id": "pd_down_003",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.973
+    },
+    {
+      "case_id": "pd_down_004",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.603
+    },
+    {
+      "case_id": "pd_down_005",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.609
+    },
+    {
+      "case_id": "pd_down_006",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.333
+    },
+    {
+      "case_id": "pd_down_007",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.149
+    },
+    {
+      "case_id": "pd_down_008",
+      "category": "distributes_down",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.864
+    },
+    {
+      "case_id": "pd_both_001",
+      "category": "both",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.449
+    },
+    {
+      "case_id": "pd_both_002",
+      "category": "both",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.647
+    },
+    {
+      "case_id": "pd_both_003",
+      "category": "both",
+      "passed": false,
+      "error": null,
+      "duration_s": 0.89
+    },
+    {
+      "case_id": "pd_both_004",
+      "category": "both",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.817
+    },
+    {
+      "case_id": "pd_both_005",
+      "category": "both",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.635
+    },
+    {
+      "case_id": "pd_neither_001",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.025
+    },
+    {
+      "case_id": "pd_neither_002",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.036
+    },
+    {
+      "case_id": "pd_neither_003",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.909
+    },
+    {
+      "case_id": "pd_neither_004",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 5.848
+    },
+    {
+      "case_id": "pd_neither_005",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.695
+    },
+    {
+      "case_id": "pd_neither_006",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.985
+    },
+    {
+      "case_id": "pd_neither_007",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.479
+    },
+    {
+      "case_id": "pd_neither_008",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.084
+    },
+    {
+      "case_id": "pd_neither_009",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.938
+    },
+    {
+      "case_id": "pd_neither_010",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.977
+    },
+    {
+      "case_id": "pd_neither_011",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.373
+    },
+    {
+      "case_id": "pd_neither_012",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.658
+    },
+    {
+      "case_id": "pd_neither_013",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.935
+    },
+    {
+      "case_id": "pd_neither_014",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.782
+    },
+    {
+      "case_id": "pd_neither_015",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.123
+    },
+    {
+      "case_id": "pd_neither_016",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.767
+    },
+    {
+      "case_id": "pd_neither_017",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.107
+    },
+    {
+      "case_id": "pd_neither_018",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.191
+    },
+    {
+      "case_id": "pd_neither_019",
+      "category": "neither",
+      "passed": false,
+      "error": null,
+      "duration_s": 2.172
+    },
+    {
+      "case_id": "pd_neither_020",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.655
+    },
+    {
+      "case_id": "pd_neither_021",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.675
+    },
+    {
+      "case_id": "pd_neither_022",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.5
+    },
+    {
+      "case_id": "pd_neither_023",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.961
+    },
+    {
+      "case_id": "pd_neither_024",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.52
+    },
+    {
+      "case_id": "pd_neither_025",
+      "category": "neither",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.445
+    }
+  ]
+}

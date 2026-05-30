@@ -1,0 +1,574 @@
+
+=== [1/6] der_cross_001 ===
+    text: 'Obama holds_role President'
+    --- stage 2 call 1 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama holds_role President" is too sparse to definitively determine which candidate Wikipedia article is meant. While "President (corporate title)" seems contextually reasonable for Obama holding a presidential role, the minimal source text does not provide sufficient context to distinguish between various interpretations of "President" (ceremonial, corporate, governmental, etc.). Abstention is appropriate when the context is insufficient to make a confident determination.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama holds_role President" indicates that Obama holds the role of President, but does not provide sufficient context to determine which specific Wikipedia article about "President" the claim refers to. The candidates include various ships, films, games, and other items named "President," as well as general concepts like "Presidency" and "President (corporate title)." Given that Obama was a U.S. President, "President (corporate title)" seems most relevant, but the source text lacks explicit context establishing this. Without clearer disambiguation, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 3 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The claim states "Obama holds_role President" but the source text provides no context about what type of President role is meant. While "President (corporate title)" might be a plausible interpretation, the source text is too minimal to determine whether this refers to a corporate role, a political office, or something else. Without additional context clarifying the nature of the President role Obama holds, no candidate can be confidently selected.'
+        error         : None
+    --- stage 2 call 4 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama holds_role President" is too ambiguous to determine which candidate is intended. While "President (corporate title)" seems like it could be relevant since it directly relates to a professional/governmental role, the source text provides no context to distinguish between different types of "President" (corporate, governmental, ceremonial, etc.). Without additional context, it cannot be determined which specific Wikipedia article the user meant to reference.'
+        error         : None
+    --- stage 2 call 5 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama holds_role President" is too minimal to disambiguate which sense of "President" is intended. While "President (corporate title)" is the most likely candidate semantically (as Obama was President of the United States, which is a political/executive role), none of the provided candidates directly represent the U.S. Presidency or the general concept of a president as a political office. The candidates provided are mostly specific ships, films, games, and other non-political uses of "President." Without clearer context indicating which specific Wikipedia article the user meant, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 6 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama holds_role President" is too minimal to disambiguate which sense of "President" is intended. While "President (corporate title)" seems most semantically plausible for a role held by a person, the sparse context does not provide sufficient evidence to rule out other interpretations with confidence. The correct interpretation cannot be determined from the surrounding source text alone.'
+        error         : None
+    --- stage 2 call 7 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama holds_role President" but provides no context about which type of president (political office, band, corporate title, card game, etc.). While "President (corporate title)" seems most likely in normal circumstances, the instruction requires that context must actively support the choice rather than relying on prior probability. Without additional context clarifying which meaning of "President" is intended, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 8 ---
+        surface form  : 'President'
+        claim         : Obama -> holds_role -> President
+        source_text   : 'Obama holds_role President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'President (corporate title)'
+        reasoning     : 'The claim states "Obama holds_role President," which indicates a professional or governmental role. Among the candidates, "President (corporate title)" is the most appropriate match, as it refers to the position/role of president in an organizational or governmental context, which is what Obama holds.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection='President (corporate title)' normalized='President (corporate title)'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+    -> passed=False error=None
+
+=== [2/6] der_cross_008 ===
+    text: 'Obama was President AND is human'
+    --- stage 2 call 1 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President" uses "President" as a generic title/role rather than referring to a specific Wikipedia article subject. None of the candidates represent the general concept of a presidential title or office that would be the appropriate match for Obama\'s role as President of the United States. The candidates are mostly ships, films, bands, and other specific entities, not the general concept of a president or presidency.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President" which refers to Barack Obama being the U.S. President (a political office). However, none of the provided candidates represent the standard political office of President of the United States. The closest candidate "President (corporate title)" refers to corporate positions, not the governmental office. "Presidency" is closer conceptually but refers to the institution rather than the title itself. The list appears to contain ships, films, games, and other specific things named "President" but not the general concept or title of President as a political office, which is what the source text refers to.'
+        error         : None
+    --- stage 2 call 3 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President" refers to Barack Obama\'s role as President of the United States, which would typically be covered under "Presidency" or "President (corporate title)" as a general concept of the presidential office. However, none of the candidates provided represent the Wikipedia article about "President" as a governmental position or the U.S. Presidency specifically. All the candidates are either specific objects named "President" (ships, films, bands, games) or related concepts, but none clearly match the intended meaning of Obama\'s presidential role.'
+        error         : None
+    --- stage 2 call 4 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President" uses "President" as a generic title referring to Obama\'s role as the 44th President of the United States. None of the candidates represent the general concept of a "president" as a political office or title. The candidates listed are mostly specific objects (ships, films, bands, games) or LDS-specific terms, none of which match the contextual meaning of "President" as a governmental position that Obama held.'
+        error         : None
+    --- stage 2 call 5 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President" uses "President" as a generic title or honorific (specifically, the U.S. presidential office), not as the name of any specific Wikipedia article subject. The candidates list includes various ships, films, bands, games, and other specific entities named "President," but none represent the concept of a presidential title or office in general. The text does not support selection of any particular candidate over the others.'
+        error         : None
+    --- stage 2 call 6 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President" uses "President" as a common noun referring to a political office or title, not as a proper noun referring to a specific entity with its own Wikipedia article. None of the candidates (which are mostly proper nouns like ships, films, bands, or organizations) matches this generic usage of the word "president." The claim appears to be about a general property rather than disambiguation to a specific Wikipedia article.'
+        error         : None
+    --- stage 2 call 7 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President" uses "President" as a common noun referring to the political office/title held by Obama, not as a proper noun referring to any of the specific Wikipedia articles listed in the candidates. None of the candidates (ships, bands, games, films, etc.) are what is meant by "President" in this context. The claim refers to the concept of presidency/the office itself, which is not clearly represented by any single candidate provided.'
+        error         : None
+    --- stage 2 call 8 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President AND is human'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President AND is human," which refers to a political office title. However, none of the candidates provided represent the political office of President of the United States or a general presidential office. The candidates consist of ships, bands, games, films, and other specific uses of "President," but no candidate covers the general concept of the political title "President" that would apply to Obama\'s role. "Presidency" comes closest conceptually, but the text explicitly uses "President" not "Presidency," and none of the candidates clearly match the political title sense intended in the source text.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+    -> passed=False error=None
+
+=== [3/6] der_predicate_translation_001 ===
+    text: 'Obama was President from 2009 to 2017'
+    --- stage 2 call 1 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," referring to the political office of the U.S. Presidency. However, none of the candidates explicitly represent the political office or title of "President" in the general sense. The candidates include "Presidency," "President (corporate title)," "President (LDS Church honorific)," and "Mr. President (disambiguation)," but none of these clearly represents the generic concept of the presidential office that would apply to Obama\'s role. The closest match would be "Presidency" or "President (corporate title)," but neither is a clear fit for a reference to the U.S. presidential office itself. Without a candidate that directly represents the political office or title of President (especially the U.S. Presidency), abstention is appropriate.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," which refers to the political office of the U.S. Presidency. However, none of the candidates directly represent this concept. The closest candidate might be "Presidency," but this refers to the institution rather than the specific title or office. The candidates list includes ships, films, games, and honorifics, but does not contain an article about the U.S. presidential office or title itself that would match Obama\'s role.'
+        error         : None
+    --- stage 2 call 3 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," which refers to the office/role of U.S. President held by Barack Obama. However, none of the candidates directly represent the Wikipedia article for "President" as a political office or title. The closest candidate would be "President (corporate title)," but that refers to a corporate position, not the U.S. Presidential office. "Presidency" is the nearest match conceptually, but it refers to the institution/term rather than the title itself. Without a candidate explicitly representing the U.S. Presidential office or a general "President" article covering political leadership titles, no candidate clearly matches the intended meaning.'
+        error         : None
+    --- stage 2 call 4 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," referring to the office or position that Obama held (the U.S. Presidency). However, none of the provided candidates represent "President" as a governmental office or title. The candidates include ships, films, games, bands, and other unrelated topics, but no candidate for the presidential office itself or a general article about "President" as a title. The most relevant candidate would be "Presidency," but the source specifically uses "President" (the title/role), not "Presidency" (the office/institution). Without a candidate matching the intended meaning, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 5 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Obama was President from 2009 to 2017" is referring to the position or role of President of the United States, not a Wikipedia article about "President" as an object or entity. None of the candidates (which include ships, films, games, bands, etc.) match this contextual meaning. The most relevant candidate would be "President (corporate title)" or "Presidency," but the source text uses "President" as referring to Obama\'s position, not a disambiguation page entry itself.'
+        error         : None
+    --- stage 2 call 6 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," which refers to Obama being the President of the United States (a political office). However, none of the candidates provided represent a general article about the political office or title of "President." The candidates include ships, films, bands, games, corporate titles, and other specific meanings of "President," but not the primary sense of "President" as a head of state or chief executive office that would apply to Obama. Therefore, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 7 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," which refers to Obama\'s role as President of the United States. However, none of the provided candidates represent this concept. The candidates include ships, films, games, bands, and other miscellaneous uses of the word "President," but none represent the political office or title of "President" in a general governmental sense. The closest candidate might be "Presidency," but that refers to the office/institution rather than the title itself. No candidate adequately matches the intended meaning in the source text.'
+        error         : None
+    --- stage 2 call 8 ---
+        surface form  : 'President'
+        claim         : Obama -> president -> President
+        source_text   : 'Obama was President from 2009 to 2017'
+        candidates    : ['HMS President', 'USS President', 'Andre President', 'Animaniacs', 'Fallen Empires (album)', 'French frigate Président', 'Jonathan Coulton discography', 'Mr. President (disambiguation)', 'Nissan President', 'Plaxton President', 'Precedent', 'Presidency', 'President-class frigate', 'President (1924 steamboat)', 'President (1937 film)', 'President (CSRT)', 'President (LDS Church honorific)', 'President (band)', 'President (card game)', 'President (corporate title)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Obama was President from 2009 to 2017," which refers to the position/title of President of the United States. However, none of the provided candidates directly represent this concept. The closest candidate would be "Presidency," which refers to the office or position itself, but the text uses "President" as a title/honorific for a person, not the abstract concept of the presidency. The candidates include various President-related items (ships, films, games, corporate titles, etc.), but none that directly capture "President" as the chief executive position of a nation or state.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+        surface='President' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='President'
+        surface='Obama' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Barack Obama'
+    -> passed=False error=None
+
+=== [4/6] der_disambiguation_003 ===
+    text: 'Apple was founded in California'
+    (no Stage 2 invocations during this case)
+    --- audit log: 98 entity_normalization events ---
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q136503322' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q136503322'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q65129345' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q65129345'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q4781185' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q4781185'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q2355591' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q2355591'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Q1871232' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q1871232'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+        surface='California' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='California'
+        surface='Apple' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Apple'
+    -> passed=False error=None
+
+=== [5/6] der_disambiguation_004 ===
+    text: 'Einstein received_award Nobel Prize'
+    --- stage 2 call 1 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize," which clearly refers to Albert Einstein, the physicist who won the Nobel Prize. However, none of the candidates listed represent Albert Einstein or a disambiguation page that would lead to him. The candidates include various vehicles, bands, and other items with "Q5" in their names, but none match the context of a person receiving a Nobel Prize. Without a candidate representing Albert Einstein, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize," but none of the candidates listed represent Albert Einstein or any person who would receive the Nobel Prize. The candidates are mostly objects, vehicles, and media (Audi Q5, BlackBerry Q5, LNER Class Q5, etc.). While the claim logically refers to Einstein receiving the Nobel Prize, there is no candidate representing Einstein or a notable Nobel Prize recipient in the provided list. Therefore, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 3 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize" which clearly indicates the subject is Einstein, not Q5. The surface form Q5 appears to be a mislabeled or erroneous identifier for what should refer to Einstein (Albert Einstein). None of the Q5 candidates (a car model, phone, aircraft, bus, band, TV series, etc.) match Einstein or his receipt of the Nobel Prize. The context indicates the actual entity should be Albert Einstein, not any of the Q5 options provided.'
+        error         : None
+    --- stage 2 call 4 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize" but the entity reference Q5 does not match Einstein. Einstein is the subject who received the Nobel Prize award, not Q5. None of the candidates listed represent Einstein or any entity that would plausibly be the recipient of a Nobel Prize. The context does not provide clear evidence for any candidate to be the recipient of a Nobel Prize award.'
+        error         : None
+    --- stage 2 call 5 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize" but Q5 does not directly refer to Einstein or any of the candidate articles. While Einstein is famously associated with the Nobel Prize, none of the Q5 candidates (a bus, band, car, ship, aircraft, etc.) have a meaningful connection to Einstein or Nobel Prizes. The candidates appear to be generic entities labeled "Q5" rather than Einstein himself, so Q5 cannot plausibly refer to any of them in this context.'
+        error         : None
+    --- stage 2 call 6 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize" but none of the candidates represent Einstein or a person who would receive a Nobel Prize. The candidates are mostly vehicles, bands, and other non-person entities. While the claim is clearly about Einstein winning a Nobel Prize, there is no Wikipedia article for Einstein in the candidate list to select.'
+        error         : None
+    --- stage 2 call 7 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Einstein received_award Nobel Prize" clearly indicates that the subject is Albert Einstein, the famous physicist who won the Nobel Prize. However, none of the provided candidates (such as "Audi Q5", "BlackBerry Q5", "Q5 (New York City bus)", "LNER Class Q5", etc.) represent Albert Einstein or any variant that would match this context. The candidates appear to be various things with the label "Q5" but none correspond to Einstein. Without a candidate for Albert Einstein, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 8 ---
+        surface form  : 'Q5'
+        claim         : Q5 -> received_award -> Nobel Prize
+        source_text   : 'Einstein received_award Nobel Prize'
+        candidates    : ['5Q (disambiguation)', 'AQM-60 Kingfisher', 'Audi Q5', 'BlackBerry Q5', 'HMS Farnborough', 'LNER Class Q5', 'Nanchang Q-5', 'Q5 (New York City bus)', 'Q5 (band)', 'Q (TV series)', 'Quran 5']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Einstein received_award Nobel Prize" but does not explicitly mention "Q5". While the claim refers to Q5 receiving the Nobel Prize, and Einstein did receive the Nobel Prize, the source text does not provide clear evidence that Q5 refers to Einstein or any entity that would receive a Nobel Prize. None of the candidate options (disambiguation pages, vehicles, TV series, Quran references, or bands) are plausibly the subject of a Nobel Prize award. Without explicit confirmation in the source text that Q5 refers to Einstein, abstention is appropriate.'
+        error         : None
+    --- audit log: 49 entity_normalization events ---
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q618779' stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized='Q618779'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Q5' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Q5'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+        surface='Nobel Prize' stage1=canonical_no_redirect stage2_invoked=False source_text_present=True selection=None normalized='Nobel Prize'
+        surface='Einstein' stage1=clean_redirect stage2_invoked=False source_text_present=True selection=None normalized='Albert Einstein'
+    -> passed=False error=None
+
+=== [6/6] der_disambiguation_006 ===
+    text: "Amazon is the world's largest river by discharge"
+    --- stage 2 call 1 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Amazon is the world\'s largest river by discharge," which clearly refers to the Amazon River. However, none of the provided candidates explicitly represent "Amazon River" or a general encyclopedia entry for the Amazon River itself. The candidates include various things named Amazon (ships, films, companies, etc.) but not the geographical feature that the claim is about. Without a clear candidate matching the Amazon River, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 2 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text clearly states "Amazon is the world\'s largest river by discharge," referring to the Amazon River. However, none of the provided candidates represent the Amazon River article. The candidates include various things named Amazon (a company, films, TV series, ships, etc.) but not the actual river. Since the correct candidate is not available in the list, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 3 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Amazon is the world\'s largest river by discharge," which clearly refers to the Amazon River. However, "Amazon (river)" or "Amazon River" does not appear in the provided candidates list. While "Amason (disambiguation)" is present, it appears to be a misspelling. None of the candidates directly correspond to the Amazon River, which is what the source text describes.'
+        error         : None
+    --- stage 2 call 4 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text clearly states "Amazon is the world\'s largest river by discharge," which refers to the Amazon River. However, "Amazon (river)" or simply "Amazon River" does not appear in the provided candidates list. None of the candidates (which include a company, chess term, color, video game, ships, films, TV series, etc.) represent the Amazon River. Without the correct candidate available, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 5 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Amazon is the world\'s largest river by discharge," which clearly refers to the Amazon River. However, none of the provided candidates directly represent the Amazon River as a river. The candidates include various other meanings of Amazon (company, films, TV series, ships, etc.) but not the geographical entity—the Amazon River itself—that the claim is about. Therefore, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 6 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Amazon is the world\'s largest river by discharge," which clearly refers to the Amazon River. However, none of the provided candidates directly match "Amazon (river)" or "Amazon River." The candidates include various other uses of "Amazon" (companies, films, ships, etc.) but not the geographical feature that the claim is about. Without the correct river candidate available, abstention is appropriate.'
+        error         : None
+    --- stage 2 call 7 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text states "Amazon is the world\'s largest river by discharge," which clearly refers to the Amazon River. However, none of the provided candidates directly match "Amazon River" - the candidates include various non-river meanings of Amazon (company, films, ships, etc.) but not the river itself. The claim appears to be about a Wikipedia article on the Amazon River that is not listed among the candidates provided.'
+        error         : None
+    --- stage 2 call 8 ---
+        surface form  : 'Amazon'
+        claim         : Amazon -> the_world_s_largest_river_by_discharge -> world's largest river by discharge
+        source_text   : "Amazon is the world's largest river by discharge"
+        candidates    : ['.amazon', '1042 Amazone', 'Amason (disambiguation)', 'Amazon-class frigate', 'Amazon-class sloop', 'Amazon: Guardians of Eden', 'Amazon (1780 ship)', 'Amazon (1990 film)', 'Amazon (1997 film)', 'Amazon (1999 TV series)', 'Amazon (2000 film)', 'Amazon (2008 TV series)', 'Amazon (Amalgam Comics)', "Amazon (Dragon's Crown)", 'Amazon (automobile)', 'Amazon (chess)', 'Amazon (color)', 'Amazon (company)', 'Amazon (video game)', 'Amazon (yacht)']
+        selection     : 'ABSTAIN'
+        reasoning     : 'The source text "Amazon is the world\'s largest river by discharge" clearly refers to the Amazon River, a geographic feature. However, none of the provided candidates explicitly represent "Amazon River" - the most specific geographic match. While some candidates could theoretically be related to the river (like "1042 Amazone" which is an asteroid, or "Amazon (yacht)" which shares the name), they do not clearly match a geographic river reference. The best candidate would be the Amazon River article itself, which is not listed in the candidates provided.'
+        error         : None
+    --- audit log: 16 entity_normalization events ---
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+        surface="world's largest river by discharge" stage1=not_found stage2_invoked=False source_text_present=True selection=None normalized="world's largest river by discharge"
+        surface='Amazon' stage1=disambiguation_page stage2_invoked=True source_text_present=True selection=None normalized='Amazon'
+    -> passed=False error=None
+
+Wrote C:\code\aedos\docs\phase_H\cluster_1_stage_2_audit.json
+
+
+=== Summary ===
+case_id                             stage2_calls   classification
+der_cross_001                       8              mixed: some picks, some abstains
+der_cross_008                       8              Stage 2 ABSTAINED (Mech A candidate)
+der_predicate_translation_001       8              Stage 2 ABSTAINED (Mech A candidate)
+der_disambiguation_003              0              stage_1_not_found
+der_disambiguation_004              8              Stage 2 ABSTAINED (Mech A candidate)
+der_disambiguation_006              8              Stage 2 ABSTAINED (Mech A candidate)
