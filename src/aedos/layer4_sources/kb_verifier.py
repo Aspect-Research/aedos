@@ -340,6 +340,14 @@ class KBVerifier:
                 # N1: the expected-value reference never resolved — the mismatch
                 # is a resolution failure, not a contradiction. Abstain, not lie.
                 return KBVerdictType.NO_MATCH, None, "value_unresolved"
+            # S3 generalization: never contradict on a type-mismatched mapping.
+            # If the looked-up statement's datatype is incompatible with the
+            # predicate's object_type, the predicate is likely mis-mapped to the
+            # wrong KB property; abstain rather than fabricate a contradiction.
+            if not _contradiction_value_type_ok(
+                getattr(scope_mismatch, "value_type", None), meta.object_type
+            ):
+                return KBVerdictType.NO_MATCH, None, "value_type_object_type_mismatch"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
         # Phase 10.5 Step 6 Batch 11 (Tier A1): conservative DISJOINT
@@ -526,6 +534,38 @@ def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:
     if pos_verdict == KBVerdictType.CONTRADICTED:
         return KBVerdictType.VERIFIED
     return pos_verdict
+
+
+# Phase 10.5 Step 6 generalization (S3): which KB statement value-types may
+# soundly drive a CONTRADICTED verdict for each predicate object_type. A
+# predicate the oracle mis-mapped to a wrong-datatype property (e.g. an
+# authorship predicate routed to P585 point-in-time instead of P50 author)
+# would otherwise compare an entity claim against date values and could
+# fabricate a contradiction. When the looked-up statement's datatype is
+# incompatible with the predicate's declared object_type we abstain instead of
+# contradicting — never lie on a type-mismatched mapping. Statement.value_type
+# ∈ {entity, literal, date, quantity}. `literal` is permitted everywhere
+# because external-id / string-valued entity properties (P212 ISBN) legitimately
+# come back literal-typed; blocking it would cause false abstains.
+_OBJECT_TYPE_COMPATIBLE_VALUE_TYPES = {
+    "entity": {"entity", "literal"},
+    "entity_list": {"entity", "literal"},
+    "time": {"date", "literal"},
+    "quantity": {"quantity", "literal"},
+}
+
+
+def _contradiction_value_type_ok(value_type: Optional[str], object_type: str) -> bool:
+    """True when a CONTRADICTED verdict driven by a statement of `value_type`
+    is type-sound for a predicate whose object_type is `object_type`. Returns
+    True (don't block) for object_types we don't constrain (e.g. proposition)
+    or when the adapter left value_type untagged — preserving prior behavior."""
+    allowed = _OBJECT_TYPE_COMPATIBLE_VALUE_TYPES.get(object_type)
+    if allowed is None:
+        return True
+    if not value_type:
+        return True
+    return value_type in allowed
 
 
 _YEAR_RE = re.compile(r"^[+-]?(\d{4})(?:-\d{2}(?:-\d{2})?)?(?:T.*)?$")
