@@ -142,7 +142,39 @@ def _build_label_type_search_query(
 # on multi-hop geographic claims.
 _SUBSUMPTION_PROPERTIES = {
     "is_a": ("P31", "P279"),
-    "part_of": ("P131", "P361", "P30", "P206", "P17"),
+    # Phase 10.5 Step 6 Run 6 follow-up: trimmed alternation to
+    # (P131, P30, P17). The fuller set initially used in Tier A1/A3
+    # included P361 (part of) and P206 (located in body of water),
+    # both of which surfaced false-subsumption paths during Run 6:
+    #
+    #   subsumption(Warsaw, Germany, "part_of") → a_subsumed_by_b
+    #     via Warsaw P206 Vistula → Vistula P17 Germany (the river's
+    #     historical/regional country listing) or via Warsaw P361
+    #     historical-Prussia → Germany.
+    #
+    # The kb_verifier's subsumption-upgrade path then verified the
+    # false claim "Marie Curie was born in Germany" (KB Curie P19 =
+    # Warsaw; Warsaw subsumed by Germany via the leaky path).
+    #
+    # The trimmed (P131, P30, P17) alternation preserves all the
+    # canonical geographic-containment chains the medium-bar wins
+    # required:
+    #   Amazon River  ⊂ South America (via P17 country → P30 continent)
+    #   Paris         ⊂ Europe        (via P131 → P30)
+    #   Eiffel Tower  ⊂ Europe        (via P131 → P131 → P30)
+    #   Warsaw        ⊂ Poland        (P131 chain)
+    #   Honolulu      ⊂ United States (P131 chain)
+    # AND it eliminates the leaky paths:
+    #   Warsaw ⊂ Germany → unrelated   (no historical/water path)
+    #   Rome   ⊂ Germany → unrelated   (Italy/Germany still resolve to
+    #                                   same continent via P30 for the
+    #                                   shared-continent DISJOINT path)
+    #
+    # P206 / P361 remain available for explicit type-and-relation
+    # queries elsewhere (e.g. the substrate subsumption table); they
+    # just don't participate in the kb_verifier's geographic
+    # `part_of` transitive closure.
+    "part_of": ("P131", "P30", "P17"),
 }
 
 # Phase H D5: default property set for KB neighbor enumeration. The
