@@ -138,6 +138,12 @@ routing_hint — pick the SINGLE most-applicable verification source:
         founded        P112  (founder; note: P571 is inception date, not founder)
         co_founded     P112  (also founder; multi-valued)
         died_in        P20   spouse          P26
+        born_on        P569  (date of birth — object_type=time, NOT P19 place)
+        died_on        P570  (date of death — object_type=time, NOT P20 place)
+        founded_in_year P571 (inception — object_type=time, NOT P112 founder)
+        dissolved_in_year P576 (dissolved/abolished/demolished date — time)
+        published_in_year / released_in_year P577 (publication date — time)
+        occurred_in_year P585 (point in time — object_type=time)
         educated_at    P69   member_of       P463
         occupation     P106  parent          P22 / P25
         successor_of   P1365 (replaces; note: P155 is `follows` in a sequence)
