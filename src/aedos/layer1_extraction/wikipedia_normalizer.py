@@ -80,27 +80,13 @@ from ..utils.rate_limit import RateLimiter
 # wasted LLM/HTTP cost. Skip Q-ids at entry.
 _QID_PATTERN = re.compile(r"^Q\d+$")
 
-# Phase 10.5 Step 6 Fix #14: known-title short-circuit map. Public-role
-# position titles whose canonical Wikidata Q-IDs the multi-stage
-# normalizer struggles to surface (Stage B wbsearchentities ranks them
-# too low; Stage C LLM-selection has variance). Direct mapping here is
-# the minimum-viable fix; v0.16 will pursue a generalizable
-# Wikipedia-article-title-to-Q path via the MediaWiki API.
-_KNOWN_ROLE_TITLES: dict[str, str] = {
-    # United States political roles
-    "President of the United States": "Q11696",
-    "President of the United States of America": "Q11696",
-    "Vice President of the United States": "Q11699",
-    # United Kingdom political roles
-    "Prime Minister of the United Kingdom": "Q14211",
-    "Prime Minister of Great Britain": "Q14211",
-    # Religious roles
-    "Pope": "Q19546",
-    # Generic positions that resolve well already are NOT in this map —
-    # this is a list of titles known to have low wbsearchentities
-    # ranking for their canonical Q-id (validated empirically against
-    # the medium-bar Pattern B cases).
-}
+# Phase 10.5 Step 6 generalization (S1a): the hand-curated _KNOWN_ROLE_TITLES
+# title→Q-id map is gone. Stage 1's MediaWiki query already requests
+# prop=pageprops, and a single canonical article's pageprops carries
+# `wikibase_item` — the title's canonical Wikidata Q-id. `_compose_result`
+# surfaces that Q-id directly for clean (non-disambiguation) article
+# resolutions, which generalizes the old 6-entry allow-list to every titled
+# entity at zero extra API cost. See Stage1Outcome.wikibase_item.
 
 # Phase H D53 step 2: Stage C tool — closed-set selection over Wikidata
 # Q-id candidates. The model picks a Q-id (not a label, not a Wikipedia
@@ -248,6 +234,10 @@ class Stage1Outcome:
     outcome: str
     canonical_title: Optional[str] = None  # set when clean_redirect or canonical_no_redirect
     disambiguation_title: Optional[str] = None  # set when disambiguation_page
+    # Phase 10.5 Step 6 (S1a): the page's Wikidata Q-id from pageprops
+    # wikibase_item — set when the title resolves to a single canonical
+    # article (clean_redirect / canonical_no_redirect), None otherwise.
+    wikibase_item: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -355,56 +345,10 @@ class WikipediaNormalizer:
             )
             return result
 
-        # Phase 10.5 Step 6 Fix #14: known-title short-circuit. For a
-        # small allow-list of public-role position titles whose canonical
-        # Wikidata Q-IDs the multi-stage normalizer struggles to surface
-        # consistently ("President of the United States" → Q11696, "Prime
-        # Minister of the United Kingdom" → Q14211, etc.), resolve them
-        # directly without the Stage A/B/C round-trip. The walker can
-        # then match Lincoln's P39 = Q11696 against the canonical Q-ID.
-        # This is the minimum-viable fix for the Pattern B
-        # holds_role-of-org cases that Fix 8's Rule 20 successfully
-        # extracts but Stage B's wbsearchentities ranks Q11696 too low
-        # to surface. Future v0.16 work: a generalizable
-        # "Wikipedia article title → Q-id" path via MediaWiki API.
-        normalized = surface_form.strip() if isinstance(surface_form, str) else surface_form
-        # Phase 10.5 Step 6 Batch 7+: leading "the " article stripping.
-        # The extractor often emits references like "the Nobel Prize in
-        # Physics", "the Institute for Advanced Study", "the United
-        # States" — Wikipedia's redirect system doesn't always redirect
-        # the "the"-prefixed form to the canonical article title, so
-        # Stage A returns not_found and the resolution cascades to a
-        # negative cache. Try both the original AND the "the"-stripped
-        # form for the known-title short-circuit; if the original isn't
-        # in the map but the stripped form is, use the stripped form.
-        # (The full Stage A/B/C also receives the "the"-stripped form
-        # via the recursion below.)
-        candidates = [normalized] if normalized else []
-        if (
-            normalized
-            and len(normalized) > 4
-            and normalized[:4].lower() == "the "
-        ):
-            candidates.append(normalized[4:].strip())
-        for candidate in candidates:
-            if candidate in _KNOWN_ROLE_TITLES:
-                qid = _KNOWN_ROLE_TITLES[candidate]
-                result = NormalizationResult(
-                    surface_form=surface_form,
-                    normalized_form=candidate,
-                    stage_a_outcome=OUTCOME_SKIPPED_KB_IDENTIFIER,
-                    selected_qid=qid,
-                )
-                self._log_audit_event(
-                    result,
-                    claim_id=claim_id,
-                    slot_position=slot_position,
-                    claim_subject=claim_subject,
-                    claim_predicate=claim_predicate,
-                    claim_object=claim_object,
-                    source_text=source_text,
-                )
-                return result
+        # (S1a) The hand-curated known-title short-circuit is gone; the
+        # general title→Q-id path lives in _compose_result via Stage 1's
+        # pageprops wikibase_item. The leading-"the" retry remains in
+        # EntityResolver (layer3) for surfaces Wikipedia doesn't redirect.
 
         # Memo key includes expected_entity_types because Stage C's type
         # filter behavior depends on it — same (surface, context) with
@@ -705,12 +649,14 @@ class WikipediaNormalizer:
                     surface_form=original,
                     outcome=OUTCOME_CLEAN_REDIRECT,
                     canonical_title=page_title,
+                    wikibase_item=pageprops.get("wikibase_item"),
                 )
             else:
                 outcomes[original] = Stage1Outcome(
                     surface_form=original,
                     outcome=OUTCOME_CANONICAL_NO_REDIRECT,
                     canonical_title=page_title,
+                    wikibase_item=pageprops.get("wikibase_item"),
                 )
 
         return outcomes
@@ -855,12 +801,38 @@ class WikipediaNormalizer:
             expected_entity_types=expected_entity_types,
         )
 
-        # Choose the normalized_form label: prefer the picked candidate's
-        # label (if any); else the fallback.
+        # (S1a) Canonical-article rescue — the general replacement for the
+        # hand-curated _KNOWN_ROLE_TITLES map. When Stage C did NOT select an
+        # entity AND Stage 1 resolved the surface to a single canonical
+        # Wikipedia article whose pageprops carry a wikibase_item that
+        # wbsearchentities never surfaced as a candidate, use that Q-id —
+        # provided it satisfies the slot's type constraint. This surfaces
+        # canonical role/position entities ("President of the United States"
+        # → Q11696) that wbsearch ranks too low. It deliberately does NOT
+        # override a Stage C abstention among candidates it already
+        # considered (wikibase_item already in the candidate set), so
+        # genuine ambiguity still abstains (soundness over completeness).
+        selected_qid = c_result["selected_qid"]
+        rescued_via_pageprops = False
+        if (
+            selected_qid is None
+            and stage1.wikibase_item
+            and _QID_PATTERN.match(stage1.wikibase_item)
+            and stage1.outcome in (OUTCOME_CLEAN_REDIRECT, OUTCOME_CANONICAL_NO_REDIRECT)
+            and stage1.wikibase_item not in {c.qid for c in stage_b_candidates}
+            and self._wikibase_item_type_ok(stage1.wikibase_item, expected_entity_types)
+        ):
+            selected_qid = stage1.wikibase_item
+            rescued_via_pageprops = True
+
+        # Choose the normalized_form label: the canonical title on a rescue,
+        # else the picked candidate's label (if any), else the fallback.
         normalized_form = fallback_label
-        if c_result["selected_qid"]:
+        if rescued_via_pageprops:
+            normalized_form = stage1.canonical_title or fallback_label
+        elif selected_qid:
             sel = next(
-                (c for c in stage_b_candidates if c.qid == c_result["selected_qid"]),
+                (c for c in stage_b_candidates if c.qid == selected_qid),
                 None,
             )
             if sel is not None:
@@ -871,7 +843,7 @@ class WikipediaNormalizer:
             surface_form=surface_form,
             normalized_form=normalized_form,
             stage_a_outcome=stage1.outcome,
-            selected_qid=c_result["selected_qid"],
+            selected_qid=selected_qid,
             stage_a_redirect_target=stage_a_redirect,
             stage_b_query=stage_b_query,
             stage_b_candidate_count=len(stage_b_candidates),
@@ -886,6 +858,25 @@ class WikipediaNormalizer:
             duration_ms=duration_ms,
             error=c_result["error"],
         )
+
+    def _wikibase_item_type_ok(self, qid: str, expected_entity_types: list[str]) -> bool:
+        """(S1a) True when `qid` may be used as the canonical-article rescue
+        resolution for a slot constrained to `expected_entity_types`. No
+        constraint → always ok. With a constraint, fetch the entity's P31 and
+        require a non-empty intersection; fail CLOSED (return False) on any
+        fetch error or empty intersection, so the rescue never resolves a
+        wrong-type entity — the slot simply abstains as it did before S1a."""
+        if not expected_entity_types:
+            return True
+        if self._kb_adapter is None:
+            return False
+        try:
+            p31_by_qid, fetch_error = self._kb_adapter._fetch_p31_for_candidates([qid])
+        except Exception:
+            return False
+        if fetch_error is not None:
+            return False
+        return bool(set(expected_entity_types) & set(p31_by_qid.get(qid, [])))
 
     # ------------------------------------------------------------------
     # Stage C — type filter + heuristic + LLM selection (D53 step 2)

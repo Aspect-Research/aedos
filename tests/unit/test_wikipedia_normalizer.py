@@ -905,3 +905,77 @@ class TestNormalizeMemo:
         assert len(events) == 2
         assert events[0]["event_data"]["from_memo"] is True
         assert events[1]["event_data"]["from_memo"] is False
+
+
+def _stage_a_canonical_with_qid(title: str, qid: str):
+    """Stage A canonical_no_redirect response whose pageprops carry a chosen
+    wikibase_item Q-id (vs the placeholder Q1 in _stage_a_canonical_response)."""
+    return _api_response(
+        {"pages": [{"title": title, "pageid": 999, "pageprops": {"wikibase_item": qid}}]}
+    )
+
+
+class TestCanonicalArticleRescue:
+    """S1a: the general replacement for the hand-curated _KNOWN_ROLE_TITLES
+    map. When wbsearchentities misses a title's canonical Q-id and Stage C
+    abstains, the Stage 1 pageprops wikibase_item rescues the resolution —
+    type-gated, and only when the Q-id was not a candidate Stage C declined."""
+
+    def test_rescue_when_wbsearch_misses_canonical_qid(self):
+        cands = [_wb_candidate("Q1", "a"), _wb_candidate("Q2", "b")]
+        normalizer, _, _, _ = _make_normalizer_with_llm(
+            {"selection": "ABSTAIN", "reasoning": "ambiguous"}, kb_candidates=cands,
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                _stage_a_canonical_with_qid("President of the United States", "Q11696")
+            )
+            result = normalizer.normalize(
+                "President of the United States", source_text="t"
+            )
+        assert result.selected_qid == "Q11696"
+
+    def test_no_rescue_when_qid_already_a_candidate(self):
+        # Stage C abstained among candidates that INCLUDE the canonical Q-id —
+        # a deliberate ambiguity abstention, not a wbsearch miss. No override.
+        cands = [_wb_candidate("Q11696", "a"), _wb_candidate("Q2", "b")]
+        normalizer, _, _, _ = _make_normalizer_with_llm(
+            {"selection": "ABSTAIN", "reasoning": "ambiguous"}, kb_candidates=cands,
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                _stage_a_canonical_with_qid("X", "Q11696")
+            )
+            result = normalizer.normalize("X", source_text="t")
+        assert result.selected_qid is None
+
+    def test_rescue_blocked_by_type_mismatch(self):
+        cands = [_wb_candidate("Q1", "a"), _wb_candidate("Q2", "b")]
+        normalizer, _, _, _ = _make_normalizer_with_llm(
+            {"selection": "ABSTAIN", "reasoning": "ambiguous"},
+            kb_candidates=cands, p31_by_qid={"Q11696": ["Q5"]},
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                _stage_a_canonical_with_qid("Title", "Q11696")
+            )
+            result = normalizer.normalize(
+                "Title", source_text="t", expected_entity_types=["Q4164871"],
+            )
+        assert result.selected_qid is None
+
+    def test_rescue_passes_matching_type(self):
+        cands = [_wb_candidate("Q1", "a"), _wb_candidate("Q2", "b")]
+        normalizer, _, _, _ = _make_normalizer_with_llm(
+            {"selection": "ABSTAIN", "reasoning": "ambiguous"},
+            kb_candidates=cands, p31_by_qid={"Q11696": ["Q4164871"]},
+        )
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                _stage_a_canonical_with_qid("President of the United States", "Q11696")
+            )
+            result = normalizer.normalize(
+                "President of the United States", source_text="t",
+                expected_entity_types=["Q4164871"],
+            )
+        assert result.selected_qid == "Q11696"
