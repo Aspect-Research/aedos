@@ -933,6 +933,25 @@ class WikidataAdapter:
                 last_error = fb_error
             candidates = fb_candidates
 
+        # (S1b) Demonym → country fallback. When the slot is type-constrained
+        # to a country (Q6256) and neither wbsearchentities nor the SPARQL
+        # label/altLabel fallback resolved the reference, try a Wikidata P1549
+        # (demonym) reverse lookup: the reference may be a demonym ("German",
+        # "American") whose country is unreachable by label match (the label is
+        # "Germany", not "German"). Generalizes the hand-curated
+        # _DEMONYM_TO_COUNTRY map to every demonym Wikidata records. Sound:
+        # fires only for a country-typed slot, accepts a unique match.
+        if not candidates and "Q6256" in set(expected_types):
+            demonym_qid = self._resolve_demonym_to_country(reference)
+            if demonym_qid is not None:
+                candidates = [
+                    ResolutionCandidate(
+                        kb_identifier=demonym_qid,
+                        provenance={"source": "demonym_p1549", "demonym": reference},
+                        score=1.0,
+                    )
+                ]
+
         duration_ms = (time.monotonic() - start) * 1000.0
         self._log_audit_event(
             event_type="kb_live_resolve",
@@ -1037,6 +1056,64 @@ class WikidataAdapter:
             return (candidates, None)
 
         return ([], "unreachable_code")  # pragma: no cover
+
+    def _resolve_demonym_to_country(self, demonym: str) -> Optional[str]:
+        """(S1b) Resolve a demonym ("German", "American") to the Q-id of the
+        country whose Wikidata P1549 (demonym) value includes it, constrained
+        to instances/subclasses of country (Q6256). Returns the Q-id on a
+        UNIQUE match, else None — fail closed on 0 / >1 matches, a non-word
+        input, or any error. The general replacement for the hand-curated
+        _DEMONYM_TO_COUNTRY map: every demonym Wikidata records, none in code.
+        """
+        if not isinstance(demonym, str):
+            return None
+        token = demonym.strip()
+        # Demonyms are short alphabetic words (optionally hyphenated/spaced).
+        # Rejecting anything else is both a soundness gate and an injection
+        # defense — `token` is interpolated into a SPARQL string literal.
+        if not token or not re.match(r"^[A-Za-z][A-Za-z .'\-]{0,40}$", token):
+            return None
+        if self._http is None:
+            return None
+        safe = token.replace("\\", "\\\\").replace('"', '\\"').lower()
+        query = (
+            "SELECT DISTINCT ?item WHERE {\n"
+            "  ?item wdt:P1549 ?d .\n"
+            f'  FILTER(LCASE(STR(?d)) = "{safe}")\n'
+            "  ?item wdt:P31/wdt:P279* wd:Q6256 .\n"
+            "} LIMIT 3"
+        )
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+        data = None
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+                break
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt == 0:
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                return None
+            except Exception:
+                return None
+        bindings = (
+            data.get("results", {}).get("bindings", [])
+            if isinstance(data, dict) else []
+        )
+        qids: list[str] = []
+        for row in bindings:
+            uri = row.get("item", {}).get("value", "")
+            qid = _extract_entity_id(uri)
+            if _ENTITY_ID_PATTERN.match(qid) and qid not in qids:
+                qids.append(qid)
+        # Unique match only — multiple countries sharing a demonym is
+        # ambiguous; abstain rather than guess (soundness over completeness).
+        return qids[0] if len(qids) == 1 else None
 
     def _fetch_p31_for_candidates(
         self, candidate_ids: list[KBEntityID]

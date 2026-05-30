@@ -204,6 +204,10 @@ before the resolver sees it.
 Set these to a list of Q-ids only when the slot's type is naturally constrained
 by the predicate's meaning. Common patterns:
   holds_role     subject=[Q5] (human),     object=[Q4164871] (position)
+  has_nationality subject=[Q5] (human),    object=[Q6256] (country) — REQUIRED:
+                 the country type gates the verifier's P1549 demonym→country
+                 resolution, so a nationality predicate whose object is a
+                 demonym ("German") must declare object_entity_types=[Q6256].
   born_in        subject=[Q5] (human),     object=[Q515, Q486972] (city, settlement)
   educated_at    subject=[Q5] (human),     object=[Q3918, Q38723] (university,
                                                   higher-education institution)
