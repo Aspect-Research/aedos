@@ -48,6 +48,22 @@ _LOCATION_KB_PROPERTIES: frozenset[str] = frozenset([
     "P276",  # location
 ])
 
+# Geographic-container entity types that the per-predicate object-type lists
+# (e.g. located_in = [country, city, settlement, …]) historically omit. A
+# claim like "Paris is in Europe" needs to resolve "Europe" to the continent
+# (Q46, instance-of continent Q5107); without continent in the accepted-type
+# set the resolver's D33 type filter rejects Q46 and lands on a non-continent
+# homonym, so the containment subsumption (France ⊂ Europe via P30) can never
+# match. `_object_resolution_types` widens the object's type filter with these
+# only for geographic-location predicates (kb_property in
+# _LOCATION_KB_PROPERTIES). Continents are a closed 7-member set, so admitting
+# them cannot over-broaden resolution. (Region Q82794 is deliberately NOT
+# included — it is open-ended and the cases that would need it also need the
+# trimmed P361 subsumption path; see Run-7 follow-up notes.)
+_GEO_CONTAINER_TYPES: frozenset[str] = frozenset([
+    "Q5107",  # continent
+])
+
 
 class KBVerdictType(str, Enum):
     VERIFIED = "verified"
@@ -170,11 +186,20 @@ class KBVerifier:
         expected_value = expected_ref
         value_resolved = False
         if meta.object_type == "entity":
+            # (geo fix) For a geographic-location predicate, widen the object's
+            # accepted-type filter to admit continents — the per-predicate type
+            # lists omit them, which otherwise blocks "X is in Europe" from
+            # resolving "Europe" to the continent (see _GEO_CONTAINER_TYPES).
+            # Only widens an existing non-empty filter; an open (None/empty)
+            # filter is left open.
+            value_types = _types_for_slot(meta, value_slot)
+            if value_types and meta.kb_property in _LOCATION_KB_PROPERTIES:
+                value_types = list(dict.fromkeys([*value_types, *_GEO_CONTAINER_TYPES]))
             value_ctx = LocalContext(
                 predicate=claim.predicate,
                 slot_position=value_slot,
                 asserting_party=claim.asserting_party,
-                expected_entity_types=_types_for_slot(meta, value_slot),
+                expected_entity_types=value_types,
                 source_text=source_text,
                 claim_subject=claim.subject,
                 claim_predicate=claim.predicate,
