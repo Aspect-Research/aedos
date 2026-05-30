@@ -14,10 +14,11 @@ tradition, specialized for the natural-language verification setting. It is
 **not** a chatbot — it is the engine that sits behind one (or behind a
 document checker, or a generated-content filter) and decides what is grounded.
 
-> **Status:** v0.15.0-rc.1 — a release candidate. The architecture is complete
-> and the mocked test suite is green, but the calibration measurement that gates
-> a final `v0.15.0` has not yet run. See [Status](#status) for what is and is
-> not verified.
+> **Status:** v0.15.0 — released and tagged. The architecture is complete, the
+> mocked test suite is green, and the calibration and medium-bar measurements
+> that gated the release have run. v0.15.0 is a *soundness-validated* release,
+> not a beats-baseline one — see [Status](#status). Internal release deployment
+> is the next phase of work.
 
 ---
 
@@ -106,9 +107,11 @@ Endpoints: `POST /chat` (verify and intervene on a message), `GET /health`,
 endpoints for substrate rows, consistency checks, circuit breakers, and
 retractions.
 
-> The deployed `/chat` path is currently **verification-inert** — see
-> [Status](#status). The verification pipeline itself is exercised through the
-> test and evaluation harnesses below.
+> The `/chat` path runs the verification pipeline end-to-end — it extracts and
+> verifies the model's draft response before returning it. The verification
+> pipeline is also exercised directly through the test and evaluation harnesses
+> below. The full internal deployment — chat interface, testing environment,
+> real-use feedback — is the next phase of work.
 
 ### Environment variables
 
@@ -131,9 +134,11 @@ pytest --run-calibration                               # calibration harness dry
 python -m tests.evaluation.benchmark --validate-harness # medium-bar harness wiring check
 ```
 
-The live medium-bar evaluation and the live calibration run are operator-
-supervised Phase 10.5 work; see [`docs/phase_10_5_runbook.md`](docs/phase_10_5_runbook.md)
-and [`docs/evaluation_methodology.md`](docs/evaluation_methodology.md).
+The live medium-bar evaluation and the live calibration run were the
+operator-supervised Phase 10.5 work that gated the v0.15.0 release; see
+[`docs/phase_10_5_runbook.md`](docs/phase_10_5_runbook.md) and
+[`docs/evaluation_methodology.md`](docs/evaluation_methodology.md) for the
+methodology, and [Status](#status) for the result.
 
 ---
 
@@ -149,35 +154,40 @@ the architecture is correct.
 
 ## Status
 
-This is **v0.15.0-rc.1**, a pre-calibration release candidate.
+This is **v0.15.0** — released and tagged at the head of the Phase 10.5
+remediation work.
 
 What is verified: the architecture is fully implemented across all five layers;
-the mocked test suite is green (~700 tests, plus 11 calibration corpora
-collected behind `--run-calibration`); three post-audit fix-up cycles and two
-re-audits have cleared the verification pipeline as sound — no path produces a
-false `verified`.
+the mocked test suite is green (~700 tests, plus 11 calibration corpora behind
+`--run-calibration`); the verdict-production audit chain (Phases A–D, three
+fix-up cycles, two re-audits) cleared the pipeline as sound — no path produces
+a false `verified`; and the gating measurements ran (Phase 10.5). The
+calibration corpora measured **zero §3.2 false-verifieds across 668 case-mode
+invocations**.
 
-What has **not** happened yet: the medium-bar evaluation that measures accuracy
-against an LLM-only baseline, and the live calibration of the LLM-mediated
-components, are Phase 10.5 work and have not run. A final `v0.15.0` tag is
-reserved for after that measurement passes its thresholds.
+**This is a soundness-validated release, not a beats-baseline one.** The
+medium-bar evaluation showed Aedos trading coverage for soundness: ~55–70%
+accuracy (a single-run-variance band) against an LLM-only baseline of ~76%, but
+a **0% false-verified rate against the baseline's ~12%**. The architectural
+commitment is soundness over coverage; the measurement validates that the
+commitment held.
 
-Known capability gaps carried into v0.16 (full list in
+Known capability gaps carried into v0.16 (full backlog through D60 in
 [`docs/v0.16_planning.md`](docs/v0.16_planning.md)):
 
-- **The deployed `/chat` endpoint is verification-inert.** The chat wrapper
-  calls the extractor with a stale signature, so the endpoint currently passes
-  responses through unverified. The verification pipeline itself is sound and
-  is exercised directly by the benchmark and calibration runners; the chat
-  wrapper integration is the gap.
-- **Cross-source unification is partial.** The walker composes pre-seeded
-  substrate taxonomy rows but cannot yet enumerate KB-sourced taxonomy
-  neighbors on its own; cross-source derivation chains need their subsumption
-  steps pre-seeded.
-- **Retraction propagation is single-hop and session-local.** The
-  consistency check and retraction wiring work within a process; the
-  verdict-to-dependent-verdict cascade and cross-process persistence are not
-  yet implemented.
+- **Multi-hop derivation depth.** Forward KB-neighbor enumeration landed in
+  v0.15 (D5), but the reverse (child-direction) enumeration (D51) and
+  distribution-gate tuning (D52) that the locative `part_of` multi-hop cases
+  need are v0.16 work; those chains still abstain.
+- **The retraction cascade and re-derivation.** Over-time soundness now holds
+  across process restarts (D6, audit-log replay), but the
+  verdict-to-dependent-verdict cascade and re-derivation from remaining
+  premises (D14) are not yet implemented.
+- **Coverage refinements.** Free-text class subsumption, compound-claim
+  semantics, quantitative routing, DISJOINT verdict refinement, cold-start
+  oracle calibration on novel predicates, claim-model temporal-reference fields
+  (`valid_from_ref` / `valid_until_ref`), and hybrid mixed-vocabulary
+  measurement are all captured for v0.16.
 
 These gaps preserve soundness — they cause false *abstains*, never false
 *verifieds*.
