@@ -295,12 +295,44 @@ def _parse_neighbors_bindings(
     return result
 
 
+# Geographic-region entity types (exact Wikidata P31) for the type-guarded
+# P361 bridge in part_of subsumption — see _build_subsumption_ask_query. P361
+# ("part of") cleanly expresses CURRENT region containment between these types
+# (US state ⊂ region, country ⊂ supranational region), but is also used for
+# organizational membership, historical/former containment, and water-body
+# adjacency — the leaky paths the Run-6 trim removed wholesale. Restoring P361
+# only between two of these region types reopens region containment without
+# the Marie-Curie-class false-verify. Exact P31 (not P31/P279*) is deliberate:
+# it cannot admit a settlement via a subclass chain (a city is Q515, never a
+# region type), keeping the leak provably closed. The set is grounded in the
+# observed P31 of the medium-bar's region entities (Massachusetts Q35657,
+# New England Q518261/Q123615496, Europe Q82794, countries Q6256).
+_GEO_REGION_TYPES: tuple[str, ...] = (
+    "Q5107",       # continent
+    "Q6256",       # country
+    "Q3624078",    # sovereign state
+    "Q82794",      # geographic region
+    "Q35657",      # state of the United States
+    "Q107390",     # federal state
+    "Q10864048",   # first-level administrative country subdivision
+    "Q518261",     # region of the United States (e.g. New England)
+    "Q123615496",  # region type observed on New England
+)
+_PART_OF_BRIDGE_PROPERTY = "P361"  # geographic "part of", type-guarded above
+
+
 def _build_subsumption_ask_query(
     source: KBEntityID, target: KBEntityID, relation_type: str
 ) -> str:
     """Build an ASK query: does `source` reach `target` via the
     relation_type's property alternation? Path-existence only — fast,
-    short-circuits on first match. Used per direction by `_live_subsumption`."""
+    short-circuits on first match. Used per direction by `_live_subsumption`.
+
+    For `part_of`, the safe alternation (P131/P30/P17) is augmented with a
+    single TYPE-GUARDED P361 bridge: a P361 edge participates only between two
+    geographic-region-typed nodes (_GEO_REGION_TYPES). This reopens region
+    containment the Run-6 trim closed (Massachusetts ⊂ New England) without
+    reopening the leaky city/historical P361 paths (Warsaw ⊄ Germany)."""
     if not _ENTITY_ID_PATTERN.match(source):
         raise ValueError(f"Invalid Wikidata entity ID: {source!r}")
     if not _ENTITY_ID_PATTERN.match(target):
@@ -312,7 +344,25 @@ def _build_subsumption_ask_query(
             f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
         )
     path = "|".join(f"wdt:{p}" for p in props)
-    return f"ASK {{ wd:{source} ({path})+ wd:{target} . }}"
+    if relation_type != "part_of":
+        return f"ASK {{ wd:{source} ({path})+ wd:{target} . }}"
+    region_values = " ".join(f"wd:{t}" for t in _GEO_REGION_TYPES)
+    bp = _PART_OF_BRIDGE_PROPERTY
+    # The bridge binds `target` as the P361 object (region containment is one
+    # P361 hop TO the region — Massachusetts P361 New England). This keeps the
+    # only unbounded traversal as `source (safe)* ?r1`, which is small (a
+    # place's geographic ancestry); a free `?r2 (safe)* target` tail explodes
+    # on Wikidata's endpoint and times out. The safe branch is listed first so
+    # an existing P131/P30/P17 path matches without touching the bridge.
+    return (
+        f"ASK {{\n"
+        f"  {{ wd:{source} ({path})+ wd:{target} . }}\n"
+        f"  UNION\n"
+        f"  {{ wd:{source} ({path})* ?r1 . ?r1 wdt:{bp} wd:{target} .\n"
+        f"    ?r1 wdt:P31 ?gt1 . wd:{target} wdt:P31 ?gt2 .\n"
+        f"    VALUES ?gt1 {{ {region_values} }} VALUES ?gt2 {{ {region_values} }} }}\n"
+        f"}}"
+    )
 
 
 def _build_establishing_property_query(
