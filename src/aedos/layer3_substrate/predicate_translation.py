@@ -38,7 +38,13 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
             },
             "routing_hint": {
                 "type": "string",
-                "enum": ["user_authoritative", "python", "kb_resolvable", "abstain"],
+                "enum": [
+                    "user_authoritative",
+                    "python",
+                    "kb_resolvable",
+                    "kb_quantitative",
+                    "abstain",
+                ],
             },
             "kb_namespace": {
                 "type": ["string", "null"],
@@ -154,6 +160,18 @@ routing_hint — pick the SINGLE most-applicable verification source:
       caution: when more than one property could fit, pick the property that
               matches the predicate's MEANING (founder vs. inception), not the
               first plausible match.
+
+  kb_quantitative — a numeric COMPARISON predicate ('..._greater_than' /
+    '..._less_than' in the name) against a count-valued Wikidata property.
+    Set kb_property to the property whose value is the count (population
+    P1082, members P2124, employees P1128, students P2196, seats P1342, …);
+    the comparator is read from the predicate name, object_type=quantity. Use
+    only for DIMENSIONLESS counts — measurements with physical units route to
+    abstain until unit-aware comparison exists.
+      examples: population_greater_than P1082, members_less_than P2124,
+                employees_greater_than P1128
+      signal: the predicate compares the subject's count of something to a
+              numeric threshold the KB records.
 
   abstain — no authoritative source of belief. Reserve for predicates that
     are intrinsically contested across observers (no single ground truth), or

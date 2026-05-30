@@ -31,23 +31,13 @@ _RESIDENCE_VERB = re.compile(
 # the adapter's P1549 reverse lookup (see WikidataAdapter._resolve_demonym_to_
 # country), so no hardcoded demonym table or post-extraction regex remains.
 
-# Phase 10.5 Step 6 Tier A2: population comparison patterns. When the
-# source text contains "has more/less than N [people-like-noun]", route
-# to the kb_quantitative predicate so the walker can query P1082
-# (population) and compare numerically. The unit noun list covers the
-# population synonyms the medium-bar uses: people, residents,
-# inhabitants, citizens. Generic count nouns (states, members, etc.)
-# need their own pattern + kb_property — out of A2's surgical scope.
-_POPULATION_MORE_PATTERN = re.compile(
-    r"\b(?:has|have|had|with|of)\s+more\s+than\s+([\d.,]+\s*(?:million|billion|thousand|k|m|bn)?)"
-    r"\s*(?:people|persons|residents|inhabitants|citizens|population)\b",
-    re.IGNORECASE,
-)
-_POPULATION_LESS_PATTERN = re.compile(
-    r"\b(?:has|have|had|with|of)\s+(?:less|fewer)\s+than\s+([\d.,]+\s*(?:million|billion|thousand|k|m|bn)?)"
-    r"\s*(?:people|persons|residents|inhabitants|citizens|population)\b",
-    re.IGNORECASE,
-)
+# (S2/T7) The population-only comparison regexes are gone. Quantitative count
+# comparisons now arrive from the extraction prompt (Rule 24) shaped as a
+# '<measure>_greater_than' / '<measure>_less_than' predicate with the numeric
+# threshold in the object slot, for any count measure (population, members,
+# employees, …). The predicate-translation oracle routes these via the
+# kb_quantitative routing_hint and supplies the count KB property (P1082,
+# P2124, P1128, …); the walker reads comparator + property from metadata.
 
 # (S1b) The hand-curated _DEMONYM_TO_COUNTRY map is gone. Demonym → country
 # resolution is sourced from Wikidata P1549 (demonym) at verification time
@@ -451,6 +441,22 @@ predicate='published_in_year', object='1869'.
     Put the bare year/date in the object slot; do NOT also copy it into \
 valid_from — that double-counts the date. Rule 7's year→valid_from applies \
 only when the date scopes a DIFFERENT relation ('X lived in Paris in 1990').
+
+24. QUANTITATIVE COUNT COMPARISON — when a claim asserts a subject's COUNT \
+of something exceeds or falls below a number ('has more than N \
+[people / residents / inhabitants / members / employees / students / seats]', \
+'has fewer than N ...'), emit a comparison predicate \
+'<measure>_greater_than' or '<measure>_less_than' \
+(population_greater_than, members_less_than, employees_greater_than, …) with \
+the bare numeric threshold in the object slot (keep magnitude words: \
+'2 million' stays '2 million'):
+    - 'Paris has more than 2 million people.' → \
+predicate='population_greater_than', object='2 million'.
+    - 'The club has fewer than 500 members.' → \
+predicate='members_less_than', object='500'.
+    Apply only to DIMENSIONLESS counts (people, members, seats, …). A \
+measurement carrying physical units (metres, kilograms, km²) is NOT in \
+scope — emit the literal claim instead.
 """
 
 
@@ -623,22 +629,11 @@ class Extractor:
         # resolved to a country at verification time via Wikidata P1549 — no
         # post-extraction rewrite or hardcoded demonym table here.
 
-        # Phase 10.5 Step 6 Tier A2: population-comparison canonicalization.
-        # When the source text matches "has more/less than N [people-like
-        # noun]" and the LLM emitted a generic `has`/`is`/`have` predicate
-        # with a descriptive object, rewrite to the canonical
-        # `population_greater_than` / `population_less_than` predicate
-        # with just the numeric quantity in the object slot. The walker's
-        # kb_quantitative routing then queries P1082 and compares.
-        if predicate in {"has", "have", "had", "is", "was", "with"}:
-            m_more = _POPULATION_MORE_PATTERN.search(source_text)
-            m_less = _POPULATION_LESS_PATTERN.search(source_text)
-            if m_more:
-                predicate = "population_greater_than"
-                object_value = m_more.group(1).strip()
-            elif m_less:
-                predicate = "population_less_than"
-                object_value = m_less.group(1).strip()
+        # (T7) Quantitative count comparison ("Paris has more than 2 million
+        # people") arrives from the extraction prompt (Rule 24) already shaped
+        # as population_greater_than(Paris, "2 million") etc. The oracle routes
+        # it (kb_quantitative) and the walker compares — no population-only
+        # regex or hardcoded P1082 here.
 
 
         triage_decision = triage(
