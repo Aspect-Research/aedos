@@ -1,0 +1,23 @@
+{
+  "_note": "Phase H D5 fixture. Q49112 = Williams College. Bindings cover the 5-property default set (P31, P279, P361, P131, P17). Mirrors the live SPARQL response shape (?prop, ?value).",
+  "results": {
+    "bindings": [
+      {
+        "prop": {"type": "uri", "value": "http://www.wikidata.org/prop/direct/P31"},
+        "value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q3918"}
+      },
+      {
+        "prop": {"type": "uri", "value": "http://www.wikidata.org/prop/direct/P31"},
+        "value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q23002054"}
+      },
+      {
+        "prop": {"type": "uri", "value": "http://www.wikidata.org/prop/direct/P131"},
+        "value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q771397"}
+      },
+      {
+        "prop": {"type": "uri", "value": "http://www.wikidata.org/prop/direct/P17"},
+        "value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q30"}
+      }
+    ]
+  }
+}

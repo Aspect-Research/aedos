@@ -1,0 +1,305 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Optional
+
+from ..layer1_extraction.extractor import ExtractionContext
+from ..layer1_extraction.triage import TriageDecision
+from ..layer4_sources.walker import VerificationContext
+from ..layer5_result.aggregator import (
+    ClaimVerdict,
+    VerificationResult,
+    base_verdict_of,
+)
+from ..llm.client import ChatMessage
+
+
+class InterventionType(str, Enum):
+    """Top-level intervention shape for the chat-wrapper response.
+
+    Phase 10.5 Session 2 Item 1 redesign: the previous 4-value enum
+    (PASS_THROUGH / ABSTAIN / CORRECT / DECLINE) rolled multiple
+    claim-level verdicts into a single response-level type, silently
+    dropping per-claim information when a draft had mixed problems
+    (one contradicted AND one abstained → CORRECT only, abstain
+    invisible). The new 3-value enum separates the *shape* of the
+    response (pass-through, per-claim intervention, refuse) from the
+    *per-claim actions* (carried in `InterventionPlan.per_claim_actions`).
+    """
+    PASS_THROUGH = "pass_through"
+    INTERVENE = "intervene"
+    DECLINE = "decline"
+
+
+class ClaimActionType(str, Enum):
+    """Per-claim action shape. Each problematic claim gets one action of
+    one of these types when the overall intervention is INTERVENE."""
+    CORRECT = "correct"
+    ABSTAIN = "abstain"
+
+
+@dataclass(frozen=True)
+class ClaimAction:
+    """One per-claim intervention. `annotation` is the user-facing text
+    the chat-wrapper composes into the response."""
+    claim_id: str
+    action_type: ClaimActionType
+    annotation: str
+
+
+@dataclass(frozen=True)
+class InterventionPlan:
+    """The full intervention shape: top-level direction + per-claim actions
+    (empty when overall is PASS_THROUGH or DECLINE)."""
+    overall: InterventionType
+    per_claim_actions: tuple[ClaimAction, ...] = ()
+
+
+@dataclass
+class ChatResponse:
+    final_message: str
+    intervention_plan: InterventionPlan
+    verification_result: VerificationResult
+    verification_id: str
+    draft_message: str = ""
+
+    @property
+    def intervention_type(self) -> str:
+        """Backwards-compatibility accessor: returns the top-level
+        intervention value (one of pass_through / intervene / decline).
+        Callers that need the per-claim actions read `intervention_plan`
+        directly."""
+        return self.intervention_plan.overall.value
+
+
+def _format_correction(cv: ClaimVerdict) -> str:
+    """Generic correction annotation for a contradicted claim. v0.15 surfaces
+    the claim's S/P/O without the contradicting grounding value; v0.16
+    enrichment plumbs the contradicting value out of the trace edges
+    (deferred per the Session 2 design)."""
+    polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
+    return (
+        f"Aedos found a contradicting source for: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
+    )
+
+
+def _format_abstention(cv: ClaimVerdict) -> str:
+    """Generic abstention annotation for a claim without grounding. The
+    `abstention_reason` (if present) gives operators a hook; the
+    user-facing text remains concise."""
+    polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
+    return (
+        f"Aedos could not verify: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
+    )
+
+
+def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan:
+    """Deterministic per-claim intervention selection.
+
+    Phase 10.5 Session 2 Item 1 (per-claim intervention) replaces the
+    previous count-based `select_intervention` with a per-claim
+    structure. The policy:
+
+    - Empty claim list → PASS_THROUGH (nothing to verify, nothing to
+      intervene on; a draft with no extracted claims goes to the user
+      unchanged).
+    - All claims have a `verified`-family base verdict → PASS_THROUGH.
+    - At least one problematic claim, AND at least one verified claim
+      OR only one problematic claim → INTERVENE with per-claim
+      annotations for each problematic claim.
+    - Zero verified claims AND ≥ 2 problematic claims → DECLINE. This
+      is the genuinely-dominated case: the draft contains nothing the
+      system can vouch for, and per-claim annotations would amount to
+      a long list of problems against zero verified content. The
+      refusal is the honest response. (The previous policy escalated
+      to DECLINE at the >50% problematic threshold including the
+      single-problematic-claim case, which dropped useful per-claim
+      annotations on the floor.)
+
+    Dual-designation verdicts (`*_given_assertion`) collapse to their
+    base verdict via `base_verdict_of` before the policy fires; the
+    `_given_assertion` qualifier is observability metadata, not a
+    user-facing distinction.
+    """
+    if not claim_verdicts:
+        return InterventionPlan(InterventionType.PASS_THROUGH)
+
+    actions: list[ClaimAction] = []
+    verified_count = 0
+    for cv in claim_verdicts:
+        base = base_verdict_of(cv.verdict)
+        if base == "verified":
+            verified_count += 1
+            continue
+        if base == "contradicted":
+            actions.append(ClaimAction(
+                claim_id=cv.claim_id,
+                action_type=ClaimActionType.CORRECT,
+                annotation=_format_correction(cv),
+            ))
+        else:  # no_grounding_found (and its dual abstained_given_assertion)
+            actions.append(ClaimAction(
+                claim_id=cv.claim_id,
+                action_type=ClaimActionType.ABSTAIN,
+                annotation=_format_abstention(cv),
+            ))
+
+    if not actions:
+        return InterventionPlan(InterventionType.PASS_THROUGH)
+    if verified_count == 0 and len(actions) >= 2:
+        return InterventionPlan(InterventionType.DECLINE)
+    return InterventionPlan(InterventionType.INTERVENE, tuple(actions))
+
+
+def build_response(draft: str, plan: InterventionPlan) -> str:
+    """Compose the user-facing response from the draft + intervention plan.
+
+    Format A (Phase 10.5 Session 2 Item 1c): pass-through returns the
+    draft unchanged; decline returns a generic refusal; intervene
+    returns the draft followed by an "Aedos verification notes:"
+    section listing each per-claim annotation as a bullet."""
+    if plan.overall == InterventionType.PASS_THROUGH:
+        return draft
+    if plan.overall == InterventionType.DECLINE:
+        return "I'm unable to provide a response I cannot verify."
+    # INTERVENE
+    notes = "\n".join(f"- {a.annotation}" for a in plan.per_claim_actions)
+    return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
+
+
+class ChatWrapper:
+    def __init__(
+        self,
+        extractor,
+        walker,
+        aggregator,
+        llm_client,
+        tier_u=None,
+        config: Optional[dict] = None,
+    ) -> None:
+        self._extractor = extractor
+        self._walker = walker
+        self._aggregator = aggregator
+        self._llm = llm_client
+        # Phase H Cluster 2 step 2: `tier_u` is the promotion target for
+        # user-asserted claims. Optional for back-compat with tests that
+        # construct ChatWrapper without it (those skip the user-message
+        # extraction step; behavior matches pre-Cluster-2). The
+        # build_pipeline shape passes it explicitly.
+        self._tier_u = tier_u
+        self._config = config or {}
+        self._verification_store: dict[str, VerificationResult] = {}
+
+    def respond(self, user_message: str, conversation_context: Optional[dict] = None) -> ChatResponse:
+        ctx_dict = conversation_context or {}
+        asserting_party = ctx_dict.get("asserting_party_id", "user")
+        current_time = datetime.now(timezone.utc).isoformat()
+
+        # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): extract claims
+        # from the user_message and promote them into Tier U BEFORE the
+        # draft is generated. This is how "user-asserted claims
+        # accumulate as premises" lands in the deployed pipeline — the
+        # draft-extraction-and-walk loop later in this method then sees
+        # the user's assertions as Tier U premises and can chain off them
+        # (the chain produces a `*_given_assertion` verdict per step 3).
+        #
+        # Bounded extra cost: one additional extraction call per turn.
+        # The user-message extraction reads from `user_message` (not
+        # `draft`), so the asserting party is the user and the claims
+        # are first-person canonicalized via the extractor's existing
+        # logic.
+        #
+        # Skip the promotion path when `tier_u` was not wired (legacy
+        # constructor shape) — the wrapper degrades cleanly to the
+        # pre-Cluster-2 behavior.
+        if self._tier_u is not None and self._extractor is not None and user_message:
+            from ..layer4_sources.promotion import promote_assertions
+            user_ctx = ExtractionContext(
+                asserting_party=asserting_party,
+                context_type="chat_user",
+                turn_id=ctx_dict.get("conversation_id"),
+            )
+            user_claims = self._extractor.extract(user_message, user_ctx)
+            user_claims = [c for c in user_claims if c.triage_decision == TriageDecision.VERIFY]
+            if user_claims:
+                promote_assertions(user_claims, self._tier_u)
+                # The promotion's pre_verdicts (cross-source contradictions
+                # on the user's own assertions vs. prior externally-verified
+                # rows) are not surfaced to this turn's intervention — the
+                # user spoke, we recorded what they said. The audit-log
+                # entries (cross_source_contradiction) are the trail.
+                # Phase 10.5 / a future deployment surface may consume them.
+
+        # 1. Generate draft
+        system = self._config.get("system_prompt", "You are a helpful assistant.")
+        draft = self._llm.chat(
+            system=system,
+            messages=[ChatMessage(role="user", content=user_message)],
+            purpose="chat",
+        )
+
+        # 2. Extract claims from the draft (the LLM's response — the
+        # text whose factual content we intervene on).
+        #
+        # The extraction call is deliberately NOT wrapped in a broad
+        # `except Exception`. A prior `except Exception: claims = []` here
+        # silently swallowed a `TypeError` from a stale `extract` signature for
+        # two release candidates, leaving `/chat` verification-inert. Letting an
+        # unexpected extraction failure propagate is the honest behaviour: the
+        # next such bug surfaces immediately instead of degrading silently.
+        claims = []
+        if self._extractor is not None and draft:
+            extraction_context = ExtractionContext(
+                asserting_party=asserting_party,
+                context_type="chat_user",
+                turn_id=ctx_dict.get("conversation_id"),
+            )
+            claims = self._extractor.extract(draft, extraction_context)
+            # Only keep VERIFY-triaged claims for verification
+            claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
+
+        # 3. Verify each claim
+        # Phase H D47: thread the draft (the text the extractor saw) as
+        # source_text so the Wikipedia normalizer's Stage 2 has context
+        # for disambiguating bare ambiguous references.
+        verification_context = VerificationContext(
+            current_time=current_time,
+            asserting_party=asserting_party,
+            source_text=draft,
+        )
+        walk_results = []
+        for claim in claims:
+            result = self._walker.walk(claim, verification_context)
+            walk_results.append(result)
+
+        # 4. Aggregate
+        vr = self._aggregator.aggregate(
+            claims=claims,
+            per_claim_results=walk_results,
+            text_input={"message": user_message, "draft": draft},
+        )
+
+        # 5. Intervention selection (per-claim plan)
+        plan = select_interventions(vr.claim_verdicts)
+
+        # 6. Build response (Format A: draft + per-claim notes)
+        final = build_response(draft, plan)
+
+        verification_id = str(uuid.uuid4())
+        self._verification_store[verification_id] = vr
+
+        return ChatResponse(
+            final_message=final,
+            intervention_plan=plan,
+            verification_result=vr,
+            verification_id=verification_id,
+            draft_message=draft,
+        )
+
+    def get_verification(self, verification_id: str) -> Optional[VerificationResult]:
+        return self._verification_store.get(verification_id)

@@ -1,0 +1,295 @@
+{
+  "corpus": "temporal_scope_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-28T07:56:54.148456+00:00",
+  "finished_at": "2026-05-28T07:57:56.643987+00:00",
+  "duration_s": 62.5,
+  "case_count": 40,
+  "passed": 40,
+  "accuracy": 1.0,
+  "threshold": 0.9,
+  "per_case": [
+    {
+      "case_id": "ts_explicit_001",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.517
+    },
+    {
+      "case_id": "ts_explicit_002",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.417
+    },
+    {
+      "case_id": "ts_explicit_003",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.095
+    },
+    {
+      "case_id": "ts_explicit_004",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.452
+    },
+    {
+      "case_id": "ts_explicit_005",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.338
+    },
+    {
+      "case_id": "ts_explicit_006",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.395
+    },
+    {
+      "case_id": "ts_explicit_007",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.236
+    },
+    {
+      "case_id": "ts_explicit_008",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.325
+    },
+    {
+      "case_id": "ts_explicit_009",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.221
+    },
+    {
+      "case_id": "ts_explicit_010",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.65
+    },
+    {
+      "case_id": "ts_implicit_001",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.259
+    },
+    {
+      "case_id": "ts_implicit_002",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.165
+    },
+    {
+      "case_id": "ts_implicit_003",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.126
+    },
+    {
+      "case_id": "ts_implicit_004",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.154
+    },
+    {
+      "case_id": "ts_implicit_005",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.309
+    },
+    {
+      "case_id": "ts_implicit_006",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.126
+    },
+    {
+      "case_id": "ts_implicit_007",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.252
+    },
+    {
+      "case_id": "ts_implicit_008",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.083
+    },
+    {
+      "case_id": "ts_implicit_009",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.147
+    },
+    {
+      "case_id": "ts_implicit_010",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.17
+    },
+    {
+      "case_id": "ts_relative_001",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.629
+    },
+    {
+      "case_id": "ts_relative_002",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.393
+    },
+    {
+      "case_id": "ts_relative_003",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.62
+    },
+    {
+      "case_id": "ts_relative_004",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.528
+    },
+    {
+      "case_id": "ts_relative_005",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.548
+    },
+    {
+      "case_id": "ts_relative_006",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.217
+    },
+    {
+      "case_id": "ts_relative_007",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.244
+    },
+    {
+      "case_id": "ts_relative_008",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.724
+    },
+    {
+      "case_id": "ts_relative_009",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.287
+    },
+    {
+      "case_id": "ts_relative_010",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 8.548
+    },
+    {
+      "case_id": "ts_no_marker_001",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.385
+    },
+    {
+      "case_id": "ts_no_marker_002",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.139
+    },
+    {
+      "case_id": "ts_no_marker_003",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.221
+    },
+    {
+      "case_id": "ts_no_marker_004",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.099
+    },
+    {
+      "case_id": "ts_no_marker_005",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.218
+    },
+    {
+      "case_id": "ts_future_001",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.273
+    },
+    {
+      "case_id": "ts_future_002",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.206
+    },
+    {
+      "case_id": "ts_future_003",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.202
+    },
+    {
+      "case_id": "ts_future_004",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.27
+    },
+    {
+      "case_id": "ts_future_005",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.298
+    }
+  ]
+}

@@ -1,0 +1,1713 @@
+[
+  {
+    "case_id": "norm_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is employed by Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "employed by",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa is employed by Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was employed by Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "employed by",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa was employed by Google",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa works at Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "works_at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa works at Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "graduated from",
+              "object": "Williams College",
+              "polarity": 1,
+              "source_text": "Asa graduated from Williams College",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "was born in",
+              "object": "Massachusetts",
+              "polarity": 1,
+              "source_text": "Asa was born in Massachusetts",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "was born",
+              "object": "",
+              "polarity": 1,
+              "source_text": "was born",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama served as President",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Curie was awarded the Nobel Prize",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:21] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "norm_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Einstein won the prize",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Einstein",
+              "predicate": "won",
+              "object": "the prize",
+              "polarity": 1,
+              "source_text": "Einstein won the prize",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is located in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Williams College",
+              "predicate": "located in",
+              "object": "Massachusetts",
+              "polarity": 1,
+              "source_text": "Williams College is located in Massachusetts",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa resides in Williamstown",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "resides in",
+              "object": "Williamstown",
+              "polarity": 1,
+              "source_text": "Asa resides in Williamstown",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is part of the research team",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "is part of",
+              "object": "the research team",
+              "polarity": 1,
+              "source_text": "Asa is part of the research team",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France belongs to NATO",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "France",
+              "predicate": "belongs to",
+              "object": "NATO",
+              "polarity": 1,
+              "source_text": "France belongs to NATO",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa co-founded the company",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "co-founded",
+              "object": "the company",
+              "polarity": 1,
+              "source_text": "Asa co-founded the company",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "norm_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa wrote the paper",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "wrote",
+              "object": "the paper",
+              "polarity": 1,
+              "source_text": "Asa wrote the paper",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa and Mike co-founded Acme",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Alice Bob and Carol attended the summit",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:52] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa and Bob are friends",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "is friend of",
+              "object": "Bob",
+              "polarity": 1,
+              "source_text": "Asa and Bob are friends",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The deal was signed by France and Germany",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "France",
+              "predicate": "signed",
+              "object": "deal",
+              "polarity": 1,
+              "source_text": "The deal was signed by France and Germany",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany"
+              ],
+              "event_type": "signing"
+            },
+            {
+              "subject": "Germany",
+              "predicate": "signed",
+              "object": "deal",
+              "polarity": 1,
+              "source_text": "The deal was signed by France and Germany",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany"
+              ],
+              "event_type": "signing"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa married Pat",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "married",
+              "object": "Pat",
+              "polarity": 1,
+              "source_text": "Asa married Pat",
+              "verb_tense": "past",
+              "participants": [
+                "Asa",
+                "Pat"
+              ],
+              "event_type": "marriage"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The group met in Paris",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Apple and IBM both released products",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Apple",
+              "predicate": "released",
+              "object": "products",
+              "polarity": 1,
+              "source_text": "Apple and IBM both released products",
+              "verb_tense": "past",
+              "participants": [],
+              "event_type": "release"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "all decomposed claims share reified_event_id",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "all decomposed claims",
+              "predicate": "share",
+              "object": "reified_event_id",
+              "polarity": 1,
+              "source_text": "all decomposed claims share reified_event_id",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is taller than Bob",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "decomp_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France Germany and Italy signed the accord",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "France",
+              "predicate": "signed",
+              "object": "the accord",
+              "polarity": 1,
+              "source_text": "France Germany and Italy signed the accord",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany",
+                "Italy"
+              ],
+              "event_type": "signing"
+            },
+            {
+              "subject": "Germany",
+              "predicate": "signed",
+              "object": "the accord",
+              "polarity": 1,
+              "source_text": "France Germany and Italy signed the accord",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany",
+                "Italy"
+              ],
+              "event_type": "signing"
+            },
+            {
+              "subject": "Italy",
+              "predicate": "signed",
+              "object": "the accord",
+              "polarity": 1,
+              "source_text": "France Germany and Italy signed the accord",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "Germany",
+                "Italy"
+              ],
+              "event_type": "signing"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama was President from 2008 to 2016",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Obama",
+              "predicate": "was President from",
+              "object": "2008 to 2016",
+              "polarity": 1,
+              "source_text": "Obama was President from 2008 to 2016",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama was President",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Obama",
+              "predicate": "was",
+              "object": "President",
+              "polarity": 1,
+              "source_text": "Obama was President",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa will be President",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RuntimeError: extract_with_tool: no tool call in OpenAI-compatible response",
+        "raw_response": {
+          "id": "gen-1779228552-0y6fnrzyFAlclMNueQ7L",
+          "choices": [
+            {
+              "finish_reason": null,
+              "index": 0,
+              "logprobs": null,
+              "message": {
+                "content": null,
+                "refusal": null,
+                "role": "assistant",
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "tool_calls": null,
+                "reasoning": null
+              },
+              "native_finish_reason": null
+            }
+          ],
+          "created": 1779228552,
+          "model": "deepseek/deepseek-v4-flash-20260423",
+          "object": "chat.completion",
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "provider": "Morph"
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was there when Obama was President",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Apple was founded in 1976",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Apple",
+              "predicate": "was founded in",
+              "object": "1976",
+              "polarity": 1,
+              "source_text": "Apple was founded in 1976",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The war ended in 1945",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "France joined the EU in 1958",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "France",
+              "predicate": "joined",
+              "object": "EU",
+              "polarity": 1,
+              "source_text": "France joined the EU",
+              "verb_tense": "past",
+              "participants": [
+                "France",
+                "EU"
+              ],
+              "event_type": "join"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa is currently employed at Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "employed at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa is currently employed at Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The policy was in effect from 2010 to 2020",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "the policy",
+              "predicate": "be in effect from",
+              "object": "2010 to 2020",
+              "polarity": 1,
+              "source_text": "The policy was in effect from 2010 to 2020",
+              "verb_tense": "past",
+              "event_type": null
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "He was there when the wall fell",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "He",
+              "predicate": "was at",
+              "object": "the wall",
+              "polarity": 1,
+              "source_text": "He was there when the wall fell",
+              "verb_tense": "past",
+              "participants": [
+                "He"
+              ],
+              "event_type": "presence"
+            },
+            {
+              "subject": "the wall",
+              "predicate": "fell",
+              "object": "exists",
+              "polarity": 1,
+              "source_text": "He was there when the wall fell",
+              "verb_tense": "past",
+              "event_type": "collapse"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa lives in Boston since 2018",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "lives in",
+              "object": "Boston",
+              "polarity": 1,
+              "source_text": "Asa lives in Boston since 2018",
+              "verb_tense": "present",
+              "participants": [],
+              "event_type": null
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The treaty will expire in 2030",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "The treaty",
+              "predicate": "will expire in",
+              "object": "2030",
+              "polarity": 1,
+              "source_text": "The treaty will expire in 2030",
+              "verb_tense": "future"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "She served as Minister for three years",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "She",
+              "predicate": "served as",
+              "object": "Minister",
+              "polarity": 1,
+              "source_text": "served as Minister",
+              "verb_tense": "past",
+              "participants": [
+                "She"
+              ],
+              "event_type": "role"
+            },
+            {
+              "subject": "She",
+              "predicate": "served for duration",
+              "object": "three years",
+              "polarity": 1,
+              "source_text": "served as Minister for three years",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "temporal_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama was president when Osama was killed",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "RuntimeError: extract_with_tool: no tool call in OpenAI-compatible response",
+        "raw_response": {
+          "id": "gen-1779228600-PAWlnfxhS7qKHxmlpXqk",
+          "choices": [
+            {
+              "finish_reason": null,
+              "index": 0,
+              "logprobs": null,
+              "message": {
+                "content": null,
+                "refusal": null,
+                "role": "assistant",
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "tool_calls": null,
+                "reasoning": null
+              },
+              "native_finish_reason": null
+            }
+          ],
+          "created": 1779228600,
+          "model": "deepseek/deepseek-v4-flash-20260423",
+          "object": "chat.completion",
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "provider": "Morph"
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa works at Google",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "works at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "Asa works at Google",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "I",
+              "predicate": "graduated from",
+              "object": "Williams College",
+              "polarity": 1,
+              "source_text": "I graduated from Williams College",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Williams College is in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Williams College",
+              "predicate": "is located in",
+              "object": "Massachusetts",
+              "polarity": 1,
+              "source_text": "Williams College is in Massachusetts",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The GDP of France is 3 trillion",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "France",
+              "predicate": "has GDP of",
+              "object": "3 trillion",
+              "polarity": 1,
+              "source_text": "The GDP of France is 3 trillion",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa was born in Massachusetts",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "born in",
+              "object": "Massachusetts",
+              "polarity": 1,
+              "source_text": "Asa was born in Massachusetts",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "graduated from",
+              "object": "Williams College",
+              "polarity": 1,
+              "source_text": "Asa graduated from Williams College",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "hardclaim_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "She said he was the founder",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "she",
+              "predicate": "said",
+              "object": "he was the founder",
+              "polarity": 1,
+              "source_text": "She said he was the founder",
+              "verb_tense": "past",
+              "participants": [
+                "she",
+                "he"
+              ],
+              "event_type": "statement"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I graduated from Williams College",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "I",
+              "predicate": "graduated from",
+              "object": "Williams College",
+              "polarity": 1,
+              "source_text": "I graduated from Williams College",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "We found in our study that aspirin reduces fever",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Our study",
+              "predicate": "found that",
+              "object": "aspirin reduces fever",
+              "polarity": 1,
+              "source_text": "We found in our study that aspirin reduces fever",
+              "verb_tense": "present"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "My alma mater is Williams College",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:52] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "He said I am the president",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "he",
+              "predicate": "said",
+              "object": "I am the president",
+              "polarity": 1,
+              "source_text": "He said I am the president",
+              "verb_tense": "past",
+              "event_type": "statement"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama said I won the election",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Obama",
+              "predicate": "said",
+              "object": "I won the election",
+              "polarity": 1,
+              "source_text": "Obama said I won the election",
+              "verb_tense": "past",
+              "participants": [
+                "Obama",
+                "I"
+              ],
+              "event_type": "speech_act"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Obama is the 44th president",
+          "tool": "extract_claims"
+        },
+        "response": null,
+        "error": "TypeError: 'NoneType' object is not subscriptable",
+        "raw_response": {
+          "id": null,
+          "choices": null,
+          "created": null,
+          "model": null,
+          "object": null,
+          "service_tier": null,
+          "system_fingerprint": null,
+          "usage": null,
+          "error": {
+            "message": "Upstream error from Morph: Failed to compile structural_tag grammar: [22:07:52] /project/cpp/grammar_compiler.cc:1037: Check failed: (std::holds_alternative<Grammar>(result)) is false: Invalid structural tag error: Only the last element in a sequence can be unlimited, but the 1th element of sequence format is unlimited\n",
+            "code": 502
+          }
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "I have been working at Google since 2020",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "I",
+              "predicate": "working at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "past",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment"
+            },
+            {
+              "subject": "I",
+              "predicate": "started working at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "past",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment_start"
+            },
+            {
+              "subject": "I",
+              "predicate": "works at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "present",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment"
+            },
+            {
+              "subject": "I",
+              "predicate": "has tenure at",
+              "object": "Google",
+              "polarity": 1,
+              "source_text": "I have been working at Google since 2020",
+              "verb_tense": "present",
+              "participants": [
+                "I",
+                "Google"
+              ],
+              "event_type": "employment"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "me and Alice went to MIT",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": []
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "The company hired me",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "The company",
+              "predicate": "hired",
+              "object": "me",
+              "polarity": 1,
+              "source_text": "The company hired me",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "firstperson_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "extractor:user",
+        "request": {
+          "system": "You are a precise claim extractor. Given a piece of text, extract all verifiable factual claims as binary relational claims (subject, predicate, object).\n\nRules:\n1. Only extract claims explicitly stated in the TEXT. Do not extract claims from context.\n2. Preserve first-person pronouns as subjects (I, me, my, we, us) \u2014 the caller will canonicalize them.\n3. Set verb_tense=future for predictive claims (they will be filtered out).\n4. source_text must be a verbatim substring of the input text.\n5. For \"Actually X, not Y\" corrections: extract X with polarity=1 and Y with polarity=0.\n6. For multi-participant events use the participants field and set event_type.\n",
+          "user_message": "Asa wrote our paper on climate",
+          "tool": "extract_claims"
+        },
+        "response": {
+          "claims": [
+            {
+              "subject": "Asa",
+              "predicate": "wrote",
+              "object": "our paper on climate",
+              "polarity": 1,
+              "source_text": "Asa wrote our paper on climate",
+              "verb_tense": "past"
+            }
+          ]
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  }
+]

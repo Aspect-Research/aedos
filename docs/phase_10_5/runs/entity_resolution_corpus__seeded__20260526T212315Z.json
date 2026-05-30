@@ -1,0 +1,365 @@
+{
+  "corpus": "entity_resolution_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T21:20:24.268008+00:00",
+  "finished_at": "2026-05-26T21:23:15.384179+00:00",
+  "duration_s": 171.1,
+  "case_count": 50,
+  "passed": 42,
+  "accuracy": 0.84,
+  "threshold": 0.9,
+  "per_case": [
+    {
+      "case_id": "er_unambiguous_001",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.083
+    },
+    {
+      "case_id": "er_unambiguous_002",
+      "category": "unambiguous",
+      "passed": false,
+      "error": null,
+      "duration_s": 2.817
+    },
+    {
+      "case_id": "er_unambiguous_003",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.234
+    },
+    {
+      "case_id": "er_unambiguous_004",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.541
+    },
+    {
+      "case_id": "er_unambiguous_005",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.278
+    },
+    {
+      "case_id": "er_unambiguous_006",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.624
+    },
+    {
+      "case_id": "er_unambiguous_007",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.544
+    },
+    {
+      "case_id": "er_unambiguous_008",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 5.953
+    },
+    {
+      "case_id": "er_unambiguous_009",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.856
+    },
+    {
+      "case_id": "er_unambiguous_010",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.882
+    },
+    {
+      "case_id": "er_unambiguous_011",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.581
+    },
+    {
+      "case_id": "er_unambiguous_012",
+      "category": "unambiguous",
+      "passed": false,
+      "error": null,
+      "duration_s": 3.668
+    },
+    {
+      "case_id": "er_unambiguous_013",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.6
+    },
+    {
+      "case_id": "er_unambiguous_014",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.012
+    },
+    {
+      "case_id": "er_unambiguous_015",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.858
+    },
+    {
+      "case_id": "er_unambiguous_016",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.026
+    },
+    {
+      "case_id": "er_unambiguous_017",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.82
+    },
+    {
+      "case_id": "er_unambiguous_018",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.935
+    },
+    {
+      "case_id": "er_unambiguous_019",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.032
+    },
+    {
+      "case_id": "er_unambiguous_020",
+      "category": "unambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.031
+    },
+    {
+      "case_id": "er_ambiguous_001",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.776
+    },
+    {
+      "case_id": "er_ambiguous_002",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.464
+    },
+    {
+      "case_id": "er_ambiguous_003",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.885
+    },
+    {
+      "case_id": "er_ambiguous_004",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.824
+    },
+    {
+      "case_id": "er_ambiguous_005",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.244
+    },
+    {
+      "case_id": "er_ambiguous_006",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.866
+    },
+    {
+      "case_id": "er_ambiguous_007",
+      "category": "ambiguous",
+      "passed": false,
+      "error": null,
+      "duration_s": 3.518
+    },
+    {
+      "case_id": "er_ambiguous_008",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.291
+    },
+    {
+      "case_id": "er_ambiguous_009",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.426
+    },
+    {
+      "case_id": "er_ambiguous_010",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.463
+    },
+    {
+      "case_id": "er_ambiguous_011",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.32
+    },
+    {
+      "case_id": "er_ambiguous_012",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.061
+    },
+    {
+      "case_id": "er_ambiguous_013",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.633
+    },
+    {
+      "case_id": "er_ambiguous_014",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.523
+    },
+    {
+      "case_id": "er_ambiguous_015",
+      "category": "ambiguous",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.286
+    },
+    {
+      "case_id": "er_type_filter_001",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.143
+    },
+    {
+      "case_id": "er_type_filter_002",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.156
+    },
+    {
+      "case_id": "er_type_filter_003",
+      "category": "type_filter",
+      "passed": false,
+      "error": null,
+      "duration_s": 4.834
+    },
+    {
+      "case_id": "er_type_filter_004",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 4.876
+    },
+    {
+      "case_id": "er_type_filter_005",
+      "category": "type_filter",
+      "passed": false,
+      "error": null,
+      "duration_s": 2.74
+    },
+    {
+      "case_id": "er_type_filter_006",
+      "category": "type_filter",
+      "passed": false,
+      "error": null,
+      "duration_s": 4.293
+    },
+    {
+      "case_id": "er_type_filter_007",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.848
+    },
+    {
+      "case_id": "er_type_filter_008",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.739
+    },
+    {
+      "case_id": "er_type_filter_009",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 6.032
+    },
+    {
+      "case_id": "er_type_filter_010",
+      "category": "type_filter",
+      "passed": true,
+      "error": null,
+      "duration_s": 9.043
+    },
+    {
+      "case_id": "er_no_match_001",
+      "category": "no_match",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.368
+    },
+    {
+      "case_id": "er_no_match_002",
+      "category": "no_match",
+      "passed": true,
+      "error": null,
+      "duration_s": 3.391
+    },
+    {
+      "case_id": "er_no_match_003",
+      "category": "no_match",
+      "passed": false,
+      "error": null,
+      "duration_s": 4.061
+    },
+    {
+      "case_id": "er_no_match_004",
+      "category": "no_match",
+      "passed": false,
+      "error": null,
+      "duration_s": 3.268
+    },
+    {
+      "case_id": "er_no_match_005",
+      "category": "no_match",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.353
+    }
+  ]
+}

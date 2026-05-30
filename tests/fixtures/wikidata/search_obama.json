@@ -1,0 +1,23 @@
+{
+  "searchinfo": {"search": "Obama"},
+  "search": [
+    {
+      "id": "Q76",
+      "title": "Q76",
+      "pageid": 76,
+      "url": "//www.wikidata.org/wiki/Q76",
+      "description": "44th president of the United States",
+      "label": "Barack Obama",
+      "match": {"type": "label", "language": "en", "text": "Barack Obama"}
+    },
+    {
+      "id": "Q842926",
+      "title": "Q842926",
+      "pageid": 842926,
+      "url": "//www.wikidata.org/wiki/Q842926",
+      "description": "Michelle Obama",
+      "label": "Michelle Obama",
+      "match": {"type": "label", "language": "en", "text": "Michelle Obama"}
+    }
+  ]
+}

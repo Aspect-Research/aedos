@@ -1,0 +1,225 @@
+{
+  "corpus": "python_verification_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T23:01:25.089132+00:00",
+  "finished_at": "2026-05-26T23:02:03.422355+00:00",
+  "duration_s": 38.3,
+  "case_count": 30,
+  "passed": 26,
+  "accuracy": 0.8666666666666667,
+  "threshold": 0.85,
+  "per_case": [
+    {
+      "case_id": "pyv_date_001",
+      "category": "date_arithmetic",
+      "passed": false,
+      "error": null,
+      "duration_s": 4.923
+    },
+    {
+      "case_id": "pyv_date_002",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.442
+    },
+    {
+      "case_id": "pyv_date_003",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.431
+    },
+    {
+      "case_id": "pyv_date_004",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.422
+    },
+    {
+      "case_id": "pyv_date_005",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.04
+    },
+    {
+      "case_id": "pyv_date_006",
+      "category": "date_arithmetic",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.134
+    },
+    {
+      "case_id": "pyv_date_007",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.293
+    },
+    {
+      "case_id": "pyv_date_008",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.928
+    },
+    {
+      "case_id": "pyv_date_009",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.124
+    },
+    {
+      "case_id": "pyv_date_010",
+      "category": "date_arithmetic",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.285
+    },
+    {
+      "case_id": "pyv_str_001",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.976
+    },
+    {
+      "case_id": "pyv_str_002",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 2.312
+    },
+    {
+      "case_id": "pyv_str_003",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.927
+    },
+    {
+      "case_id": "pyv_str_004",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.813
+    },
+    {
+      "case_id": "pyv_str_005",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.021
+    },
+    {
+      "case_id": "pyv_str_006",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.896
+    },
+    {
+      "case_id": "pyv_str_007",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.976
+    },
+    {
+      "case_id": "pyv_str_008",
+      "category": "string_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.839
+    },
+    {
+      "case_id": "pyv_num_001",
+      "category": "numerical_comparison",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.707
+    },
+    {
+      "case_id": "pyv_num_002",
+      "category": "numerical_comparison",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.783
+    },
+    {
+      "case_id": "pyv_num_003",
+      "category": "numerical_comparison",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.414
+    },
+    {
+      "case_id": "pyv_num_004",
+      "category": "numerical_comparison",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.546
+    },
+    {
+      "case_id": "pyv_num_005",
+      "category": "numerical_comparison",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.247
+    },
+    {
+      "case_id": "pyv_num_006",
+      "category": "numerical_comparison",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.175
+    },
+    {
+      "case_id": "pyv_list_001",
+      "category": "list_set_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.253
+    },
+    {
+      "case_id": "pyv_list_002",
+      "category": "list_set_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.37
+    },
+    {
+      "case_id": "pyv_list_003",
+      "category": "list_set_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.863
+    },
+    {
+      "case_id": "pyv_list_004",
+      "category": "list_set_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.225
+    },
+    {
+      "case_id": "pyv_list_005",
+      "category": "list_set_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 0.888
+    },
+    {
+      "case_id": "pyv_list_006",
+      "category": "list_set_operations",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.07
+    }
+  ]
+}

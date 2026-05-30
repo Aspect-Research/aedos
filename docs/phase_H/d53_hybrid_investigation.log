@@ -1,0 +1,59 @@
+========================================================================
+D53 hybrid-approach validation: bare vs canonical-form wbsearchentities
+========================================================================
+
+surface                expected   bare rank    canonical form                 canonical rank
+----------------------------------------------------------------------------------------------------
+Obama                  Q76        NOT FOUND    Barack Obama                   1
+Apple                  Q312       1            Apple Inc.                     1
+Amazon                 Q3884      1            Amazon                         1
+Einstein               Q937       2            Albert Einstein                1
+President              Q11696     4            President of the United States 1
+Williams College       Q49166     1            Williams College               1
+
+
+Detailed top-5 for canonical-form queries:
+
+  'Barack Obama' (expected Q76):
+    1. Q76       Barack Obama                                       match=label  <-- EXPECTED
+    2. Q649593   Barack Obama Sr.                                   match=label
+    3. Q59661289 Barack Obama Presidential Library                  match=label
+    4. Q47513588 Barack Obama                                       match=label
+    5. Q1379733  presidency of Barack Obama                         match=alias
+
+  'Apple Inc.' (expected Q312):
+    1. Q312      Apple Inc.                                         match=label  <-- EXPECTED
+    2. Q62033032 Apple media event                                  match=alias
+    3. Q1048090  history of Apple Inc.                              match=alias
+    4. Q4781184  Apple Inc. litigation                              match=label
+    5. Q2935440  Apple Inc. advertising                             match=label
+
+  'Amazon' (expected Q3884):
+    1. Q3884     Amazon                                             match=label  <-- EXPECTED
+    2. Q40040    Amazonas                                           match=label
+    3. Q456065   Amazon                                             match=label
+    4. Q136469   Amazon Kindle                                      match=alias
+    5. Q201162   Amazonas Department                                match=label
+
+  'Albert Einstein' (expected Q937):
+    1. Q937      Albert Einstein                                    match=label  <-- EXPECTED
+    2. Q2030894  Albert Einstein College of Medicine                match=label
+    3. Q2253683  Albert Einstein                                    match=label
+    4. Q21200226 Albert Einstein                                    match=label
+    5. Q47513150 Albert Einstein                                    match=label
+
+  'President of the United States' (expected Q11696):
+    1. Q11696    President of the United States                     match=label  <-- EXPECTED
+    2. Q11699    Vice President of the United States                match=alias
+    3. Q17512211 cultural depictions of John F. Kennedy             match=alias
+    4. Q125680992 President of the United States                     match=label
+    5. Q115435580 president of the United States Conference of Catho match=label
+
+  'Williams College' (expected Q49166):
+    1. Q49166    Williams College                                   match=label  <-- EXPECTED
+    2. Q12072937 Williams College Museum of Art                     match=label
+    3. Q8021012  Williams Ephs                                      match=alias
+    4. Q61782737 Williams College Cemetery                          match=label
+    5. Q23018410 Williams College Investment Office                 match=label
+
+Wrote C:\code\aedos\docs\phase_H\d53_hybrid_investigation.json

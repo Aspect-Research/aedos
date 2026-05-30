@@ -1,0 +1,602 @@
+[
+  {
+    "case_id": "pyv_date_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2026-05-17', predicate='days_after', object='100'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime, timedelta\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'days_after':\n        try:\n            # Parse the subject date\n            subject_date = datetime.strptime(subject, '%Y-%m-%d')\n            # Calculate the date 100 days after the subject date\n            target_date = subject_date + timedelta(days=int(obj))\n            # Check if the target date is exactly 100 days after the subject date\n            return (subject_date + timedelta(days=100)).strftime('%Y-%m-%d') == target_date.strftime('%Y-%m-%d')\n        except (ValueError, TypeError):\n            return False\n    return False",
+          "reasoning": "The function verifies if the date in 'subject' is exactly 100 days before the date in 'object'. It parses the subject date, adds 100 days, and checks if the result matches the object date."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2026-05-17', predicate='days_after', object='99'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'days_after':\n        try:\n            date = datetime.strptime(subject, '%Y-%m-%d')\n            days = int(obj)\n            return (date - datetime(1970, 1, 1)).days == days\n        except (ValueError, TypeError):\n            return False\n    return False",
+          "reasoning": "The function checks if the given date (subject) is exactly the specified number of days (obj) after the Unix epoch (1970-01-01). It parses the date string, calculates the number of days since the epoch, and compares it to the given number of days."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2024', predicate='is_leap_year', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate != 'is_leap_year':\n        return False\n    try:\n        year = int(subject)\n    except ValueError:\n        return False\n    if obj.lower() not in ('true', 'false'):\n        return False\n    is_leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)\n    return str(is_leap).lower() == obj.lower()",
+          "reasoning": "The function first checks if the predicate is 'is_leap_year'. Then it tries to convert the subject to an integer (the year). If the object is not 'true' or 'false', it returns False. It then calculates if the year is a leap year using the standard leap year rules and compares it to the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='1900', predicate='is_leap_year', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'is_leap_year':\n        year = int(subject)\n        if obj.lower() in ('true', '1'):\n            # A year is a leap year if it is divisible by 4, except for end of century years, which must be divisible by 400.\n            return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)\n        else:\n            return not ((year % 4 == 0 and year % 100 != 0) or (year % 400 == 0))\n    return False",
+          "reasoning": "To verify if a year is a leap year, we check if it's divisible by 4 but not by 100, unless it's also divisible by 400. This matches the astronomical definition of a leap year."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='1973', predicate='birth_year_plus_30', object='2003'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'birth_year_plus_30':\n        try:\n            birth_year = int(subject)\n            expected_year = int(obj)\n            return expected_year == birth_year + 30\n        except ValueError:\n            return False\n    return False",
+          "reasoning": "The function checks if the object is equal to the subject (birth year) plus 30. It first verifies if the predicate matches 'birth_year_plus_30', then attempts to convert both subject and object to integers. If successful, it checks if the object is the subject plus 30. If not, or if conversion fails, it returns False."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2020-03-01', predicate='days_between', object='1'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'days_between':\n        try:\n            date1 = datetime.strptime(subject, '%Y-%m-%d')\n            date2 = datetime.strptime(obj, '%Y-%m-%d')\n            delta = abs((date2 - date1).days)\n            return delta == 1\n        except ValueError:\n            return False\n    return False",
+          "reasoning": "The function checks if the absolute difference in days between two dates is exactly 1 day. It parses the input strings as dates and computes the difference."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2023', predicate='age_in_2026', object='3'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'age_in_2026':\n        try:\n            birth_year = int(subject)\n            age_in_2026 = 2026 - birth_year\n            return str(age_in_2026) == obj\n        except ValueError:\n            return False\n    return False",
+          "reasoning": "The function checks if the subject (a birth year) results in the given age (object) in 2026. It calculates the age by subtracting the birth year from 2026 and compares it to the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2000-01-01', predicate='day_of_week', object='Saturday'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'day_of_week':\n        date = datetime.strptime(subject, '%Y-%m-%d')\n        return date.strftime('%A') == obj\n    return False",
+          "reasoning": "The function verifies if the given date (subject) corresponds to the specified day of the week (object) by parsing the date and comparing the day name."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2026-02-28', predicate='next_day_is', object='2026-03-01'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime, timedelta\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate != 'next_day_is':\n        return False\n    try:\n        subject_date = datetime.strptime(subject, '%Y-%m-%d')\n        obj_date = datetime.strptime(obj, '%Y-%m-%d')\n    except ValueError:\n        return False\n    return (subject_date + timedelta(days=1)).strftime('%Y-%m-%d') == obj",
+          "reasoning": "The function first checks if the predicate is 'next_day_is'. Then it parses the subject and object as dates. If parsing fails, it returns False. Otherwise, it checks if the next day after the subject date equals the object date."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_date_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='2026-02-28', predicate='next_day_is', object='2026-02-29'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "from datetime import datetime, timedelta\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate != 'next_day_is':\n        return False\n    try:\n        subject_date = datetime.strptime(subject, '%Y-%m-%d')\n        obj_date = datetime.strptime(obj, '%Y-%m-%d')\n        return (subject_date + timedelta(days=1)) == obj_date\n    except ValueError:\n        return False",
+          "reasoning": "The function first checks if the predicate is 'next_day_is'. If not, it returns False. Then, it tries to parse the subject and object as dates in the format 'YYYY-MM-DD'. If parsing fails, it returns False. Otherwise, it checks if the date one day after the subject date equals the object date."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='strawberry', predicate='count_char_r', object='3'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'count_char_r':\n        return str(subject.count('r')) == obj\n    return False",
+          "reasoning": "The predicate 'count_char_r' means we need to count the occurrences of the letter 'r' in the subject string and compare it to the object. The function checks if the count of 'r' in 'strawberry' is '3'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='strawberry', predicate='count_char_r', object='2'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'count_char_r':\n        return str(subject.count('r')) == obj\n    return False",
+          "reasoning": "The predicate 'count_char_r' means we need to count the occurrences of the character 'r' in the subject string and compare it to the object. The function checks if the count of 'r' in the subject string matches the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='hello world', predicate='word_count', object='2'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'word_count':\n        return len(subject.split()) == int(obj)\n    return False",
+          "reasoning": "The function checks if the number of words in the subject string equals the integer value of the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='aedos', predicate='length', object='5'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'length':\n        return len(subject) == int(obj)\n    return False",
+          "reasoning": "The function checks if the length of the subject string equals the integer value of the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='Mississippi', predicate='count_char_s', object='4'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'count_char_s':\n        return str(subject.count('s')) == obj\n    return False",
+          "reasoning": "The function checks if the count of 's' characters in the subject string equals the object value."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='racecar', predicate='is_palindrome', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'is_palindrome':\n        return subject == subject[::-1]\n    return False",
+          "reasoning": "A string is a palindrome if it reads the same forwards and backwards. We can check this by comparing the string to its reverse (using slicing with [::-1])."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='hello', predicate='is_palindrome', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'is_palindrome':\n        return subject == subject[::-1]\n    return False",
+          "reasoning": "The function checks if the subject string is a palindrome by comparing it to its reverse."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_str_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='HELLO', predicate='lowercase_equals', object='hello'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'lowercase_equals':\n        return subject.lower() == obj\n    return False",
+          "reasoning": "The predicate 'lowercase_equals' means we should check if the lowercase version of the subject equals the object. This is done using the lower() string method."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_num_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='4', predicate='less_than', object='7'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'less_than':\n        return float(subject) < float(obj)\n    return False",
+          "reasoning": "The function checks if the subject is less than the object when the predicate is 'less_than'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_num_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='10', predicate='less_than', object='3'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'less_than':\n        return float(subject) < float(obj)\n    return False",
+          "reasoning": "The function checks if the subject is less than the object when the predicate is 'less_than'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_num_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='7', predicate='is_prime', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate != 'is_prime':\n        return False\n    \n    try:\n        n = int(subject)\n    except ValueError:\n        return False\n    \n    if n < 2:\n        return False\n    \n    for i in range(2, int(math.sqrt(n)) + 1):\n        if n % i == 0:\n            return False\n    \n    return True",
+          "reasoning": "The function checks if the subject (a string representing a number) is a prime number. It first converts the subject to an integer, then checks for primality by testing divisibility up to the square root of the number. If the subject is prime, it returns True; otherwise, it returns False."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_num_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='9', predicate='is_prime', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate != 'is_prime':\n        return False\n    \n    try:\n        num = int(subject)\n    except ValueError:\n        return False\n    \n    if num < 2:\n        return False\n    \n    for i in range(2, int(math.sqrt(num)) + 1):\n        if num % i == 0:\n            return False\n    \n    return obj.lower() == 'true'",
+          "reasoning": "The function checks if the subject (a number) is prime by testing divisibility up to the square root of the number. If the number is prime and the object is 'true', it returns True; otherwise, it returns False."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_num_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='144', predicate='is_perfect_square', object='true'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "import math\n\ndef verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'is_perfect_square':\n        try:\n            num = int(subject)\n            root = math.isqrt(num)\n            return root * root == num\n        except (ValueError, TypeError):\n            return False\n    return False",
+          "reasoning": "To verify if a number is a perfect square, we compute its integer square root and check if squaring it gives back the original number. This handles both positive and negative numbers, and returns False for non-numeric inputs."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_num_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='3.14159265', predicate='rounds_to_2dp', object='3.14'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'rounds_to_2dp':\n        try:\n            num = float(subject)\n            rounded = round(num, 2)\n            return str(rounded) == obj\n        except ValueError:\n            return False\n    return False",
+          "reasoning": "The function checks if the subject (a string representing a number) rounds to the given object (a string representing a number) when rounded to 2 decimal places. It converts the subject to a float, rounds it to 2 decimal places, and compares the result to the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_list_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='1,2,3,4,5', predicate='sum_equals', object='15'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'sum_equals':\n        try:\n            numbers = [int(x) for x in subject.split(',')]\n            return sum(numbers) == int(obj)\n        except (ValueError, AttributeError):\n            return False\n    return False",
+          "reasoning": "The function checks if the sum of numbers in the subject string equals the object value. It splits the subject by commas, converts the parts to integers, sums them, and compares to the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_list_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='1,2,3,4,5', predicate='sum_equals', object='14'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'sum_equals':\n        # Split the subject string into a list of numbers\n        numbers = list(map(int, subject.split(',')))\n        # Calculate the sum of the numbers\n        total = sum(numbers)\n        # Convert the object to an integer for comparison\n        target = int(obj)\n        # Return True if the sum equals the target, False otherwise\n        return total == target\n    return False",
+          "reasoning": "The function checks if the sum of numbers in the subject string equals the integer value of the object. It splits the subject string by commas, converts the parts to integers, sums them, and compares the result to the object value."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_list_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='apple,banana,cherry', predicate='contains', object='banana'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'contains':\n        return obj in subject.split(',')\n    return False",
+          "reasoning": "The predicate 'contains' means we need to check if the object is in the list of items in the subject. The subject is a comma-separated string, so we split it into a list and check for membership."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_list_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='1,2,3,2,1', predicate='unique_count', object='3'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'unique_count':\n        # Split the subject string into a list of numbers\n        numbers = subject.split(',')\n        # Convert the object string to an integer\n        expected_count = int(obj)\n        # Calculate the number of unique numbers\n        unique_count = len(set(numbers))\n        # Return True if the unique count matches the expected count\n        return unique_count == expected_count\n    return False",
+          "reasoning": "The function splits the subject string into a list of numbers, converts the object string to an integer, calculates the number of unique numbers in the list, and returns True if the unique count matches the expected count."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_list_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='5,3,8,1,9,2', predicate='max_value', object='9'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'max_value':\n        values = list(map(int, subject.split(',')))\n        return max(values) == int(obj)\n    return False",
+          "reasoning": "The function splits the subject string by commas, converts the resulting substrings to integers, and checks if the maximum value in the list equals the integer value of the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pyv_list_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "python_code_generation",
+        "request": {
+          "system": "You are a Python code generator for factual claim verification. Given a claim (subject, predicate, object), write a Python function that returns True if the claim holds, False if it does not. Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. No other imports. Function signature: def verify(subject: str, predicate: str, obj: str) -> bool",
+          "user_message": "Claim: subject='5,3,8,1,9,2', predicate='sorted_first', object='1'\nGenerate the verify() function.",
+          "tool": "generate_python_verify"
+        },
+        "response": {
+          "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'sorted_first':\n        # Split the subject string into a list of integers\n        numbers = list(map(int, subject.split(',')))\n        # Sort the list\n        sorted_numbers = sorted(numbers)\n        # Check if the first element of the sorted list matches the object\n        return str(sorted_numbers[0]) == obj\n    return False",
+          "reasoning": "To verify the claim, we need to check if the first element of the sorted list of numbers in the subject string matches the object. We split the subject string by commas, convert the resulting substrings to integers, sort the list of integers, and then compare the first element of the sorted list to the object."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  }
+]

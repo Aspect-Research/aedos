@@ -1,0 +1,236 @@
+[
+  {
+    "surface": "Obama",
+    "expected_qid": "Q76",
+    "bare_rank": 0,
+    "canonical_form": "Barack Obama",
+    "canonical_rank": 1,
+    "canonical_top5": [
+      {
+        "rank": 1,
+        "qid": "Q76",
+        "label": "Barack Obama",
+        "match_type": "label"
+      },
+      {
+        "rank": 2,
+        "qid": "Q649593",
+        "label": "Barack Obama Sr.",
+        "match_type": "label"
+      },
+      {
+        "rank": 3,
+        "qid": "Q59661289",
+        "label": "Barack Obama Presidential Library",
+        "match_type": "label"
+      },
+      {
+        "rank": 4,
+        "qid": "Q47513588",
+        "label": "Barack Obama",
+        "match_type": "label"
+      },
+      {
+        "rank": 5,
+        "qid": "Q1379733",
+        "label": "presidency of Barack Obama",
+        "match_type": "alias"
+      }
+    ]
+  },
+  {
+    "surface": "Apple",
+    "expected_qid": "Q312",
+    "bare_rank": 1,
+    "canonical_form": "Apple Inc.",
+    "canonical_rank": 1,
+    "canonical_top5": [
+      {
+        "rank": 1,
+        "qid": "Q312",
+        "label": "Apple Inc.",
+        "match_type": "label"
+      },
+      {
+        "rank": 2,
+        "qid": "Q62033032",
+        "label": "Apple media event",
+        "match_type": "alias"
+      },
+      {
+        "rank": 3,
+        "qid": "Q1048090",
+        "label": "history of Apple Inc.",
+        "match_type": "alias"
+      },
+      {
+        "rank": 4,
+        "qid": "Q4781184",
+        "label": "Apple Inc. litigation",
+        "match_type": "label"
+      },
+      {
+        "rank": 5,
+        "qid": "Q2935440",
+        "label": "Apple Inc. advertising",
+        "match_type": "label"
+      }
+    ]
+  },
+  {
+    "surface": "Amazon",
+    "expected_qid": "Q3884",
+    "bare_rank": 1,
+    "canonical_form": "Amazon",
+    "canonical_rank": 1,
+    "canonical_top5": [
+      {
+        "rank": 1,
+        "qid": "Q3884",
+        "label": "Amazon",
+        "match_type": "label"
+      },
+      {
+        "rank": 2,
+        "qid": "Q40040",
+        "label": "Amazonas",
+        "match_type": "label"
+      },
+      {
+        "rank": 3,
+        "qid": "Q456065",
+        "label": "Amazon",
+        "match_type": "label"
+      },
+      {
+        "rank": 4,
+        "qid": "Q136469",
+        "label": "Amazon Kindle",
+        "match_type": "alias"
+      },
+      {
+        "rank": 5,
+        "qid": "Q201162",
+        "label": "Amazonas Department",
+        "match_type": "label"
+      }
+    ]
+  },
+  {
+    "surface": "Einstein",
+    "expected_qid": "Q937",
+    "bare_rank": 2,
+    "canonical_form": "Albert Einstein",
+    "canonical_rank": 1,
+    "canonical_top5": [
+      {
+        "rank": 1,
+        "qid": "Q937",
+        "label": "Albert Einstein",
+        "match_type": "label"
+      },
+      {
+        "rank": 2,
+        "qid": "Q2030894",
+        "label": "Albert Einstein College of Medicine",
+        "match_type": "label"
+      },
+      {
+        "rank": 3,
+        "qid": "Q2253683",
+        "label": "Albert Einstein",
+        "match_type": "label"
+      },
+      {
+        "rank": 4,
+        "qid": "Q21200226",
+        "label": "Albert Einstein",
+        "match_type": "label"
+      },
+      {
+        "rank": 5,
+        "qid": "Q47513150",
+        "label": "Albert Einstein",
+        "match_type": "label"
+      }
+    ]
+  },
+  {
+    "surface": "President",
+    "expected_qid": "Q11696",
+    "bare_rank": 4,
+    "canonical_form": "President of the United States",
+    "canonical_rank": 1,
+    "canonical_top5": [
+      {
+        "rank": 1,
+        "qid": "Q11696",
+        "label": "President of the United States",
+        "match_type": "label"
+      },
+      {
+        "rank": 2,
+        "qid": "Q11699",
+        "label": "Vice President of the United States",
+        "match_type": "alias"
+      },
+      {
+        "rank": 3,
+        "qid": "Q17512211",
+        "label": "cultural depictions of John F. Kennedy",
+        "match_type": "alias"
+      },
+      {
+        "rank": 4,
+        "qid": "Q125680992",
+        "label": "President of the United States",
+        "match_type": "label"
+      },
+      {
+        "rank": 5,
+        "qid": "Q115435580",
+        "label": "president of the United States Conference of Catholic Bishops",
+        "match_type": "label"
+      }
+    ]
+  },
+  {
+    "surface": "Williams College",
+    "expected_qid": "Q49166",
+    "bare_rank": 1,
+    "canonical_form": "Williams College",
+    "canonical_rank": 1,
+    "canonical_top5": [
+      {
+        "rank": 1,
+        "qid": "Q49166",
+        "label": "Williams College",
+        "match_type": "label"
+      },
+      {
+        "rank": 2,
+        "qid": "Q12072937",
+        "label": "Williams College Museum of Art",
+        "match_type": "label"
+      },
+      {
+        "rank": 3,
+        "qid": "Q8021012",
+        "label": "Williams Ephs",
+        "match_type": "alias"
+      },
+      {
+        "rank": 4,
+        "qid": "Q61782737",
+        "label": "Williams College Cemetery",
+        "match_type": "label"
+      },
+      {
+        "rank": 5,
+        "qid": "Q23018410",
+        "label": "Williams College Investment Office",
+        "match_type": "label"
+      }
+    ]
+  }
+]

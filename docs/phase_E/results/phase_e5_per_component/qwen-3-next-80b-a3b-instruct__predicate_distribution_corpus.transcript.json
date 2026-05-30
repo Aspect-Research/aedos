@@ -1,0 +1,1002 @@
+[
+  {
+    "case_id": "pd_up_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'lives_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'lives_in' expresses a locative containment relationship; if an entity lives in a part, it logically lives in the larger whole containing that part. For example, if Asa lives_in Williamstown and Williamstown is part_of Massachusetts, then Asa lives_in Massachusetts. This aligns with the authoritative rubric for locative predicates over 'part_of'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'located_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'located_in' is a locative-containment predicate, similar to 'lives_in' or 'born_in', which distribute upward over 'part_of' relations. If X is located_in Y and Y is part_of Z, then X is located_in Z."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'occurred_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'occurred_in' is a locative-containment relation, analogous to 'lives_in' or 'born_in'. If an event occurred_in a specific location and that location is part_of a larger region, then the event occurred_in the larger region as well."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'citizen_of' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'citizen_of' is a locative-containment predicate, similar to 'lives_in' or 'member_of'. If someone is a citizen_of a city and that city is part_of a state, then they are also a citizen_of the state, following the authoritative rubric."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'works_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'works_in' is a locative-containment predicate, and like 'lives_in' or 'headquartered_in', it distributes up over 'part_of': if someone works_in a city and that city is part_of a state, then they work_in the state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'headquartered_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'headquartered_in' is a locative-containment relation, and like 'located_in' or 'works_in', it distributes upward over 'part_of': if a company is headquartered_in a city, and that city is part_of a state, then the company is headquartered_in the state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'born_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'born_in' is a locative-containment predicate, and like other such predicates (e.g., lives_in, located_in), it distributes up over the 'part_of' relation: if someone was born in a city, and that city is part of a state, then they were born in the state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'died_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'died_in' is a locative-containment predicate, similar to 'born_in' and 'located_in', which distribute up over 'part_of' relations. If someone died_in a specific city, and that city is part_of a state, then it follows that they died_in the state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'member_of' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'member_of' is a locative-containment relation, similar to 'citizen_of' or 'registered_in'. If X is a member_of Y and Y is_part_of Z, then X is a member_of Z, as membership propagates upward through containment hierarchies."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'registered_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'registered_in' is a locative-containment predicate, similar to 'lives_in' or 'located_in'. If an entity is registered_in a subpart (e.g., a city), and that subpart is part_of a larger region (e.g., a state), then the entity is also registered_in the larger region."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'published_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'published_in' is a locative-containment predicate, similar to 'located_in' or 'headquartered_in.' If a work is published_in a journal and that journal is part_of a publisher, then the work is published_in the publisher, following the direction of containment."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_up_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'operates_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'operates_in' is a locative-containment predicate, similar to 'lives_in' or 'headquartered_in', which distribute up over 'part_of'. If a company operates_in a city and that city is part_of a state, then the company operates_in the state."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'mortal' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'mortal' is a universal property of a kind: if all humans are mortal and Asa is a human, then Asa is mortal. This property transfers from the kind to its members, consistent with the rubric for universal-property predicates over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'has_nucleus' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'has_nucleus' is a universal biological property of a kind: if a taxon (e.g., eukaryotes) has a nucleus, then every member of that taxon (e.g., a specific cell) also has a nucleus. Thus, under the 'is_a' relation, the property distributes downward from kind to individual."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'has_dna' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'has_dna' is a universal biological property of kinds; if a kind (e.g., 'human') has_dna, then every individual member of that kind (e.g., 'Asa') also has_dna. This aligns with the authoritative rubric where properties like 'has_dna' distribute_down over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'taxed' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'taxed' is a universal property of a kind: if a category (e.g., 'citizens') is taxed, then every individual member of that category (e.g., 'Asa' who is_a citizen) is also taxed. This matches the authoritative rubric example of 'taxed' over 'is_a' distributing down."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'regulated_by_sec' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'regulated_by_sec' is a universal-property predicate of a kind, similar to 'taxed' or 'requires_visa'. If a category (e.g., 'public_company') is regulated_by_sec, then every instance that is_a member of that category (e.g., a specific corporation) is also regulated_by_sec. Thus, the property transfers downward over the is_a relation."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'biodegradable' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'biodegradable' describes a universal physical property of a kind; if a material type (e.g., paper) is biodegradable and a specific item (e.g., a newspaper) is_a paper, then theitem is also biodegradable. This mirrors the 'mortal' over 'is_a' example \u2014 properties of the kind transfer to its instances."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'requires_visa' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "The predicate 'requires_visa' is a universal property of a kind: if a country requires a visa, then any entity that is_a citizen of that country also requires a visa. This is consistent with the rubric example of 'requires_visa' distributing down over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_down_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'has_four_legs' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If a kind has four legs (e.g., dogs have four legs) and an individual is_a member of that kind (e.g., Fido is_a dog), then the individual also has four legs. This is a universal property of the kind that transfers downward to all instances."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'located_in' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'located_in' is a locative-containment predicate, similar to 'lives_in' or 'born_in', which are known to distribute upward over 'part_of' relations. Although the query specifies 'is_a', the authoritative rubric explicitly associates 'located_in' with 'part_of' and not 'is_a'. Since 'is_a' denotes kind membership and 'located_in' is not a universal property of kinds, it does not distribute downward. Without evidence that 'located_in' transfers upward over 'is_a' (e.g., a city being a kind of region), and given the rubric's default mapping to 'part_of', we conclude it does not distribute over 'is_a' at all \u2014 but the question asks for distribution over 'is_a' under polarity 1, and no authoritative case supports upward distribution over 'is_a' for this predicate. Therefore, correcting: 'located_in' does not distribute in either direction over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'operates_in' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'operates_in' is a locative-containment predicate, similar to 'located_in' and 'headquartered_in', which distribute_up over part_of. Although the given subsumption relation is 'is_a', the semantics of 'operates_in' imply that if an entity operates in a location and that location is subsumed by a broader geographical entity (e.g., a city is_a region), it is reasonable to infer the entity operates in the broader location. However, since the authoritative rubric specifies 'operates_in' distributes_up over 'part_of', and 'is_a' is not directly covered, we must infer based on analogous behavior \u2014 but note that 'is_a' is a taxonomic relation, not a spatial one. Given no clear case for 'operates_in' over 'is_a', we reassess: strict adherence to rubric shows no distribution over 'is_a' unless it's a property of kind members. Operating location is not a kind property. Thus, the correct verdict is 'neither'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'contains' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_down",
+          "reason": "If Y contains X and X is a part_of Y, then the containment relation holds for the part. For example, if a bookshelf contains a book and the book is part_of the bookshelf, then the bookshelf contains the book. However, if the bookshelf contains a book, and the bookshelf is part_of a room, it does not necessarily mean the room contains the book \u2014 containment does not automatically extend upward."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'adjacent_to' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'adjacent_to' describes a spatial relation between entities, and adjacency does not transfer hierarchically over 'part_of'. If X is adjacent_to Y and X is part_of Z, it does not follow that Z is adjacent_to Y, nor vice versa. Adjacency is a surface-level relation, not a property that scales with containment."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_both_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'speaks_language' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'speaks_language' is attitudinal/intensional in nature: if someone speaks French and French is_a Romance_language, it does not follow that they speak all Romance languages, nor does speaking a Romance language imply they speak French. Thus, it does not distribute in either direction over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_001",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'prefers' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'prefers' is an attitudinal and intensional predicate; if someone prefers a specific subtype (e.g., golden_retriever), it does not imply they prefer the broader category (e.g., dog), nor vice versa. Attitudinal predicates like 'prefers' do not distribute over is_a subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_002",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'hates' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'hates' is an attitudinal and intensional predicate; just because someone hates a specific entity (e.g., a breed of dog) does not imply they hate all broader categories (e.g., dogs) or more specific subtypes (e.g., a particular dog), and vice versa. Such predicates do not distribute over is_a relations under asserted polarity."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_003",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'authored' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'authored' is an intensional relation tied to specific individuals; if X authored a book and X is_a Y, it does not follow that Y authored the book (e.g., a novelist is_a human, but not all humans authored the book). Conversely, if a genre is_a category and someone authored a work in that genre, it does not imply the genre itself authored the work. Thus, 'authored' does not distribute in either direction over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_004",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'married_to' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'married_to' is an attitudinal/intensional relation that does not transfer across taxonomic categories; if person A is married_to person B and person B is_a human, it does not follow that person A is married_to all humans or only humans. Such relational predicates over 'is_a' do not distribute."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_005",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'holds_role' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'holds_role' is an intensional relation that assigns a specific role to an entity; just because X holds a role and X is_a Y does not mean Y holds that role, nor does Y holding the role imply X does. Like 'prefers', it does not distribute over subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_006",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'resembles' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'resembles' is an intensional and attitudinal relation, similar to 'prefers'; just because X resembles Y and Y is_a Z does not imply X resembles Z, nor the reverse. The similarity relation does not transfer across taxonomic hierarchy."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_007",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'invented' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'invented' is intensional and attitudinal in nature; if someone invented a specific device (e.g., a drone) and drones are a kind of aircraft, it does not follow that they invented all aircraft or that they invented drones merely because they invented an aircraft. The action of invention does not transfer directionally over is_a relations."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_008",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'owns' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'owns' is an attitudinal/intensional relation that does not transfer across taxonomic hierarchies. If someone owns a golden_retriever and a golden_retriever is_a dog, it does not follow that they own all dogs or that they own any specific dog beyond the particular instance. Ownership is tied to specific individuals, not kinds."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_009",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'received_award' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'received_award' is not a universal property of a kind, nor is it a locative or containment relation. Just because an individual received an award and is a member of a category (e.g., 'Nobel laureate is_a scientist') does not imply the category as a whole received the award, nor does every member of the category necessarily receive it. Attitudinal and specific-event predicates like 'received_award' do not distribute over is_a relations."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_010",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'succeeded_by' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'succeeded_by' denotes a temporal or sequential relationship between specific instances, not a property of kinds. If X is succeeded_by Y and X is_a Z, it does not follow that Z is succeeded_by Y, nor vice versa. This is an intensional, non-universal relation that does not distribute over is_a."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_011",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'employed_by' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'employed_by' is an attitudinal/intensional relationship that does not logically transfer between a subtype and its supertype. Just because an employee is employed_by a specific company (e.g., a subsidiary), it does not imply they are employed_by the parent company (up), nor does having an employee of a parent company imply every subclass (e.g., subsidiary) employs them (down)."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_012",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'educated_at' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'educated_at' denotes a specific location of education, not a universal property of a kind. If someone is educated_at Harvard and Harvard is_a university, it does not follow that they are educated_at every university, nor does being educated_at a university imply they were educated_at Harvard. This is an attitudinal/locative relation that does not transfer directionally over 'is_a'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_013",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'co_founded' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'co_founded' is an attitudinal or relational event predicate that ties specific individuals to a specific entity; if X and Y co-founded Apple and Apple is_a technology_company, it does not follow that X and Y co-founded all technology companies (downward) or that any technology company they co-founded includes Apple (upward). Such event-based, agent-specific relations do not distribute over is_a subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_014",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'voted_for' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'voted_for' is attitudinal and intensional; if X voted_for a specific candidate and that candidate is_a member of a party, it does not follow that X voted_for the party as a whole, nor vice versa. Intensional predicates like 'voted_for' do not distribute over is_a relations."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_015",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'visited' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'visited' is an attitudinal or intentional event predicate, similar to 'prefers'; it does not distribute over part_of because visiting a part does not imply visiting the whole, nor does visiting the whole imply visiting every part."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_016",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'bought' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'bought' is an attitudinal/intensional event predicate, not a universal property or locative containment relation. If someone bought a golden_retriever and golden_retriever is_a dog, it does not follow they bought a dog (the purchase may be specific to the subkind), nor does buying a dog imply buying a golden_retriever. Such event-based, specific-agent-to-specific-object predicates do not distribute over taxonomic subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_017",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'caused' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'caused' is causal and intensional; if X caused Y and X is_a Z, it does not follow that Z caused Y (upward), nor that X caused all superclasses of Y (downward). Causal relations do not transfer over taxonomic subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_018",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'named' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'named' is an individual-specific property that does not transfer across taxonomic relationships. If X is named 'Alice' and X is_a Y, it does not follow that Y is named 'Alice', nor vice versa. Naming is unique to individuals and does not distribute over 'is_a' subsumption."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_019",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'born_in' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "distributes_up",
+          "reason": "The predicate 'born_in' is a locative-containment predicate, and like 'lives_in' over 'part_of', it distributes up over 'part_of'. Here, the relation is 'is_a', but since 'born_in' is inherently tied to location and not kind membership, it does not distribute over 'is_a'. However, the authoritative rubric explicitly lists 'born_in' as distributing_up over 'part_of', and since the query incorrectly specifies 'is_a', we must infer the intended relation. Given the rubric's pattern and the ambiguity, the most consistent interpretation is that 'born_in' should distribute_up over the correct containment relation (part_of), but under 'is_a' it does not distribute. However, the rubric does not provide a direct example for 'born_in' over 'is_a'. Given that 'born_in' is not a property of a kind (e.g., being born in Boston doesn't define the kind 'human'), it fails to distribute downward, and failing to distribute upward as well under 'is_a', the correct verdict is 'neither'."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_020",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'holds_patent_on' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 1 (asserted).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'holds_patent_on' is an attitudinal/intensional relation tied to specific entities (inventors or assignees) and does not generalize across taxonomic kinds. If entity X holds a patent on invention Y, and X is_a Z, it does not follow that Z holds the patent on Y (e.g., a company is_a legal entity, but not all legal entities hold that patent). Conversely, if Z holds the patent and X is_a Z, it does not imply X holds it individually. No directional transfer occurs."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_021",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'prefers' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 0 (negated).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'prefers' is attitudinal and intensional, which do not distribute over subsumption relations. Under negated polarity (polarity=0), this non-distribution is reinforced, as counterexamples at either level (subkind or kind) do not logically propagate in either direction."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_022",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'authored' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 0 (negated).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'authored' is intensional and context-sensitive; even when negated (polarity=0), it does not distribute up or down over 'is_a'. If X did not author Y and X is_a Z, it does not follow that Z did not author Y, nor vice versa. Negation further breaks any potential directional inference, as per the polarity rule."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_023",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'located_in' distributes over a 'part_of' subsumption relation (one of is_a or part_of) under polarity 0 (negated).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X part_of Y, then P(Y).\n  distributes_down: if P(Y) and X part_of Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'located_in' normally distributes_up over 'part_of' under positive polarity, but under negated polarity (polarity=0), the contrapositive does not hold: if X is not located_in Y and X is part_of Z, it does not follow that X is not located_in Z, nor vice versa. Negated locative predicates generally do not distribute in either direction."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_024",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'mortal' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 0 (negated).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'mortal' normally distributes down over 'is_a' under positive polarity, but under negated polarity (polarity=0), the contrapositive does not hold: if X is not mortal, it does not imply that its superkind is not mortal, nor does a non-mortal superkind imply its subkind is not mortal. Negation blocks distribution in both directions."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  },
+  {
+    "case_id": "pd_neither_025",
+    "calls": [
+      {
+        "method": "extract_with_tool",
+        "purpose": "substrate:predicate_distribution",
+        "request": {
+          "system": "You are a knowledge-base reasoning assistant specializing in predicate logic.",
+          "user_message": "Determine how the predicate 'holds_role' distributes over a 'is_a' subsumption relation (one of is_a or part_of) under polarity 0 (negated).\n\nVERDICT DEFINITIONS:\n  distributes_up:   if P(X) and X is_a Y, then P(Y).\n  distributes_down: if P(Y) and X is_a Y, then P(X).\n  both:             distributes in both directions.\n  neither:          does not distribute in either direction.\n\nAUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n  - 'lives_in' over 'part_of' \u2192 distributes_up. If Asa lives_in Williamstown and Williamstown part_of Massachusetts, then Asa lives_in Massachusetts. Similar locative-containment predicates over part_of (located_in, works_in, born_in, died_in, headquartered_in, citizen_of, member_of, registered_in, published_in, operates_in) also distribute_up over part_of.\n  - 'mortal' over 'is_a' \u2192 distributes_down. If humans (as a kind) are mortal and Asa is_a human, then Asa is mortal. Universal-property predicates of a kind (has_dna, has_nucleus, taxed, regulated_by_sec, requires_visa) similarly distribute_down over is_a \u2014 the property of the kind transfers to every member.\n  - 'prefers' over 'is_a' \u2192 neither. If Asa prefers golden_retrievers and golden_retriever is_a dog, it does NOT follow that Asa prefers dogs (over-specific to the subkind), nor the reverse. Attitudinal and intensional predicates do not distribute.\n  - 'both' is rare and reserved for predicates whose semantics genuinely transfer in both directions over the relation. Do not default to 'both' when uncertain; default to 'neither'.\n\nPOLARITY RULE:\n  Negated polarity (polarity=0) typically becomes 'neither' because the contrapositive of a distributing rule does not hold: a counter-example at the subordinate level need not propagate up, and a counter-example at the kind level need not propagate down. Apply this default unless the predicate's semantics specifically support a directional negation.",
+          "tool": "generate_distribution_verdict"
+        },
+        "response": {
+          "verdict": "neither",
+          "reason": "The predicate 'holds_role' is intensional and attitudinal in nature; under negated polarity, it does not distribute in either direction over 'is_a' subsumption. A counterexample at the subordinate level does not imply the same at the superordinate level, and vice versa, per the polarity rule for negated predicates."
+        },
+        "error": null,
+        "raw_response": null
+      }
+    ]
+  }
+]

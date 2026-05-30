@@ -1,0 +1,295 @@
+{
+  "corpus": "temporal_scope_corpus",
+  "mode": "seeded",
+  "seeded": true,
+  "predicate_translation_row_count_at_start": 83,
+  "started_at": "2026-05-26T22:58:00.030208+00:00",
+  "finished_at": "2026-05-26T22:58:58.959839+00:00",
+  "duration_s": 58.9,
+  "case_count": 40,
+  "passed": 30,
+  "accuracy": 0.75,
+  "threshold": 0.9,
+  "per_case": [
+    {
+      "case_id": "ts_explicit_001",
+      "category": "explicit_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 3.302
+    },
+    {
+      "case_id": "ts_explicit_002",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.176
+    },
+    {
+      "case_id": "ts_explicit_003",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.366
+    },
+    {
+      "case_id": "ts_explicit_004",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.484
+    },
+    {
+      "case_id": "ts_explicit_005",
+      "category": "explicit_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 2.688
+    },
+    {
+      "case_id": "ts_explicit_006",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.19
+    },
+    {
+      "case_id": "ts_explicit_007",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.176
+    },
+    {
+      "case_id": "ts_explicit_008",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.767
+    },
+    {
+      "case_id": "ts_explicit_009",
+      "category": "explicit_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.583
+    },
+    {
+      "case_id": "ts_explicit_010",
+      "category": "explicit_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.627
+    },
+    {
+      "case_id": "ts_implicit_001",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.749
+    },
+    {
+      "case_id": "ts_implicit_002",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.276
+    },
+    {
+      "case_id": "ts_implicit_003",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.232
+    },
+    {
+      "case_id": "ts_implicit_004",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.072
+    },
+    {
+      "case_id": "ts_implicit_005",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.092
+    },
+    {
+      "case_id": "ts_implicit_006",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.664
+    },
+    {
+      "case_id": "ts_implicit_007",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.205
+    },
+    {
+      "case_id": "ts_implicit_008",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.686
+    },
+    {
+      "case_id": "ts_implicit_009",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.061
+    },
+    {
+      "case_id": "ts_implicit_010",
+      "category": "implicit_past",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.08
+    },
+    {
+      "case_id": "ts_relative_001",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.751
+    },
+    {
+      "case_id": "ts_relative_002",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.845
+    },
+    {
+      "case_id": "ts_relative_003",
+      "category": "relative_scope",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"C:\\code\\aedos\\scripts\\phase_10_5_run.py\", line 63, in run_once\n    ok = bool(runner(harness, case))\n              ^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\code\\aedos\\tests\\calibration\\test_corpus_runner.py\", line 328, in _run_temporal_scope\n    claims = extractor.extract(case[\"text\"], ctx)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\code\\aedos\\src\\aedos\\layer1_extraction\\extractor.py\", line 270, in extract\n    claim = self._build_claim(raw, text, context)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\code\\aedos\\src\\aedos\\layer1_extraction\\extractor.py\", line 302, in _build_claim\n    triage_decision = triage(\n                      ^^^^^^^\nTypeError: expected string or bytes-like object, got 'NoneType'\n",
+      "duration_s": 2.263
+    },
+    {
+      "case_id": "ts_relative_004",
+      "category": "relative_scope",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.618
+    },
+    {
+      "case_id": "ts_relative_005",
+      "category": "relative_scope",
+      "passed": false,
+      "error": "Traceback (most recent call last):\n  File \"C:\\code\\aedos\\scripts\\phase_10_5_run.py\", line 63, in run_once\n    ok = bool(runner(harness, case))\n              ^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\code\\aedos\\tests\\calibration\\test_corpus_runner.py\", line 328, in _run_temporal_scope\n    claims = extractor.extract(case[\"text\"], ctx)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\code\\aedos\\src\\aedos\\layer1_extraction\\extractor.py\", line 270, in extract\n    claim = self._build_claim(raw, text, context)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\code\\aedos\\src\\aedos\\layer1_extraction\\extractor.py\", line 283, in _build_claim\n    if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'NoneType' object has no attribute 'lower'\n",
+      "duration_s": 1.785
+    },
+    {
+      "case_id": "ts_relative_006",
+      "category": "relative_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.261
+    },
+    {
+      "case_id": "ts_relative_007",
+      "category": "relative_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.227
+    },
+    {
+      "case_id": "ts_relative_008",
+      "category": "relative_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.467
+    },
+    {
+      "case_id": "ts_relative_009",
+      "category": "relative_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.354
+    },
+    {
+      "case_id": "ts_relative_010",
+      "category": "relative_scope",
+      "passed": false,
+      "error": null,
+      "duration_s": 1.929
+    },
+    {
+      "case_id": "ts_no_marker_001",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.295
+    },
+    {
+      "case_id": "ts_no_marker_002",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.03
+    },
+    {
+      "case_id": "ts_no_marker_003",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.053
+    },
+    {
+      "case_id": "ts_no_marker_004",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.361
+    },
+    {
+      "case_id": "ts_no_marker_005",
+      "category": "no_markers",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.085
+    },
+    {
+      "case_id": "ts_future_001",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.144
+    },
+    {
+      "case_id": "ts_future_002",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.068
+    },
+    {
+      "case_id": "ts_future_003",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.384
+    },
+    {
+      "case_id": "ts_future_004",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.174
+    },
+    {
+      "case_id": "ts_future_005",
+      "category": "future_rejection",
+      "passed": true,
+      "error": null,
+      "duration_s": 1.348
+    }
+  ]
+}
