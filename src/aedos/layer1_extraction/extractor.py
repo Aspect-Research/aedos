@@ -54,59 +54,14 @@ _POPULATION_LESS_PATTERN = re.compile(
 # (WikidataAdapter._resolve_demonym_to_country), gated on a country-typed
 # (Q6256) object slot. This generalizes to every demonym Wikidata records.
 
-# Phase 10.5 Step 6 Batch 4: year-aware predicate canonicalization. When
-# the LLM follows Rule 7 (year → valid_from) but keeps the place-form
-# predicate (e.g. `born_in` for "Einstein was born in 1879" instead of
-# `born_on`), the walker routes to the WRONG KB property — P19 (place
-# of birth) returns Ulm and the verifier finds Ulm ≠ "Einstein" (the
-# self-referenced object), producing a §3.2 false-contradiction (which
-# the strict Fix 4 currently drops by rejecting the claim entirely). The
-# right fix is at extraction: rewrite the predicate to its year-aware
-# variant (`born_on` → P569 date of birth, `founded_in_year` → P571
-# inception, `died_on` → P570 date of death) when valid_from looks like
-# a year. The walker then checks the date directly and the extraction
-# carries the year-as-content rather than the year-as-temporal-scope.
-_BARE_YEAR_RE_EXTRACT = re.compile(r"^[+-]?\d{1,4}$")
-_YEAR_AWARE_REWRITES = {
-    # valid_from family (point-in-time inception / birth / creation)
-    "born_in": "born_on",
-    "born": "born_on",
-    "was_born": "born_on",
-    "founded": "founded_in_year",
-    "was_founded": "founded_in_year",
-    "established": "founded_in_year",
-    "incepted": "founded_in_year",
-    "started": "founded_in_year",
-    "launched_in": "founded_in_year",
-    "published_in": "published_in_year",
-    "released_in": "released_in_year",
-    # valid_from OR valid_until family (point-in-time death / destruction)
-    "died_in": "died_on",
-    "died": "died_on",
-    "was_killed_in": "died_on",
-    "passed_away_in": "died_on",
-    "fell": "dissolved_in_year",
-    "fell_in": "dissolved_in_year",
-    "dissolved": "dissolved_in_year",
-    "destroyed": "dissolved_in_year",
-    "demolished": "dissolved_in_year",
-    "abolished": "dissolved_in_year",
-    "ended": "dissolved_in_year",
-    # Generic point-in-time event predicates. Triggered only when
-    # object is empty / descriptive AND a year is present — guards
-    # against hijacking unrelated `was` / `is` claims.
-    "was": "occurred_in_year",
-    "is": "occurred_in_year",
-    "occurred": "occurred_in_year",
-    "happened": "occurred_in_year",
-    "took_place": "occurred_in_year",
-}
-
-# Objects that signal the LLM put descriptive context (location, agent)
-# into the object slot rather than the inception value itself. Triggers
-# the year-aware rewrite even when subject != object (i.e. the object
-# isn't the Rule 7 self-reference convention).
-_DESCRIPTIVE_OBJECT_PREFIXES = ("in ", "from ", "by ", "at ", "during ", "on ")
+# (S2) The hand-curated _YEAR_AWARE_REWRITES verb→predicate table is gone.
+# Date-valued event claims now arrive from the extraction prompt (Rule 23)
+# already shaped as a date-sense predicate with the date in the object slot
+# (born_on, died_on, founded_in_year, dissolved_in_year, published_in_year,
+# released_in_year, occurred_in_year). Each date-sense predicate maps to its
+# own date KB property via the predicate-translation oracle (object_type=time
+# → P569 / P570 / P571 / P576 / P577 / P585), so there is no Python verb map
+# and no runtime object-vs-scope disambiguation here.
 
 EXTRACTION_TOOL: dict[str, Any] = {
     "name": "extract_claims",
@@ -476,6 +431,26 @@ claim for the profession plus ONE has_nationality claim per demonym:
     Keep each demonym as the bare demonym word. Apply only when both \
 hyphenated tokens are nationality demonyms; a hyphenated proper name that is \
 not a nationality stays intact.
+
+23. DATE-VALUED EVENT PREDICATES — when a birth, death, founding, \
+dissolution, publication, release, or occurrence is stated with a DATE/YEAR \
+as the fact being asserted (not merely a temporal scope on some OTHER \
+relation), put the date in the OBJECT slot and use the date-sense predicate, \
+NOT the place/agent-sense predicate: born_on (date of birth), died_on (date \
+of death), founded_in_year (inception), dissolved_in_year (dissolution / \
+abolition / destruction), published_in_year, released_in_year, \
+occurred_in_year.
+    - 'Einstein was born in 1879.' → predicate='born_on', object='1879'. \
+(Contrast 'born in Ulm' → predicate='born_in', object='Ulm' — a place.)
+    - 'Google was founded in 1994.' → predicate='founded_in_year', \
+object='1994'. (Contrast 'founded by Larry Page' → predicate='founded_by'.)
+    - 'The Berlin Wall fell in 1989.' → predicate='dissolved_in_year', \
+object='1989'.
+    - 'War and Peace was published in 1869.' → \
+predicate='published_in_year', object='1869'.
+    Put the bare year/date in the object slot; do NOT also copy it into \
+valid_from — that double-counts the date. Rule 7's year→valid_from applies \
+only when the date scopes a DIFFERENT relation ('X lived in Paris in 1990').
 """
 
 
@@ -566,52 +541,11 @@ class Extractor:
         ):
             return None
 
-        # Phase 10.5 Step 6 Batch 4: year-aware predicate rewrite — done
-        # BEFORE the self-ref check below so the rewrite can rescue
-        # claims that would otherwise be dropped as malformed. When the
-        # LLM emitted a place-form predicate (born_in / founded /
-        # died_in) but Rule 7 fired and the year is in valid_from, the
-        # object slot is often the self-reference (per Rule 7's example
-        # convention). The rewrite moves the year into the object slot
-        # and switches the predicate to its year-aware variant
-        # (born_on → P569, founded_in_year → P571, died_on → P570),
-        # so the walker checks the date directly rather than routing
-        # to the place property.
-        raw_pred_pre = normalize_predicate(raw.get("predicate", ""))
-        valid_from_pre = raw.get("valid_from")
-        valid_until_pre = raw.get("valid_until")
-        # Pick the year-shaped temporal slot. For "born/founded" the LLM
-        # uses valid_from (inception). For "fell/dissolved/ended" the
-        # LLM uses valid_until (end of existence). Either is a year-aware
-        # rewrite trigger.
-        year_value = None
-        for cand in (valid_from_pre, valid_until_pre):
-            if cand and _BARE_YEAR_RE_EXTRACT.match(str(cand).strip().lstrip("+")):
-                year_value = str(cand).strip().lstrip("+").lstrip("-")
-                break
-        # Trigger conditions: predicate matches AND a year is present AND
-        # either (a) the object is the Rule 7 self-reference, or (b) the
-        # object is a descriptive locative/agent phrase ("in Illinois",
-        # "by the British", etc.) — those signal the LLM didn't put the
-        # inception value itself in the object slot.
-        object_lower = raw_object.strip().lower()
-        object_is_self_ref = (
-            raw_subject.strip().casefold() == raw_object.strip().casefold()
-            and raw_subject.strip()
-        )
-        object_is_descriptive = any(
-            object_lower.startswith(p) for p in _DESCRIPTIVE_OBJECT_PREFIXES
-        )
-        if (
-            raw_pred_pre in _YEAR_AWARE_REWRITES
-            and year_value
-            and (object_is_self_ref or object_is_descriptive or not raw_object.strip())
-        ):
-            # Rewrite in the raw dict so downstream construction picks it up.
-            raw = dict(raw)
-            raw["predicate"] = _YEAR_AWARE_REWRITES[raw_pred_pre]
-            raw["object"] = year_value
-            raw_object = raw["object"]
+        # (S2) Date-valued event predicate selection happens in the extraction
+        # prompt (Rule 23): "Einstein was born in 1879" arrives as
+        # born_on(Einstein, 1879), "Google was founded in 1994" as
+        # founded_in_year(Google, 1994). No Python verb→predicate rewrite here;
+        # a date-sense predicate routes to its date KB property via the oracle.
 
         # Phase 10.5 Step 5 root-cause: reject self-referential triples
         # (subject == object after trim/case-fold). The extractor
