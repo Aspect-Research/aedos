@@ -1,0 +1,18 @@
+{
+  "_note": "v0.16 WS1 fixture for fetch_property_ontology(P26 = spouse). Mirrors the SPARQL SELECT shape of _build_property_ontology_query: ?constraintKind (the constraint-type Q-id), ?cls (the constrained class Q-id), ?subProp/?invProp/?relProp. Here P26 carries a value-type constraint (Q21510865) constraining the value to human (Q5); no single-value constraint (spouse is multi-valued over a lifetime).",
+  "results": {
+    "bindings": [
+      {
+        "constraintKind": {"type": "uri", "value": "http://www.wikidata.org/entity/Q21510865"},
+        "cls": {"type": "uri", "value": "http://www.wikidata.org/entity/Q5"}
+      },
+      {
+        "constraintKind": {"type": "uri", "value": "http://www.wikidata.org/entity/Q21503250"},
+        "cls": {"type": "uri", "value": "http://www.wikidata.org/entity/Q5"}
+      },
+      {
+        "invProp": {"type": "uri", "value": "http://www.wikidata.org/entity/P26"}
+      }
+    ]
+  }
+}

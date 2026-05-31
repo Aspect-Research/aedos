@@ -20,7 +20,9 @@ from .layer3_substrate import Substrate
 from .layer3_substrate.consistency import ConsistencyChecker
 from .layer3_substrate.predicate_distribution import PredicateDistributionOracle
 from .layer3_substrate.predicate_translation import PredicateTranslation
+from .layer3_substrate.property_relations import PropertyRelations
 from .layer3_substrate.resolver import EntityResolver
+from .layer3_substrate.sling_fallback import SlingFallback
 from .layer3_substrate.subsumption import SubsumptionOracle
 from .layer4_sources.kb_verifier import KBVerifier
 from .layer4_sources.kb_wikidata import WikidataAdapter
@@ -133,7 +135,17 @@ def build_pipeline(
         circuit_breaker_threshold=config.circuit_breaker_threshold,
     )
 
-    pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=consistency)
+    # v0.16 WS1: wire binding-discovery collaborators. `kb` was built above
+    # (build_default_kb / injected), so the ordering holds. Both collaborators
+    # fail open, so a mock kb (no fetch_property_ontology / enumerate_neighbors)
+    # simply yields the oracle's single primary binding = pre-v0.16 behavior.
+    pt = PredicateTranslation(
+        db=db,
+        llm_client=client,
+        consistency_checker=consistency,
+        property_relations=PropertyRelations(db, kb),
+        sling=SlingFallback(db, kb, client),
+    )
 
     # Phase H D47: Wikipedia normalizer wired into the resolver. The
     # normalizer shares the HTTP cache layer that build_default_kb already

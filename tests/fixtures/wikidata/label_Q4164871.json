@@ -1,0 +1,4 @@
+{
+  "_note": "v0.16 WS1 fixture for fetch_label(Q4164871). Terse fixture shape ({\"label\": ...}) accepted by _extract_label_from_entities for compact fixtures.",
+  "label": "position"
+}

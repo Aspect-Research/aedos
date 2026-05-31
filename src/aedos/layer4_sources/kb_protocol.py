@@ -92,3 +92,22 @@ class KBProtocol(Protocol):
         properties: list[KBPropertyID],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]: ...
+
+    # v0.16 WS1: two ontology/label operations supporting multi-property
+    # binding discovery (PropertyRelations) and the WS5 correction surface.
+    # Both are OPTIONAL on the protocol — consumers call them via `getattr`
+    # so stub adapters that predate v0.16 keep satisfying KBProtocol — and
+    # both FAIL OPEN by contract.
+    #
+    # `fetch_property_ontology(prop)` returns the property's Wikidata
+    # constraint/relation ontology as a dict with keys subject_type_qids,
+    # value_type_qids, inverse_pids, subproperty_pids, related_pids,
+    # single_valued. On any error / non-P-id / no constraints it returns an
+    # EMPTY ontology (all-empty lists, single_valued=False); it NEVER raises.
+    # Discovery is additive enrichment — an empty ontology falls the caller
+    # back to the oracle's primary binding (current behavior).
+    def fetch_property_ontology(self, prop: KBPropertyID) -> dict: ...
+
+    # `fetch_label(qid)` returns the entity's English label, or None on any
+    # error / non-Q-id / missing label. NEVER raises.
+    def fetch_label(self, qid: KBEntityID) -> Optional[str]: ...
