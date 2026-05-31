@@ -241,7 +241,10 @@ def _run_extraction(h: _Harness, case: dict) -> bool:
         claim = claims[0]
         return all(
             getattr(claim, field) == expected.get(field)
-            for field in ("valid_from", "valid_until", "valid_during_ref")
+            for field in (
+                "valid_from", "valid_until",
+                "valid_during_ref", "valid_from_ref", "valid_until_ref",
+            )
         )
 
     if category == "decomposition":
@@ -348,8 +351,17 @@ def _run_temporal_scope(h: _Harness, case: dict) -> bool:
     if not claims:
         return False  # a non-future case that produced no claim has failed
     claim = claims[0]
-    return (claim.valid_from == expected.get("valid_from")
-            and claim.valid_until == expected.get("valid_until"))
+    # v0.16.1 WS8 Stage 1: also validate the event-relative *_ref fields so the
+    # relative-scope corpus cases (before→valid_until_ref, after/since→
+    # valid_from_ref, during→valid_during_ref) are actually checked, not just
+    # the absolute valid_from/valid_until pair.
+    return all(
+        getattr(claim, field) == expected.get(field)
+        for field in (
+            "valid_from", "valid_until",
+            "valid_during_ref", "valid_from_ref", "valid_until_ref",
+        )
+    )
 
 
 def _run_entity_resolution(h: _Harness, case: dict) -> bool:

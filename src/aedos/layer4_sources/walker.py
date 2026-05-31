@@ -259,6 +259,8 @@ def _claim_from_parts(
         valid_from=template.valid_from,
         valid_until=template.valid_until,
         valid_during_ref=template.valid_during_ref,
+        valid_from_ref=template.valid_from_ref,
+        valid_until_ref=template.valid_until_ref,
     )
 
 
