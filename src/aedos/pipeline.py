@@ -1,4 +1,4 @@
-"""Shared production-pipeline construction for Aedos v0.15.
+"""Shared production-pipeline construction for Aedos.
 
 `build_pipeline` assembles the full verification pipeline — substrate oracles,
 sources, the derivation walker, the aggregator — with the correctness
@@ -20,7 +20,10 @@ from .layer3_substrate import Substrate
 from .layer3_substrate.consistency import ConsistencyChecker
 from .layer3_substrate.predicate_distribution import PredicateDistributionOracle
 from .layer3_substrate.predicate_translation import PredicateTranslation
+from .layer3_substrate.property_relations import PropertyRelations
 from .layer3_substrate.resolver import EntityResolver
+from .layer3_substrate.sling_fallback import SlingFallback
+from .layer3_substrate.substrate_exceptions import SubstrateExceptionCache
 from .layer3_substrate.subsumption import SubsumptionOracle
 from .layer4_sources.kb_verifier import KBVerifier
 from .layer4_sources.kb_wikidata import WikidataAdapter
@@ -64,11 +67,9 @@ def build_default_kb(db, llm_client: LLMClient, config: Config) -> WikidataAdapt
     calibration harness (`tests/calibration/test_corpus_runner.py`) for its
     own pipeline construction.
 
-    Extracted in the Phase F2 follow-up (F-039) — the calibration harness
-    was originally constructing `WikidataAdapter()` with no arguments,
-    bypassing the F2 wiring fix and hitting the live-methods' wiring-gap
-    `RuntimeError` under `RUN_LIVE_KB=1`. Centralizing the construction
-    here prevents *new* call sites from reintroducing the same defect.
+    Centralizing the construction here prevents *new* call sites from
+    constructing `WikidataAdapter()` with no arguments and reintroducing
+    the live-methods' wiring-gap `RuntimeError` under `RUN_LIVE_KB=1`.
     """
     lru_cache = LRUHTTPCache(
         max_size=config.http_cache_lru_size,
@@ -93,18 +94,17 @@ def build_pipeline(
     kb=None,
     config: Optional[Config] = None,
 ) -> Pipeline:
-    """Assemble the full Aedos v0.15 verification pipeline against `db`.
+    """Assemble the full Aedos verification pipeline against `db`.
 
     `llm_client`, `kb`, and `config` may be injected — mocks for harness
     validation, live instances otherwise. When `config` is None, builds a
     `Config.from_env()` instance.
 
-    Wiring (F2): when `kb is None`, this constructor builds a
+    Wiring: when `kb is None`, this constructor builds a
     `CachingHTTPClient` (User-Agent + LRU cache + TTL from `config`) and
     constructs `WikidataAdapter` with the full dependency set. That makes
     the deployed pipeline reach the live Wikidata API with the configured
-    HTTP cache, rate limits, and identity — closing the F-004 wiring gap
-    surfaced by the F1 audit.
+    HTTP cache, rate limits, and identity.
 
     The correctness mechanisms are wired exactly as architecture 5.4 /
     7.3 require: the consistency checker runs on every oracle row write
@@ -117,25 +117,45 @@ def build_pipeline(
         config = Config.from_env()
     client = llm_client if llm_client is not None else LLMClient()
     if kb is None:
-        # F-004 closure: construct the live-ready Wikidata adapter with
+        # Construct the live-ready Wikidata adapter with
         # HTTP cache and configuration. Adapter still runs in fixture mode
         # when RUN_LIVE_KB != 1 — only the wiring shape changes here.
         kb = build_default_kb(db, client, config)
 
     propagator = RetractionPropagator(db=db)
-    # D6: rehydrate the verdict-trace index from persisted verdict_recorded
+    # Rehydrate the verdict-trace index from persisted verdict_recorded
     # events so retraction propagation survives process restarts (arch 7.3).
     propagator.replay()
+
+    # v0.16 WS3 §3D: the bounded nogood cache. Wired into the KB adapter
+    # (verify_transitive_path consult/record), the subsumption oracle, the
+    # walker (_nogood_vetoes), and the kb_verifier (binding-loop veto). Discovered
+    # nogoods only — never seeded; an absent/flaky cache fails open everywhere.
+    exception_cache = SubstrateExceptionCache(db)
+    # Attribute injection keeps the adapter constructor (build_default_kb /
+    # injected mocks) unchanged; verify_transitive_path reads self._exception_cache.
+    if hasattr(kb, "_exception_cache"):
+        kb._exception_cache = exception_cache
     consistency = ConsistencyChecker(
         db=db,
         retraction_propagator=propagator,
-        # F-026: thread circuit-breaker threshold through Config.
+        # Thread circuit-breaker threshold through Config.
         circuit_breaker_threshold=config.circuit_breaker_threshold,
     )
 
-    pt = PredicateTranslation(db=db, llm_client=client, consistency_checker=consistency)
+    # v0.16 WS1: wire binding-discovery collaborators. `kb` was built above
+    # (build_default_kb / injected), so the ordering holds. Both collaborators
+    # fail open, so a mock kb (no fetch_property_ontology / enumerate_neighbors)
+    # simply yields the oracle's single primary binding = pre-v0.16 behavior.
+    pt = PredicateTranslation(
+        db=db,
+        llm_client=client,
+        consistency_checker=consistency,
+        property_relations=PropertyRelations(db, kb),
+        sling=SlingFallback(db, kb, client),
+    )
 
-    # Phase H D47: Wikipedia normalizer wired into the resolver. The
+    # Wikipedia normalizer wired into the resolver. The
     # normalizer shares the HTTP cache layer that build_default_kb already
     # set up (CachingHTTPClient with User-Agent + LRU + TTL from Config);
     # we reuse `kb._http` to avoid building a second cache. When the
@@ -158,7 +178,7 @@ def build_pipeline(
         llm_client=client,
         db=db,
         config=config,
-        # Phase H D53 step 2: hand the KB adapter to the normalizer so
+        # Hand the KB adapter to the normalizer so
         # Stage B can call wbsearchentities and Stage C can call the
         # batched P31 type-filter fetch.
         kb_adapter=kb,
@@ -169,7 +189,8 @@ def build_pipeline(
         wikipedia_normalizer=wikipedia_normalizer,
     )
     subsumption = SubsumptionOracle(
-        db=db, llm_client=client, kb_protocol=kb, consistency_checker=consistency
+        db=db, llm_client=client, kb_protocol=kb, consistency_checker=consistency,
+        exception_cache=exception_cache,
     )
     distribution = PredicateDistributionOracle(
         db=db, llm_client=client, consistency_checker=consistency
@@ -185,22 +206,30 @@ def build_pipeline(
         db=db,
         predicate_translation=pt,
         wikipedia_normalizer=wikipedia_normalizer,
+        # v0.16 WS3 §3E: the premise-retraction entry point — a closed/retracted
+        # Tier U premise marks dependent *_given_assertion verdicts stale.
+        retraction_propagator=propagator,
     )
-    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    kb_verifier = KBVerifier(
+        kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt,
+        exception_cache=exception_cache,
+    )
     python_verifier = PythonVerifier(llm_client=client)
     walker = Walker(
         tier_u=tier_u,
         kb_verifier=kb_verifier,
         python_verifier=python_verifier,
         substrate=substrate,
-        # F-025: thread walker budgets / depth through Config.
+        # Thread walker budgets / depth through Config.
         walker_wall_clock_seconds=config.walker_wall_clock_seconds,
         walker_max_llm_calls=config.walker_max_llm_calls,
         walker_max_depth=config.walker_max_depth,
-        # Phase H D5: thread the KB adapter explicitly so the walker can
+        # Thread the KB adapter explicitly so the walker can
         # call `enumerate_neighbors` as a fallback when substrate-cached
         # subsumption is empty.
         kb=kb,
+        # v0.16 WS3 §3D: the bounded nogood cache for _nogood_vetoes.
+        exception_cache=exception_cache,
     )
     extractor = Extractor(llm_client=client)
     aggregator = Aggregator(retraction_propagator=propagator, db=db)

@@ -1,4 +1,4 @@
-"""Python sandbox for Aedos v0.15.
+"""Python sandbox for Aedos.
 
 Threat model
 ------------
@@ -14,7 +14,7 @@ sandbox.
 
 What the sandbox blocks
 -----------------------
-v0.15's AST-walk hardening blocks the common patterns that
+The AST-walk hardening blocks the common patterns that
 LLM-generated code might produce when prompted for verification tasks:
 
 - Static imports outside the allow-list (datetime, math, decimal,
@@ -44,24 +44,23 @@ What the sandbox does NOT block
   starts on a literal, not on a user-named variable; a blanket block
   would either also block legitimate uses or miss this pattern.
 
-When v0.15 is appropriate
--------------------------
+When this sandbox is appropriate
+--------------------------------
 - Research deployments.
 - Internal tools where user input is bounded.
-- Calibration and evaluation workflows (the Phase 10.5 corpora).
+- Calibration and evaluation workflows.
 - Development and testing.
 
-When v0.15 is NOT appropriate
-------------------------------
+When this sandbox is NOT appropriate
+------------------------------------
 - Public-facing chat endpoints where user prompts are unconstrained.
 - Deployments where Aedos's verifier output is used to make
   security-relevant decisions.
 - Any production scenario where an attacker can craft input that
   influences what code the LLM generates.
 
-For those scenarios, upgrade to RestrictedPython (Option B in
-``docs/phase_F/f3_design.md`` §4) or containerized execution
-(Option C). v0.16 may ship one of these as the default.
+For those scenarios, upgrade to RestrictedPython or containerized
+execution.
 
 Allowed modules per architecture Section 6.3:
     datetime, math, decimal, fractions, statistics, re, unicodedata, string
@@ -88,8 +87,8 @@ ALLOWED_MODULES: frozenset[str] = frozenset([
     "re",
     "unicodedata",
     "string",
-    # Phase 10.5 Step 6: typing is purely a type-annotation helper used
-    # by the post-Fix-3 Python verifier prompt that introduced
+    # typing is purely a type-annotation helper used
+    # by the Python verifier prompt that emits
     # `-> Optional[bool]` return-type signatures. typing has no runtime
     # capability that violates the sandbox's threat model — Optional,
     # Union, etc. are passive annotations evaluated to typing class
@@ -175,8 +174,7 @@ def _check_sandbox_violations(
         ``__import__``, ``__builtins__``).
 
     See the module docstring's threat-model section for what this does
-    and does not catch. F-015 in `docs/phase_F/f3_design.md` records
-    the design choice.
+    and does not catch.
     """
     try:
         tree = ast.parse(code)
@@ -222,10 +220,9 @@ def run_code(
 ) -> SandboxResult:
     """Run code in a restricted subprocess after sandbox-violation scanning.
 
-    See the module docstring for the threat model and the explicit list
-    of what this sandbox does and does not block. F-015 in
-    `docs/phase_F/f3_design.md` §4 records the design choice and the
-    upgrade path for deployments handling adversarial input.
+    See the module docstring for the threat model, the explicit list
+    of what this sandbox does and does not block, and the upgrade path
+    for deployments handling adversarial input.
     """
     allowed = ALLOWED_MODULES if extra_allowed is None else ALLOWED_MODULES | extra_allowed
 

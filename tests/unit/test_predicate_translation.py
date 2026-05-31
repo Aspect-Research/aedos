@@ -12,6 +12,7 @@ from aedos.database import open_memory_db
 from aedos.llm.client import LLMClient
 from aedos.layer3_substrate.predicate_translation import (
     PREDICATE_METADATA_TOOL,
+    PredicateBinding,
     PredicateMetadata,
     PredicateTranslation,
     PredicateTranslationError,
@@ -133,6 +134,90 @@ class TestPredicateMetadataDataclass:
         )
         assert m.subject_entity_types == ["Q5"]
         assert m.object_entity_types == ["Q43229"]
+
+
+# ---------------------------------------------------------------------------
+# TestPredicateMetadataBindings (v0.16 WS1)
+# ---------------------------------------------------------------------------
+
+class TestPredicateMetadataBindings:
+    """v0.16 WS1: PredicateMetadata gains a `bindings` list. A legacy scalar
+    construction synthesizes exactly one PredicateBinding mirroring the scalar
+    fields; an explicit bindings list round-trips and mirrors bindings[0] back
+    onto the scalar accessors."""
+
+    def test_legacy_scalar_synthesizes_one_binding(self):
+        # Construct with only the scalar fields (no `bindings=`). __post_init__
+        # must synthesize exactly one binding mirroring the scalars.
+        m = PredicateMetadata(
+            id=1,
+            aedos_predicate="holds_role",
+            object_type="entity",
+            user_subject_required=False,
+            distinct_slots=None,
+            routing_hint="kb_resolvable",
+            kb_namespace="wikidata",
+            kb_property="P39",
+            slot_to_qualifier=None,
+            reason="maps to position held",
+            created_at="2026-01-01T00:00:00+00:00",
+            single_valued=True,
+            subject_entity_types=["Q5"],
+            object_entity_types=["Q4164871"],
+        )
+        assert m.bindings  # non-empty
+        assert len(m.bindings) == 1
+        b = m.bindings[0]
+        assert isinstance(b, PredicateBinding)
+        assert b.kb_property == m.kb_property == "P39"
+        assert b.kb_namespace == "wikidata"
+        assert b.single_valued is True
+        assert b.subject_entity_types == ["Q5"]
+        assert b.object_entity_types == ["Q4164871"]
+        assert b.source == "legacy_scalar"
+
+    def test_explicit_bindings_round_trip_and_mirror_scalars(self):
+        # Construct with an explicit bindings list; bindings round-trips and
+        # bindings[0]'s values mirror back onto the scalar accessors so the
+        # ~18 existing scalar readers stay correct.
+        primary = PredicateBinding(
+            kb_namespace="wikidata",
+            kb_property="P106",
+            slot_to_qualifier={"start": "P580"},
+            single_valued=False,
+            subject_entity_types=["Q5"],
+            object_entity_types=["Q28640"],
+            source="ontology_p2302",
+            rank=0.9,
+        )
+        secondary = PredicateBinding(
+            kb_namespace="wikidata",
+            kb_property="P39",
+            source="oracle",
+            rank=0.4,
+        )
+        m = PredicateMetadata(
+            id=2,
+            aedos_predicate="works_as",
+            object_type="entity",
+            user_subject_required=False,
+            distinct_slots=None,
+            routing_hint="kb_resolvable",
+            kb_namespace=None,
+            kb_property=None,
+            slot_to_qualifier=None,
+            reason="r",
+            created_at="t",
+            bindings=[primary, secondary],
+        )
+        # bindings round-trips intact (order + count preserved).
+        assert m.bindings == [primary, secondary]
+        # bindings[0] mirrored onto the scalar accessors.
+        assert m.kb_property == "P106"
+        assert m.kb_namespace == "wikidata"
+        assert m.slot_to_qualifier == {"start": "P580"}
+        assert m.subject_entity_types == ["Q5"]
+        assert m.object_entity_types == ["Q28640"]
 
 
 # ---------------------------------------------------------------------------
@@ -549,3 +634,271 @@ class TestEntityTypesRoundTrip:
         ).fetchone()
         assert row["subject_entity_types"] is None
         assert row["object_entity_types"] is None
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS1 binding discovery (PropertyRelations + SLING)
+# ---------------------------------------------------------------------------
+
+from aedos.layer3_substrate.property_relations import PropertyOntology
+from aedos.layer3_substrate.predicate_translation import PredicateBinding
+
+
+class _StubPropertyRelations:
+    """Test double for PropertyRelations. Returns a pre-canned PropertyOntology
+    per kb_property; an unknown property yields an empty ontology (the
+    fall-open case). Records which properties were fetched."""
+
+    def __init__(self, by_property: dict[str, PropertyOntology]):
+        self._by_property = by_property
+        self.fetched: list[str] = []
+
+    def fetch(self, kb_property, kb_namespace="wikidata") -> PropertyOntology:
+        self.fetched.append(kb_property)
+        return self._by_property.get(kb_property, PropertyOntology())
+
+
+class _StubSling:
+    """Test double for SlingFallback. Returns a pre-canned list of bindings;
+    records calls. propose_bindings is the only method discovery calls."""
+
+    def __init__(self, bindings: list[PredicateBinding] | None = None):
+        self._bindings = bindings or []
+        self.calls = 0
+
+    def propose_bindings(self, predicate, oracle_raw) -> list[PredicateBinding]:
+        self.calls += 1
+        return list(self._bindings)
+
+
+def _make_discovery_oracle(response, property_relations=None, sling=None):
+    db = open_memory_db()
+    transport = MockTransport(response=response)
+    client = LLMClient(_transport=transport)
+    oracle = PredicateTranslation(
+        db=db,
+        llm_client=client,
+        property_relations=property_relations,
+        sling=sling,
+    )
+    return oracle, db, transport
+
+
+class TestBindingDiscoveryFallsOpen:
+    """Discovery is ADDITIVE ENRICHMENT. With no collaborators wired (the
+    mock/cold/default case), the result is a SINGLE legacy_scalar binding
+    mirroring the oracle's primary property = pre-v0.16 behavior."""
+
+    def test_no_collaborators_yields_single_legacy_binding(self):
+        oracle, _, _ = _make_oracle()  # no property_relations / sling
+        meta = oracle.consult("holds_role")
+        assert len(meta.bindings) == 1
+        b = meta.bindings[0]
+        assert b.source == "legacy_scalar"
+        assert b.kb_property == "P39"
+        # Scalar mirror preserved.
+        assert meta.kb_property == "P39"
+
+    def test_empty_ontology_falls_open_to_oracle_binding(self):
+        # PropertyRelations wired but returns an EMPTY ontology for the
+        # property → discovery falls open to the oracle's single binding.
+        pr = _StubPropertyRelations({})  # every fetch → empty ontology
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=pr
+        )
+        meta = oracle.consult("holds_role")
+        assert pr.fetched == ["P39"]  # the primary was consulted
+        assert len(meta.bindings) == 1
+        # The single binding is the oracle binding (empty ontology adds nothing).
+        assert meta.bindings[0].kb_property == "P39"
+
+    def test_non_kb_resolvable_never_invokes_discovery(self):
+        # A user_authoritative predicate carries no KB binding; discovery must
+        # not touch PropertyRelations and the single binding is legacy_scalar.
+        pr = _StubPropertyRelations({})
+        resp = _default_metadata_response(
+            routing_hint="user_authoritative", kb_property=None, kb_namespace=None
+        )
+        oracle, _, _ = _make_discovery_oracle(resp, property_relations=pr)
+        meta = oracle.consult("prefers")
+        assert pr.fetched == []  # never consulted for a non-KB predicate
+        assert len(meta.bindings) == 1
+        assert meta.bindings[0].source == "legacy_scalar"
+
+    def test_discovery_error_degrades_to_oracle_binding(self):
+        # A PropertyRelations.fetch that raises must not break the write —
+        # discovery is enrichment; it degrades to the oracle binding.
+        class _RaisingPR:
+            def fetch(self, *a, **kw):
+                raise RuntimeError("ontology backend down")
+
+        oracle, db, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=_RaisingPR()
+        )
+        meta = oracle.consult("holds_role")  # must not raise
+        assert len(meta.bindings) == 1
+        assert meta.bindings[0].kb_property == "P39"
+        # The degradation is logged for observability.
+        events = db.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE event_type='binding_discovery_failed'"
+        ).fetchone()[0]
+        assert events == 1
+
+
+class TestBindingDiscoveryFromOntology:
+    """When the Wikidata property ontology (PropertyRelations) constrains a
+    candidate, discovery builds an ontology_p2302 binding ranked ABOVE the
+    plain oracle binding, carrying the ontology's value/subject types and
+    single-value flag."""
+
+    def test_ontology_typed_binding_supersedes_oracle_for_primary(self):
+        # The primary property's ontology constrains it → the ontology binding
+        # for P39 dedupes out the plain oracle binding for the same P-id.
+        # The ontology supplies TYPES; the ORACLE supplies single_valued. Here
+        # the oracle says single_valued=1, so the ontology binding mirrors it.
+        pr = _StubPropertyRelations({
+            "P39": PropertyOntology(
+                subject_type_qids=["Q5"],
+                value_type_qids=["Q4164871"],
+                single_valued=True,
+            )
+        })
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(single_valued=1), property_relations=pr
+        )
+        meta = oracle.consult("holds_role")
+        assert len(meta.bindings) == 1  # deduped by (namespace, P-id)
+        b = meta.bindings[0]
+        assert b.source == "ontology_p2302"
+        assert b.object_entity_types == ["Q4164871"]
+        assert b.subject_entity_types == ["Q5"]
+        # single_valued comes from the ORACLE (authoritative), not the ontology.
+        assert b.single_valued is True
+        # bindings[0] mirrors onto the scalar accessors (back-compat).
+        assert meta.single_valued is True
+        assert meta.object_entity_types == ["Q4164871"]
+
+    def test_oracle_authoritative_for_single_valued_not_ontology(self):
+        # PATCH-A fix (4) / §3.2 never-false-contradict: single_valued is the
+        # ONLY flag that licenses a CONTRADICTED verdict, so the conservative
+        # oracle stays authoritative for it. An ontology that asserts
+        # single_valued=True must NOT OR-promote the flag past the oracle's
+        # deliberate 0 — the primary binding's single_valued stays False, so
+        # this binding alone cannot license a false contradiction.
+        pr = _StubPropertyRelations({
+            "P39": PropertyOntology(
+                subject_type_qids=["Q5"],
+                value_type_qids=["Q4164871"],
+                single_valued=True,  # ontology says functional...
+            )
+        })
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(),  # ...but the oracle is silent (=> 0)
+            property_relations=pr,
+        )
+        meta = oracle.consult("holds_role")
+        assert len(meta.bindings) == 1
+        b = meta.bindings[0]
+        assert b.source == "ontology_p2302"
+        # Types still flow from the ontology (enrichment is intact)...
+        assert b.object_entity_types == ["Q4164871"]
+        assert b.subject_entity_types == ["Q5"]
+        # ...but single_valued does NOT: the oracle's 0 is authoritative.
+        assert b.single_valued is False
+        assert meta.single_valued is False
+
+    def test_candidate_property_adds_second_binding_ranked_above_oracle(self):
+        # The copula case: oracle primary P31, candidate P106. P106's ontology
+        # constrains it → an ontology_p2302 binding for P106 is added. P31's
+        # ontology is empty → the plain oracle binding for P31 stays. Ranking:
+        # ontology-typed (P106) first, then oracle-primary (P31).
+        pr = _StubPropertyRelations({
+            "P106": PropertyOntology(value_type_qids=["Q28640"]),  # occupation
+        })
+        resp = _default_metadata_response(
+            kb_property="P31",
+            candidate_kb_properties=["P106"],
+        )
+        oracle, _, _ = _make_discovery_oracle(resp, property_relations=pr)
+        meta = oracle.consult("is_a_physicist")
+        props = [b.kb_property for b in meta.bindings]
+        assert props == ["P106", "P31"], props
+        assert meta.bindings[0].source == "ontology_p2302"
+        assert meta.bindings[0].object_entity_types == ["Q28640"]
+        assert meta.bindings[1].source == "oracle"
+        # Scalar mirror flips to bindings[0] (intended per spec — scalar mirrors
+        # the evidence-arbitrated winner).
+        assert meta.kb_property == "P106"
+        # Persisted JSON round-trips: re-fetch through _row_to_metadata.
+        warm = oracle.consult("is_a_physicist")
+        assert [b.kb_property for b in warm.bindings] == ["P106", "P31"]
+        assert warm.bindings[0].source == "ontology_p2302"
+
+    def test_candidate_kb_properties_tolerated_when_absent(self):
+        # candidate_kb_properties is optional. A response WITHOUT it (the common
+        # case) discovers exactly the primary binding — no crash, no extra rows.
+        pr = _StubPropertyRelations({})
+        resp = _default_metadata_response()  # no candidate_kb_properties key
+        oracle, _, _ = _make_discovery_oracle(resp, property_relations=pr)
+        meta = oracle.consult("holds_role")
+        assert [b.kb_property for b in meta.bindings] == ["P39"]
+
+    def test_candidate_kb_properties_null_tolerated(self):
+        # Explicit null candidate_kb_properties behaves identically to absent.
+        pr = _StubPropertyRelations({})
+        resp = _default_metadata_response(candidate_kb_properties=None)
+        oracle, _, _ = _make_discovery_oracle(resp, property_relations=pr)
+        meta = oracle.consult("holds_role")
+        assert [b.kb_property for b in meta.bindings] == ["P39"]
+
+
+class TestBindingDiscoverySlingFallback:
+    """SLING is consulted ONLY when the ontology couldn't constrain a candidate
+    (any candidate had an empty ontology). SLING bindings rank LAST and never
+    license a contradiction (single_valued is forced False at the SLING layer)."""
+
+    def test_sling_fires_when_ontology_empty(self):
+        pr = _StubPropertyRelations({})  # ontology empty for the primary
+        sling = _StubSling([
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P800",
+                source="sling", rank=0.1,
+            )
+        ])
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=pr, sling=sling
+        )
+        meta = oracle.consult("holds_role")
+        assert sling.calls == 1
+        props = [b.kb_property for b in meta.bindings]
+        # Oracle primary first (its ontology was empty so it stays as `oracle`),
+        # SLING candidate last.
+        assert props == ["P39", "P800"], props
+        assert meta.bindings[-1].source == "sling"
+
+    def test_sling_not_consulted_when_ontology_constrains_every_candidate(self):
+        # If every candidate's ontology is non-empty, there is no long-tail gap
+        # for SLING to fill → propose_bindings is never called.
+        pr = _StubPropertyRelations({
+            "P39": PropertyOntology(value_type_qids=["Q4164871"]),
+        })
+        sling = _StubSling([
+            PredicateBinding(kb_namespace="wikidata", kb_property="P800", source="sling")
+        ])
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=pr, sling=sling
+        )
+        meta = oracle.consult("holds_role")
+        assert sling.calls == 0
+        assert [b.kb_property for b in meta.bindings] == ["P39"]
+
+    def test_sling_empty_proposal_leaves_oracle_binding(self):
+        # SLING fails open: an empty proposal list leaves just the oracle binding.
+        pr = _StubPropertyRelations({})
+        sling = _StubSling([])  # no signal
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=pr, sling=sling
+        )
+        meta = oracle.consult("holds_role")
+        assert sling.calls == 1
+        assert [b.kb_property for b in meta.bindings] == ["P39"]

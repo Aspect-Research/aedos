@@ -1,4 +1,4 @@
-"""Tests for the v0.15 FastAPI application."""
+"""Tests for the FastAPI application."""
 
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ class TestHealthEndpoint:
         assert data["status"] == "ok"
         assert data["version"] == __version__
 
-    def test_version_is_0_15(self, client):
+    def test_version_is_0_16(self, client):
         response = client.get("/health")
-        assert "0.15" in response.json()["version"]
+        assert "0.16" in response.json()["version"]
 
 
 class TestAuditEndpoints:

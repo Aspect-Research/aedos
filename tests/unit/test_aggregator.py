@@ -99,6 +99,84 @@ class TestClaimVerdictsField:
         assert vr.claim_verdicts == []
 
 
+class TestClaimVerdictContradictingValue:
+    """WS5 (part b): the aggregator populates ClaimVerdict.contradicting_value /
+    contradicting_value_type by scanning the trace for a CONTRADICTED
+    premise_lookup edge carrying the value the source holds. Only done for
+    contradicted-family verdicts; None otherwise."""
+
+    def _contradicted_walk_result(self, verdict, value, value_type):
+        from aedos.layer5_result.trace import TraceEdge
+        root = TraceNode("claim")
+        trace = JustificationTrace(root=root)
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=root,
+            target=TraceNode("kb_statement", {"entity": "Q76"}),
+            metadata={
+                "source": "kb",
+                "verdict": "contradicted",
+                "contradicting_value": value,
+                "contradicting_value_type": value_type,
+                "kb_property": "P19",
+            },
+        ))
+        return WalkResult(
+            verdict=verdict,
+            trace=trace,
+            budget_consumption=BudgetConsumption(wall_clock_ms=10.0, llm_calls=1),
+        )
+
+    def test_aggregate_populates_contradicting_value(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        wr = self._contradicted_walk_result("contradicted", "Q18094", "entity")
+        vr = agg.aggregate([c], [wr])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value == "Q18094"
+        assert cv.contradicting_value_type == "entity"
+
+    def test_aggregate_populates_for_contradicted_given_assertion(self):
+        # base_verdict_of collapses the dual to contradicted, so the scan runs.
+        agg = Aggregator()
+        c = _claim("c1")
+        wr = self._contradicted_walk_result(
+            "contradicted_given_assertion", "Paris", "literal")
+        vr = agg.aggregate([c], [wr])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value == "Paris"
+        assert cv.contradicting_value_type == "literal"
+
+    def test_quantity_value_stringified(self):
+        # _extract_contradicting_value coerces the value to str (a numeric
+        # kb_value flows through as a string for the chat-wrapper).
+        agg = Aggregator()
+        c = _claim("c1")
+        wr = self._contradicted_walk_result("contradicted", 67000000, "quantity")
+        vr = agg.aggregate([c], [wr])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value == "67000000"
+        assert cv.contradicting_value_type == "quantity"
+
+    def test_verified_verdict_has_no_contradicting_value(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("verified")])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value is None
+        assert cv.contradicting_value_type is None
+
+    def test_contradicted_without_value_edge_is_none(self):
+        # A CONTRADICTED verdict whose trace carries no distinct value
+        # (polarity-conflict / subsumption-fallback) → None, never invented.
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("contradicted")])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value is None
+        assert cv.contradicting_value_type is None
+
+
 # ---------------------------------------------------------------------------
 # TestAggregator
 # ---------------------------------------------------------------------------
@@ -280,62 +358,86 @@ class TestVerdictSetStructuralConsistency:
             meta = vr.aggregate_metadata
             assert meta["verified"] + meta["contradicted"] + meta["abstained"] == 1
 
-    def test_intervention_collapses_dual_to_base(self):
-        # Phase 10.5 Session 2 Item 1 (per-claim intervention): the
-        # invariant is preserved across the API redesign — for any
-        # verdict mix, replacing each verdict with its base-counterpart
-        # must produce the same InterventionPlan. The dual designation
-        # is transparent to intervention selection.
+    def test_intervention_no_longer_collapses_dual_to_base(self):
+        # WS5 (part d): INVERTED from the v0.15 collapse invariant. The
+        # `*_given_assertion` qualifier is NO LONGER transparent to
+        # intervention selection — a conditional verdict now produces a
+        # DIFFERENT (conditional) plan than its base verdict. `base_verdict_of`
+        # still drives the aggregate COUNT buckets (tested elsewhere), but it
+        # no longer governs the user-surface intervention.
         from aedos.deployment.chat_wrapper import (
-            InterventionType, select_interventions,
+            ClaimActionType, InterventionType, select_interventions,
         )
-        from aedos.layer5_result.aggregator import ALL_VERDICTS, base_verdict_of
         agg = Aggregator()
 
-        # Exhaustive 1-of-6 single-claim check: every dual matches its base.
-        for v in ALL_VERDICTS:
-            c = _claim("c1")
-            dual_vr = agg.aggregate([c], [_walk_result(v)])
-            base_vr = agg.aggregate([c], [_walk_result(base_verdict_of(v))])
-            dual_plan = select_interventions(dual_vr.claim_verdicts)
-            base_plan = select_interventions(base_vr.claim_verdicts)
-            assert dual_plan.overall == base_plan.overall, (
-                f"intervention overall diverged for verdict {v!r} vs its "
-                f"base {base_verdict_of(v)!r}"
-            )
-            assert len(dual_plan.per_claim_actions) == len(base_plan.per_claim_actions), (
-                f"per-claim action count diverged for verdict {v!r}"
-            )
+        # verified_given_assertion DIVERGES from verified: base verified is a
+        # silent PASS_THROUGH; the dual surfaces a CONFIRM_CONDITIONAL note.
+        c = _claim("c1")
+        dual_vr = agg.aggregate([c], [_walk_result("verified_given_assertion")])
+        base_vr = agg.aggregate([c], [_walk_result("verified")])
+        dual_plan = select_interventions(dual_vr.claim_verdicts)
+        base_plan = select_interventions(base_vr.claim_verdicts)
+        assert base_plan.overall == InterventionType.PASS_THROUGH
+        assert dual_plan.overall == InterventionType.INTERVENE
+        assert dual_plan.overall != base_plan.overall
+        assert len(dual_plan.per_claim_actions) == 1
+        assert (
+            dual_plan.per_claim_actions[0].action_type
+            == ClaimActionType.CONFIRM_CONDITIONAL
+        )
 
-        # Multi-claim mixed batch: 3 verified_given_assertion + 1
-        # contradicted_given_assertion. Under the per-claim plan this is
-        # INTERVENE with one CORRECT action (three verified + one
-        # problematic). Same shape applies for the base equivalent.
-        claims = [_claim(f"c{i}") for i in range(4)]
-        dual_results = [_walk_result(v) for v in (
-            "verified_given_assertion", "verified_given_assertion",
-            "verified_given_assertion", "contradicted_given_assertion",
-        )]
-        base_results = [_walk_result(v) for v in (
-            "verified", "verified", "verified", "contradicted",
-        )]
-        dual_vr = agg.aggregate(claims, dual_results)
-        base_vr = agg.aggregate(claims, base_results)
+        # contradicted_given_assertion keeps CORRECT (same action_type as its
+        # base) but the annotation diverges — it carries the conditional suffix.
+        c = _claim("c1")
+        dual_vr = agg.aggregate([c], [_walk_result("contradicted_given_assertion")])
+        base_vr = agg.aggregate([c], [_walk_result("contradicted")])
         dual_plan = select_interventions(dual_vr.claim_verdicts)
         base_plan = select_interventions(base_vr.claim_verdicts)
         assert dual_plan.overall == base_plan.overall == InterventionType.INTERVENE
-        assert len(dual_plan.per_claim_actions) == len(base_plan.per_claim_actions) == 1
-        assert dual_plan.per_claim_actions[0].action_type.value == "correct"
+        assert (
+            dual_plan.per_claim_actions[0].action_type
+            == base_plan.per_claim_actions[0].action_type
+            == ClaimActionType.CORRECT
+        )
+        assert (
+            dual_plan.per_claim_actions[0].annotation
+            != base_plan.per_claim_actions[0].annotation
+        )
+        assert "rests on your own prior assertion" in dual_plan.per_claim_actions[0].annotation
+
+        # abstained_given_assertion keeps ABSTAIN but with the conditional suffix.
+        c = _claim("c1")
+        dual_vr = agg.aggregate([c], [_walk_result("abstained_given_assertion")])
+        base_vr = agg.aggregate([c], [_walk_result("no_grounding_found")])
+        dual_plan = select_interventions(dual_vr.claim_verdicts)
+        base_plan = select_interventions(base_vr.claim_verdicts)
+        assert (
+            dual_plan.per_claim_actions[0].action_type
+            == base_plan.per_claim_actions[0].action_type
+            == ClaimActionType.ABSTAIN
+        )
+        assert (
+            dual_plan.per_claim_actions[0].annotation
+            != base_plan.per_claim_actions[0].annotation
+        )
 
     def test_trace_serialization_round_trip_carries_assertion_flag(self):
-        # JustificationTrace.chain_includes_assertion survives trace_to_json.
-        from aedos.layer5_result.trace import trace_to_json
-        trace = JustificationTrace(
-            root=TraceNode("claim"),
-            chain_includes_assertion=True,
+        # JustificationTrace.chain_includes_assertion (now DERIVED from the
+        # provenance term, v0.16 WS3 §3A) survives trace_to_json. Populate the
+        # term with an assertion-conditional literal; the derived boolean must
+        # serialize True and the provenance view must be present.
+        from aedos.layer5_result.trace import (
+            ProvenanceLiteral,
+            ProvenanceTerm,
+            trace_to_json,
+        )
+        trace = JustificationTrace(root=TraceNode("claim"))
+        trace.provenance.add_alternative(
+            ProvenanceTerm.lit(ProvenanceLiteral(source="tier_u", assertion=True))
         )
         j = trace_to_json(trace)
         assert j["chain_includes_assertion"] is True
+        assert "provenance" in j
 
     def test_corpus_runner_accepts_every_verdict(self):
         # The corpus runner's expected-verdict comparison must accept all
@@ -351,6 +453,67 @@ class TestVerdictSetStructuralConsistency:
                 f"verdict {v!r} missing from _VERDICT_TO_BASE_COUNT — "
                 "the six-way verdict set has drifted"
             )
+
+
+class TestExtractSourceRows:
+    """v0.16 WS3 §3C/D13: _extract_source_rows feeds the retraction propagator's
+    dependency index. It prefers the structured provenance term when populated
+    (the walker's source of truth) and falls back to the legacy edge-metadata
+    scan for hand-built test traces. The D13 entity_resolution_cache key makes
+    KB-grounded verdicts retractable when a cached entity resolution is retracted.
+    """
+
+    def test_entity_resolution_cache_key_registered(self):
+        from aedos.layer5_result.aggregator import _TRACE_ROW_ID_KEYS
+        assert _TRACE_ROW_ID_KEYS["entity_resolution_cache_row_id"] == "entity_resolution_cache"
+
+    def test_edge_scan_extracts_entity_resolution_cache_row(self):
+        # D13: a KB premise edge stamping entity_resolution_cache_row_id is
+        # pulled into source_rows via the legacy edge scan (no provenance term).
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        from aedos.layer5_result.trace import TraceEdge
+        root = TraceNode("claim")
+        trace = JustificationTrace(root=root)
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup", source=root,
+            target=TraceNode("kb_statement"),
+            metadata={"source": "kb", "entity_resolution_cache_row_id": 42},
+        ))
+        assert _extract_source_rows(trace) == [("entity_resolution_cache", 42)]
+
+    def test_provenance_term_preferred_over_edge_scan(self):
+        # When the provenance term carries source rows, it is the single source
+        # of truth — the edge scan is not consulted (so a term-only KB verdict,
+        # with no edge metadata, still surfaces its entity_resolution_cache dep).
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        from aedos.layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        root = TraceNode("claim")
+        trace = JustificationTrace(root=root)
+        trace.provenance.add_alternative(ProvenanceTerm.lit(
+            ProvenanceLiteral(source="kb", table="entity_resolution_cache", row_id=9)))
+        assert _extract_source_rows(trace) == [("entity_resolution_cache", 9)]
+
+    def test_empty_trace_extracts_nothing(self):
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        trace = JustificationTrace(root=TraceNode("claim"))
+        assert _extract_source_rows(trace) == []
+
+    def test_aggregate_records_entity_resolution_cache_dependency(self):
+        # End of the chain: the aggregator records the D13 dependency into the
+        # propagator's trace index, so retracting that cache row propagates to
+        # the KB verdict.
+        from aedos.layer5_result.retraction import RetractionPropagator
+        from aedos.layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        prop = RetractionPropagator()
+        agg = Aggregator(retraction_propagator=prop)
+        c = _claim("c1")
+        wr = _walk_result("verified")
+        wr.trace.provenance.add_alternative(ProvenanceTerm.lit(
+            ProvenanceLiteral(source="kb", table="entity_resolution_cache", row_id=7)))
+        agg.aggregate([c], [wr])
+        assert ("entity_resolution_cache", 7) in prop._trace_index["c1"]
+        retracted = prop.propagate_retraction("entity_resolution_cache", 7)
+        assert any(r.claim_id == "c1" for r in retracted)
 
 
 class TestAggregatorTraces:

@@ -1,11 +1,31 @@
-"""Phase H D5: tests for Walker._expand_via_kb_neighbors.
+"""Phase H D5 + v0.16 WS2: tests for the walker's KB-neighbor discovery.
 
 Constructed walker scenarios — mocked Substrate + mocked KB adapter —
-exercise the D5 fallback behavior: it fires when subsumption substrate
-is empty, it doesn't fire when substrate has neighbors, it doesn't fire
-when the distribution gate is closed, it doesn't fire when the
-walker's `kb` parameter is None, and the emitted trace edges have the
+exercise the KB-neighbor enumeration that fires (as the DISCOVERY
+enumerator) when the substrate's subsumption oracle has no neighbors
+(cheapest-path-first), is skipped when substrate has neighbors, is
+skipped when the walker has no `kb`, and emits trace edges of the
 expected shape.
+
+v0.16 WS2 §3/§5 rewrite (gate -> ranker, depth==0 cap removed):
+  - `predicate_distribution` is demoted from a GATE to a RANKER.
+    A `neither` verdict no longer forecloses the relation; discovery
+    is LIBERAL — KB enumeration MAY fire for `neither`. Soundness moved
+    entirely to `_verify_chain`: a discovered substitution survives to a
+    verdict only if the taxonomy/transitive edge is confirmed in a source
+    (and, for intensional is_a, only if the kind-entailment verdict is
+    non-`neither`). So a `neither` predicate still ends at
+    `no_grounding_found` — but via verify-time rejection / no grounding
+    premise, not via a discovery-time skip.
+  - The depth==0 cap on KB enumeration is removed; both directions
+    (parent via outgoing, child via incoming) now enumerate regardless of
+    the distribution verdict — `preferred` only ORDERS the calls. Cost is
+    bounded by the per-walk fanout budget (see test_walker_ws2_budget.py),
+    not the depth cap.
+
+The MagicMock KB gains a `verify_transitive_path` return (KBProtocol grew
+the method in WS2 §1); the substrate-`find_neighbors` admission path routes
+through it inside `_verify_chain`.
 """
 
 from __future__ import annotations
@@ -20,6 +40,7 @@ from aedos.layer3_substrate import Substrate
 from aedos.layer4_sources.kb_protocol import (
     ResolutionCandidate,
     SubsumptionResult,
+    TransitivePathResult,
 )
 from aedos.layer4_sources.kb_verifier import KBVerdictType, KBVerdict
 from aedos.layer4_sources.tier_u import LookupResult
@@ -81,17 +102,29 @@ def _make_substrate(
     *,
     distribution_verdict: str = "distributes_down",
     sub_neighbors: list = (),
+    sub_neighbors_by_relation: dict | None = None,
+    consult_verdict: str = "unrelated",
     resolved_qid: str | None = "Q49112",
 ):
     """Build a mocked Substrate that:
       - returns `distribution_verdict` from predicate_distribution.consult
-      - returns `sub_neighbors` from subsumption.find_neighbors
+      - returns `sub_neighbors` from subsumption.find_neighbors (or, when
+        `sub_neighbors_by_relation` is given, keys neighbors per relation_type)
+      - returns `consult_verdict` from subsumption.consult (the WS2 §6
+        verify-time authority _verify_chain falls back to when the KB
+        transitive path can't confirm)
       - resolves any reference to `resolved_qid` (or empty if None)
     """
     pd = MagicMock()
     pd.consult.return_value = _distribution_verdict(distribution_verdict)
     sub = MagicMock()
-    sub.find_neighbors.return_value = list(sub_neighbors)
+    if sub_neighbors_by_relation is not None:
+        def _find(entity_ref, relation_type):
+            return list(sub_neighbors_by_relation.get(relation_type, ()))
+        sub.find_neighbors.side_effect = _find
+    else:
+        sub.find_neighbors.return_value = list(sub_neighbors)
+    sub.consult.return_value = SubsumptionResult(verdict=consult_verdict)
     resolver = MagicMock()
     if resolved_qid is None:
         resolver.resolve.return_value = []
@@ -111,11 +144,19 @@ def _make_substrate(
 def _make_kb(
     neighbors_by_prop: dict | None = None,
     incoming_by_prop: dict | None = None,
+    *,
+    path_holds: bool = True,
 ):
     """A mock KB adapter exposing `enumerate_neighbors`. `neighbors_by_prop`
     is what the outgoing direction returns; `incoming_by_prop` is the
     incoming (D51 reverse). Either defaults to empty per requested
-    property."""
+    property.
+
+    v0.16 WS2 §1: the KB also exposes `verify_transitive_path` (KBProtocol
+    grew the method) — `_verify_chain` consults it for the SLOT-SUBSTITUTION
+    case when both endpoints resolve to Q-ids. `path_holds` controls whether
+    the transitive-path ASK is reported as holding (default True).
+    """
     kb = MagicMock()
 
     def fake(entity, properties, direction="outgoing"):
@@ -128,6 +169,7 @@ def _make_kb(
         return {p: list(neighbors_by_prop.get(p, [])) for p in properties}
 
     kb.enumerate_neighbors.side_effect = fake
+    kb.verify_transitive_path.return_value = TransitivePathResult(holds=path_holds)
     return kb
 
 
@@ -147,9 +189,11 @@ def _make_walker(substrate, kb):
 
 class TestD5Fallback:
     def test_fires_when_substrate_empty_and_distribution_down(self):
-        """The headline case: subsumption oracle has nothing, distribution
-        gate is open in the 'parent' direction → D5 enumerates KB
-        neighbors and emits expansions."""
+        """The headline case: subsumption oracle has nothing, so the KB-neighbor
+        enumerator fires (cheapest-path-first fallback) and emits expansions.
+        v0.16 WS2: with the gate demoted to a ranker, `distributes_down`
+        deprioritizes nothing here — it ORDERS the parent direction first; the
+        parent (outgoing) enumeration still produces the P131 edge under test."""
         substrate = _make_substrate(
             distribution_verdict="distributes_down",
             sub_neighbors=[],
@@ -212,9 +256,18 @@ class TestD5Fallback:
         # KB enumerate_neighbors should not have been called.
         kb.enumerate_neighbors.assert_not_called()
 
-    def test_does_not_fire_when_distribution_gate_closed(self):
-        """When predicate_distribution returns 'neither' (gate closed),
-        no expansion happens at all — D5 doesn't get a chance to fire."""
+    def test_neither_distribution_is_explored_but_does_not_ground(self):
+        """v0.16 WS2 §3 (gate -> ranker): when predicate_distribution returns
+        `neither`, the relation is no longer foreclosed. Discovery is LIBERAL,
+        so KB enumeration MAY fire for `neither` (the old gate would have
+        skipped it). But soundness moved to verify time: the discovered
+        substitutions never ground (no Tier U premise, KB verifier NO_MATCH),
+        so the walk still ends at `no_grounding_found`. The OUTCOME matches the
+        old gate; the reason is now grounding-failure, not a discovery skip.
+
+        This is the behavioral inversion of the old
+        `test_does_not_fire_when_distribution_gate_closed`: we assert the
+        sound verdict, not that enumeration was suppressed."""
         substrate = _make_substrate(
             distribution_verdict="neither",
             sub_neighbors=[],
@@ -222,14 +275,52 @@ class TestD5Fallback:
         kb = _make_kb({"P131": ["Q771397"]})
         walker = _make_walker(substrate, kb)
 
-        walker.walk(_claim(), _ctx())
+        result = walker.walk(_claim(), _ctx())
 
-        kb.enumerate_neighbors.assert_not_called()
+        # The relation is explored (the gate is gone); the walker still
+        # abstains because nothing the substitution reaches grounds the claim.
+        assert result.verdict == "no_grounding_found"
+
+    def test_neither_distribution_admits_no_subsumption_substitution(self):
+        """v0.16 WS2 §3.2 soundness: with a substrate `is_a` neighbor present
+        and a `neither` distribution verdict, `_verify_chain` REJECTS the
+        substitution — the kind-entailment authority (distribution=neither)
+        says the predicate does not transfer across is_a, even if the
+        structural edge holds. No `subsumption_traversal` edge survives, and
+        the verdict is `no_grounding_found`. This is the verify-time analog of
+        the old closed-gate behavior, proven at the substrate-neighbor path."""
+        sub_neighbor = MagicMock()
+        sub_neighbor.direction = "parent"
+        sub_neighbor.entity.identifier = "dog"
+        sub_neighbor.row_id = 7
+        substrate = _make_substrate(
+            distribution_verdict="neither",
+            # Only an is_a neighbor exists, so the is_a kind-entailment gate is
+            # the sole admission path under test (no part_of edge to confound).
+            sub_neighbors_by_relation={"is_a": [sub_neighbor], "part_of": []},
+        )
+        # KB transitive path WOULD report the edge as holding, but the is_a
+        # kind-entailment gate forecloses it before any structural check.
+        kb = _make_kb(path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(predicate="prefers", object_val="dog"), _ctx())
+
+        assert result.verdict == "no_grounding_found"
+        assert "subsumption_traversal" not in [
+            e.edge_type for e in result.trace.edges
+        ]
 
     def test_fires_reverse_for_distributes_up_after_d51(self):
-        """Phase H D51 (2026-05-24): `distributes_up` → directions={'child'}.
-        D5's outgoing-only used to skip; D51 adds reverse enumeration so
-        the walker fires with `direction="incoming"` instead."""
+        """Phase H D51 (2026-05-24): `distributes_up` prefers the 'child'
+        direction. D5's outgoing-only used to skip; D51 added reverse
+        enumeration so the walker also fires with `direction="incoming"`.
+        v0.16 WS2 §3/§5: both directions now enumerate regardless of the
+        verdict (the depth cap and direction gate are gone) — `distributes_up`
+        merely ORDERS the incoming/child direction first. This test asserts the
+        incoming enumeration fires and records `direction='child'`, which holds
+        under the ranker semantics (incoming is among the now-unconditional
+        directions)."""
         substrate = _make_substrate(
             distribution_verdict="distributes_up",
             sub_neighbors=[],
@@ -361,3 +452,215 @@ class TestD5Fallback:
         # We see calls for both is_a and part_of relation types.
         assert ["P31", "P279"] in called_properties
         assert ["P131", "P361", "P17"] in called_properties
+
+
+# ---------------------------------------------------------------------------
+# PATCH-A soundness pins for the KB-neighbor enumeration arm.
+# ---------------------------------------------------------------------------
+
+class TestKBEnumCandidateGated:
+    """PATCH-A fix (1) / SS3 symmetry: every KB-ENUMERATED candidate is routed
+    through the SAME _verify_chain entailment gate the substrate find_neighbors
+    arm uses. The single enumeration hop proves the neighbor EXISTS, not that the
+    SUBSTITUTION is entailed: an is_a `neither` predicate (kind-entailment says
+    the predicate does not transfer across is_a) must REJECT the candidate — it
+    must not appear as a surviving kb_neighbor_enumeration edge. An entailed one
+    (non-`neither` verdict + holding KB path) still passes."""
+
+    def _is_a_edges(self, result):
+        return [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+            and e.metadata.get("relation_type") == "is_a"
+        ]
+
+    def test_unentailed_is_a_candidate_rejected(self):
+        # `neither` distribution = the is_a kind-entailment authority forecloses
+        # the substitution. Only is_a neighbors are enumerated (P31), so the is_a
+        # _verify_chain gate is the sole admission path; the candidate is REJECTED
+        # and no is_a kb_neighbor_enumeration edge survives. (The KB path WOULD
+        # report holding, proving rejection is the gate, not a missing edge.)
+        substrate = _make_substrate(
+            distribution_verdict="neither",
+            sub_neighbors=[],
+        )
+        kb = _make_kb({"P31": ["Q12345"], "P279": [], "P131": [], "P361": [], "P17": []},
+                      path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(predicate="prefers"), _ctx())
+
+        assert result.verdict == "no_grounding_found"
+        assert self._is_a_edges(result) == [], (
+            "an is_a `neither` KB-enum candidate must be rejected by the gate; "
+            f"got {[e.metadata for e in self._is_a_edges(result)]}"
+        )
+
+    def test_entailed_is_a_candidate_admitted(self):
+        # Same shape, but a non-`neither` verdict (distributes_down) passes the
+        # is_a kind-entailment gate and the KB transitive path HOLDS — the
+        # candidate is admitted and the is_a kb_neighbor_enumeration edge survives.
+        # This is the positive control proving the gate is selective, not a
+        # blanket suppression of the is_a arm.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+        )
+        kb = _make_kb({"P31": ["Q12345"], "P279": [], "P131": [], "P361": [], "P17": []},
+                      path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(predicate="prefers"), _ctx())
+
+        assert self._is_a_edges(result), (
+            "an entailed (non-`neither` + holding-path) is_a KB-enum candidate "
+            "must be admitted; got no surviving is_a edge"
+        )
+
+
+class TestVerifyChainKBNegativeAuthoritative:
+    """PATCH-C r2pa-01 / §3.2 never-false-verify, REFINED. A DEFINITE KB
+    transitive NON-HOLD (TransitivePathResult.holds=False, error=None) is an
+    authoritative negative against a *cold LLM positive*, but it must NOT
+    discard a sound Priority-2 substrate row (operator-seeded / discovered —
+    trust ordering: substrate > KB > LLM). So on a definite KB negative
+    _verify_chain now FALLS THROUGH to the substrate consult in LLM-EXCLUDED
+    mode (`allow_llm=False`):
+
+      * a substrate row that confirms the step STILL admits it (a seeded
+        `Williamstown part_of Massachusetts` survives Wikidata's incomplete
+        part_of closure);
+      * with NO substrate row the LLM Priority-3 is suppressed, so a cold LLM
+        guess can never fabricate a positive over the KB negative — the step
+        is rejected (§3.2).
+
+    A holding KB path still returns True without any consult. A KB-UNAVAILABLE
+    answer (None / fail-open error) still does the FULL consult (LLM included)."""
+
+    def test_definite_kb_negative_admits_when_substrate_row_confirms(self):
+        # Definite KB non-hold (holds=False, error=None) + a substrate row that
+        # CONFIRMS the step (consult_verdict="a_subsumed_by_b"). Under the
+        # round-2 fix this is exactly the scenario that SHOULD verify: the KB
+        # negative excludes only the LLM tier; the sound substrate row (trust:
+        # substrate > KB) still admits the substitution.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",  # passes the is_a gate
+            sub_neighbors=[],
+            consult_verdict="a_subsumed_by_b",  # a real substrate row confirms
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
+                       "P31": ["Q5"], "P279": []},
+                      path_holds=False)  # DEFINITE negative, no error
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        # The substrate row admits the KB-enum substitution despite the KB
+        # transitive-negative.
+        kb_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+        ]
+        assert kb_edges, (
+            "a definite KB transitive-negative must NOT discard a confirming "
+            "substrate row; expected a surviving KB-enum substitution"
+        )
+        # The fix's heart: the consult IS reached, but in LLM-EXCLUDED mode so
+        # only a sound substrate/KB row (never a cold LLM positive) can confirm.
+        assert substrate.subsumption.consult.called, (
+            "a definite KB negative must fall through to the substrate consult"
+        )
+        for call in substrate.subsumption.consult.call_args_list:
+            assert call.kwargs.get("allow_llm") is False, (
+                "the consult on a KB negative must exclude the LLM tier "
+                f"(allow_llm=False); got {call.kwargs}"
+            )
+
+    def test_definite_kb_negative_rejects_when_only_llm_would_confirm(self):
+        # Definite KB non-hold AND no confirming substrate row
+        # (consult_verdict="unrelated" — the row tier yields nothing, and the
+        # LLM tier is suppressed by allow_llm=False). A cold LLM positive is
+        # NEVER admitted over the KB negative (§3.2). Every substitution is
+        # rejected → no grounding.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+            consult_verdict="unrelated",  # no substrate row admits; LLM excluded
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
+                       "P31": ["Q5"], "P279": []},
+                      path_holds=False)  # DEFINITE negative, no error
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        assert result.verdict == "no_grounding_found"
+        kb_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+        ]
+        assert kb_edges == [], (
+            "with no confirming substrate row and the LLM tier suppressed, a "
+            f"definite KB negative must reject every substitution; got "
+            f"{[e.metadata for e in kb_edges]}"
+        )
+        # The consult IS reached (substrate tier may confirm) but the LLM tier
+        # is excluded — proving a cold LLM positive cannot be admitted.
+        assert substrate.subsumption.consult.called
+        for call in substrate.subsumption.consult.call_args_list:
+            assert call.kwargs.get("allow_llm") is False
+
+    def test_kb_unavailable_does_full_consult_including_llm(self):
+        # Positive control for the UNAVAILABLE branch: when the KB transitive
+        # ASK fails open (error set → tp treated as no authoritative answer),
+        # allow_llm stays True and the consult runs the FULL KB->substrate->LLM
+        # resolution. Here the substrate row confirms (consult_verdict admits)
+        # and the consult is invoked WITHOUT allow_llm=False.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+            consult_verdict="a_subsumed_by_b",
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
+                       "P31": ["Q5"], "P279": []})
+        # Fail-open: the transitive-path ASK reports an ERROR, not a verdict —
+        # an UNAVAILABLE answer, so _verify_chain keeps allow_llm=True.
+        kb.verify_transitive_path.return_value = TransitivePathResult(
+            holds=False, error="simulated SPARQL timeout"
+        )
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        assert substrate.subsumption.consult.called, (
+            "a KB-unavailable answer must fall through to the consult"
+        )
+        # Full consult: the LLM tier is NOT excluded (default True / not False).
+        for call in substrate.subsumption.consult.call_args_list:
+            assert call.kwargs.get("allow_llm", True) is not False, (
+                "a KB-UNAVAILABLE consult must keep the LLM tier available "
+                f"(allow_llm must not be False); got {call.kwargs}"
+            )
+
+    def test_holding_kb_path_still_admits(self):
+        # Positive control: a holding KB transitive path (holds=True) confirms
+        # the edge — _verify_chain returns True and the candidate is admitted,
+        # again WITHOUT needing the substrate consult.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+            consult_verdict="unrelated",
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": []},
+                      path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        part_of_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+            and e.metadata.get("relation_type") == "part_of"
+        ]
+        assert part_of_edges, "a holding KB path must admit the candidate"
+        substrate.subsumption.consult.assert_not_called()

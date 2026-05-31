@@ -63,8 +63,7 @@ class ConsistencyChecker:
         config: Optional[dict] = None,
         circuit_breaker_threshold: Optional[int] = None,
     ) -> None:
-        """Circuit-breaker threshold resolves in priority order
-        (F3 §5.2):
+        """Circuit-breaker threshold resolves in priority order:
 
           1. Explicit `circuit_breaker_threshold` kwarg — used by
              `build_pipeline` to thread `Config.circuit_breaker_threshold`.
@@ -173,7 +172,7 @@ class ConsistencyChecker:
                 # legitimate inverse pair, not an incompatible mapping — skip it.
                 if _is_inverse_mapping(sq, c["slot_to_qualifier"]):
                     continue
-                # Phase 10.5 Step 5 root-cause: skip conflicts where either
+                # Skip conflicts where either
                 # row's slot_to_qualifier is NULL. A NULL sq on a kb-mapped
                 # predicate is a malformed runtime-oracle entry; treating it
                 # as a peer to a properly-formed sq map causes the

@@ -112,8 +112,83 @@ class TestChatEndpoint:
         for action in body["per_claim_actions"]:
             assert "claim_id" in action
             assert "action_type" in action
-            assert action["action_type"] in ("correct", "abstain")
+            # WS5 (part d): the action_type set is widened to include
+            # 'confirm_conditional' (surfaced for verified_given_assertion).
+            assert action["action_type"] in (
+                "correct", "abstain", "confirm_conditional",
+            )
             assert "annotation" in action
+
+    def test_post_chat_returns_observability(self):
+        # WS5 (part e): /chat carries an additive `observability` list — one
+        # structured, inspectable entry per verified claim.
+        client = _make_test_app()
+        resp = client.post("/chat", json={"message": "Tell me about the sky."})
+        body = resp.json()
+        assert "observability" in body
+        assert isinstance(body["observability"], list)
+        for entry in body["observability"]:
+            assert "claim_id" in entry
+            assert "verdict" in entry
+            assert "base_verdict" in entry
+            assert "conditional" in entry
+            assert "contradicting_value" in entry
+            # The human-readable trace rendering is the operator's inspection
+            # surface and must be present for each claim with a trace.
+            assert "trace_human" in entry
+
+    def test_post_chat_observability_is_lightweight(self):
+        # Round-1 observability follow-up: the PUBLIC /chat body carries the
+        # LIGHTWEIGHT observability surface — verdict-level fields only. It must
+        # NOT carry the full `trace` JSON nor the raw `provenance` term, because
+        # both embed internal substrate row ids that are not part of the public
+        # contract. A caller wanting the audit detail dereferences
+        # `verification_id` against GET /verification/{id}.
+        client = _make_test_app()
+        resp = client.post("/chat", json={"message": "Tell me about the sky."})
+        body = resp.json()
+        for entry in body["observability"]:
+            # The verdict-level fields a caller needs to render the turn.
+            assert "verdict" in entry
+            assert "trace_human" in entry
+            assert "contradicting_value" in entry
+            # The heavy / row-id-bearing keys are ABSENT from the public body.
+            assert "trace" not in entry
+            assert "provenance" not in entry
+
+    def test_post_chat_body_leaks_no_internal_row_ids(self):
+        # Soundness-of-contract: no internal substrate table/row_id identifier
+        # may leak into the public /chat body. Scan the serialized body for the
+        # row-id-bearing key names (trace edge metadata embeds these) and for a
+        # raw integer under any `row_id` key.
+        import json as _json
+
+        client = _make_test_app()
+        resp = client.post("/chat", json={"message": "Tell me about the sky."})
+        raw = resp.text
+        for forbidden in (
+            "tier_u_row_id",
+            "entity_resolution_cache_row_id",
+            "subsumption_row_id",
+        ):
+            assert forbidden not in raw, f"internal id key {forbidden!r} leaked to /chat"
+        # No `row_id` key bound to an integer anywhere in the public body.
+        body = resp.json()
+
+        def _no_row_id_int(node):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    assert not (k == "row_id" and isinstance(v, int)), (
+                        "raw row_id integer leaked to /chat body"
+                    )
+                    _no_row_id_int(v)
+            elif isinstance(node, list):
+                for v in node:
+                    _no_row_id_int(v)
+
+        _no_row_id_int(body)
+        # Guard the scan itself: the serialized body round-trips as JSON.
+        assert _json.loads(raw) == body
 
     def test_post_chat_returns_verification_id(self):
         client = _make_test_app()
@@ -136,6 +211,25 @@ class TestChatEndpoint:
         body = client.get(f"/verification/{vid}").json()
         assert "aggregate_metadata" in body
         assert "per_claim_verdicts" in body
+
+    def test_get_verification_returns_observability_claims(self):
+        # WS5 (part e): /verification/{id} is the deeper inspection surface —
+        # an additive `claims` list, each entry carrying verdict + a
+        # human-readable trace rendering. Existing keys stay (additive).
+        client = _make_test_app()
+        post_resp = client.post("/chat", json={"message": "Tell me."})
+        vid = post_resp.json()["verification_id"]
+        body = client.get(f"/verification/{vid}").json()
+        assert "claims" in body
+        assert isinstance(body["claims"], list)
+        for entry in body["claims"]:
+            assert "verdict" in entry
+            assert "trace_human" in entry
+            # Round-1 observability follow-up: the AUDIT endpoint stays FULLY
+            # detailed — the verbose surface carries the row-id-bearing `trace`
+            # and `provenance` keys that the public /chat body omits.
+            assert "trace" in entry
+            assert "provenance" in entry
 
     def test_get_verification_unknown_id_returns_404(self):
         client = _make_test_app()

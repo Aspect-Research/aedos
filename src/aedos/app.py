@@ -1,10 +1,10 @@
-"""FastAPI server for Aedos v0.15."""
+"""FastAPI server for Aedos."""
 
 from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -24,9 +24,9 @@ _chat_wrapper = None  # populated lazily on first POST /chat call
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _db, _config
-    # F-013: load .env before Config.from_env() so the env-var reads
+    # Load .env before Config.from_env() so the env-var reads
     # in Config's default_factory pick up values from the file. Safe
-    # to call repeatedly (idempotent per F3 §6 / aedos.utils.env).
+    # to call repeatedly (idempotent; see aedos.utils.env).
     # No-op if the file isn't present or python-dotenv isn't installed.
     from aedos.utils.env import load_dotenv_if_present
     load_dotenv_if_present()
@@ -115,27 +115,31 @@ async def chat(request: ChatRequest) -> JSONResponse:
         # build_pipeline assembles the full verification pipeline with the
         # correctness mechanisms wired in (architecture 5.4 / 7.3). It is shared
         # with the medium-bar benchmark so app and benchmark have one wiring
-        # definition rather than two drifting copies. Phase F2 threads `_config`
+        # definition rather than two drifting copies. `_config` is threaded
         # through so the deployed pipeline reaches Wikidata with the configured
-        # endpoints, HTTP cache, and User-Agent (F-004/F-005/F-006/F-007).
+        # endpoints, HTTP cache, and User-Agent.
         pipeline = build_pipeline(_db, config=_config)
         _chat_wrapper = ChatWrapper(
             extractor=pipeline.extractor,
             walker=pipeline.walker,
             aggregator=pipeline.aggregator,
             llm_client=pipeline.llm_client,
-            # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): thread
-            # Tier U through so the wrapper can promote user-message
+            # Thread Tier U through so the wrapper can promote user-message
             # claims as `asserted_unverified` premises before draft
             # generation.
             tier_u=pipeline.tier_u,
+            # WS5: thread the KB adapter so corrections can reverse-label
+            # contradicting entity Q-ids via its fetch_label.
+            kb=pipeline.kb,
         )
+
+    from aedos.deployment.chat_wrapper import claim_observability
 
     ctx = {"asserting_party_id": request.asserting_party_id or "user"}
     response = _chat_wrapper.respond(request.message, conversation_context=ctx)
     return JSONResponse({
         "final_message": response.final_message,
-        # Phase 10.5 Session 2 Item 1: 3-value top-level
+        # 3-value top-level
         # (pass_through / intervene / decline) plus the new per-claim
         # action list. The 4-value rollup (CORRECT / ABSTAIN) is gone;
         # callers that need per-claim detail read `per_claim_actions`.
@@ -149,6 +153,16 @@ async def chat(request: ChatRequest) -> JSONResponse:
             for a in response.intervention_plan.per_claim_actions
         ],
         "verification_id": response.verification_id,
+        # WS5 observability (additive), LIGHTWEIGHT for the PUBLIC body
+        # (round-1 follow-up): per-claim verdict / base verdict / conditional
+        # flag / abstention reason / contradicting value / human-readable
+        # trace. It deliberately OMITS the raw `provenance` term and the full
+        # `trace` JSON — both embed internal substrate row ids
+        # (tier_u_row_id / entity_resolution_cache_row_id / subsumption_row_id)
+        # that are not part of the public contract. A caller needing the full
+        # audit detail dereferences `verification_id` against
+        # GET /verification/{id}, which returns the verbose surface.
+        "observability": claim_observability(response.verification_result),
     })
 
 
@@ -159,8 +173,15 @@ async def get_verification(verification_id: str) -> JSONResponse:
     vr = _chat_wrapper.get_verification(verification_id)
     if vr is None:
         raise HTTPException(status_code=404, detail="verification not found")
+    from aedos.deployment.chat_wrapper import claim_observability
     return JSONResponse({
         "verification_id": verification_id,
         "per_claim_verdicts": vr.per_claim_verdicts,
         "aggregate_metadata": vr.aggregate_metadata,
+        # WS5 observability (additive), VERBOSE for the rich AUDIT endpoint
+        # (round-1 follow-up): the deeper per-claim inspection surface — full
+        # trace + provenance (incl. the (table,row_id) retraction footprint) +
+        # corrected value per claim. Internal row ids are intentionally kept
+        # here; this is the operator's audit view, not the public /chat body.
+        "claims": claim_observability(vr, verbose=True),
     })

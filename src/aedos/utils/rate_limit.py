@@ -1,4 +1,4 @@
-"""Simple per-instance rate limiter for Aedos v0.15 external-service calls.
+"""Simple per-instance rate limiter for Aedos external-service calls.
 
 The limiter enforces a minimum interval between `acquire` calls — the
 deployed pipeline is single-threaded, so a sleep-based limiter is
@@ -6,11 +6,8 @@ sufficient. State lives as an instance attribute (the limiter is owned
 by the adapter that constructs it, e.g. `WikidataAdapter._sparql_limiter`
 and `WikidataAdapter._search_limiter`); this keeps "add concurrency
 protection later" a small local change rather than a refactor of where
-the state lives. Future v0.16 work (captured if Phase 10.5 surfaces
-concurrent-request needs) wraps the `_last_call` mutation in a
-`threading.Lock` and changes nothing else.
-
-Per Phase F2 design doc §7.4.
+the state lives. Adding concurrency protection later wraps the
+`_last_call` mutation in a `threading.Lock` and changes nothing else.
 """
 
 from __future__ import annotations

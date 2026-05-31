@@ -208,6 +208,210 @@ class TestWalkerDirectLookup:
 
 
 # ---------------------------------------------------------------------------
+# TestWalkerContradictingValue — WS5(a): the CONTRADICTED KB premise_lookup
+# edge carries the contradicting value (the source's statement value).
+# ---------------------------------------------------------------------------
+
+def _contradicted_edge(trace):
+    """Return the first contradicted premise_lookup edge metadata, or None."""
+    for e in trace.edges:
+        if e.metadata.get("verdict") == "contradicted":
+            return e.metadata
+    return None
+
+
+class _ContradictingKBVerifier:
+    """Mock KBVerifier returning a CONTRADICTED verdict whose
+    matched_statement carries the value the source holds — the value WS5
+    must surface onto the trace edge."""
+
+    def __init__(self, statement):
+        self._statement = statement
+
+    def verify(self, claim, current_time=None, source_text=None):
+        return KBVerdict(
+            verdict=KBVerdictType.CONTRADICTED,
+            matched_statement=self._statement,
+            subject_kb_id="Q76",
+            trace={"kb_property": "P19"},
+        )
+
+
+def _make_walker_with_kb_verifier(kb_verifier, routing_hint="kb_resolvable"):
+    db = open_memory_db()
+    transport = MockTransport(routing_hint=routing_hint)
+    client = LLMClient(_transport=transport)
+    pt = PredicateTranslation(db=db, llm_client=client)
+
+    class StubKB:
+        def resolve_entity(self, r, lc): return [ResolutionCandidate("Q76", score=0.9)]
+        def lookup_statements(self, e, p): return []
+        def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+
+    resolver = EntityResolver(kb_protocol=StubKB(), db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=StubKB())
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+    return Walker(
+        tier_u=MockTierU(found=False),
+        kb_verifier=kb_verifier,
+        python_verifier=PythonVerifier(),
+        substrate=substrate,
+    )
+
+
+class TestWalkerContradictingValue:
+    def test_contradicted_edge_carries_matched_statement_value(self):
+        # WS5(a.1): the contradicting value on the CONTRADICTED kb edge is
+        # exactly matched_statement.value, with its value_type.
+        stmt = Statement(value="Q18094", value_type="entity")
+        walker = _make_walker_with_kb_verifier(_ContradictingKBVerifier(stmt))
+        result = walker.walk(_claim(), _ctx())
+        assert result.verdict == "contradicted"
+        md = _contradicted_edge(result.trace)
+        assert md is not None
+        assert md["contradicting_value"] == "Q18094"
+        assert md["contradicting_value_type"] == "entity"
+
+    def test_contradicting_value_flows_to_claim_verdict(self):
+        # End-to-end: the value carried on the edge is plumbed by the
+        # aggregator into ClaimVerdict.contradicting_value.
+        from aedos.layer5_result.aggregator import Aggregator
+        stmt = Statement(value="Paris", value_type="literal")
+        walker = _make_walker_with_kb_verifier(_ContradictingKBVerifier(stmt))
+        claim = _claim()
+        result = walker.walk(claim, _ctx())
+        vr = Aggregator().aggregate([claim], [result])
+        cv = vr.claim_verdicts[0]
+        assert cv.verdict == "contradicted"
+        assert cv.contradicting_value == "Paris"
+        assert cv.contradicting_value_type == "literal"
+
+    def test_subsumption_fallback_contradiction_has_no_value(self):
+        # matched_statement is None on the subsumption-fallback CONTRADICTED
+        # path (and the verifier trace carries no contradicting_value) → the
+        # edge carries None, never an invented value (§3.2-safe).
+        class _NoStatementContradictingKB:
+            def verify(self, claim, current_time=None, source_text=None):
+                return KBVerdict(
+                    verdict=KBVerdictType.CONTRADICTED,
+                    matched_statement=None,
+                    subject_kb_id="Q76",
+                    trace={"kb_property": "P19"},
+                )
+
+        walker = _make_walker_with_kb_verifier(_NoStatementContradictingKB())
+        result = walker.walk(_claim(), _ctx())
+        assert result.verdict == "contradicted"
+        md = _contradicted_edge(result.trace)
+        assert md is not None
+        assert md.get("contradicting_value") is None
+
+
+# ---------------------------------------------------------------------------
+# TestWalkerKBQuantitativeValue — WS5(a.2): the kb_quantitative path now
+# appends an observability premise_lookup edge, and on contradiction the
+# KB value is the contradicting value.
+# ---------------------------------------------------------------------------
+
+class _QuantTransport:
+    """Transport whose predicate metadata routes to kb_quantitative with a
+    kb_property (P1082 = population), so the walker's quantitative branch
+    fires."""
+
+    def extract_with_tool(self, *a, purpose=None, **kw):
+        if purpose == "substrate:predicate_distribution":
+            return {"verdict": "neither", "reason": "test"}
+        if purpose == "substrate:subsumption":
+            return {"verdict": "unrelated", "reason": "test"}
+        return {
+            "object_type": "quantity",
+            "user_subject_required": 0,
+            "distinct_slots": None,
+            "routing_hint": "kb_quantitative",
+            "kb_namespace": "wikidata",
+            "kb_property": "P1082",
+            "slot_to_qualifier": None,
+            "reason": "test",
+        }
+
+    def chat(self, *a, **kw):
+        return ""
+
+
+def _make_quant_walker(kb_value_str):
+    db = open_memory_db()
+    client = LLMClient(_transport=_QuantTransport())
+    pt = PredicateTranslation(db=db, llm_client=client)
+
+    class StubQuantKB:
+        def resolve_entity(self, r, lc): return [ResolutionCandidate("Q142", score=0.95)]
+        def lookup_statements(self, e, p):
+            return [Statement(value=kb_value_str, value_type="quantity")]
+        def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+
+    kb = StubQuantKB()
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    return Walker(
+        tier_u=MockTierU(found=False),
+        kb_verifier=kb_verifier,
+        python_verifier=PythonVerifier(),
+        substrate=substrate,
+        kb=kb,
+    )
+
+
+class TestWalkerKBQuantitativeValue:
+    def _quant_claim(self):
+        return _claim(
+            subject="France",
+            predicate="population_greater_than",
+            object_val="60 million",
+        )
+
+    def test_quantitative_contradiction_carries_kb_value(self):
+        # KB value (10M) < threshold (60M) → contradicted; the contradicting
+        # value is the KB value, typed 'quantity'.
+        walker = _make_quant_walker(kb_value_str="10000000")
+        result = walker.walk(self._quant_claim(), _ctx())
+        assert result.verdict == "contradicted"
+        md = _contradicted_edge(result.trace)
+        assert md is not None
+        assert md["source"] == "kb_quantitative"
+        assert md["contradicting_value"] == 10000000
+        assert md["contradicting_value_type"] == "quantity"
+        assert md["kb_value"] == 10000000
+        assert md["threshold"] == 60000000
+
+    def test_quantitative_verified_appends_observability_edge_without_value(self):
+        # KB value (67M) > threshold (60M) → verified. The observability edge
+        # is still appended (kb_value/threshold), but carries NO
+        # contradicting_value (it is not a contradiction).
+        walker = _make_quant_walker(kb_value_str="67000000")
+        result = walker.walk(self._quant_claim(), _ctx())
+        assert result.verdict == "verified"
+        edge = next(
+            (e.metadata for e in result.trace.edges
+             if e.metadata.get("source") == "kb_quantitative"),
+            None,
+        )
+        assert edge is not None
+        assert edge["kb_value"] == 67000000
+        assert edge["verdict"] == "verified"
+        assert "contradicting_value" not in edge
+
+    def test_quantitative_single_kb_source_count(self):
+        # WS5 risk note: the added edge must NOT double-count source_breakdown.
+        walker = _make_quant_walker(kb_value_str="10000000")
+        result = walker.walk(self._quant_claim(), _ctx())
+        assert result.trace.source_breakdown.get("kb") == 1
+
+
+# ---------------------------------------------------------------------------
 # TestF042RoutingGate — Python verifier is gated on routing_hint=="python"
 # ---------------------------------------------------------------------------
 
@@ -423,3 +627,139 @@ class TestWalkerPolarityTracking:
         c = _claim(polarity=0)
         result = walker.walk(c, _ctx())
         assert 0 in result.trace.polarity_trace
+
+
+# ---------------------------------------------------------------------------
+# TestWalkerAbstentionReasonShortCircuit — v0.16 WS4 (4b): a claim carrying an
+# extraction-layer abstention_reason is short-circuited to no_grounding_found
+# at walk() entry, BEFORE any Tier U / KB / Python / LLM lookup. This is the
+# §3.2-soundness guard: malformed triples (self_referential /
+# predicate_eq_object) must never reach a KB lookup that could false-contradict.
+# ---------------------------------------------------------------------------
+
+class _CallCountingTierU:
+    """Tier U whose lookup methods record whether they were called — to pin
+    the pre-lookup guarantee (the short-circuit must fire before any lookup)."""
+
+    def __init__(self):
+        self.lookup_calls = 0
+        self.object_conflict_calls = 0
+
+    def lookup(self, claim, current_time=None, exclude_row_ids=None):
+        self.lookup_calls += 1
+        return LookupResult(found=False)
+
+    def lookup_object_conflict(self, claim, current_time=None):
+        self.object_conflict_calls += 1
+        return LookupResult(found=False)
+
+    def write(self, *a, **kw):
+        pass
+
+
+class _CallCountingKBVerifier:
+    def __init__(self):
+        self.verify_calls = 0
+
+    def verify(self, claim, current_time=None, source_text=None):
+        self.verify_calls += 1
+        return KBVerdict(verdict=KBVerdictType.NO_MATCH, subject_kb_id="Q76")
+
+
+def _make_counting_walker():
+    db = open_memory_db()
+    transport = MockTransport(routing_hint="kb_resolvable")
+    client = LLMClient(_transport=transport)
+    pt = PredicateTranslation(db=db, llm_client=client)
+
+    class StubKB:
+        def resolve_entity(self, r, lc): return [ResolutionCandidate("Q76", score=0.9)]
+        def lookup_statements(self, e, p): return []
+        def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+
+    resolver = EntityResolver(kb_protocol=StubKB(), db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=StubKB())
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+
+    tier_u = _CallCountingTierU()
+    kb_verifier = _CallCountingKBVerifier()
+    walker = Walker(
+        tier_u=tier_u,
+        kb_verifier=kb_verifier,
+        python_verifier=PythonVerifier(),
+        substrate=substrate,
+    )
+    return walker, tier_u, kb_verifier
+
+
+def _reasoned_claim(abstention_reason, subject="Einstein", predicate="born_in",
+                    object_val="Einstein", polarity=1):
+    return Claim(
+        claim_id="rc1",
+        subject=subject,
+        predicate=predicate,
+        object=object_val,
+        polarity=polarity,
+        source_text="test",
+        asserting_party="user_test",
+        triage_decision=TriageDecision.VERIFY,
+        abstention_reason=abstention_reason,
+    )
+
+
+class TestWalkerAbstentionReasonShortCircuit:
+    def test_abstention_reason_short_circuits_pre_lookup(self):
+        # A claim carrying abstention_reason='self_referential' walks to
+        # no_grounding_found with the reason echoed, AND neither the Tier U
+        # lookup nor the KB verify was EVER called (the pre-lookup guarantee).
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim("self_referential")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "self_referential"
+        assert tier_u.lookup_calls == 0
+        assert tier_u.object_conflict_calls == 0
+        assert kb_verifier.verify_calls == 0
+        # Zero budget consumed — the guard returns before the budget loop.
+        assert result.budget_consumption.llm_calls == 0
+
+    def test_predicate_eq_object_short_circuits_pre_lookup(self):
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim("predicate_eq_object", predicate="fell", object_val="fell")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "predicate_eq_object"
+        assert tier_u.lookup_calls == 0
+        assert kb_verifier.verify_calls == 0
+
+    def test_not_checkworthy_short_circuits_pre_lookup(self):
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim("not_checkworthy", predicate="is_nice", object_val="pleasant")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "not_checkworthy"
+        assert tier_u.lookup_calls == 0
+        assert kb_verifier.verify_calls == 0
+
+    def test_content_less_event_walks_to_no_grounding_never_contradicted(self):
+        # v0.16 WS4 Deletion #2 regression: the content-less-event extractor
+        # filter is removed; a (World War II, occurred, '') shape now reaches
+        # the walker with abstention_reason=None. With an empty object and no
+        # KB grounding it must abstain (no_grounding_found) — and crucially
+        # must NEVER yield 'contradicted' (the conservative-outcome invariant).
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = Claim(
+            claim_id="cle1",
+            subject="World War II",
+            predicate="occurred",
+            object="",
+            polarity=1,
+            source_text="World War II occurred",
+            asserting_party="user_test",
+            triage_decision=TriageDecision.VERIFY,
+            abstention_reason=None,
+        )
+        result = walker.walk(claim, _ctx())
+        assert result.verdict != "contradicted"
+        assert result.verdict == "no_grounding_found"

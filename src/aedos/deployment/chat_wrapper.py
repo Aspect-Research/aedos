@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 from ..layer1_extraction.extractor import ExtractionContext
-from ..layer1_extraction.triage import TriageDecision
+from ..layer1_extraction.triage import AbstentionReason
 from ..layer4_sources.walker import VerificationContext
 from ..layer5_result.aggregator import (
     ClaimVerdict,
     VerificationResult,
     base_verdict_of,
+    is_given_assertion,
 )
 from ..llm.client import ChatMessage
 
@@ -20,13 +21,8 @@ from ..llm.client import ChatMessage
 class InterventionType(str, Enum):
     """Top-level intervention shape for the chat-wrapper response.
 
-    Phase 10.5 Session 2 Item 1 redesign: the previous 4-value enum
-    (PASS_THROUGH / ABSTAIN / CORRECT / DECLINE) rolled multiple
-    claim-level verdicts into a single response-level type, silently
-    dropping per-claim information when a draft had mixed problems
-    (one contradicted AND one abstained → CORRECT only, abstain
-    invisible). The new 3-value enum separates the *shape* of the
-    response (pass-through, per-claim intervention, refuse) from the
+    The 3-value enum separates the *shape* of the response
+    (pass-through, per-claim intervention, refuse) from the
     *per-claim actions* (carried in `InterventionPlan.per_claim_actions`).
     """
     PASS_THROUGH = "pass_through"
@@ -36,9 +32,16 @@ class InterventionType(str, Enum):
 
 class ClaimActionType(str, Enum):
     """Per-claim action shape. Each problematic claim gets one action of
-    one of these types when the overall intervention is INTERVENE."""
+    one of these types when the overall intervention is INTERVENE.
+
+    `CONFIRM_CONDITIONAL` (WS5) surfaces a `*_given_assertion` verified
+    claim: the claim is verified only because it rests on the user's own
+    (unverified) assertion, not on an independent source. It is made
+    VISIBLE per the observability requirement but is NOT treated as a
+    problem (it never escalates to DECLINE)."""
     CORRECT = "correct"
     ABSTAIN = "abstain"
+    CONFIRM_CONDITIONAL = "confirm_conditional"
 
 
 @dataclass(frozen=True)
@@ -75,14 +78,49 @@ class ChatResponse:
         return self.intervention_plan.overall.value
 
 
-def _format_correction(cv: ClaimVerdict) -> str:
-    """Generic correction annotation for a contradicted claim. v0.15 surfaces
-    the claim's S/P/O without the contradicting grounding value; v0.16
-    enrichment plumbs the contradicting value out of the trace edges
-    (deferred per the Session 2 design)."""
+def _format_correction(cv: ClaimVerdict, label_fetcher=None) -> str:
+    """Correction annotation for a contradicted claim. When the trace
+    carried a contradicting value (`cv.contradicting_value`), emit
+    '... the source indicates {value} instead.' Entity Q-ids are
+    reverse-labeled via `label_fetcher` (when
+    `cv.contradicting_value_type == 'entity'`); dates/quantities/literals
+    pass through. Falls back to the generic form when no value was
+    captured (§3.2-safe: only emit 'instead X' when a distinct value was
+    genuinely captured). Reverse-label failure degrades to the raw Q-id —
+    never crashes."""
+    polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
+    base = (
+        f"Aedos found a contradicting source for: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}"
+    )
+    value = cv.contradicting_value
+    if value:
+        display = value
+        if (
+            cv.contradicting_value_type == "entity"
+            and isinstance(value, str)
+            and value.startswith("Q")
+            and label_fetcher is not None
+        ):
+            try:
+                label = label_fetcher(value)
+            except Exception:
+                label = None
+            if label:
+                display = label
+        return f"{base}; the source indicates {display} instead."
+    return f"{base}."
+
+
+def _format_conditional(cv: ClaimVerdict) -> str:
+    """WS5: annotation for a `verified_given_assertion` claim — verified
+    only because it rests on the user's own (unverified) assertion, with
+    no independent source confirming it. Makes the conditional nature
+    VISIBLE without treating it as a problem."""
     polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
     return (
-        f"Aedos found a contradicting source for: "
+        f"Aedos verified, contingent on your assertion that it holds "
+        f"(no independent source confirms it): "
         f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
     )
 
@@ -98,12 +136,12 @@ def _format_abstention(cv: ClaimVerdict) -> str:
     )
 
 
-def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan:
+def select_interventions(
+    claim_verdicts: list[ClaimVerdict], label_fetcher=None
+) -> InterventionPlan:
     """Deterministic per-claim intervention selection.
 
-    Phase 10.5 Session 2 Item 1 (per-claim intervention) replaces the
-    previous count-based `select_intervention` with a per-claim
-    structure. The policy:
+    The policy:
 
     - Empty claim list → PASS_THROUGH (nothing to verify, nothing to
       intervene on; a draft with no extracted claims goes to the user
@@ -116,15 +154,23 @@ def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan
       is the genuinely-dominated case: the draft contains nothing the
       system can vouch for, and per-claim annotations would amount to
       a long list of problems against zero verified content. The
-      refusal is the honest response. (The previous policy escalated
-      to DECLINE at the >50% problematic threshold including the
-      single-problematic-claim case, which dropped useful per-claim
-      annotations on the floor.)
+      refusal is the honest response.
 
-    Dual-designation verdicts (`*_given_assertion`) collapse to their
-    base verdict via `base_verdict_of` before the policy fires; the
-    `_given_assertion` qualifier is observability metadata, not a
-    user-facing distinction.
+    Conditional verdicts (`*_given_assertion`, WS5): the base verdict still
+    drives the COUNT buckets (via `base_verdict_of`), but the
+    `_given_assertion` qualifier is NO LONGER erased at the user surface.
+    A `verified_given_assertion` claim emits a `CONFIRM_CONDITIONAL` action
+    (visible, but never problematic); `contradicted_given_assertion` /
+    `abstained_given_assertion` get CORRECT / ABSTAIN with a suffix noting
+    the contradiction/abstention rests on the user's own assertion.
+
+    DECLINE policy: only CORRECT / ABSTAIN actions count as 'problematic'.
+    A draft of only conditional confirmations surfaces via INTERVENE notes
+    (visibility) and is never refused — a conditionally-verified claim is a
+    (conditional) verification, not a problem.
+
+    `label_fetcher` (optional) reverse-labels entity Q-ids in correction
+    text; threaded down to `_format_correction`.
     """
     if not claim_verdicts:
         return InterventionPlan(InterventionType.PASS_THROUGH)
@@ -132,26 +178,52 @@ def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan
     actions: list[ClaimAction] = []
     verified_count = 0
     for cv in claim_verdicts:
+        # v0.16 WS4 (4c): not_checkworthy claims are quiet — they are recorded
+        # as ClaimVerdicts (observable in VerificationResult) but produce no
+        # user-facing note and do not count toward the verified/problematic
+        # tallies that drive PASS_THROUGH/DECLINE. This keeps an all-inert draft
+        # → PASS_THROUGH (never a spurious DECLINE).
+        if cv.abstention_reason == AbstentionReason.NOT_CHECKWORTHY.value:
+            continue
         base = base_verdict_of(cv.verdict)
+        conditional = is_given_assertion(cv.verdict)
         if base == "verified":
             verified_count += 1
+            if conditional:
+                # WS5: surface the conditional verification (observability) —
+                # not independently grounded, but not a problem either.
+                actions.append(ClaimAction(
+                    claim_id=cv.claim_id,
+                    action_type=ClaimActionType.CONFIRM_CONDITIONAL,
+                    annotation=_format_conditional(cv),
+                ))
             continue
         if base == "contradicted":
             actions.append(ClaimAction(
                 claim_id=cv.claim_id,
                 action_type=ClaimActionType.CORRECT,
-                annotation=_format_correction(cv),
+                annotation=_format_correction(cv, label_fetcher=label_fetcher)
+                + (" (this contradiction rests on your own prior assertion)" if conditional else ""),
             ))
         else:  # no_grounding_found (and its dual abstained_given_assertion)
             actions.append(ClaimAction(
                 claim_id=cv.claim_id,
                 action_type=ClaimActionType.ABSTAIN,
-                annotation=_format_abstention(cv),
+                annotation=_format_abstention(cv)
+                + (" (your assertion alone is not independent grounding)" if conditional else ""),
             ))
 
     if not actions:
         return InterventionPlan(InterventionType.PASS_THROUGH)
-    if verified_count == 0 and len(actions) >= 2:
+    problematic = [
+        a for a in actions
+        if a.action_type in (ClaimActionType.CORRECT, ClaimActionType.ABSTAIN)
+    ]
+    if not problematic:
+        # Only conditional confirmations — surface them via INTERVENE notes
+        # (visibility), never DECLINE on a draft we conditionally verified.
+        return InterventionPlan(InterventionType.INTERVENE, tuple(actions))
+    if verified_count == 0 and len(problematic) >= 2:
         return InterventionPlan(InterventionType.DECLINE)
     return InterventionPlan(InterventionType.INTERVENE, tuple(actions))
 
@@ -159,7 +231,7 @@ def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan
 def build_response(draft: str, plan: InterventionPlan) -> str:
     """Compose the user-facing response from the draft + intervention plan.
 
-    Format A (Phase 10.5 Session 2 Item 1c): pass-through returns the
+    Pass-through returns the
     draft unchanged; decline returns a generic refusal; intervene
     returns the draft followed by an "Aedos verification notes:"
     section listing each per-claim annotation as a bullet."""
@@ -172,6 +244,65 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
+def claim_observability(vr: VerificationResult, verbose: bool = False) -> list[dict]:
+    """WS5: structured, inspectable per-claim view.
+
+    Two surfaces, two depths (round-1 observability follow-up). The
+    `verbose` flag selects between them:
+
+    - verbose=False (LIGHTWEIGHT, for the PUBLIC POST /chat body): the
+      verdict-level fields a caller needs to render the turn — verdict,
+      base verdict, conditional flag, abstention reason, the
+      contradicting value, and a human-readable trace string — but NOT
+      the raw `provenance` term and NOT the full `trace` JSON. Both of
+      those carry internal substrate identifiers (the trace edge metadata
+      embeds tier_u_row_id / entity_resolution_cache_row_id /
+      subsumption_row_id, and the provenance literals carry table+row_id
+      pairs). Internal DB row ids are not part of the public contract; a
+      `/chat` consumer that wants the full audit detail dereferences
+      `verification_id` against GET /verification/{id}.
+    - verbose=True (FULL, for the rich AUDIT endpoint GET
+      /verification/{id}): everything, including `trace` (full
+      trace_to_json with edge metadata) and `provenance` (the AND/OR
+      term with its (table,row_id) literals) so the operator keeps the
+      complete retraction-footprint view.
+
+    `trace_human` is emitted on BOTH surfaces: it is row-id-free (see
+    trace_to_human in trace.py — provenance renders as source+status+
+    assertion-marker only), so it is safe in the public body.
+    """
+    from ..layer5_result.trace import trace_to_json, trace_to_human
+    out: list[dict] = []
+    for cv in vr.claim_verdicts:
+        trace = vr.per_claim_traces.get(cv.claim_id)
+        entry = {
+            "claim_id": cv.claim_id,
+            "subject": cv.claim.subject,
+            "predicate": cv.claim.predicate,
+            "object": cv.claim.object,
+            "polarity": cv.claim.polarity,
+            "verdict": cv.verdict,
+            "base_verdict": base_verdict_of(cv.verdict),
+            "conditional": is_given_assertion(cv.verdict),
+            "abstention_reason": cv.abstention_reason,
+            "contradicting_value": cv.contradicting_value,
+            "contradicting_value_type": cv.contradicting_value_type,
+            "trace_human": (
+                trace_to_human(trace, claim=cv.claim, verdict=cv.verdict)
+                if trace else None
+            ),
+        }
+        if verbose:
+            # FULL audit surface only: the row-id-bearing trace + provenance.
+            trace_json = trace_to_json(trace) if trace else None
+            entry["provenance"] = (
+                trace_json.get("provenance") if trace_json else None
+            )
+            entry["trace"] = trace_json
+        out.append(entry)
+    return out
+
+
 class ChatWrapper:
     def __init__(
         self,
@@ -181,16 +312,22 @@ class ChatWrapper:
         llm_client,
         tier_u=None,
         config: Optional[dict] = None,
+        kb=None,
     ) -> None:
         self._extractor = extractor
         self._walker = walker
         self._aggregator = aggregator
         self._llm = llm_client
-        # Phase H Cluster 2 step 2: `tier_u` is the promotion target for
+        # WS5: the KB adapter (WikidataAdapter), used only to reverse-label
+        # contradicting entity Q-ids when composing corrections. Optional and
+        # accessed via getattr(kb, "fetch_label", None) so mock/stub adapters
+        # without fetch_label keep working. None for legacy/test constructions.
+        self._kb = kb
+        # `tier_u` is the promotion target for
         # user-asserted claims. Optional for back-compat with tests that
         # construct ChatWrapper without it (those skip the user-message
-        # extraction step; behavior matches pre-Cluster-2). The
-        # build_pipeline shape passes it explicitly.
+        # extraction step; behavior matches a wrapper built without Tier U).
+        # The build_pipeline shape passes it explicitly.
         self._tier_u = tier_u
         self._config = config or {}
         self._verification_store: dict[str, VerificationResult] = {}
@@ -200,13 +337,13 @@ class ChatWrapper:
         asserting_party = ctx_dict.get("asserting_party_id", "user")
         current_time = datetime.now(timezone.utc).isoformat()
 
-        # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): extract claims
+        # Extract claims
         # from the user_message and promote them into Tier U BEFORE the
         # draft is generated. This is how "user-asserted claims
         # accumulate as premises" lands in the deployed pipeline — the
         # draft-extraction-and-walk loop later in this method then sees
         # the user's assertions as Tier U premises and can chain off them
-        # (the chain produces a `*_given_assertion` verdict per step 3).
+        # (the chain produces a `*_given_assertion` verdict).
         #
         # Bounded extra cost: one additional extraction call per turn.
         # The user-message extraction reads from `user_message` (not
@@ -216,7 +353,7 @@ class ChatWrapper:
         #
         # Skip the promotion path when `tier_u` was not wired (legacy
         # constructor shape) — the wrapper degrades cleanly to the
-        # pre-Cluster-2 behavior.
+        # behavior of a wrapper built without Tier U.
         if self._tier_u is not None and self._extractor is not None and user_message:
             from ..layer4_sources.promotion import promote_assertions
             user_ctx = ExtractionContext(
@@ -225,7 +362,12 @@ class ChatWrapper:
                 turn_id=ctx_dict.get("conversation_id"),
             )
             user_claims = self._extractor.extract(user_message, user_ctx)
-            user_claims = [c for c in user_claims if c.triage_decision == TriageDecision.VERIFY]
+            # v0.16 WS4 (4c): promote only checkworthy, well-formed assertions
+            # as premises — exclude any claim carrying an extraction-layer
+            # abstention_reason (not_checkworthy, self_referential,
+            # predicate_eq_object, subject_absent_from_source). A malformed or
+            # not-checkworthy user assertion must not become a Tier U premise.
+            user_claims = [c for c in user_claims if c.abstention_reason is None]
             if user_claims:
                 promote_assertions(user_claims, self._tier_u)
                 # The promotion's pre_verdicts (cross-source contradictions
@@ -233,7 +375,7 @@ class ChatWrapper:
                 # rows) are not surfaced to this turn's intervention — the
                 # user spoke, we recorded what they said. The audit-log
                 # entries (cross_source_contradiction) are the trail.
-                # Phase 10.5 / a future deployment surface may consume them.
+                # A future deployment surface may consume them.
 
         # 1. Generate draft
         system = self._config.get("system_prompt", "You are a helpful assistant.")
@@ -260,11 +402,15 @@ class ChatWrapper:
                 turn_id=ctx_dict.get("conversation_id"),
             )
             claims = self._extractor.extract(draft, extraction_context)
-            # Only keep VERIFY-triaged claims for verification
-            claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
+            # v0.16 WS4 (4c): do NOT drop INERT_PROSE claims here. They now
+            # carry abstention_reason='not_checkworthy' (extractor) and the
+            # walker short-circuits them to no_grounding_found (4b) with zero
+            # external/LLM calls; the aggregator records a ClaimVerdict so the
+            # designation is observable, and select_interventions suppresses any
+            # not_checkworthy claim from the user-facing notes and the tallies.
 
         # 3. Verify each claim
-        # Phase H D47: thread the draft (the text the extractor saw) as
+        # Thread the draft (the text the extractor saw) as
         # source_text so the Wikipedia normalizer's Stage 2 has context
         # for disambiguating bare ambiguous references.
         verification_context = VerificationContext(
@@ -284,8 +430,12 @@ class ChatWrapper:
             text_input={"message": user_message, "draft": draft},
         )
 
-        # 5. Intervention selection (per-claim plan)
-        plan = select_interventions(vr.claim_verdicts)
+        # 5. Intervention selection (per-claim plan). WS5: thread the KB
+        # adapter's fetch_label so corrections can reverse-label entity Q-ids
+        # ("the source indicates {label} instead"). getattr-guarded: a kb
+        # without fetch_label (or no kb) yields None → raw value / generic form.
+        label_fetcher = getattr(self._kb, "fetch_label", None)
+        plan = select_interventions(vr.claim_verdicts, label_fetcher=label_fetcher)
 
         # 6. Build response (Format A: draft + per-claim notes)
         final = build_response(draft, plan)
@@ -302,4 +452,55 @@ class ChatWrapper:
         )
 
     def get_verification(self, verification_id: str) -> Optional[VerificationResult]:
-        return self._verification_store.get(verification_id)
+        """Return the stored VerificationResult, lazily re-deriving any stale
+        verdict first (v0.16 WS3 §3E).
+
+        A verdict goes STALE when a Tier U premise it rested on is later closed
+        or retracted (TierU.write/retract → propagate_retraction). Staleness is
+        scoped to *_given_assertion verdicts. On next reference here, re-walk
+        each stale claim (the walk IS the re-derivation), re-aggregate the whole
+        result so the stored shape stays consistent, clear the stale flags, and
+        return the refreshed result. No propagator (test paths) → return as-is.
+        """
+        vr = self._verification_store.get(verification_id)
+        if vr is None:
+            return None
+        propagator = getattr(self._aggregator, "_propagator", None)
+        if propagator is None:
+            return vr
+
+        stale_ids = [
+            cv.claim_id
+            for cv in vr.claim_verdicts
+            if propagator.is_stale(cv.claim_id)
+        ]
+        if not stale_ids:
+            return vr
+
+        # Re-walk EVERY claim and re-aggregate — the cheapest correct path that
+        # keeps per_claim_verdicts / claim_verdicts / aggregate_metadata mutually
+        # consistent (a partial re-walk would desync the aggregate counts).
+        # v0.16 WS3 §3E: re-derivation needs a real VerificationContext —
+        # Walker.walk dereferences context.current_time. Rebuild one from the
+        # stored claims (they share the turn's asserting party) and the draft
+        # that was verified, with a fresh timestamp.
+        rederive_context = VerificationContext(
+            current_time=datetime.now(timezone.utc).isoformat(),
+            asserting_party=(
+                vr.claims_extracted[0].asserting_party
+                if vr.claims_extracted else "user"
+            ),
+            source_text=vr.text_input.get("draft") if vr.text_input else None,
+        )
+        walk_results = [
+            self._walker.walk(c, rederive_context) for c in vr.claims_extracted
+        ]
+        refreshed = self._aggregator.aggregate(
+            claims=vr.claims_extracted,
+            per_claim_results=walk_results,
+            text_input=vr.text_input,
+        )
+        for cid in stale_ids:
+            propagator.clear_stale(cid)
+        self._verification_store[verification_id] = refreshed
+        return refreshed

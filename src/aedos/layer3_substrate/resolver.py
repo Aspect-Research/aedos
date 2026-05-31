@@ -30,7 +30,7 @@ class EntityResolver:
         llm_client=None,
         wikipedia_normalizer=None,
     ) -> None:
-        """`wikipedia_normalizer` is the Phase H D47 normalizer. When
+        """`wikipedia_normalizer` is the Wikipedia normalizer. When
         provided, `resolve` invokes it on the reference before the cache
         lookup / KB call — bare ambiguous references are normalized to
         canonical Wikipedia article titles (when Wikipedia's redirect
@@ -44,22 +44,33 @@ class EntityResolver:
         self._db = db
         self._llm = llm_client
         self._normalizer = wikipedia_normalizer
+        # WS3: entity_resolution_cache row id touched by the most recent
+        # resolve() — the retractable dependency a KB verdict rests on.
+        self._last_cache_row_id: Optional[int] = None
+
+    def last_cache_row_id(self) -> Optional[int]:
+        """WS3: the entity_resolution_cache row id touched by the most
+        recent resolve() on this resolver. None when the last resolve did not
+        hit/create a cache row (mock paths, normalizer Stage-C INSERT OR
+        IGNORE that collided). Request-scoped; the KBVerifier reads it
+        immediately after select() to stamp the premise edge."""
+        return self._last_cache_row_id
 
     def resolve(self, reference: str, local_context: LocalContext) -> list[ResolutionCandidate]:
         """Cache-first resolution. On miss, delegates to KB and writes cache.
 
-        Phase H D47: before the cache lookup, normalize the reference via
+        Before the cache lookup, normalize the reference via
         the Wikipedia normalizer when one is wired. The cache and KB
         lookups then key on the normalized form, so cross-utterance
         references that resolve to the same canonical entity dedupe
         through one cache row.
 
-        Phase H D53: the normalizer's Stage C may produce a `selected_qid`
+        The normalizer's Stage C may produce a `selected_qid`
         directly. When present, the resolver short-circuits with that
         Q-id (single ResolutionCandidate at score 1.0) and skips the
         KB.resolve_entity call. When absent, the existing label-based
-        fallback runs (KB.resolve_entity wraps wbsearchentities + D33
-        + SPARQL fallback as today).
+        fallback runs (KB.resolve_entity wraps wbsearchentities + type
+        filter + SPARQL fallback as today).
 
         Skipped when:
           - no normalizer is wired (None);
@@ -69,11 +80,15 @@ class EntityResolver:
           - the reference looks like a synthetic event id (starts with
             "event_").
         """
+        # WS3: reset per-call; each branch below sets it to the touched
+        # cache row id (or leaves None when no row is hit/created).
+        self._last_cache_row_id = None
+
         normalized_reference, selected_qid = self._normalize_if_applicable(
             reference, local_context
         )
 
-        # Phase H D53 step 2: short-circuit when the normalizer's Stage C
+        # Short-circuit when the normalizer's Stage C
         # produced a Q-id. The KB.resolve_entity path would re-run
         # wbsearchentities and the type filter — wasteful given the
         # normalizer has already done that work.
@@ -96,6 +111,8 @@ class EntityResolver:
                 ),
             )
             self._db.commit()
+            self._last_cache_row_id = self._db.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
             return [ResolutionCandidate(
                 kb_identifier=selected_qid,
                 provenance={"source": "wikipedia_normalizer_stage_c", "label": normalized_reference},
@@ -115,12 +132,13 @@ class EntityResolver:
         ).fetchone()
 
         if cached is not None:
+            self._last_cache_row_id = cached["id"]
             self._db.execute(
                 "UPDATE entity_resolution_cache SET used_count=used_count+1, last_used_at=? WHERE id=?",
                 (_NOW(), cached["id"]),
             )
             self._db.commit()
-            # Phase H Cluster 1 step 1: negative cache. Empty
+            # Negative cache. Empty
             # resolved_kb_identifier means a prior call resolved this
             # (normalized_reference, context) to no KB candidates; surface
             # the same answer without re-querying KB. The schema's
@@ -155,9 +173,11 @@ class EntityResolver:
                 ),
             )
             self._db.commit()
+            self._last_cache_row_id = self._db.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
         else:
-            # Negative cache write. The Cluster 1 diagnostic surfaced
-            # that abstain-then-no-match cases re-queried KB on every
+            # Negative cache write. Without this,
+            # abstain-then-no-match cases re-queried KB on every
             # walker iteration (the cache only wrote on candidates>0),
             # so a single walk fired one KB call per surface-form
             # occurrence — eight per case for the "President" surface
@@ -178,11 +198,13 @@ class EntityResolver:
                 ),
             )
             self._db.commit()
+            self._last_cache_row_id = self._db.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
 
         return candidates
 
     # ------------------------------------------------------------------
-    # D47 normalization helper
+    # Normalization helper
     # ------------------------------------------------------------------
 
     def _normalize_if_applicable(
@@ -191,7 +213,7 @@ class EntityResolver:
         """Run the Wikipedia normalizer and return (normalized_form,
         selected_qid). `normalized_form` is the surface form when
         normalization is skipped or fails. `selected_qid` is a Wikidata
-        Q-id when the normalizer's Stage C produced one (D53), or None
+        Q-id when the normalizer's Stage C produced one, or None
         when it abstained, errored, or wasn't asked.
         """
         if self._normalizer is None or not reference:
@@ -225,7 +247,7 @@ class EntityResolver:
             # failure; the resolver keeps moving with the surface form.
             return reference, None
 
-        # Phase 10.5 Step 6 Batch 7+: leading-"the" retry. The extractor
+        # Leading-"the" retry. The extractor
         # often emits references like "the Nobel Prize in Physics", "the
         # Institute for Advanced Study" — Wikipedia's redirect system
         # doesn't always redirect the article-prefixed form to the

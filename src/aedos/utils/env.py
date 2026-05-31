@@ -1,4 +1,4 @@
-"""Shared `.env` loader (F3 §6 / F-013).
+"""Shared `.env` loader.
 
 A small, explicit, opt-in helper. Callers that want `.env` loading
 invoke `load_dotenv_if_present()`; callers that don't (tests by
@@ -6,7 +6,7 @@ default) ignore it. The utility avoids the test-coupling risk of
 loading `.env` from `conftest.py` while making it easy for every
 deployment / runner entry point to load `.env` explicitly.
 
-Idempotent per operator's Q3 refinement: multiple entry points may
+Idempotent: multiple entry points may
 invoke during a single process; calling twice is a no-op. python-
 dotenv's `load_dotenv()` itself does not override existing env vars
 by default, so the wrapper's idempotency check just guards against
@@ -15,7 +15,6 @@ the file-read overhead.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Optional, Union
 

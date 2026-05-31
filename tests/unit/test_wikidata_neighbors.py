@@ -17,10 +17,15 @@ import pytest
 
 from aedos.config import Config
 from aedos.database import open_memory_db
+from aedos.layer3_substrate.substrate_exceptions import SubstrateExceptionCache
+from aedos.layer4_sources.kb_protocol import TransitivePathResult
 from aedos.layer4_sources.kb_wikidata import (
     WikidataAdapter,
     _DEFAULT_NEIGHBOR_PROPERTIES,
+    _SUBSUMPTION_PROPERTIES,
     _build_neighbors_query,
+    _build_subsumption_ask_query,
+    _build_transitive_ask_query,
     _parse_neighbors_bindings,
 )
 from aedos.utils.http_cache import CachingHTTPClient, LRUHTTPCache
@@ -348,3 +353,251 @@ class TestReverseLiveFailureModes:
         from aedos.audit.log import query_events
         events = query_events(db, event_type="kb_live_neighbors")
         assert events[0]["event_data"]["direction"] == "incoming"
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS2 §1: verify_transitive_path — the first-class transitive-path
+# primitive the walker's discover/verify drives. Covers query-builder parity
+# (byte-identical to the old subsumption ASK), the single-property generic
+# path, the type-guarded P361 part_of bridge (Warsaw⊄Germany leak guard
+# preserved), the fixture path, and live fail-open.
+# ---------------------------------------------------------------------------
+
+class TestTransitiveAskQueryBuilder:
+    def test_is_a_query_byte_identical_to_subsumption_ask(self):
+        """The extracted `_build_transitive_ask_query` must produce output
+        byte-identical to the old `_build_subsumption_ask_query` for is_a, so
+        the verifier's subsumption ASK is unchanged by the generalization."""
+        legacy = _build_subsumption_ask_query("Q5", "Q215627", "is_a")
+        generalized = _build_transitive_ask_query(
+            "Q5", "Q215627", _SUBSUMPTION_PROPERTIES["is_a"], use_part_of_bridge=False
+        )
+        assert generalized == legacy
+        assert "wdt:P31" in generalized and "wdt:P279" in generalized
+
+    def test_part_of_query_byte_identical_to_subsumption_ask(self):
+        """part_of delegation must be byte-identical too — preserving the
+        type-guarded P361 bridge (the Marie-Curie / Warsaw leak guard)."""
+        legacy = _build_subsumption_ask_query("Q270", "Q183", "part_of")
+        generalized = _build_transitive_ask_query(
+            "Q270", "Q183", _SUBSUMPTION_PROPERTIES["part_of"],
+            use_part_of_bridge=True,
+        )
+        assert generalized == legacy
+
+    def test_single_property_generic_path_no_bridge(self):
+        """relation_type=None → a plain single-property `(wdt:P)+` path for ANY
+        transitive property (e.g. P171 parent-taxon). No is_a/part_of
+        alternation, no P361 bridge, no UNION."""
+        q = _build_transitive_ask_query("Q140", "Q729", ("P171",), use_part_of_bridge=False)
+        assert q == "ASK { wd:Q140 (wdt:P171)+ wd:Q729 . }"
+        assert "UNION" not in q
+        assert "P361" not in q
+
+    def test_part_of_bridge_is_type_guarded(self):
+        """The type-guarded P361 part_of bridge that re-pins Warsaw⊄Germany:
+        the bridge participates ONLY between two region-typed nodes (the
+        VALUES guard). The plain safe alternation (P131/P30/P17) is the first
+        UNION branch; the P361 hop is guarded by P31 ∈ _GEO_REGION_TYPES on
+        BOTH endpoints — exactly the construction that closed the
+        Warsaw-P206-Vistula-P17-Germany / Warsaw-P361-historical-Prussia leaks.
+        A regression that drops the type guard (a bare `(...|wdt:P361)+`) would
+        reopen Warsaw⊄Germany; this asserts the guard is present."""
+        bridged = _build_transitive_ask_query(
+            "Q270", "Q183", _SUBSUMPTION_PROPERTIES["part_of"],
+            use_part_of_bridge=True,
+        )
+        # The bridge is present...
+        assert "wdt:P361" in bridged
+        # ...but P361 is NOT folded into the unbounded alternation path: the
+        # alternation only contains the safe (P131/P30/P17) properties.
+        for safe in ("P131", "P30", "P17"):
+            assert f"wdt:{safe}" in bridged
+        assert "(wdt:P131|wdt:P30|wdt:P17|wdt:P361)" not in bridged
+        # ...and the P361 hop is type-guarded to region types on both nodes.
+        assert "wdt:P31 ?gt1" in bridged
+        assert "wdt:P31 ?gt2" in bridged
+        assert bridged.count("VALUES") == 2
+
+    def test_invalid_entity_id_raises(self):
+        with pytest.raises(ValueError, match="entity ID"):
+            _build_transitive_ask_query("not_a_qid", "Q1", ("P171",), use_part_of_bridge=False)
+
+    def test_invalid_property_id_raises(self):
+        with pytest.raises(ValueError, match="property ID"):
+            _build_transitive_ask_query("Q1", "Q2", ("not_a_pid",), use_part_of_bridge=False)
+
+
+class TestVerifyTransitivePathFixture:
+    def test_holds_for_recorded_chain(self):
+        """Fixture path: Q95's recorded subsumption chain is non-empty, so a
+        transitive-path check from Q95 reports holds=True. The result is a
+        single-direction `TransitivePathResult`, not the symmetric
+        `SubsumptionResult`."""
+        adapter = WikidataAdapter()  # _live=False → fixture path
+        result = adapter.verify_transitive_path(
+            "Q95", "Q43229", "P31", relation_type="is_a"
+        )
+        assert isinstance(result, TransitivePathResult)
+        assert result.holds is True
+
+    def test_missing_fixture_does_not_hold(self):
+        """No fixture for the source → no recorded path → holds=False (a path
+        miss abstains, never false-verifies)."""
+        adapter = WikidataAdapter()
+        result = adapter.verify_transitive_path(
+            "Q49166", "Q183", "P131", relation_type="part_of"
+        )
+        assert result.holds is False
+
+    def test_single_property_branch_uses_kb_property(self):
+        """relation_type=None routes through the single-property branch; a
+        missing fixture still yields a fail-open non-holding result."""
+        adapter = WikidataAdapter()
+        result = adapter.verify_transitive_path("Q49166", "Q729", "P171")
+        assert isinstance(result, TransitivePathResult)
+        assert result.holds is False
+
+    def test_unsupported_relation_type_raises(self):
+        adapter = WikidataAdapter()
+        with pytest.raises(ValueError, match="relation_type"):
+            adapter.verify_transitive_path("Q1", "Q2", "P31", relation_type="bogus")
+
+
+class TestVerifyTransitivePathLiveFailOpen:
+    """Exercise the live ASK path directly (mirrors TestLiveNeighborsFailureModes
+    calling `_live_neighbors`): `verify_transitive_path` dispatches to the
+    fixture path when RUN_LIVE_KB != 1, so the live behavior is tested by
+    calling `_live_transitive_path` with the resolved property tuple."""
+
+    def test_holds_true_on_positive_ask(self):
+        adapter, db = _make_adapter()
+        cm, _ = _make_httpx_cm(_make_response(b'{"boolean": true}'))
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            result = adapter._live_transitive_path(
+                "Q270", "Q36", _SUBSUMPTION_PROPERTIES["part_of"],
+                use_part_of_bridge=True,
+            )
+        assert result.holds is True
+        assert result.error is None
+        from aedos.audit.log import query_events
+        events = query_events(db, event_type="kb_verify_transitive_path")
+        assert events[0]["event_data"]["holds"] is True
+        assert events[0]["event_data"]["use_part_of_bridge"] is True
+
+    def test_holds_false_on_negative_ask(self):
+        """The Warsaw⊄Germany regression at the adapter level: a negative ASK
+        (the leak guard keeps the path from existing live) yields holds=False."""
+        adapter, db = _make_adapter()
+        cm, _ = _make_httpx_cm(_make_response(b'{"boolean": false}'))
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            result = adapter._live_transitive_path(
+                "Q270", "Q183", _SUBSUMPTION_PROPERTIES["part_of"],  # Warsaw ⊄ Germany
+                use_part_of_bridge=True,
+            )
+        assert result.holds is False
+        assert result.error is None
+
+    def test_timeout_fails_open_with_error(self):
+        adapter, db = _make_adapter()
+        cm, _ = _make_httpx_cm(httpx.TimeoutException("persistent timeout"))
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            with patch("aedos.layer4_sources.kb_wikidata.time.sleep"):
+                result = adapter._live_transitive_path(
+                    "Q1", "Q2", ("P171",), use_part_of_bridge=False
+                )
+        assert result.holds is False
+        assert "TimeoutException" in (result.error or "")
+
+    def test_malformed_response_fails_open(self):
+        adapter, db = _make_adapter()
+        cm, _ = _make_httpx_cm(_make_response(b'not json'))
+        with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+            result = adapter._live_transitive_path(
+                "Q1", "Q2", ("P171",), use_part_of_bridge=False
+            )
+        assert result.holds is False
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS3 §3D: verify_transitive_path consults + records the bounded nogood
+# cache. A confirmed non-holding path is EAGERLY recorded as `ask_false`; a
+# later consult of the same (source, target, relation) short-circuits to
+# holds=False WITHOUT a SPARQL ASK — the Marie-Curie / Warsaw⊄Germany leak
+# guard. Because the recorded nogood is matched path-agnostically by relation,
+# widening the property alternation later cannot resurrect the closed leak.
+# ---------------------------------------------------------------------------
+
+class TestVerifyTransitivePathNogoodCache:
+    def test_negative_result_records_nogood(self):
+        adapter, db = _make_adapter()  # fixture path: Warsaw⊄Germany → holds False
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        res = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert res.holds is False
+        # The negative ASK was eagerly recorded as a nogood.
+        rows = db.execute(
+            "SELECT relation_type, source_identifier, target_identifier, reason "
+            "FROM substrate_exceptions"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["relation_type"] == "part_of"
+        assert rows[0]["source_identifier"] == "Q270"
+        assert rows[0]["target_identifier"] == "Q183"
+        assert rows[0]["reason"] == "ask_false"
+
+    def test_nogood_short_circuits_without_ask(self):
+        adapter, db = _make_adapter()
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        # First call records the nogood.
+        adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+
+        # A leak-guard regression: even if the alternation were widened so the
+        # underlying ASK now (wrongly) returns True, the recorded nogood must
+        # short-circuit BEFORE any ASK fires. We assert the ASK is not reached
+        # by making the fixture path raise if it is consulted.
+        def _boom(*a, **k):
+            raise AssertionError("verify_transitive_path must not ASK on a cached nogood")
+        adapter._fixture_transitive_path = _boom  # type: ignore[method-assign]
+
+        res2 = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert res2.holds is False
+
+    def test_retracted_nogood_no_longer_short_circuits(self):
+        adapter, db = _make_adapter()
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        row_id = db.execute(
+            "SELECT id FROM substrate_exceptions ORDER BY id LIMIT 1"
+        ).fetchone()["id"]
+        cache.retract(row_id, reason="operator: path now holds")
+        # After retraction the nogood no longer matches, so the consult does NOT
+        # short-circuit — the ASK runs again. We prove the ASK is reached by
+        # making the fixture path observable.
+        ran = {"asked": False}
+        orig = adapter._fixture_transitive_path
+
+        def _spy(*a, **k):
+            ran["asked"] = True
+            return orig(*a, **k)
+        adapter._fixture_transitive_path = _spy  # type: ignore[method-assign]
+        res = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert ran["asked"] is True
+        assert res.holds is False
+        # The retracted row stays soft-deleted (its UNIQUE key collides with the
+        # eager re-record's INSERT OR IGNORE), so the operator's retraction is
+        # durable — an `ask_false` re-record cannot silently resurrect it.
+        assert cache.is_nogood(
+            relation_type="part_of", source_identifier="Q270", target_identifier="Q183",
+        ) is False
+
+    def test_no_cache_wired_runs_as_before(self):
+        # Without an exception cache the method behaves exactly as the WS2
+        # fixture path — no consult, no record, no substrate_exceptions row.
+        adapter, db = _make_adapter()
+        res = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert res.holds is False
+        count = db.execute("SELECT COUNT(*) FROM substrate_exceptions").fetchone()[0]
+        assert count == 0
