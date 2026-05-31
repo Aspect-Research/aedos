@@ -21,9 +21,10 @@ a CI invariant.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from ..layer1_extraction.extractor import Claim
 from ..utils.sandbox import run_code
@@ -42,13 +43,18 @@ PYTHON_VERIFY_TOOL: dict[str, Any] = {
             "code": {
                 "type": "string",
                 "description": (
-                    "Python code defining: def verify(subject: str, predicate: str, obj: str) "
-                    "-> Optional[bool]. Return True if the claim deterministically holds, "
+                    "Python code defining: def verify(subject: str, predicate: str, obj: str, "
+                    "premises: dict) -> Optional[bool]. `premises` is a dict of FETCHED facts "
+                    "keyed by slot name ('subject', 'object'), each a {'value': <str>} entry — "
+                    "e.g. {'subject': {'value': '1643'}, 'object': {'value': '1879'}} for a "
+                    "born-before comparison. When premises is empty, compute from the three "
+                    "literal slots alone. Return True if the claim deterministically holds, "
                     "False if it deterministically does not, or None if verification is "
                     "inherently uncertain — speculative numerical estimates, time-varying "
-                    "values without timestamps, contested claims, or anything you cannot "
-                    "compute from the allowed stdlib alone. Phase 10.5 §3.2 soundness "
-                    "invariant: prefer None over a guessed True/False."
+                    "values without timestamps, contested claims, a MISSING/empty required "
+                    "premise, or anything you cannot compute from the allowed stdlib alone. "
+                    "Phase 10.5 §3.2 soundness invariant: prefer None over a guessed "
+                    "True/False — a missing premise MUST return None, never a guess."
                 ),
             },
             "reasoning": {
@@ -73,7 +79,11 @@ _SYSTEM_PROMPT = (
     "always safer than a fabricated verdict. "
     "Allowed imports: datetime, math, decimal, fractions, statistics, re, unicodedata, string. "
     "No other imports. Function signature: "
-    "def verify(subject: str, predicate: str, obj: str) -> Optional[bool]"
+    "def verify(subject: str, predicate: str, obj: str, premises: dict) -> Optional[bool]. "
+    "`premises` carries FETCHED facts the comparison needs (keyed by slot name, each "
+    "{'value': <str>}); it is empty when the claim is computable from the three literal "
+    "slots alone. A required premise that is missing or empty MUST yield None (abstain) — "
+    "never fabricate or guess a premise value."
 )
 
 _SANDBOX_TIMEOUT = 5
@@ -101,19 +111,55 @@ class PythonVerifier:
         self._sandbox = sandbox  # unused — module-level run_code() used instead
         self._llm = llm_client
 
-    def verify(self, claim: Claim) -> PythonVerdict:
+    def verify(self, claim: Claim, premises: Optional[dict] = None) -> PythonVerdict:
+        """Generate and run a Python verifier for `claim`.
+
+        v0.16.1 WS3b (premise -> Python channel): `premises` is an OPTIONAL dict
+        of FETCHED facts the comparison computes over, keyed by slot name
+        ('subject' / 'object'), each value a small JSON-serializable dict
+        (`{'value': <str>, 'source': ..., 'kb_property': ...}`). The walker
+        gathers these from KB/Tier-U for a `routing_hint='python'` comparison
+        predicate whose metadata declares `premise_properties`. The resolved
+        premise values are threaded into BOTH the codegen prompt AND the
+        generated `def verify(subject, predicate, object, premises)` call, so
+        the generated code can compute over fetched facts (e.g. two birth
+        years). premises=None (the default) preserves the EXACT prior behavior:
+        the generated verify() sees only the claim's three literal slots and an
+        empty premises dict. The generated code stays None-eligible — a missing
+        premise / exception still routes to abstain, never a fabricated verdict.
+        """
         inputs = {
             "subject": claim.subject,
             "predicate": claim.predicate,
             "object": claim.object,
         }
+        # Only JSON-serializable premise dicts survive into the sandbox literal;
+        # a non-dict / non-serializable premises arg is treated as "no premises"
+        # (fail-safe — never crash the verifier on a malformed premise channel).
+        premises_payload: dict = {}
+        if isinstance(premises, dict):
+            try:
+                json.dumps(premises)
+                premises_payload = premises
+            except (TypeError, ValueError):
+                premises_payload = {}
+        if premises_payload:
+            inputs["premises"] = premises_payload
 
         if self._llm is None:
             return PythonVerdict(verdict="no_terminal_result", inputs=inputs)
 
         # LLM code generation
+        premise_line = ""
+        if premises_payload:
+            premise_line = (
+                f"\nFetched premises (compute over these, keyed by slot): "
+                f"{json.dumps(premises_payload)}\n"
+                "If any premise your computation needs is missing or empty, return None."
+            )
         user_msg = (
-            f"Claim: subject={claim.subject!r}, predicate={claim.predicate!r}, object={claim.object!r}\n"
+            f"Claim: subject={claim.subject!r}, predicate={claim.predicate!r}, object={claim.object!r}"
+            f"{premise_line}\n"
             "Generate the verify() function."
         )
         try:
@@ -143,9 +189,23 @@ class PythonVerifier:
         # claims. Pre-Phase-10.5 behavior treated None as falsy → contradicted,
         # which forced the generator into a fabricated False on uncertainty
         # (§3.2 soundness violation); the None branch corrects that.
+        #
+        # v0.16.1 WS3b: the harness ADAPTIVELY passes the fetched `premises`
+        # dict as a 4th positional arg when the generated verify() accepts it
+        # (co_argcount >= 4). Legacy 3-arg code (the entire existing test
+        # corpus and any prompt the model answers with the old signature) is
+        # called with exactly three args, so premises=None reproduces the prior
+        # behavior byte-for-byte. The premises literal is JSON (validated
+        # serializable above), embedded as a Python dict literal.
         harness = (
             f"{code}\n"
-            f"_result = verify({claim.subject!r}, {claim.predicate!r}, {claim.object!r})\n"
+            f"_premises = {premises_payload!r}\n"
+            f"_args = ({claim.subject!r}, {claim.predicate!r}, {claim.object!r})\n"
+            "_argc = getattr(getattr(verify, '__code__', None), 'co_argcount', 3)\n"
+            "if _argc >= 4:\n"
+            "    _result = verify(*_args, _premises)\n"
+            "else:\n"
+            "    _result = verify(*_args)\n"
             "if _result is None:\n"
             "    print('NONE')\n"
             "elif _result:\n"

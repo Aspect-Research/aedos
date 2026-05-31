@@ -171,6 +171,14 @@ def load_seeds_into_connection(
         # seed declares `candidate_kb_properties` (else NULL → read-synthesize
         # the single legacy_scalar binding, unchanged).
         bindings_json = _synthesize_bindings_json(entry)
+        # v0.16.1 WS3b: premise -> Python channel. A seed may declare
+        # `premise_properties` (slot -> KB property to fetch as a premise) for a
+        # routing_hint='python' comparison predicate; NULL/omit preserves the
+        # no-fetch default.
+        premise_properties = entry.get("premise_properties") or None
+        premise_properties_json = (
+            json.dumps(premise_properties) if premise_properties else None
+        )
         # SQLite NULL != NULL in UNIQUE checks, so INSERT OR REPLACE
         # won't deduplicate rows where kb_namespace IS NULL. Delete
         # first instead.
@@ -187,8 +195,8 @@ def load_seeds_into_connection(
                  routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                  single_valued, subject_entity_types, object_entity_types,
                  reason, created_at, used_count, last_consulted_at, retracted_at,
-                 bindings)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?)
+                 bindings, premise_properties)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
             """,
             (
                 entry["aedos_predicate"],
@@ -205,6 +213,7 @@ def load_seeds_into_connection(
                 entry.get("reason", ""),
                 now,
                 bindings_json,
+                premise_properties_json,
             ),
         )
         loaded += 1
