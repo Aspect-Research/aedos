@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aedos.layer1_extraction.triage import TriageDecision, triage
+from aedos.layer1_extraction.triage import AbstentionReason, TriageDecision, triage
 
 
 class TestAlwaysVerifyPredicates:
@@ -126,3 +126,36 @@ class TestInertProse:
 
     def test_stylistic_claim(self):
         assert triage("is_beautiful", "prose", "elegant") == TriageDecision.INERT_PROSE
+
+
+# ---------------------------------------------------------------------------
+# TestAbstentionReasonEnum — v0.16 WS4 (4a.0): the five extraction-layer
+# abstention reasons. Pinning the values guards against an accidental rename
+# (the strings are written onto Claim.abstention_reason and compared against
+# literals in the walker / chat_wrapper / benchmark). AbstentionReason
+# subclasses str so existing string consumers (aggregator) keep working.
+# ---------------------------------------------------------------------------
+
+class TestAbstentionReasonEnum:
+    def test_abstention_reason_enum_values(self):
+        assert AbstentionReason.SELF_REFERENTIAL.value == "self_referential"
+        assert AbstentionReason.PREDICATE_EQ_OBJECT.value == "predicate_eq_object"
+        assert AbstentionReason.CONTENT_LESS_EVENT.value == "content_less_event"
+        assert (
+            AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+            == "subject_absent_from_source"
+        )
+        assert AbstentionReason.NOT_CHECKWORTHY.value == "not_checkworthy"
+        assert {r.value for r in AbstentionReason} == {
+            "self_referential",
+            "predicate_eq_object",
+            "content_less_event",
+            "subject_absent_from_source",
+            "not_checkworthy",
+        }
+
+    def test_abstention_reason_is_str_subclass(self):
+        # Subclassing str keeps `"budget" in reason` / `== "..."` consumers
+        # in aggregator.py working unchanged.
+        assert isinstance(AbstentionReason.NOT_CHECKWORTHY, str)
+        assert AbstentionReason.NOT_CHECKWORTHY == "not_checkworthy"

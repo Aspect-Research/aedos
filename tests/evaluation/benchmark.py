@@ -189,7 +189,6 @@ class AedosRunner:
         from datetime import datetime, timezone
 
         from aedos.layer1_extraction.extractor import ExtractionContext
-        from aedos.layer1_extraction.triage import TriageDecision
         from aedos.layer4_sources.walker import VerificationContext
 
         if self._pipeline is None:
@@ -199,8 +198,12 @@ class AedosRunner:
         try:
             ctx = ExtractionContext(asserting_party="benchmark", context_type="document")
             claims = extractor.extract(case.statement, ctx)
-            # Only VERIFY-triaged claims are verified (matches the chat-wrapper).
-            claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
+            # v0.16 WS4 (4c): exclude extraction-layer-reasoned claims
+            # (not_checkworthy + malformed) from the benchmark rollup — the
+            # benchmark scores groundable claims. Mirrors the chat-wrapper
+            # promotion gate (abstention_reason is None) now that the draft
+            # VERIFY-filter is removed.
+            claims = [c for c in claims if c.abstention_reason is None]
             if not claims:
                 return RunResult(case_id=case.case_id, verdict="no_grounding_found",
                                  latency_seconds=time.monotonic() - start)

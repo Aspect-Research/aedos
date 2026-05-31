@@ -329,6 +329,27 @@ class Walker:
         )
         polarity_trace: list[int] = []
 
+        # v0.16 WS4 (4b): a claim carrying an extraction-layer abstention_reason
+        # is malformed or not-checkworthy. Short-circuit to no_grounding_found
+        # BEFORE any Tier U / KB / Python / LLM lookup. The self_referential /
+        # predicate_eq_object reasons are the §3.2-soundness-critical ones: their
+        # malformed triples would, if looked up, risk a false contradiction (the
+        # v0.15 reason the extractor dropped them). subject_absent_from_source
+        # and not_checkworthy are also returned here (nothing to ground). This
+        # is the pre-lookup guard — placed at walk entry, before the frontier
+        # loop and before any _direct_lookup. Base no_grounding_found (NOT
+        # _apply_assertion_designation): the user_authoritative chain-flag set
+        # happens after this guard, so it is irrelevant here.
+        if claim.abstention_reason:
+            trace.walk_metadata["short_circuit"] = claim.abstention_reason
+            trace.polarity_trace = []
+            return WalkResult(
+                verdict="no_grounding_found",
+                trace=trace,
+                abstention_reason=claim.abstention_reason,
+                budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
+            )
+
         # Phase H Cluster 2 step 3 (Q-UserAuth): for predicates routed
         # `user_authoritative`, external grounding is structurally
         # unreachable — no KB property maps to `prefers` / `believes` /
