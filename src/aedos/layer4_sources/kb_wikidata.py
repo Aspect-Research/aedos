@@ -78,6 +78,14 @@ _PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
 # dynamic-discovery follow-up.
 _DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
 
+# v0.16.1 WS5c: the temporal interval-qualifier keys, relocated here from CORE
+# (walker's interval resolver). P580 = start time, P582 = end time. These are
+# the qualifier P-ids `_live_lookup` populates on every `Statement.qualifiers`
+# dict; CORE reads them via the `interval_qualifier_keys` accessor rather than
+# baking the P-ids into the walker. (start_key, end_key) order is contractual.
+_INTERVAL_START_QUALIFIER = "P580"  # start time
+_INTERVAL_END_QUALIFIER = "P582"    # end time
+
 # When the wbsearchentities post-filter eliminates
 # all candidates AND expected_entity_types is non-empty, fall back to a SPARQL
 # label-OR-altLabel search constrained by P31. Live validation surfaced that
@@ -184,6 +192,20 @@ _SUBSUMPTION_PROPERTIES = {
 # Other properties (P50 author, P108 employer, P39 position) are deferred
 # to v0.16.
 _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
+
+# v0.16.1 WS5c: per-relation KB neighbor property set, relocated here from CORE
+# (walker._D5_NEIGHBOR_PROPS_BY_RELATION). The walker passes the opaque
+# relation_type ("is_a"/"part_of") and the adapter resolves the Wikidata P-ids,
+# so no P-id naming survives above the seam. Mirrors `_SUBSUMPTION_PROPERTIES`
+# for is_a/part_of, plus P17 (country) and P361 (part of) on part_of for
+# country-/region-level grounding (e.g. Williams College P17 → United States;
+# useful for "X is in the United States" when the substrate's subsumption oracle
+# is cold). The tuples are byte-identical to the walker's former table so
+# neighbor enumeration is behavior-neutral.
+_NEIGHBOR_PROPERTIES_BY_RELATION: dict[str, tuple[str, ...]] = {
+    "is_a": ("P31", "P279"),
+    "part_of": ("P131", "P361", "P17"),
+}
 
 
 # Reverse enumeration's LIMIT. Unbounded properties like
@@ -1107,8 +1129,9 @@ class WikidataAdapter:
     def enumerate_neighbors(
         self,
         entity: KBEntityID,
-        properties: list[KBPropertyID],
+        properties: Optional[list[KBPropertyID]] = None,
         direction: str = "outgoing",
+        relation_type: Optional[str] = None,
     ) -> dict[KBPropertyID, list[KBEntityID]]:
         """Enumerate `entity`'s direct KB neighbors along
         the given `properties`, in the given `direction`. Returns a dict
@@ -1121,10 +1144,23 @@ class WikidataAdapter:
         other methods' input types — the live and fixture paths normalize
         it to a tuple before SPARQL construction.
 
+        v0.16.1 WS5c: the OPAQUE `relation_type` ("is_a"/"part_of") lets CORE
+        request a relation's neighbor property set without naming Wikidata
+        P-ids. When `properties` is empty/None and `relation_type` resolves in
+        `_NEIGHBOR_PROPERTIES_BY_RELATION`, the adapter uses that relation's
+        P-id tuple; an explicit `properties` list takes precedence (SLING's
+        co-occurrence path passes one), and an unknown/absent relation falls
+        back to `_DEFAULT_NEIGHBOR_PROPERTIES`.
+
         `direction` is "outgoing" (default) or "incoming"; see
         `KBProtocol.enumerate_neighbors` for the semantic distinction.
         """
-        props_tuple = tuple(properties) if properties else _DEFAULT_NEIGHBOR_PROPERTIES
+        if properties:
+            props_tuple = tuple(properties)
+        elif relation_type and relation_type in _NEIGHBOR_PROPERTIES_BY_RELATION:
+            props_tuple = _NEIGHBOR_PROPERTIES_BY_RELATION[relation_type]
+        else:
+            props_tuple = _DEFAULT_NEIGHBOR_PROPERTIES
         if self._live:
             return self._live_neighbors(entity, props_tuple, direction)
         return self._fixture_neighbors(entity, props_tuple, direction)
@@ -1185,6 +1221,37 @@ class WikidataAdapter:
         CORE helper made on self._kb, so the live/fixture path and verdict are
         byte-identical). Fails closed on uncertainty (§3.2)."""
         return _geographic_disjoint(self.subsumption, value_qid, expected_qid)
+
+    # ------------------------------------------------------------------
+    # v0.16.1 WS5c: entity-surface search + type-fetch (relocated from the
+    # Wikipedia normalizer's reach-arounds into adapter privates).
+    # ------------------------------------------------------------------
+
+    def search(self, query: str, limit: Optional[int] = None) -> list:
+        """v0.16.1 WS5c: KBProtocol entity-surface search. Delegates to
+        `wbsearchentities` (the implementation is unchanged — behavior is
+        byte-identical), giving CORE a protocol-level search op so the
+        normalizer no longer reaches into `wbsearchentities` directly."""
+        return self.wbsearchentities(query, limit)
+
+    def fetch_types(
+        self, qids: list[KBEntityID]
+    ) -> tuple[dict[str, list[str]], Optional[str]]:
+        """v0.16.1 WS5c: KBProtocol batch P31 type-fetch. Delegates to
+        `_fetch_p31_for_candidates` (unchanged), giving CORE a protocol-level
+        type-fetch op so the normalizer no longer reaches into the adapter's
+        private `_fetch_p31_for_candidates`. Returns `(types_by_qid, error)`;
+        a non-None error is the fail-open signal (caller passes candidates
+        unfiltered)."""
+        return self._fetch_p31_for_candidates(qids)
+
+    def interval_qualifier_keys(self) -> tuple[KBPropertyID, KBPropertyID]:
+        """v0.16.1 WS5c: the (start, end) temporal interval-qualifier keys
+        (`P580`, `P582`) CORE's interval resolver reads off
+        `Statement.qualifiers`. Relocated from the walker's hardcoded P-ids so
+        the qualifier P-ids live with the adapter that populates them. Order is
+        contractual: (start_key, end_key)."""
+        return (_INTERVAL_START_QUALIFIER, _INTERVAL_END_QUALIFIER)
 
     # ------------------------------------------------------------------
     # Fixture-backed implementations

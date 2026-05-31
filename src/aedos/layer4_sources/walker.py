@@ -17,17 +17,6 @@ from ..layer4_sources.kb_protocol import KBProtocol, LocalContext
 from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
 
 
-# Per-relation KB neighbor properties. Mirrors
-# `_SUBSUMPTION_PROPERTIES` in `kb_wikidata.py` for is_a/part_of, plus
-# P17 (country) on part_of for country-level grounding (e.g. Williams
-# College P17 → United States; useful for "X is in the United States"
-# style claims when the substrate's subsumption oracle is cold).
-_D5_NEIGHBOR_PROPS_BY_RELATION: dict[str, tuple[str, ...]] = {
-    "is_a": ("P31", "P279"),
-    "part_of": ("P131", "P361", "P17"),
-}
-
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -1552,6 +1541,12 @@ class Walker:
         if not statements:
             return None
 
+        # v0.16.1 WS5c: the start/end qualifier keys come from the KB adapter
+        # (the authority that populates Statement.qualifiers), not a hardcoded
+        # walker P-id. Fail-safe to the historical (P580, P582) default for
+        # adapters predating the accessor (behavior-neutral).
+        start_key, end_key = self._interval_qualifier_keys()
+
         # Prefer a single `preferred`-ranked statement when present (Wikidata
         # marks the canonical/current value preferred). Else require the starts
         # to agree; conflicting starts with no preferred ranking → abstain.
@@ -1573,7 +1568,7 @@ class Walker:
         unique = len(statements) == 1 or len(preferred) == 1
 
         starts = {
-            self._iso_or_none(s.qualifiers.get("P580"))
+            self._iso_or_none(s.qualifiers.get(start_key))
             for s in chosen
         }
         starts.discard(None)
@@ -1581,7 +1576,7 @@ class Walker:
             # Conflicting starts, no single preferred discriminator → abstain.
             return None
 
-        ends_raw = [s.qualifiers.get("P582") for s in chosen]
+        ends_raw = [s.qualifiers.get(end_key) for s in chosen]
         ends = {self._iso_or_none(e) for e in ends_raw}
         ends.discard(None)
         # A genuine open end (some statement has NO P582) keeps the interval
@@ -1610,6 +1605,24 @@ class Walker:
             end_known=end_known,
             unique=unique,
         )
+
+    def _interval_qualifier_keys(self) -> tuple[str, str]:
+        """v0.16.1 WS5c: the (start, end) temporal interval-qualifier keys to
+        read off `Statement.qualifiers`, sourced from the KB adapter (the
+        authority that populates them) via the optional KBProtocol
+        `interval_qualifier_keys` accessor. Falls back to the historical
+        (P580, P582) for adapters predating the accessor — behavior-neutral,
+        since interval grounding only runs against a live adapter that provides
+        it (`_gather_interval` returns None when `self._kb is None`)."""
+        accessor = getattr(self._kb, "interval_qualifier_keys", None)
+        if callable(accessor):
+            try:
+                keys = accessor()
+            except Exception:
+                keys = None
+            if isinstance(keys, (tuple, list)) and len(keys) == 2:
+                return keys[0], keys[1]
+        return ("P580", "P582")
 
     @staticmethod
     def _iso_or_none(value) -> Optional[str]:
@@ -1692,11 +1705,15 @@ class Walker:
         terminal verdict, having emitted a kb_statement trace edge + provenance
         premise. Carries contradicting_value (WS5) on a contradiction and a
         retractable resolution-cache row id (WS3) when one was touched."""
+        # v0.16.1 WS5c: the start/end qualifier P-ids come from the KB adapter
+        # (the authority that populates Statement.qualifiers), not a hardcoded
+        # walker P-id. _started -> start qualifier, _ended -> end qualifier.
+        start_key, end_key = self._interval_qualifier_keys()
         pred = claim.predicate
         if pred.endswith("_started"):
-            qual_prop = "P580"
+            qual_prop = start_key
         elif pred.endswith("_ended"):
-            qual_prop = "P582"
+            qual_prop = end_key
         else:
             return None
 
@@ -1717,8 +1734,8 @@ class Walker:
         if interval is None:
             return None
 
-        kb_date = interval.start if qual_prop == "P580" else interval.end
-        endpoint_known = interval.start_known if qual_prop == "P580" else interval.end_known
+        kb_date = interval.start if qual_prop == start_key else interval.end
+        endpoint_known = interval.start_known if qual_prop == start_key else interval.end_known
         if not endpoint_known or kb_date is None:
             # The KB records no value for this endpoint (open end / unknown
             # start) — abstain rather than contradict (absence is not evidence).
@@ -2424,8 +2441,13 @@ class Walker:
         """
         if self._kb is None:
             return []
-        properties = list(_D5_NEIGHBOR_PROPS_BY_RELATION.get(relation_type, ()))
-        if not properties:
+        # v0.16.1 WS5c: the relation -> KB-property mapping moved INTO the
+        # adapter's enumerate_neighbors. CORE passes the opaque relation_type
+        # (no P-id naming above the seam); the adapter resolves the property
+        # set. The walker only ever drives the two taxonomic/containment
+        # relations — guard to those so an unrecognized relation produces no
+        # KB expansion (preserving the former unknown-relation early-return).
+        if relation_type not in ("is_a", "part_of"):
             return []
 
         # v0.16 WS2 §3: both directions fire (gate removed); `preferred` ranks
@@ -2471,7 +2493,7 @@ class Walker:
             for walker_dir, kb_dir in kb_calls:
                 try:
                     neighbors_by_prop = self._kb.enumerate_neighbors(
-                        entity_qid, properties, direction=kb_dir,
+                        entity_qid, direction=kb_dir, relation_type=relation_type,
                     )
                 except Exception:
                     continue
