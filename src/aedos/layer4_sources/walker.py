@@ -197,6 +197,58 @@ def _is_vague_class_object(object_value: str) -> bool:
     return False
 
 
+def _vague_class_head(object_value: str) -> Optional[str]:
+    """Extract the bare CLASS-noun head from a vague-class object phrase, or
+    None if no head can be isolated.
+
+    "a town in the United States"          -> "town"
+    "a state that borders New York"        -> "state"
+    "an institution founded before 1800"   -> "institution"
+    "some river"                           -> "river"
+
+    The head is the noun phrase BETWEEN the indefinite-article prefix and the
+    first restrictive modifier (a preposition like "in"/"of"/"that"/relative
+    clause). The walker resolves THIS head to a KB class Q-id and confirms the
+    subject's instance/subclass path to it — the qualifier ("in the United
+    States") is intentionally dropped: the §3.2-sound check is "subject is_a
+    <class>" via P31/P279 authority, and a positive path can only HOLD when the
+    membership is real. The qualifier is NOT used to broaden a positive (it
+    could only tighten one, and the KB path already enforces the tightening
+    through the resolved class).
+    """
+    if not object_value:
+        return None
+    obj = object_value.strip()
+    if not obj:
+        return None
+    lower = obj.lower()
+    head = None
+    for prefix in _VAGUE_CLASS_PREFIXES:
+        if lower.startswith(prefix):
+            head = obj[len(prefix):]
+            break
+    if head is None:
+        return None
+    head = head.strip()
+    if not head:
+        return None
+    # Cut at the first restrictive modifier: a preposition or relative-clause
+    # marker. Leaves the bare class-noun head ("town", "state", "institution").
+    cut_markers = (
+        " that ", " which ", " where ", " whose ", " who ",
+        " in ", " of ", " on ", " at ", " from ", " with ", " near ",
+        " founded ", " located ", " bordering ", " borders ", " using ",
+    )
+    head_lower = head.lower()
+    cut = len(head)
+    for marker in cut_markers:
+        idx = head_lower.find(marker)
+        if idx != -1 and idx < cut:
+            cut = idx
+    head = head[:cut].strip()
+    return head or None
+
+
 def _claim_key(claim: Claim) -> str:
     return f"{claim.asserting_party}|{claim.subject}|{claim.predicate}|{claim.object}|{claim.polarity}"
 
@@ -613,6 +665,20 @@ class Walker:
                 assertion=(flipped_status == "asserted_unverified"),
             )
             return "contradicted", "tier_u", 0
+
+        # v0.16.1 WS3 Step 0: vague-class instance check. When the claim's
+        # OBJECT is a vague descriptive class ("a town in the United States"),
+        # the walker normally abstains (it cannot match a free-text class as a
+        # literal). Try a SOUND positive grounding: resolve the class to a KB
+        # Q-id and confirm the SUBJECT's instance/subclass path to it via the
+        # `is_a` (P31|P279+) transitive authority the walker already trusts.
+        # Fires ONLY on a definite positive; on any miss / uncertainty it
+        # returns None and falls through to the existing logic below (which
+        # still abstains on the vague class — sound, never a cold LLM positive).
+        if node.polarity == 1 and _is_vague_class_object(node.object):
+            vague_verdict = self._verify_vague_class_instance(node, trace)
+            if vague_verdict == "verified":
+                return "verified", "kb", 0
 
         # Object-conflict belief revision: a functional
         # (single_valued) predicate admits at most one object value per
@@ -1881,6 +1947,90 @@ class Walker:
         if qid and qid.startswith("Q"):
             return qid
         return None
+
+    def _verify_vague_class_instance(
+        self,
+        node: Claim,
+        trace: JustificationTrace,
+    ) -> Optional[str]:
+        """v0.16.1 WS3 Step 0: SOUND class-instance check for a vague-class
+        object.
+
+        When a claim's OBJECT is a vague descriptive class ("a town in the
+        United States", "a state that borders New York") the walker cannot
+        match it as a literal entity, so today it abstains. This adds a
+        positive grounding path that fires ONLY on a confirmed class
+        membership, using the SAME subsumption authority the walker already
+        trusts (`verify_transitive_path` over `is_a` = P31|P279+):
+
+          1. Extract the bare class-noun head from the vague object.
+          2. Resolve it to a KB CLASS Q-id (via the substrate resolver, the
+             same resolver `_resolve_qid` uses).
+          3. Resolve the claim's SUBJECT to a Q-id.
+          4. Ask the KB whether `subject is_a class` holds transitively.
+          5. Return "verified" ONLY on a DEFINITE positive (holds=True,
+             error=None). On a non-resolution, a definite negative, an
+             uncertain/fail-open KB answer, or any exception, return None so
+             the caller KEEPS ABSTAINING — that is sound (§3.2). A cold LLM
+             positive is NEVER admitted: the only authority consulted is the
+             KB transitive path.
+
+        Returns "verified" on confirmed membership, else None (caller falls
+        through to the existing object-conflict / Stage-1 / external-grounding
+        logic, all of which still apply — this only ADDS a verify, it never
+        suppresses any other path).
+        """
+        # Subject-less or KB-less walks cannot run the check; abstain.
+        if self._kb is None or not node.subject:
+            return None
+        head = _vague_class_head(node.object)
+        if not head:
+            return None
+        # Resolve the class head and the subject to Q-ids. The class head is
+        # resolved in the object slot, the subject in the subject slot, exactly
+        # as `_resolve_qid` is used elsewhere.
+        class_qid = self._resolve_qid(node, head, "object")
+        if not class_qid:
+            return None  # vague class did not resolve to a Q-id -> abstain
+        subject_qid = self._resolve_qid(node, node.subject, "subject")
+        if not subject_qid:
+            return None
+        # Nogood veto FIRST (entailment-safety): a cached "does NOT hold"
+        # forecloses the edge without a network round-trip.
+        if self._nogood_vetoes(subject_qid, class_qid, "is_a"):
+            return None
+        # KB authority: does `subject is_a class` hold transitively (P31|P279+)?
+        try:
+            tp = self._kb.verify_transitive_path(
+                subject_qid, class_qid, None, relation_type="is_a"
+            )
+        except Exception:
+            return None
+        # Verify ONLY on a DEFINITE positive. A definite negative, a fail-open
+        # error, or a None result all KEEP ABSTAINING (sound — never guess).
+        if tp is None or getattr(tp, "error", None) is not None:
+            return None
+        if not getattr(tp, "holds", False):
+            return None
+        trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=trace.root,
+            target=TraceNode("kb_statement", {"entity": node.subject}),
+            metadata={
+                "source": "kb",
+                "verdict": "verified",
+                "relation_type": "is_a",
+                "grounding": "vague_class_instance",
+                "class_head": head,
+                "subject_qid": subject_qid,
+                "class_qid": class_qid,
+                "establishing_property": getattr(tp, "establishing_property", None),
+                "polarity": node.polarity,
+            },
+        ))
+        self._record_premise(trace, source="kb", assertion=False)
+        return "verified"
 
     def _nogood_vetoes(
         self, child_qid: str, parent_qid: str, relation_type: str
