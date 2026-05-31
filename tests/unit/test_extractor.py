@@ -269,11 +269,16 @@ class TestRule25IntervalEndpointPromptRules:
         assert "DO NOT apply Rule 25 when" in _SYSTEM_PROMPT
         assert "No date/year is present" in _SYSTEM_PROMPT
 
-    def test_rules_12_13_14_cross_reference_rule_25(self):
-        # The three interval-bearing rules each instruct the LLM to ALSO emit
-        # the Rule 25 endpoint claim.
+    def test_rules_12_13_cross_reference_rule_25(self):
+        # The interval-bearing employment rules (12/13) each instruct the LLM to
+        # ALSO emit the Rule 25 endpoint claim. (v0.16.1 WS4 dropped the dead
+        # status_started/status_ended seed rows, so Rule 14 no longer carries a
+        # Rule 25 status endpoint cross-reference and the prompt no longer
+        # elicits status_started/status_ended.)
         from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
-        assert _SYSTEM_PROMPT.count("per Rule 25") >= 3
+        assert _SYSTEM_PROMPT.count("per Rule 25") >= 2
+        assert "status_started" not in _SYSTEM_PROMPT
+        assert "status_ended" not in _SYSTEM_PROMPT
 
 
 class TestRule25EndpointClaimPipeline:

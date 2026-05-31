@@ -325,6 +325,7 @@ class KBVerifier:
                 and value_resolved
                 and isinstance(lookup_subject_id, str)
                 and isinstance(expected_value, str)
+                and self._is_location_property(binding.kb_property)
                 and self._subsumption_upgrades(lookup_subject_id, expected_value)
             ):
                 pos_verdict = KBVerdictType.VERIFIED
