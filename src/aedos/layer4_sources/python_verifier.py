@@ -28,6 +28,7 @@ from typing import Any, Optional
 
 from ..layer1_extraction.extractor import Claim
 from ..utils.sandbox import run_code
+from .walker import _parse_quantity
 
 
 PYTHON_VERIFY_TOOL: dict[str, Any] = {
@@ -106,6 +107,267 @@ def _extract_code_block(text: str) -> str:
     return text.strip()
 
 
+# ---------------------------------------------------------------------------
+# v0.16.1 WS6 — deterministic front-end (item 6b)
+#
+# A narrow, exact-parse evaluator tried BEFORE the LLM codegen for the common
+# self-contained comparison / arithmetic / date-ordering claims the Python tier
+# exists for (e.g. "100 greater_than 50", "10 squared 100"). Today those rely on
+# one-shot LLM codegen that is flaky run-to-run; this grounds them
+# deterministically. §3.2 paramount: a verdict is returned ONLY on a TOTAL,
+# UNAMBIGUOUS parse over an EXACT computation (real arithmetic — it can never
+# false-verify). ANYTHING not fully parsed returns None, and verify() then
+# proceeds to the existing LLM-codegen path exactly as before (the None-eligible
+# / fail-open framing is preserved untouched).
+# ---------------------------------------------------------------------------
+
+# A STRICT numeric operand: the whole (trimmed) string must be a number with an
+# optional recognized magnitude word, and nothing else. This is the totality
+# gate the front-end requires — the shared `_parse_quantity` (reused from the
+# walker's kb_quantitative path for the "2 million" / "60 million" suffix logic)
+# is intentionally LENIENT (it grabs the leading numeric token, so "Q123" -> 123,
+# "144 apples" -> 144), which is right for a KB threshold but UNSOUND for an
+# operand. We anchor-match first, then delegate the value computation (incl. the
+# suffix multipliers) to `_parse_quantity` so the magnitude handling stays in one
+# place and cannot drift.
+# Either plain digits with an optional fractional part, OR digit-groups joined
+# by PROPER thousands separators (groups of exactly 3), optionally followed by a
+# single recognized magnitude word. Crucially this REJECTS a comma-separated
+# list like "1,2,3,4,5" (groups are not 3 digits) — that must fall through to
+# codegen, never be read as the single number 12345.
+_STRICT_NUMBER_RE = re.compile(
+    r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*"
+    r"(?:million|billion|thousand|hundred|m|bn|k)?",
+    re.IGNORECASE,
+)
+
+_BARE_YEAR_RE = re.compile(r"[-+]?\d{1,4}")
+
+
+def _strict_number(text: Optional[str]) -> Optional[float]:
+    """Parse `text` to a number ONLY if the ENTIRE trimmed string is a number
+    (with an optional magnitude suffix); else None. Reuses `_parse_quantity`
+    for the value/suffix computation, adding the anchored totality gate the
+    deterministic front-end needs so a partial / contaminated operand never
+    yields a (mis)computed verdict."""
+    if text is None:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    if not _STRICT_NUMBER_RE.fullmatch(s):
+        return None
+    return _parse_quantity(s)
+
+
+def _strict_year(text: Optional[str]) -> Optional[int]:
+    """Parse a bare 1-4 digit year ONLY if the entire trimmed string is that
+    year (optionally signed); else None. Deliberately stricter than a free-text
+    date parser — date/year ordering is sound only when both operands are
+    unambiguous bare years."""
+    if text is None:
+        return None
+    s = str(text).strip()
+    if not s or not _BARE_YEAR_RE.fullmatch(s):
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
+# Comparator vocabulary. Mirrors the walker's kb_quantitative comparator parsing
+# (greater_than/more_than/above -> gt; less_than/below/fewer_than -> lt) and
+# extends it with the equals / at_least / at_most family and the `measure_`
+# prefix variants the metadata oracle emits, so the deterministic front-end
+# stays consistent with how comparators are named elsewhere. Ordered longest /
+# most-specific first; the substring search is on the lowercased predicate.
+#   gt  : strictly greater          lt  : strictly less
+#   ge  : greater-or-equal          le  : less-or-equal
+#   eq  : equal
+_COMPARATORS: tuple[tuple[str, Optional[str]], ...] = (
+    ("greater_than_or_equal", "ge"),
+    ("less_than_or_equal", "le"),
+    ("at_least", "ge"),
+    ("at_most", "le"),
+    ("greater_than", "gt"),
+    ("less_than", "lt"),
+    ("more_than", "gt"),
+    ("fewer_than", "lt"),
+    ("not_equal", None),  # explicitly UNsupported -> fall through (None)
+    ("equals", "eq"),
+    ("equal_to", "eq"),
+    ("above", "gt"),
+    ("below", "lt"),
+)
+
+_COMPARE = {
+    "gt": lambda a, b: a > b,
+    "lt": lambda a, b: a < b,
+    "ge": lambda a, b: a >= b,
+    "le": lambda a, b: a <= b,
+    "eq": lambda a, b: a == b,
+}
+
+
+# Arithmetic-operator tokens. A predicate carrying any of these is an
+# arithmetic predicate (e.g. "plus_30_equals", "birth_year_plus_30"), NOT a pure
+# comparator — so the comparator path must NOT hijack it on an incidental
+# `equals` substring. Such predicates route to `_arithmetic_verdict`, which only
+# returns a verdict on the unary forms it can parse totally and otherwise
+# abstains (None -> codegen).
+_ARITH_TOKENS = ("squared", "cubed", "plus", "minus", "times", "multiplied", "divided")
+
+
+def _comparator_of(pred_lower: str) -> Optional[str]:
+    """Return the comparator key ('gt'/'lt'/'ge'/'le'/'eq') named by the
+    predicate, or None if the predicate names none unambiguously. The
+    `not_equal` family maps to None on purpose: "==" floats are exact but "!="
+    over the strict-number path is left to codegen to avoid surprising the
+    existing corpus; over-abstention here is safe. A predicate that ALSO carries
+    an arithmetic-operator token is treated as arithmetic, not comparison
+    (returns None here), so "plus_30_equals" never matches the `equals`
+    comparator on the bare subject/object."""
+    if any(tok in pred_lower for tok in _ARITH_TOKENS):
+        return None
+    for token, comp in _COMPARATORS:
+        if token in pred_lower:
+            return comp  # may be None (explicitly unsupported)
+    return None
+
+
+# before/after over two years. "before" -> subject year strictly < object year.
+def _date_order_comparator(pred_lower: str) -> Optional[str]:
+    if "before" in pred_lower or "earlier_than" in pred_lower or "older_than" in pred_lower:
+        return "lt"
+    if "after" in pred_lower or "later_than" in pred_lower or "younger_than" in pred_lower:
+        return "gt"
+    return None
+
+
+# Simple arithmetic over the predicate, e.g. predicate "squared" / "plus_5" or
+# "N squared is K". We support ONLY the closed, unambiguous operator set below
+# and require an exact integer/float match. Anything else -> None.
+_ARITH_OPS = {
+    "squared": lambda n, _m: n * n,
+    "cubed": lambda n, _m: n * n * n,
+    "plus": lambda n, m: n + m,
+    "minus": lambda n, m: n - m,
+    "times": lambda n, m: n * m,
+    "multiplied_by": lambda n, m: n * m,
+    "divided_by": lambda n, m: (n / m) if m != 0 else None,
+}
+
+
+def _arithmetic_verdict(subject: str, predicate: str, obj: str) -> Optional[str]:
+    """Evaluate "N <op> [M] is K" forms where N=subject, K=object, and the
+    operator (+ optional embedded operand M) is named by the predicate, e.g.
+    predicate="squared" ("10 squared 100"), "plus_30_equals"? -> NO (M embedded
+    in the predicate name as a separate token is NOT parsed here — that path has
+    an ambiguous operand and is left to codegen). We handle:
+      * unary ops (squared/cubed): subject and object both strict numbers.
+      * binary ops where the SECOND operand is the predicate-embedded literal IS
+        intentionally NOT supported (ambiguous tokenization) -> None.
+    Returns 'verified'/'contradicted'/None."""
+    n = _strict_number(subject)
+    k = _strict_number(obj)
+    if n is None or k is None:
+        return None
+    pred = predicate.lower()
+    # Strip trailing result-connectives so "squared_equals"/"squared_is" match.
+    op_token = None
+    for token in _ARITH_OPS:
+        if token in pred:
+            op_token = token
+            break
+    if op_token is None:
+        return None
+    # Unary ops only (squared/cubed): a binary op needs a second operand, but the
+    # ONLY operands present (subject, object) are already N and K — a binary form
+    # like "N plus M is K" would need M, which lives nowhere unambiguous here, so
+    # binary ops abstain (None -> codegen) unless the op is unary.
+    if op_token not in ("squared", "cubed"):
+        return None
+    fn = _ARITH_OPS[op_token]
+    result = fn(n, None)
+    if result is None:
+        return None
+    holds = result == k
+    return "verified" if holds else "contradicted"
+
+
+def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Optional[str]:
+    """Try a TOTAL, EXACT, deterministic parse+evaluation of `claim`. Returns
+    'verified' / 'contradicted' on a fully-parsed exact computation, else None
+    (the caller then proceeds to the existing LLM codegen). §3.2: this can never
+    false-verify — every returned verdict is real arithmetic over operands that
+    parsed in their ENTIRETY; any ambiguity (partial parse, unrecognized
+    comparator/op, non-numeric operand) returns None and falls through.
+
+    Polarity is honored via the same flip the walker uses elsewhere: a negated
+    claim ("X is NOT greater than Y") inverts the computed verdict.
+
+    `premises` (WS3b) may carry fetched operand values keyed by slot
+    ('subject'/'object', each {'value': <str>}); when present and parseable they
+    are used IN PLACE OF the literal slot for the comparison/ordering paths
+    (e.g. born_before resolves both birth years as premises). A premise that is
+    present but does NOT parse strictly is treated as "no usable premise" for
+    that slot -> the path abstains (None), never guesses."""
+    predicate = (claim.predicate or "")
+    pred_lower = predicate.lower()
+
+    # Resolve operand values: prefer a strictly-parseable premise value for the
+    # slot, else the literal slot. (None when neither parses for the path that
+    # needs it.)
+    def _premise_raw(slot: str) -> Optional[str]:
+        if isinstance(premises, dict):
+            entry = premises.get(slot)
+            if isinstance(entry, dict) and "value" in entry:
+                return str(entry["value"])
+        return None
+
+    subj_raw = _premise_raw("subject")
+    obj_raw = _premise_raw("object")
+    subject = subj_raw if subj_raw is not None else claim.subject
+    obj = obj_raw if obj_raw is not None else claim.object
+
+    verdict: Optional[str] = None
+
+    # 1) Numeric comparison (greater_than / less_than / at_least / at_most /
+    #    equals / measure_* family). Both operands must be STRICT numbers.
+    comp = _comparator_of(pred_lower)
+    if comp is not None:
+        a = _strict_number(subject)
+        b = _strict_number(obj)
+        if a is not None and b is not None:
+            holds = _COMPARE[comp](a, b)
+            verdict = "verified" if holds else "contradicted"
+
+    # 2) Date / year ordering (before / after) over two STRICT years. Only tried
+    #    when the predicate did not already name a numeric comparator (so a
+    #    predicate like "population_greater_than" never enters the year path).
+    if verdict is None:
+        order = _date_order_comparator(pred_lower)
+        if order is not None:
+            ya = _strict_year(subject)
+            yb = _strict_year(obj)
+            if ya is not None and yb is not None:
+                holds = _COMPARE[order](ya, yb)
+                verdict = "verified" if holds else "contradicted"
+
+    # 3) Simple exact arithmetic ("N squared K", "N cubed K").
+    if verdict is None:
+        verdict = _arithmetic_verdict(subject, predicate, obj)
+
+    if verdict is None:
+        return None
+
+    # Honor polarity (a negated comparison inverts the deterministic verdict).
+    if getattr(claim, "polarity", 1) == 0:
+        verdict = "contradicted" if verdict == "verified" else "verified"
+    return verdict
+
+
 class PythonVerifier:
     def __init__(self, sandbox=None, llm_client=None) -> None:
         self._sandbox = sandbox  # unused — module-level run_code() used instead
@@ -145,6 +407,22 @@ class PythonVerifier:
                 premises_payload = {}
         if premises_payload:
             inputs["premises"] = premises_payload
+
+        # v0.16.1 WS6: deterministic front-end, tried FIRST. For the common
+        # self-contained comparison / arithmetic / date-ordering claims this
+        # grounds the verdict by EXACT computation (real arithmetic over fully-
+        # parsed operands), bypassing the flaky one-shot LLM codegen. §3.2: it
+        # returns None for ANYTHING not totally + unambiguously parsed, in which
+        # case verify() proceeds to the existing codegen path below exactly as
+        # before. It needs no LLM, so it runs even when self._llm is None.
+        det = _deterministic_verdict(claim, premises_payload or None)
+        if det is not None:
+            return PythonVerdict(
+                verdict=det,
+                inputs=inputs,
+                output=det,
+                runtime_metadata={"deterministic": True},
+            )
 
         if self._llm is None:
             return PythonVerdict(verdict="no_terminal_result", inputs=inputs)

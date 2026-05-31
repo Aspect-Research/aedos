@@ -165,14 +165,17 @@ def _make_walker(*, kb=None, resolver=None, meta_by_pred=None, python_verifier=N
     )
 
 
-def _born_before_walker(code=_BORN_BEFORE_CODE, *, kb, resolver):
-    """A walker wired for the born_before premise->python channel, returning
-    (walker, transport) so the test can inspect codegen invocations (gate c)."""
+def _born_before_walker(code=_BORN_BEFORE_CODE, *, kb, resolver, predicate="born_before"):
+    """A walker wired for a premise->python comparison channel, returning
+    (walker, transport) so the test can inspect codegen invocations (gate c).
+    `predicate` defaults to born_before; tests that must reach the LLM-codegen
+    path (gate d) pass a NEUTRAL predicate the WS6 deterministic front-end does
+    not recognize, so the deterministic verdict does not preempt the codegen."""
     transport = _MockTransport(code)
     pv = PythonVerifier(llm_client=LLMClient(_transport=transport))
     w = _make_walker(
         kb=kb, resolver=resolver, python_verifier=pv,
-        meta_by_pred={"born_before": _StubMeta(
+        meta_by_pred={predicate: _StubMeta(
             premise_properties={"subject": "P569", "object": "P569"})},
     )
     return w, transport
@@ -527,10 +530,14 @@ class TestPremiseToPythonChannelEndToEnd:
         # resolve fine; the code itself honestly abstains.
         none_code = "def verify(s, p, o, premises): return None\n"
         kb, resolver = self._newton_einstein_kb()
-        w, transport = _born_before_walker(none_code, kb=kb, resolver=resolver)
+        # NEUTRAL predicate: the WS6 deterministic front-end does not recognize
+        # 'premise_compare', so the verdict comes from the codegen (None) under
+        # test, not the deterministic year-ordering path.
+        w, transport = _born_before_walker(
+            none_code, kb=kb, resolver=resolver, predicate="premise_compare")
         trace = _trace()
         verdict, source, llm, grounding = w._try_external_grounding(
-            _claim(), _ctx(), trace
+            _claim(predicate="premise_compare"), _ctx(), trace
         )
         assert verdict is None
         # Codegen WAS invoked (premises resolved) but returned None -> abstain.
@@ -541,10 +548,11 @@ class TestPremiseToPythonChannelEndToEnd:
         # no_terminal_result -> no terminal walker verdict (abstain).
         boom_code = "def verify(s, p, o, premises): raise ValueError('boom')\n"
         kb, resolver = self._newton_einstein_kb()
-        w, transport = _born_before_walker(boom_code, kb=kb, resolver=resolver)
+        w, transport = _born_before_walker(
+            boom_code, kb=kb, resolver=resolver, predicate="premise_compare")
         trace = _trace()
         verdict, source, llm, grounding = w._try_external_grounding(
-            _claim(), _ctx(), trace
+            _claim(predicate="premise_compare"), _ctx(), trace
         )
         assert verdict is None
 

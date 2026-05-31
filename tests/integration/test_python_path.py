@@ -116,13 +116,15 @@ class TestWalkerPythonPath:
         assert result.verdict == "contradicted"
 
     def test_python_exception_falls_through_to_no_grounding(self):
+        # A claim the WS6 deterministic front-end ignores (string-op predicate,
+        # non-numeric object) so the codegen exception path is what's exercised.
         walker = _make_system("def verify(s, p, o): raise ValueError('bad')")
-        result = walker.walk(_claim(), _ctx())
+        result = walker.walk(_claim("strawberry", "count_char_r", "three"), _ctx())
         assert result.verdict == "no_grounding_found"
 
     def test_python_disallowed_import_falls_through(self):
         walker = _make_system("import os\ndef verify(s, p, o): return True")
-        result = walker.walk(_claim(), _ctx())
+        result = walker.walk(_claim("strawberry", "count_char_r", "three"), _ctx())
         assert result.verdict == "no_grounding_found"
 
 
