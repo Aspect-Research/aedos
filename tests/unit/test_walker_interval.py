@@ -2,10 +2,9 @@
 
 Covers (spec docs/v0_16/06_temporal.md §B):
   * `_iso_or_none` — BEFORE_PRESENT and empty → None (open end).
-  * `_interval_holds_at` — the three-valued holds-at-T table (§B.2):
-        open-end → true once start<=T; start>T → false; end<T → false;
-        unknown-start → unknown; both-unknown → unknown; BEFORE_PRESENT as an
-        end never forces a false.
+  * (`_interval_holds_at` and its three-valued holds-at-T suite were removed in
+        v0.16.1 WS4 — the primitive had no verdict-path consumer; see the walker
+        note where it lived.)
   * `_interval_from_statements` — P580/P582 gathering, preferred-rank
         disambiguation, conflicting-start abstention, open-end dominance.
   * `_verify_interval_endpoint` — verified / contradicted / abstain, driven by
@@ -189,71 +188,13 @@ class TestIsoOrNone:
 
 
 # ---------------------------------------------------------------------------
-# _interval_holds_at  (three-valued table, §B.2)
+# v0.16.1 WS4: the _interval_holds_at three-valued primitive (and its
+# TestIntervalHoldsAt suite) were REMOVED — the primitive had no verdict-path
+# consumer (its only intended caller is the deferred event-relative resolver,
+# item 7 Stage 2) and wiring it to a present-day check risked a false-contradict.
+# The BEFORE_PRESENT → end_known=False behavior it relied on is still covered by
+# the _iso_or_none tests above and the _interval_from_statements tests below.
 # ---------------------------------------------------------------------------
-
-class TestIntervalHoldsAt:
-    def setup_method(self):
-        self.w = _make_walker()
-
-    def test_closed_interval_T_inside_is_true(self):
-        iv = Interval(start="1933-01-01", end="1955-01-01",
-                      start_known=True, end_known=True)
-        assert self.w._interval_holds_at(iv, "1940-01-01") == "true"
-
-    def test_start_after_T_is_false(self):
-        # start > T → relation hadn't begun.
-        iv = Interval(start="1933-01-01", end="1955-01-01",
-                      start_known=True, end_known=True)
-        assert self.w._interval_holds_at(iv, "1920-01-01") == "false"
-
-    def test_end_before_T_is_false(self):
-        # end < T → relation already ended.
-        iv = Interval(start="1933-01-01", end="1955-01-01",
-                      start_known=True, end_known=True)
-        assert self.w._interval_holds_at(iv, "1990-01-01") == "false"
-
-    def test_open_end_with_start_le_T_is_true(self):
-        # Open end (ongoing) and start <= T → true.
-        iv = Interval(start="1912-01-01", start_known=True, end_known=False)
-        assert self.w._interval_holds_at(iv, "2024-01-01") == "true"
-
-    def test_open_end_with_start_gt_T_is_false(self):
-        # Even with an open end, a future start forces false.
-        iv = Interval(start="1912-01-01", start_known=True, end_known=False)
-        assert self.w._interval_holds_at(iv, "1900-01-01") == "false"
-
-    def test_unknown_start_known_end_is_unknown(self):
-        # start UNKNOWN, end known, T <= end → cannot place T → unknown.
-        iv = Interval(end="1955-01-01", start_known=False, end_known=True)
-        assert self.w._interval_holds_at(iv, "1940-01-01") == "unknown"
-
-    def test_unknown_start_end_before_T_is_false(self):
-        # An end strictly before T still forces false regardless of the
-        # unknown start.
-        iv = Interval(end="1955-01-01", start_known=False, end_known=True)
-        assert self.w._interval_holds_at(iv, "1990-01-01") == "false"
-
-    def test_both_unknown_is_unknown(self):
-        iv = Interval(start_known=False, end_known=False)
-        assert self.w._interval_holds_at(iv, "1940-01-01") == "unknown"
-
-    def test_before_present_end_never_forces_false(self):
-        # An interval gathered with BEFORE_PRESENT as its end maps to
-        # end_known=False (via _iso_or_none) — a soft past signal that must NOT
-        # force a false. With a known start <= T it holds (open-end semantics).
-        iv = self.w._interval_from_statements([
-            Statement(value="Q1", value_type="entity",
-                      qualifiers={"P580": "1912-01-01", "P582": BEFORE_PRESENT})
-        ])
-        assert iv is not None
-        assert iv.end_known is False
-        assert self.w._interval_holds_at(iv, "2024-01-01") == "true"
-
-    def test_empty_T_is_unknown(self):
-        iv = Interval(start="1933-01-01", start_known=True, end_known=True,
-                      end="1955-01-01")
-        assert self.w._interval_holds_at(iv, "") == "unknown"
 
 
 # ---------------------------------------------------------------------------

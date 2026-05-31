@@ -105,3 +105,32 @@ class TestConfigValidation:
     def test_db_path_must_be_non_empty(self):
         with pytest.raises(ValueError, match="db_path"):
             Config(db_path="")
+
+
+class TestEnableSlingFlag:
+    """v0.16.1 WS4 (SLING activation): the `enable_sling` flag is the config-level
+    activation gate. It defaults ON (the mechanism is ACTIVATED), is overridable
+    by the AEDOS_ENABLE_SLING env var (off only for 0/false/no/off, any case),
+    and can be set explicitly on the dataclass. Pins the activation surface so the
+    mechanism cannot silently regress to inert."""
+
+    def test_default_is_on_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("AEDOS_ENABLE_SLING", raising=False)
+        assert Config().enable_sling is True
+
+    def test_env_off_values_disable(self, monkeypatch):
+        for val in ("0", "false", "no", "off", "FALSE", "Off", "  NO  "):
+            monkeypatch.setenv("AEDOS_ENABLE_SLING", val)
+            assert Config().enable_sling is False, val
+
+    def test_env_on_values_enable(self, monkeypatch):
+        for val in ("1", "true", "yes", "on", ""):
+            monkeypatch.setenv("AEDOS_ENABLE_SLING", val)
+            assert Config().enable_sling is True, val
+
+    def test_explicit_override_wins(self, monkeypatch):
+        # An explicit constructor value is honored regardless of the env var.
+        monkeypatch.setenv("AEDOS_ENABLE_SLING", "1")
+        assert Config(enable_sling=False).enable_sling is False
+        monkeypatch.setenv("AEDOS_ENABLE_SLING", "0")
+        assert Config(enable_sling=True).enable_sling is True

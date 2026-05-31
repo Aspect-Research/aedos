@@ -66,6 +66,23 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
                     "primary kb_property is unambiguous."
                 ),
             },
+            "sample_subject_qids": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+                "description": (
+                    "v0.16.1 (SLING distant supervision): a SMALL list (2-3) of "
+                    "well-known Wikidata subject Q-ids that are canonical, "
+                    "uncontroversial instances of this predicate's SUBJECT — set "
+                    "ONLY for a LONG-TAIL kb_resolvable edge whose Wikidata "
+                    "property has no usable P2302 type/constraint ontology (a "
+                    "niche or non-standard relation). The substrate samples these "
+                    "entities' co-occurring KB properties to propose ONE extra "
+                    "verify-only candidate binding (it can never contradict). "
+                    "Emit Q-ids you are confident name the right entity; null/omit "
+                    "for any predicate whose property is well-constrained or whose "
+                    "subjects you are unsure of (the default — no SLING sampling)."
+                ),
+            },
             "slot_to_qualifier": {
                 "type": ["object", "null"],
                 "description": "JSON mapping Aedos slot names to KB qualifier P-numbers.",
@@ -235,6 +252,19 @@ routing_hint — pick the SINGLE most-applicable verification source:
               object_entity_types null/open (the P31 object can be ANY class —
               river, city, profession); the P106 candidate's occupation value-type
               constraint is supplied by P106's own ontology at discovery time.
+
+      sample_subject_qids (LONG-TAIL kb_resolvable edges ONLY): when the
+              kb_property is a NICHE / non-standard Wikidata relation that lacks a
+              usable P2302 type/constraint ontology (so candidate_kb_properties
+              and the ontology can't help), you MAY list 2-3 well-known Wikidata
+              subject Q-ids that are canonical, uncontroversial instances of this
+              predicate's SUBJECT. The substrate uses distant supervision over
+              their co-occurring properties to propose ONE extra verify-only
+              candidate binding (it can never drive a contradiction and is
+              value-type-gated on the positive path). Emit Q-ids ONLY when you are
+              confident they name the right entity; leave it null for any common,
+              well-constrained property (born_in, occupation, member_of, ...) and
+              whenever you are unsure of the subjects -- the default is no sampling.
 
   kb_quantitative — a numeric COMPARISON predicate ('..._greater_than' /
     '..._less_than' in the name) against a count-valued Wikidata property.
@@ -448,6 +478,7 @@ class PredicateTranslation:
         consistency_checker=None,
         property_relations=None,
         sling=None,
+        enable_sling: bool = True,
     ) -> None:
         self._db = db
         self._llm = llm_client
@@ -458,6 +489,10 @@ class PredicateTranslation:
         # single primary binding = pre-v0.16 behavior.
         self._property_relations = property_relations
         self._sling = sling
+        # v0.16.1 WS4: config gate for SLING distant supervision. When False,
+        # the SlingFallback is never consulted even if wired — turning SLING off
+        # can only lose a (verify-only) candidate, never change a sound verdict.
+        self._enable_sling = enable_sling
 
     def consult(
         self,
@@ -884,14 +919,16 @@ class PredicateTranslation:
         # SLING fallback: only when the ontology couldn't constrain a candidate
         # (long-tail edges). Lowest rank; never licenses a contradiction.
         #
-        # DORMANT-MECHANISM NOTE (round-1 follow-up): SLING is DEFERRED-INERT in
-        # v0.16 — this call always yields []. propose_bindings needs sample
-        # subject Q-ids (sample_subject_qids / example_qids) in `raw`, which the
-        # predicate-metadata oracle's tool schema (PREDICATE_METADATA_TOOL) does
-        # not emit, so it samples nothing and proposes nothing. Activation
-        # (adding the schema field + a prompt to populate it) is a future
-        # operator decision; it fails open and changes no verdict today.
-        if any_ontology_empty and self._sling is not None:
+        # v0.16.1 WS4 — ACTIVATED (gated). The predicate-metadata oracle now emits
+        # optional `sample_subject_qids` (tool schema + prompt) for long-tail edges
+        # the ontology can't constrain; propose_bindings samples those entities'
+        # co-occurring properties and proposes ONE verify-only candidate. The
+        # binding is single_valued=False (can never CONTRADICT), ranks LAST, and is
+        # value_type_gated=True (fail-closed positive gate) so a noisy co-occurrence
+        # cannot false-verify on an unconfirmed object type. The `enable_sling`
+        # config flag gates consumption: when off, SLING is never consulted (a
+        # verify-only candidate is simply not produced — no sound verdict changes).
+        if any_ontology_empty and self._sling is not None and self._enable_sling:
             proposed = self._sling.propose_bindings(aedos_predicate, raw)
             if isinstance(proposed, list):
                 sling_bindings = [b for b in proposed if isinstance(b, PredicateBinding)]

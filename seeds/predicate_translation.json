@@ -834,30 +834,6 @@
     "reason": "v0.16 T1. Role/position end date = P582 (end time) qualifier on the P39 (position held) statement. kb_interval resolver. Multi-valued."
   },
   {
-    "aedos_predicate": "status_started",
-    "object_type": "time",
-    "user_subject_required": 0,
-    "distinct_slots": null,
-    "routing_hint": "kb_interval",
-    "kb_namespace": "wikidata",
-    "kb_property": "P571",
-    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P580"},
-    "single_valued": 0,
-    "reason": "v0.16 T1. State-bearing-subject start = inception (P571). Unlike the employment/membership/role endpoints, inception/dissolution are STATEMENTS, not qualifiers, but the kb_interval resolver also gathers a Tier U started/ended row; for an org subject prefer founded_in_year (P571) / dissolved_in_year (P576) directly. Object is the date. Multi-valued (conservative)."
-  },
-  {
-    "aedos_predicate": "status_ended",
-    "object_type": "time",
-    "user_subject_required": 0,
-    "distinct_slots": null,
-    "routing_hint": "kb_interval",
-    "kb_namespace": "wikidata",
-    "kb_property": "P576",
-    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P582"},
-    "single_valued": 0,
-    "reason": "v0.16 T1. State-bearing-subject end = dissolution (P576). See status_started. Object is the date. Multi-valued (conservative)."
-  },
-  {
     "aedos_predicate": "born_before",
     "object_type": "entity",
     "user_subject_required": 0,

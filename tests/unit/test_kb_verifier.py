@@ -1287,3 +1287,87 @@ class TestKBVerifierOccupationCopulaPositiveGate:
         assert verifier._object_confirms_value_type("Q5982903", b2) is False
         # Unresolved object → fail closed.
         assert verifier._object_confirms_value_type(None, b) is False
+
+
+# ===========================================================================
+# v0.16.1 WS4 — SLING distant-supervision binding (ACTIVATED, verify-only)
+#
+# A SLING binding is a low-rank, single_valued=False, value_type_gated=True
+# candidate the substrate proposes for a long-tail edge. Through the binding
+# loop it must:
+#   * VERIFY a matching claim ONLY when the resolved object PROVABLY satisfies
+#     the binding's value-type (the fail-closed positive gate);
+#   * ABSTAIN (never false-verify) when the object's type can't be confirmed;
+#   * NEVER drive CONTRADICTED (single_valued=False).
+# These pin the soundness contract that makes activation safe.
+# ===========================================================================
+
+# Q-id reused below: Q12737077 occupation (the SLING binding's value-type).
+_SLING_VT = ["Q12737077"]
+
+
+def _sling_only_meta(predicate="works_as", value_types=_SLING_VT):
+    """meta whose ONLY binding is a SLING candidate (mirrors what
+    SlingFallback.propose_bindings produces: source='sling',
+    single_valued=False, low rank, value_type_gated=True)."""
+    return _make_meta(predicate, [
+        PredicateBinding(kb_namespace="wikidata", kb_property="P106",
+                         single_valued=False, object_entity_types=value_types,
+                         source="sling", rank=0.1, value_type_gated=True),
+    ])
+
+
+class TestKBVerifierSlingBinding:
+    def test_sling_verifies_only_through_value_type_gate(self):
+        # The SLING binding's P106 set matches the resolved object AND the object
+        # is_a occupation (Q12737077) ⇒ the fail-closed positive gate is
+        # satisfied ⇒ VERIFIED. This is the ONLY path a SLING binding can verify.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P106": [Statement(value="Q5982903", value_type="entity")],  # guitarist
+            },
+            resolutions={"guitarist": "Q5982903"},
+            subsumptions={("Q5982903", "Q12737077", "is_a"): "a_subsumed_by_b"},
+        )
+        verifier = _make_multi_verifier(kb, _sling_only_meta())
+        result = verifier.verify(_claim(subject="Obama", predicate="works_as",
+                                        object_val="guitarist"))
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("property") == "P106"
+        tried = {t["property"]: t for t in result.trace["bindings_tried"]}
+        assert tried["P106"]["source"] == "sling"
+
+    def test_sling_abstains_when_value_type_unconfirmed(self):
+        # The P106 statement matches the resolved object, but the object is
+        # provably NOT an occupation (unrelated) ⇒ the fail-closed positive gate
+        # blocks the verify ⇒ NO_MATCH (abstain). A noisy co-occurrence binding
+        # cannot false-verify on an unconfirmed object type.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P106": [Statement(value="Q4022", value_type="entity")],  # river
+            },
+            resolutions={"river": "Q4022", "Amazon": "Q3783"},
+            subsumptions={("Q4022", "Q12737077", "is_a"): "unrelated"},
+        )
+        verifier = _make_multi_verifier(kb, _sling_only_meta())
+        result = verifier.verify(_claim(subject="Amazon", predicate="works_as",
+                                        object_val="river"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        tried = {t["property"]: t for t in result.trace["bindings_tried"]}
+        assert tried["P106"]["abstention_reason"] == "value_type_unconfirmed_positive_gate"
+
+    def test_sling_never_contradicts(self):
+        # Even with a value-type-confirmed object whose value does NOT match the
+        # KB P106 set, a SLING binding (single_valued=False) NEVER contradicts —
+        # the mismatch is NO_MATCH (abstain), per §3.2.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P106": [Statement(value="Q177220", value_type="entity")],  # singer
+            },
+            resolutions={"guitarist": "Q5982903"},
+            subsumptions={("Q5982903", "Q12737077", "is_a"): "a_subsumed_by_b"},
+        )
+        verifier = _make_multi_verifier(kb, _sling_only_meta())
+        result = verifier.verify(_claim(subject="Obama", predicate="works_as",
+                                        object_val="guitarist"))
+        assert result.verdict == KBVerdictType.NO_MATCH

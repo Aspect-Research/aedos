@@ -153,6 +153,10 @@ def build_pipeline(
         consistency_checker=consistency,
         property_relations=PropertyRelations(db, kb),
         sling=SlingFallback(db, kb, client),
+        # v0.16.1 WS4: SLING distant supervision is ACTIVATED by default; the
+        # AEDOS_ENABLE_SLING config flag gates whether its verify-only candidate
+        # bindings are produced/consumed.
+        enable_sling=config.enable_sling,
     )
 
     # Wikipedia normalizer wired into the resolver. The
@@ -212,7 +216,6 @@ def build_pipeline(
     )
     kb_verifier = KBVerifier(
         kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt,
-        exception_cache=exception_cache,
     )
     python_verifier = PythonVerifier(llm_client=client)
     walker = Walker(
