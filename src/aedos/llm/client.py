@@ -1,12 +1,6 @@
-"""LLM client for Aedos v0.15.
+"""LLM client for Aedos.
 
-Lifted from v0.14 src/llm_client.py with these changes:
-- Cost tracking replaced with a lightweight call counter (used by walker budget).
-- Model defaults updated for v0.15.
-- Added `complete` as an alias for `chat`.
-- Removed dependency on src.cost.
-
-Phase E1 — per-purpose, per-provider routing. `DEFAULT_MODEL_BY_PURPOSE` is a
+Per-purpose, per-provider routing. `DEFAULT_MODEL_BY_PURPOSE` is a
 dict of dicts: each purpose carries a `model`, a `base_url` (None → the native
 Anthropic SDK; a URL → the OpenAI-compatible SDK pointed at that endpoint —
 OpenAI itself, or OpenRouter, or any OpenAI-API-compatible host), and an
@@ -20,7 +14,7 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
 import anthropic
@@ -33,21 +27,16 @@ DEFAULT_MODEL = "claude-haiku-4-5"
 # Anthropic SDK; a URL routes to the OpenAI-compatible SDK.
 _ANTHROPIC = {"base_url": None, "api_key_env_var": "ANTHROPIC_API_KEY"}
 _OPENAI = {"base_url": "https://api.openai.com/v1", "api_key_env_var": "OPENAI_API_KEY"}
-# OpenRouter (OpenAI-API-compatible) — used by the Phase E comparison and, after
-# Phase E5, by whichever purposes the operator migrates to open-weight models.
+# OpenRouter (OpenAI-API-compatible) — used by whichever purposes the
+# operator migrates to open-weight models.
 _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "OPENROUTER_API_KEY"}
 
 # Per-purpose routing. Each value is {"model", "base_url", "api_key_env_var"}.
-# Phase E1 keeps the v0.15 model assignments unchanged — only the config *shape*
-# and the routing *mechanism* change here; the open-weight migration of the
-# model values is Phase E5, after the comparison.
 #
-# Phase F2 (F-009 closure): the substrate / verifier call-site purpose strings
-# now match the keys in this table. Before F2 the call sites used names like
-# `subsumption_generation` / `python_code_generation` that did not match the
-# table, so four call types fell through to the chat-default model in
-# deployment — see docs/phase_F/deployment_readiness_audit.md F-009 for the
-# project-level account.
+# The substrate / verifier call-site purpose strings must match the keys in
+# this table. Mismatched names (e.g. `subsumption_generation` /
+# `python_code_generation`) fall through to the chat-default model in
+# deployment instead of the intended per-purpose model.
 #
 # `extractor:assistant` is architecturally distinct from `extractor:user`
 # for asserting-party reasons (the asserting party for an assistant-extracted
@@ -56,27 +45,25 @@ _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "O
 # distinction is preserved in configuration.
 DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
     "chat":                             {"model": "claude-haiku-4-5", **_ANTHROPIC},
-    # Phase E3 (2026-05-23) — extractor purposes on claude-haiku-4-5 with the
-    # v5 prompt (100% on the cleaned extraction corpus; see
-    # docs/phase_E_report.md).
+    # Extractor purposes on claude-haiku-4-5 with the
+    # extraction prompt (100% on the cleaned extraction corpus).
     "extractor:user":                   {"model": "claude-haiku-4-5", **_ANTHROPIC},
     "extractor:assistant":              {"model": "claude-haiku-4-5", **_ANTHROPIC},
-    # Phase E5 (2026-05-23) — per-component selection from candidate × corpus
-    # measurement + prompt iteration on the proposed-winner model. See
-    # docs/phase_E_v2_report.md for the per-component data, iteration logs,
-    # and architectural-ceiling interpretation. Three of five components
+    # Per-component selection from candidate × corpus
+    # measurement + prompt iteration on the proposed-winner model.
+    # Three of five components
     # clear their calibration thresholds at this configuration; the two that
-    # don't (entity_resolution, walker) are bounded by D47 / D5 / D16/D23,
+    # don't (entity_resolution, walker) are bounded by their grounding paths,
     # not by the model.
     "substrate:predicate_translation":  {"model": "claude-haiku-4-5", **_ANTHROPIC},
     "substrate:subsumption":            {"model": "qwen/qwen3-next-80b-a3b-instruct", **_OPENROUTER},
     "substrate:predicate_distribution": {"model": "qwen/qwen3-next-80b-a3b-instruct", **_OPENROUTER},
     "substrate:entity_resolution":      {"model": "qwen/qwen3-next-80b-a3b-instruct", **_OPENROUTER},
-    # Phase E (python_verifier soundness winner) — Devstral Small 1.1 had 0
+    # python_verifier soundness winner — Devstral Small 1.1 had 0
     # false-verifieds on python_verification_corpus where five other
-    # candidates each produced 1. See docs/phase_E_report.md.
+    # candidates each produced 1.
     "python_verifier":                  {"model": "mistralai/devstral-small", **_OPENROUTER},
-    # Phase H D47 step 2 — Wikipedia normalizer Stage 2 selection. Bounded
+    # Wikipedia normalizer Stage 2 selection. Bounded
     # closed-set selection over disambiguation-page candidates with explicit
     # abstention. Haiku 4.5 (Anthropic native) — small, fast, reliable tool
     # calls; matches the extractor model.
@@ -118,7 +105,7 @@ def _config_for_model(model: str) -> dict:
 
 def _purpose_override(purpose: Optional[str]) -> Optional[dict]:
     """A whole-run routing override from the `AEDOS_OVERRIDE_MODEL_BY_PURPOSE`
-    env var (JSON: purpose → config). The Phase E comparison harness uses this
+    env var (JSON: purpose → config). The comparison harness uses this
     to drive every internal purpose with one candidate model. A `"*"` key
     applies to every purpose except `chat` (the chat slot is never overridden).
     An entry may be a full `{model, base_url, api_key_env_var}` config or a bare
@@ -191,7 +178,7 @@ def _first_text(response: Any) -> str:
 
 def _attach_raw_response(exc: BaseException, resp: Any) -> None:
     """Attach the raw SDK response (best-effort serialized) to an exception
-    raised while parsing it. The Phase E diagnostic transcript wrapper reads
+    raised while parsing it. The diagnostic transcript wrapper reads
     `_raw_response` so the response shape is captured for failed calls."""
     if resp is None or hasattr(exc, "_raw_response"):
         return

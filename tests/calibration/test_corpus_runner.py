@@ -272,8 +272,21 @@ def _run_extraction(h: _Harness, case: dict) -> bool:
         for subj in case.get("expected_subjects_in_output", []):
             if subj not in subjects:
                 return False
-        for subj in case.get("expected_subjects_not_in_output", []):
-            if subj in subjects:
+        # WS4 verify-every-claim (07_tests.md §4, L180): a subject mentioned
+        # only in the conversation CONTEXT (absent from the source text) is no
+        # longer DROPPED — it is EMITTED with abstention_reason
+        # 'subject_absent_from_source'. The old `expected_subjects_not_in_output`
+        # absence check is inverted: the context subject must be present AND
+        # carry the expected abstention_reason.
+        abstention_reason = case.get("expected_abstention_reason")
+        for subj in case.get("expected_abstention_subjects", []):
+            matching = [c for c in claims if c.subject == subj]
+            if not matching:
+                return False
+            if abstention_reason is not None and not any(
+                getattr(c, "abstention_reason", None) == abstention_reason
+                for c in matching
+            ):
                 return False
         if "source_text_check" in case:
             return any(c.source_text == case["source_text_check"] for c in claims)

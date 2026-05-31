@@ -1,4 +1,4 @@
-"""SQLite schema creation and connection management for Aedos v0.15."""
+"""SQLite schema creation and connection management for Aedos."""
 
 from __future__ import annotations
 
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     single_valued INTEGER NOT NULL DEFAULT 0,
     subject_entity_types TEXT,
     object_entity_types TEXT,
+    bindings TEXT,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
@@ -121,6 +122,45 @@ CREATE TABLE IF NOT EXISTS entity_resolution_cache (
     UNIQUE(reference, local_context_signature)
 );
 
+CREATE TABLE IF NOT EXISTS property_relations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_namespace TEXT NOT NULL,
+    kb_property TEXT NOT NULL,        -- the property the relations are ABOUT
+    relation_type TEXT NOT NULL,      -- subject_type_constraint(P2302/Q21503250) |
+                                      -- value_type_constraint(P2302/Q21510865) |
+                                      -- inverse(P1696) | subproperty(P1647) |
+                                      -- related(P1659) | single_value(P2302/Q19474404)
+    related_value TEXT,               -- a Q-id (type/inverse) or P-id (subproperty/related)
+    source TEXT NOT NULL,             -- 'wikidata_p2302' | 'wikidata_p1647' | ...
+    created_at TEXT NOT NULL,
+    last_consulted_at TEXT,
+    used_count INTEGER DEFAULT 0,
+    retracted_at TEXT,
+    retraction_reason TEXT,
+    UNIQUE(kb_namespace, kb_property, relation_type, related_value)
+);
+
+CREATE TABLE IF NOT EXISTS substrate_exceptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exception_kind TEXT NOT NULL,          -- 'subsumption' | 'transitive_path'
+    relation_type TEXT NOT NULL,           -- e.g. 'part_of', 'is_a'
+    property_path TEXT NOT NULL,           -- canonical "P131|P30|P17" alternation
+    source_identifier TEXT NOT NULL,       -- subject / subtree root Q-id
+    target_identifier TEXT NOT NULL,       -- object Q-id
+    reason TEXT NOT NULL,                  -- 'ask_false' | 'operator_marked' | 'leak_guard'
+    created_at TEXT NOT NULL,
+    last_consulted_at TEXT,
+    used_count INTEGER DEFAULT 0,
+    retracted_at TEXT,
+    retraction_reason TEXT,
+    UNIQUE(exception_kind, relation_type, property_path, source_identifier, target_identifier)
+);
+
+CREATE INDEX IF NOT EXISTS idx_property_relations_prop
+    ON property_relations(kb_namespace, kb_property);
+CREATE INDEX IF NOT EXISTS idx_substrate_exceptions_lookup
+    ON substrate_exceptions(exception_kind, relation_type, source_identifier, target_identifier);
+
 CREATE INDEX IF NOT EXISTS idx_tier_u_party_pred ON tier_u(asserting_party, predicate);
 CREATE INDEX IF NOT EXISTS idx_predicate_translation_pred ON predicate_translation(aedos_predicate);
 CREATE INDEX IF NOT EXISTS idx_audit_log_type ON audit_log(event_type);
@@ -129,9 +169,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log(occurred_at);
 
 
 def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
-    """Create the v0.15 schema on `conn`. Idempotent.
+    """Create the schema on `conn`. Idempotent.
 
-    Phase H Cluster 3 (2026-05-26): when `load_seeds=True` and the
+    When `load_seeds=True` and the
     `predicate_translation` table is empty, auto-loads
     `seeds/predicate_translation.json` and emits a `seeds_loaded`
     audit event. The empty-table gate preserves operator
@@ -144,9 +184,9 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     behavior). `open_memory_db()` defaults to `load_seeds=False`
     (test-fixture convention; tests build their own substrate).
     The corpus runner explicitly opts in to seeded mode for its
-    in-vocabulary measurement; the cold-start mode (the v0.15
-    default measurement) leaves load_seeds=False so every predicate
-    consultation hits the LLM oracle.
+    in-vocabulary measurement; the cold-start mode leaves
+    load_seeds=False so every predicate consultation hits the LLM
+    oracle.
     """
     conn.executescript(_SCHEMA_SQL)
     # Migration guard (N6): a database created before single_valued was added
@@ -160,7 +200,7 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
         )
     except sqlite3.OperationalError:
         pass  # column already exists
-    # Phase G D33 (2026-05-23): subject_entity_types / object_entity_types
+    # subject_entity_types / object_entity_types
     # columns. Same idempotent ALTER pattern as single_valued. NULL default
     # — predicates without entity types skip the type filter, preserving
     # current behavior.
@@ -171,22 +211,32 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
             )
         except sqlite3.OperationalError:
             pass  # column already exists
-    # Phase H D47 (2026-05-23): subject_surface / object_surface columns on
+    # subject_surface / object_surface columns on
     # tier_u. With the Wikipedia normalizer wired, TierU keys subject /
     # object on the normalized (canonical) form so cross-utterance
     # references to the same entity dedupe to one row. The original
     # surface form is preserved in *_surface for trace inspection. Same
-    # idempotent ALTER pattern as the D33 columns; NULL default
-    # preserves pre-D47 row semantics.
+    # idempotent ALTER pattern as the entity-types columns; NULL default
+    # preserves prior row semantics.
     for col in ("subject_surface", "object_surface"):
         try:
             conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+    # v0.16: predicate_translation.bindings — JSON list of
+    # the multi-property PredicateBinding ranked set discovered from
+    # Wikidata's ontology. Legacy scalar columns are retained; rows with
+    # bindings IS NULL read-synthesize one binding from the scalar columns
+    # (_row_to_metadata / PredicateMetadata.__post_init__). Same idempotent
+    # ALTER pattern as the entity-types columns; additive and non-destructive.
+    try:
+        conn.execute("ALTER TABLE predicate_translation ADD COLUMN bindings TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
     if load_seeds:
         _maybe_load_seeds(conn)
-    # Phase H Cluster 2 step 1: tier_u.status. Three-value enum tracking
+    # tier_u.status. Three-value enum tracking
     # provenance of the row — `asserted_unverified` (entered via user
     # assertion promotion), `externally_verified` (either pre-seeded as
     # established fact or upgraded by a successful KB/Python grounding
@@ -195,9 +245,9 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     # code (TierU.write / mark_externally_verified) enforces validity.
     # The CREATE TABLE above carries the CHECK for fresh DBs.
     #
-    # Migration: pre-Cluster-2 rows pre-date the promotion path, so
-    # they represent established external knowledge (operator seeds,
-    # runbook Step 3 inserts) rather than in-session assertions. The
+    # Migration: rows that pre-date the promotion path represent
+    # established external knowledge (operator seeds, runbook
+    # inserts) rather than in-session assertions. The
     # ALTER's `DEFAULT 'asserted_unverified'` would mis-label them; we
     # flip pre-existing rows to `externally_verified` only when the
     # ALTER succeeded (signal that the column is new to this DB).
@@ -294,4 +344,6 @@ TABLE_NAMES = [
     "audit_log",
     "consistency_circuit_breaker",
     "entity_resolution_cache",
+    "property_relations",
+    "substrate_exceptions",
 ]

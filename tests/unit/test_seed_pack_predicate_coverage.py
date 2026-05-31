@@ -83,6 +83,42 @@ _KNOWN_DRIFT: set[tuple[str, str]] = {
     ("notable_work", "kb_mapping_corpus.jsonl"),           # P800 (notable work) — not yet seeded
     ("official_language", "kb_mapping_corpus.jsonl"),      # P37 (official language) — distinct from P407 `language`
     ("parent_organization", "kb_mapping_corpus.jsonl"),    # P749 (parent organization) — distinct from P361 `part_of`
+    # ------------------------------------------------------------------
+    # v0.16 WS1 (Decision 1.g): the 21 synonym ALIAS rows were deleted from the
+    # seed pack. Synonymy is no longer pre-seeded — it is carried by the
+    # substrate's multi-property binding discovery (Wikidata ontology + SLING).
+    # The corpus references below were formerly satisfied by an alias seed row;
+    # they are now COLD-START DISCOVERY TARGETS. They are documented here (not
+    # re-seeded and not renamed in the corpus) so this test still catches NEW
+    # drift while the alias-deletion gap stays explicitly triaged. Removing a
+    # pair requires either re-adding the alias seed (rejected — no hardcoded
+    # synonym tables) or renaming the corpus reference to its canonical form
+    # (TA-CAL's call; owns corpus .jsonl edits).
+    ("authored", "entity_resolution_corpus.jsonl"),        # was alias of P50 author
+    ("authored", "extraction_corpus.jsonl"),
+    ("authored", "kb_mapping_corpus.jsonl"),
+    ("award_received", "consistency_check_corpus.jsonl"),  # was alias of P166 (received_award)
+    ("birthplace_is", "consistency_check_corpus.jsonl"),   # was functional alias of born_in (P19)
+    ("date_of_birth", "kb_mapping_corpus.jsonl"),          # was functional alias of born_on (P569)
+    ("date_of_death", "kb_mapping_corpus.jsonl"),          # was functional alias of died_on (P570)
+    ("death_place_is", "consistency_check_corpus.jsonl"),  # was functional alias of died_in (P20)
+    ("founded_in", "entity_resolution_corpus.jsonl"),      # was functional alias of founded_in_year (P571)
+    ("graduated_from", "consistency_check_corpus.jsonl"),  # was alias of educated_at (P69)
+    ("graduated_from", "extraction_corpus.jsonl"),
+    ("has_population", "kb_mapping_corpus.jsonl"),          # was alias of population_of (P1082)
+    ("held_position", "consistency_check_corpus.jsonl"),   # was alias of holds_role (P39)
+    ("inception_date", "kb_mapping_corpus.jsonl"),         # was functional alias of founded_in_year (P571)
+    ("instance_of", "kb_mapping_corpus.jsonl"),            # was alias of is_a (P31)
+    ("occupied_position", "consistency_check_corpus.jsonl"),  # was alias of holds_role (P39)
+    ("part_of_region", "consistency_check_corpus.jsonl"),  # was alias of located_in / part_of
+    ("received_award", "entity_resolution_corpus.jsonl"),  # canonical row deleted; cold-start target
+    ("received_award", "extraction_corpus.jsonl"),
+    ("received_award", "kb_mapping_corpus.jsonl"),
+    ("shares_border_with", "kb_mapping_corpus.jsonl"),     # was alias of P47 (shares border)
+    ("spouse", "kb_mapping_corpus.jsonl"),                 # was alias of spouse_of (P26)
+    ("successor_of", "kb_mapping_corpus.jsonl"),           # was alias of P1365 (replaces)
+    ("won_award", "consistency_check_corpus.jsonl"),       # was alias of received_award (P166)
+    ("works_at", "consistency_check_corpus.jsonl"),        # was alias of employed_by (P108)
 }
 
 

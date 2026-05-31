@@ -817,3 +817,60 @@ class TestTierUStage3Broadening:
         result = tu.lookup(_claim(predicate="serves_as"), current_time=_NOW_STR)
         assert result.found is True
         assert result.stage == 3
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS6 T1 — Tier U interval-endpoint rows participate in _gather_interval
+#
+# The walker's interval resolver (_tier_u_endpoint) gathers a *_started/_ended
+# Tier U fact alongside the KB P580/P582 qualifiers. That helper calls
+# tier_u.lookup(claim) for the endpoint predicate and reads rows[0]["object"]
+# as the date. These tests assert the lookup leg works at the Tier U layer
+# (the full-walker behavior is covered in test_walker_interval.py): an
+# employment_started row written for a subject is found by a lookup on the
+# same endpoint predicate, and its object (the date) is returned.
+# ---------------------------------------------------------------------------
+
+class TestTierUIntervalEndpointRows:
+    def test_employment_started_row_found_by_lookup(self):
+        tu, _ = _tier_u()
+        tu.write(_claim(subject="Asa", predicate="employment_started", object_val="2020"))
+        result = tu.lookup(
+            _claim(subject="Asa", predicate="employment_started", object_val="2020"),
+            current_time=_NOW_STR,
+        )
+        assert result.found is True
+        # The resolver reads the date off the row's object slot.
+        assert result.rows[0]["object"] == "2020"
+
+    def test_employment_ended_row_found_by_lookup(self):
+        tu, _ = _tier_u()
+        tu.write(_claim(subject="Asa", predicate="employment_ended", object_val="2024"))
+        result = tu.lookup(
+            _claim(subject="Asa", predicate="employment_ended", object_val="2024"),
+            current_time=_NOW_STR,
+        )
+        assert result.found is True
+        assert result.rows[0]["object"] == "2024"
+
+    def test_endpoint_lookup_miss_for_other_subject(self):
+        # Scoping sanity: an endpoint row for one subject does not match a
+        # lookup for a different subject's endpoint.
+        tu, _ = _tier_u()
+        tu.write(_claim(subject="Asa", predicate="employment_started", object_val="2020"))
+        result = tu.lookup(
+            _claim(subject="Bob", predicate="employment_started", object_val="2020"),
+            current_time=_NOW_STR,
+        )
+        assert result.found is False
+
+    def test_role_started_row_found_by_lookup(self):
+        # role_started (the P39 endpoint) participates the same way.
+        tu, _ = _tier_u()
+        tu.write(_claim(subject="Asa", predicate="role_started", object_val="2011"))
+        result = tu.lookup(
+            _claim(subject="Asa", predicate="role_started", object_val="2011"),
+            current_time=_NOW_STR,
+        )
+        assert result.found is True
+        assert result.rows[0]["object"] == "2011"

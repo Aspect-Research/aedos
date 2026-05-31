@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from .predicate_distribution import PredicateDistributionOracle
 from .predicate_translation import PredicateTranslation

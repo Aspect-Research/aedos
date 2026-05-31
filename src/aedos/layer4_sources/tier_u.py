@@ -5,7 +5,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 from ..audit.log import log_event
 from ..layer1_extraction.extractor import Claim
@@ -14,11 +14,11 @@ from ..layer3_substrate.predicate_translation import PredicateTranslation, Predi
 
 _NOW = lambda: datetime.now(timezone.utc).isoformat()
 
-# Phase H Cluster 3 step 8 (2026-05-26): strip a leading definite/indefinite
+# Strip a leading definite/indefinite
 # article from a slot value. "The project" and "project" name the same
 # state-bearing subject; the corpus author's seed may use one and the
-# extractor's output the other. Pre-step-8 the literal Stage 1 lookup
-# missed (der_revision_005 ceiling). The strip happens BEFORE the
+# extractor's output the other. Without the strip the literal Stage 1 lookup
+# misses. The strip happens BEFORE the
 # Wikipedia normalizer, so the normalizer sees the de-articled form and
 # its Wikipedia-redirect resolution still handles proper-noun titles
 # ("Beatles" → "The Beatles" via redirect graph). The strip only
@@ -37,7 +37,7 @@ class WriteResult:
     was_idempotent: bool = False
     contradiction_closed: bool = False
     closed_row_ids: list[int] = field(default_factory=list)
-    # Phase H Cluster 2 step 1: cross-source contradiction signal. Set when
+    # Cross-source contradiction signal. Set when
     # the write would have closed an externally_verified prior row via
     # §6.1 belief revision; under the KB-wins rule the prior stays open
     # and the new row is marked `contradicted_by_externally_verified`.
@@ -60,16 +60,15 @@ class TierU:
     def __init__(
         self,
         db: sqlite3.Connection,
-        entity_resolver=None,  # stub in Phase 3; wired in Phase 4
+        entity_resolver=None,  # optional; enables Stage 2 broadening when wired
         predicate_translation: Optional[PredicateTranslation] = None,
         wikipedia_normalizer=None,
+        retraction_propagator=None,
     ) -> None:
         # `db` is required; audit events are written via log_event(db, ...)
-        # unconditionally — the vestigial `audit_log` flag (a D8 leftover that
-        # build_pipeline never set) was removed in Phase B (B3), matching the
-        # A4 cleanup of consistency.py / retraction.py / contradiction_tracer.py.
+        # unconditionally — there is no `audit_log` toggle.
         #
-        # Phase H D47: `wikipedia_normalizer` (optional) lets TierU key
+        # `wikipedia_normalizer` (optional) lets TierU key
         # rows on the canonical Wikipedia form rather than the surface
         # form, so cross-utterance references to the same entity dedupe
         # to one row. The original surface forms are preserved in the
@@ -80,19 +79,25 @@ class TierU:
         self._resolver = entity_resolver
         self._oracle = predicate_translation
         self._normalizer = wikipedia_normalizer
+        # v0.16 WS3 §3E: the premise-retraction entry point. When a user
+        # correction closes a prior Tier U row (write's closed_row_ids loop) or
+        # retract() soft-deletes one, propagate_retraction marks any
+        # *_given_assertion verdict that depended on that premise STALE for lazy
+        # re-derivation. Optional — None (test paths) skips the propagation.
+        self._propagator = retraction_propagator
 
     def _normalize_slot(self, value: str, claim: Claim, slot: str) -> str:
-        """Phase H D47: return the canonical Wikipedia form for a claim
+        """Return the canonical Wikipedia form for a claim
         slot. No-op when no normalizer is wired or the value is empty;
         also skipped for the asserting party itself (first-person
         canonicalization output) and synthetic event ids.
 
-        Phase H Cluster 3 step 8 (2026-05-26): always strip a leading
+        Always strip a leading
         definite/indefinite article from the value before normalization.
         "The project" and "project" refer to the same state-bearing
         subject; the corpus author's seed may use one form and the
         extractor's output may use another. Without article stripping
-        the literal Stage 1 lookup misses (der_revision_005 ceiling).
+        the literal Stage 1 lookup misses.
         The article strip happens BEFORE the Wikipedia normalizer
         consultation, so the normalizer sees the de-articled form. For
         proper-noun subjects (`The United States`, `The Beatles`) the
@@ -135,7 +140,7 @@ class TierU:
 
         Idempotent on matching content. A prior row is *closed* (its
         `valid_until` set to now) only when the new claim genuinely contradicts
-        it (D16) — one of:
+        it — one of:
 
           (a) same object, opposite polarity — a direct negation; closes the
               prior regardless of the predicate's cardinality;
@@ -148,10 +153,10 @@ class TierU:
         A different object at a different polarity (the contrastive-correction
         shape "X, not Y") is likewise compatible: the prior stays open.
 
-        Phase H Cluster 2 step 1: `status` is the new row's provenance flag
+        `status` is the new row's provenance flag
         — `asserted_unverified` (default; entered via the promotion path)
         or `externally_verified` (pre-seeded as established fact). The
-        §"KB wins" cross-source rule fires when a (D16) closure target
+        §"KB wins" cross-source rule fires when a closure target
         is `externally_verified`: the prior stays open, the new row is
         written with status `contradicted_by_externally_verified`, and
         `was_cross_source_contradicted` is set on the WriteResult so the
@@ -167,23 +172,23 @@ class TierU:
         now = _NOW()
         source_ctx_json = json.dumps(source_context) if source_context else None
 
-        # Phase H D47: persist the canonical form in subject/object and the
+        # Persist the canonical form in subject/object and the
         # surface form in subject_surface/object_surface. All downstream
         # keying (idempotency, negation, object-conflict) is on the
         # canonical form, so cross-utterance references to the same entity
         # collapse to one row. When the normalizer is not wired the
         # canonical form equals the surface form and behavior is unchanged.
         #
-        # Phase H Cluster 3 step 7 (2026-05-26): `bypass_normalizer=True`
+        # `bypass_normalizer=True`
         # skips the Wikipedia normalizer for callers that already know
         # the canonical form (corpus runner seed writes; load_seeds; any
-        # explicit operator seeding). Pre-Cluster-3-step-7 the seed write
-        # passed claim.source_text='seed', which produced subtly different
+        # explicit operator seeding). Otherwise a seed write passing
+        # claim.source_text='seed' can produce subtly different
         # canonical forms than the extractor's subsequent promotion writes
-        # whose source_text was the actual claim text — two rows resulted
-        # for the same intended subject and the walker matched the
+        # whose source_text is the actual claim text — two rows result
+        # for the same intended subject and the walker matches the
         # asserted_unverified promotion row instead of the externally_verified
-        # seed (der_revision_004 ceiling).
+        # seed.
         if bypass_normalizer:
             subject_canonical = claim.subject
             object_canonical = claim.object
@@ -192,14 +197,14 @@ class TierU:
             object_canonical = self._normalize_slot(claim.object, claim, "object")
 
         # Idempotency: exact match on asserting_party + subject + predicate +
-        # object + polarity + scope (valid_from, valid_until). Phase H Cluster
-        # 3 step 7 (2026-05-26): scope is now part of the idempotency key.
-        # Pre-step-7 the idempotency check ignored scope, so a new claim with
-        # a different valid_from than a prior row was silently treated as a
-        # no-op write — `der_revision_006` ("Asa joined Google in 2020" with
-        # prior employed_by valid_from=2019) hit this path and the walker
-        # returned `verified` (matching the prior) instead of detecting the
-        # scope conflict. Now the new write is recognized as scope-conflicting
+        # object + polarity + scope (valid_from, valid_until). Scope is part
+        # of the idempotency key.
+        # If the idempotency check ignored scope, a new claim with
+        # a different valid_from than a prior row would be silently treated as a
+        # no-op write — e.g. "Asa joined Google in 2020" with a
+        # prior employed_by valid_from=2019 would make the walker
+        # return `verified` (matching the prior) instead of detecting the
+        # scope conflict. Including scope, the new write is recognized as scope-conflicting
         # and routed through the §"KB wins" mechanism (when the prior is
         # externally_verified) or written as a new row that the walker can
         # surface as a belief revision.
@@ -247,12 +252,12 @@ class TierU:
                  object_canonical),
             ).fetchall()
 
-        # Phase H Cluster 2 step 1: §"KB wins" check. A would-be closure
+        # §"KB wins" check. A would-be closure
         # whose target is `externally_verified` does NOT close the prior;
         # instead, the new row's status flips to
         # `contradicted_by_externally_verified` and the caller is informed
         # via `was_cross_source_contradicted`. asserted_unverified prior
-        # rows close as before (D16 / §6.1 semantics unchanged).
+        # rows close as before (§6.1 semantics unchanged).
         closed_row_ids: list[int] = []
         cross_source_conflict_ids: list[int] = []
         parallel_assertion = False
@@ -273,7 +278,7 @@ class TierU:
             else:
                 parallel_assertion = True
 
-        # Phase H Cluster 3 step 7 (2026-05-26): scope_conflict closure.
+        # scope_conflict closure.
         # A prior row with the SAME key (subject, predicate, object, polarity)
         # but a different scope (valid_from / valid_until) is a temporal
         # contradiction — the asserting party previously stated the relation
@@ -325,6 +330,14 @@ class TierU:
         self._db.commit()
         row_id: int = self._db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
+        # v0.16 WS3 §3E: a closed (superseded) premise is a retraction of the
+        # prior belief. Mark any *_given_assertion verdict that rested on it
+        # STALE for lazy re-derivation. Fires once per closed row; a None
+        # propagator (test paths) no-ops.
+        if self._propagator is not None:
+            for closed_id in closed_row_ids:
+                self._propagator.propagate_retraction("tier_u", closed_id)
+
         contradiction_closed = bool(closed_row_ids)
         log_event(
             self._db,
@@ -337,7 +350,7 @@ class TierU:
                 "status": effective_status,
             },
         )
-        # Audit which case fired, so Phase 10.5 can tell a belief revision
+        # Audit which case fired, so a reader can tell a belief revision
         # (a closed prior) from a parallel assertion (a multi-valued addition).
         for closed_id in closed_row_ids:
             log_event(
@@ -360,8 +373,8 @@ class TierU:
                     "predicate": claim.predicate,
                 },
             )
-        # Phase H Cluster 2 step 1: §"KB wins" audit event. Records the
-        # asymmetric outcome so Phase 10.5 / debugging can see which
+        # §"KB wins" audit event. Records the
+        # asymmetric outcome so debugging can see which
         # claims were rejected because an externally-verified prior held.
         if cross_source_conflict_ids:
             log_event(
@@ -393,13 +406,13 @@ class TierU:
     ) -> LookupResult:
         """Three-stage lookup against Tier U rows.
 
-        Phase H Cluster 3 step 7 (2026-05-26): `exclude_row_ids` lets the
+        `exclude_row_ids` lets the
         caller filter out specific rows from the lookup — used by the
         walker to skip the row written by the current walk's own promotion,
         so the polarity-conflict / object-conflict belief-revision paths
         become reachable even when promote-then-walk would otherwise let
         the walker match its own freshly-written assertion at Stage 1.
-        Empty / None means no filtering (pre-step-7 behavior).
+        Empty / None means no filtering.
         """
         if current_time is None:
             current_time = _NOW()
@@ -409,7 +422,7 @@ class TierU:
         if result.found:
             return result
 
-        # Stage 2: entity-resolution broadening (stub in Phase 3)
+        # Stage 2: entity-resolution broadening (only when a resolver is wired)
         if self._resolver is not None:
             result = self._stage2(claim, current_time)
             if result.found:
@@ -439,15 +452,15 @@ class TierU:
 
         For a functional (single_valued) predicate such a row contradicts a
         positive claim — the asserting party already stipulated a different
-        value for the slot. This is the object-conflict half of belief revision
-        (D16); the caller (the walker) consults `single_valued` and decides.
+        value for the slot. This is the object-conflict half of belief revision;
+        the caller (the walker) consults `single_valued` and decides.
         Multi-valued predicates do not conflict on an object difference.
 
         Only positive (polarity=1) rows are returned: a negative Tier U row
         `¬(S P O′)` about a different object O′ does not bear on a claim about
         O. Literal match only — no entity/predicate broadening.
 
-        Phase H D47: subject + object are normalized to canonical Wikipedia
+        Subject + object are normalized to canonical Wikipedia
         form (when the normalizer is wired) before keying. A prior row
         asserting "Asa lives_in Boston" and a current claim "Asa lives_in
         Massachusetts" — wait, those are different canonicals; conflict
@@ -459,7 +472,7 @@ class TierU:
             current_time = _NOW()
         subject_canonical = self._normalize_slot(claim.subject, claim, "subject")
         object_canonical = self._normalize_slot(claim.object, claim, "object")
-        # Phase H Cluster 2 step 1: `contradicted_by_externally_verified`
+        # `contradicted_by_externally_verified`
         # rows behave like retracted ones for verdict-influencing reads —
         # they record the user said something contrary to KB, but they
         # do not ground future verdicts.
@@ -489,6 +502,10 @@ class TierU:
             event_subject=f"tier_u:{row_id}",
             event_data={"reason": reason},
         )
+        # v0.16 WS3 §3E: propagate the retraction — mark dependent
+        # *_given_assertion verdicts STALE for lazy re-derivation.
+        if self._propagator is not None:
+            self._propagator.propagate_retraction("tier_u", row_id)
 
     def mark_externally_verified(
         self,
@@ -501,7 +518,7 @@ class TierU:
         `externally_verified`.
 
         Called by the walker when a successful KB / Python grounding for
-        a claim also matches an asserted_unverified Tier U row (Q-Upgrade).
+        a claim also matches an asserted_unverified Tier U row.
         The upgrade is idempotent: a row already at `externally_verified`
         is left unchanged and the call returns False. Rows at
         `contradicted_by_externally_verified` are NOT upgraded — that
@@ -511,7 +528,7 @@ class TierU:
         separate KB hit on the same row is incoherent and should not
         cancel the contradiction).
 
-        Audit-event detail (for v0.16 retraction propagation per D14).
+        Audit-event detail (for retraction propagation).
         The `tier_u_status_upgraded` event captures everything needed to
         reconstruct the upgrade decision without forensic walk-replay:
 
@@ -523,8 +540,8 @@ class TierU:
                                    that triggered the upgrade. Default
                                    is `'verified'` (the upgrade only
                                    fires when external grounding
-                                   succeeded — see Q-Upgrade). Captured
-                                   explicitly so v0.16 can confirm the
+                                   succeeded). Captured
+                                   explicitly to confirm the
                                    upgrade was contingent on a
                                    verified outcome.
           - `grounding_chain`    — caller-supplied structured dict
@@ -542,14 +559,14 @@ class TierU:
                                      mix:  {"source": "derivation",
                                             "chain": [<edges>]}
                                    The walker populates this in step 3.
-                                   v0.15 does NOT implement
+                                   This method does NOT implement
                                    reverse-upgrade propagation (a
                                    retracted KB row that triggered an
                                    upgrade does not auto-downgrade the
                                    tier_u row); the chain is captured
-                                   now so v0.16 D14 can implement that
-                                   propagation without archaeological
-                                   reconstruction.
+                                   now so that propagation can be
+                                   implemented later without
+                                   archaeological reconstruction.
           - `occurred_at`        — timestamp; auto-captured by
                                    `audit_log` schema (architecture
                                    §5.2's `occurred_at` column)
@@ -641,7 +658,7 @@ class TierU:
         return [dict(r) for r in rows]
 
     def _stage2(self, claim: Claim, current_time: str) -> LookupResult:
-        """Entity-resolution broadening — stub; not implemented until Phase 4."""
+        """Entity-resolution broadening — stub; not implemented."""
         return LookupResult(found=False)
 
     def _stage3(self, claim: Claim, current_time: str) -> LookupResult:
@@ -675,11 +692,11 @@ class TierU:
     ) -> list[dict]:
         """Return non-retracted, currently-valid rows matching all given fields.
 
-        Phase H Cluster 2 step 1: `contradicted_by_externally_verified`
+        `contradicted_by_externally_verified`
         rows are excluded — they record what the user said but cannot
         ground a verdict (the KB-wins decision is preserved).
 
-        Phase H Cluster 3 step 7 (2026-05-26): `exclude_row_ids` filters
+        `exclude_row_ids` filters
         specific row ids out — used by the walker to skip the current
         walk's own promoted row.
         """

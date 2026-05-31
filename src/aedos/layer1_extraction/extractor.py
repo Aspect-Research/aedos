@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from ..llm.client import LLMClient
 from .decomposition import decompose_event
 from .normalization import normalize_predicate
-from .temporal import BEFORE_PRESENT, TemporalScope, extract_temporal_scope
-from .triage import TriageDecision, triage
+from .temporal import extract_temporal_scope
+from .triage import AbstentionReason, TriageDecision, triage
 
 _FIRST_PERSON = re.compile(
     r"^(I|me|my|mine|myself|we|us|our|ours|ourselves)$", re.IGNORECASE
 )
 
-# Phase 10.5 Step 6 sub-cause F enforcement: Rule 18 (RESIDENCE VOCABULARY)
+# Rule 18 (RESIDENCE VOCABULARY)
 # says "lives in" / "lived in" / "resides in" should produce predicate
 # 'lives_in', not 'located_in'. The extractor LLM has a strong "located_in"
 # prior on these inputs and ignores Rule 18 about half the time. This regex
@@ -25,27 +25,27 @@ _RESIDENCE_VERB = re.compile(
     r"\b(lives?|lived|resides?|residing)\s+in\b", re.IGNORECASE
 )
 
-# (S1b) Nationality recognition moved to the extraction prompt (Rule 21):
+# Nationality recognition happens in the extraction prompt (Rule 21):
 # the LLM emits has_nationality(X, "<demonym>") directly. The demonym object
 # ("German", "American") is resolved to a country Q-id at verification time by
 # the adapter's P1549 reverse lookup (see WikidataAdapter._resolve_demonym_to_
 # country), so no hardcoded demonym table or post-extraction regex remains.
 
-# (S2/T7) The population-only comparison regexes are gone. Quantitative count
-# comparisons now arrive from the extraction prompt (Rule 24) shaped as a
+# There are no population-only comparison regexes. Quantitative count
+# comparisons arrive from the extraction prompt (Rule 24) shaped as a
 # '<measure>_greater_than' / '<measure>_less_than' predicate with the numeric
 # threshold in the object slot, for any count measure (population, members,
 # employees, …). The predicate-translation oracle routes these via the
 # kb_quantitative routing_hint and supplies the count KB property (P1082,
 # P2124, P1128, …); the walker reads comparator + property from metadata.
 
-# (S1b) The hand-curated _DEMONYM_TO_COUNTRY map is gone. Demonym → country
+# There is no hand-curated _DEMONYM_TO_COUNTRY map. Demonym → country
 # resolution is sourced from Wikidata P1549 (demonym) at verification time
 # (WikidataAdapter._resolve_demonym_to_country), gated on a country-typed
 # (Q6256) object slot. This generalizes to every demonym Wikidata records.
 
-# (S2) The hand-curated _YEAR_AWARE_REWRITES verb→predicate table is gone.
-# Date-valued event claims now arrive from the extraction prompt (Rule 23)
+# There is no hand-curated _YEAR_AWARE_REWRITES verb→predicate table.
+# Date-valued event claims arrive from the extraction prompt (Rule 23)
 # already shaped as a date-sense predicate with the date in the object slot
 # (born_on, died_on, founded_in_year, dissolved_in_year, published_in_year,
 # released_in_year, occurred_in_year). Each date-sense predicate maps to its
@@ -101,13 +101,8 @@ EXTRACTION_TOOL: dict[str, Any] = {
     },
 }
 
-# Phase E5 prompt — the v5 result of Phase E3's prompt-engineering iteration
-# (baseline → v1 → v2 → v3 → v4 → v5). The baseline 6-rule prompt produced 45/57
-# = 78.95% on the original extraction corpus with Haiku 4.5; v5 produces 53/53
-# = 100% on the cleaned 53-case corpus. The iteration sequence and per-case
-# triage are documented in docs/phase_E_report.md / docs/phase_E/results/
-# augmented_prompt_v{1..5}/. Each rule's "do this / do NOT do this" structure
-# is the v0.16 D45 process pattern: component prompts encoding Aedos-specific
+# The extraction prompt. Each rule's "do this / do NOT do this" structure
+# follows the process pattern that component prompts encoding Aedos-specific
 # contracts must specify both positive triggers AND explicit non-triggering
 # conditions to prevent over-application.
 _SYSTEM_PROMPT = """\
@@ -213,6 +208,9 @@ object='Google', valid_from='2020'.
 valid_from='2018'.
     - 'Asa started at Apple in 2015' / 'Asa started working at Apple in \
 2015' → predicate='employed_by', valid_from='2015'.
+    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: \
+'Asa joined Google in 2020' → employed_by(Asa, Google, valid_from='2020') \
+PLUS employment_started(Asa, '2020') with the bare year in the OBJECT slot.
     DO NOT apply Rule 12 when:
     - The object is a non-employment group (a club, party, gym, team, \
 meeting): use predicate='member_of' instead. 'Asa joined the chess club' \
@@ -229,6 +227,9 @@ object='Google', valid_until='2024'.
 object='Microsoft', valid_until='2019'.
     - 'Asa resigned from Apple in 2022' / 'Asa departed Apple in 2022' → \
 predicate='employed_by', object='Apple', valid_until='2022'.
+    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: \
+'Asa left Google in 2024' → employed_by(Asa, Google, valid_until='2024') \
+PLUS employment_ended(Asa, '2024') with the bare year in the OBJECT slot.
     DO NOT apply Rule 13 when:
     - 'Left' refers to physical departure ('Asa left the room', 'Asa left \
 Paris'): emit the literal claim, not an employment termination.
@@ -246,6 +247,11 @@ predicate='status', object='ended', valid_until='2024'.
 object='ended', valid_until='2019'.
     - 'The program began in 2015' → predicate='status', object='ongoing', \
 valid_from='2015'.
+    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: a "began/\
+started/launched" date → status_started(subject, YEAR); an "ended/concluded/\
+completed" date → status_ended(subject, YEAR), with the bare year in the \
+OBJECT slot. (When the subject is an ORG, prefer the Rule 23 founded_in_year \
+/ dissolved_in_year date predicates over status_started/status_ended.)
     A STATE-BEARING subject is one that exists over a time interval and has \
 a current state. The defining clue is that the subject is referenced with \
 "the" + a noun denoting an ongoing thing (project, program, partnership, \
@@ -457,6 +463,38 @@ predicate='members_less_than', object='500'.
     Apply only to DIMENSIONLESS counts (people, members, seats, …). A \
 measurement carrying physical units (metres, kilograms, km²) is NOT in \
 scope — emit the literal claim instead.
+
+25. INTERVAL ENDPOINTS — when a relation's START or END is given as a \
+date/year, emit the relation claim (as Rules 12/13/14 direct, keeping its \
+valid_from / valid_until scope) AND a SEPARATE date-in-object claim naming \
+the endpoint: '<relation>_started' / '<relation>_ended' with the bare \
+year/date in the OBJECT slot. This mirrors Rule 23's date-in-object \
+treatment — the endpoint claim is independently verifiable against the \
+start-time / end-time qualifier the KB records on the relation's statement.
+    The endpoint predicates are: employment_started / employment_ended (for \
+employed_by, Rules 12/13), membership_started / membership_ended (for \
+member_of), role_started / role_ended (for holds_role), status_started / \
+status_ended (for status, Rule 14).
+    - 'Asa joined Google in 2020' → TWO claims: \
+employed_by(Asa, Google, valid_from='2020') + employment_started(Asa, '2020').
+    - 'Asa left Google in 2024' → \
+employed_by(Asa, Google, valid_until='2024') + employment_ended(Asa, '2024').
+    - 'Asa became a senator in 2011' → \
+holds_role(Asa, senator, valid_from='2011') + role_started(Asa, '2011').
+    - 'The partnership ended in 2019' → \
+status(The partnership, ended, valid_until='2019') + \
+status_ended(The partnership, '2019').
+    DO NOT apply Rule 25 when:
+    - No date/year is present. A bare 'Asa joined Google' → ONLY \
+employed_by(Asa, Google); emit NO employment_started endpoint claim (there \
+is no date to assert).
+    - Do NOT duplicate the date into BOTH the object slot AND a valid_from / \
+valid_until on the ENDPOINT claim. The endpoint claim's date is its OBJECT \
+(like Rule 23); leave the endpoint claim's valid_from / valid_until empty. \
+The base relation claim keeps the scope; the endpoint claim does not repeat it.
+    - The subject is an ORG with an inception/dissolution date — prefer the \
+Rule 23 founded_in_year / dissolved_in_year date predicates (the date is the \
+fact about the org itself), not status_started / status_ended.
 """
 
 
@@ -483,6 +521,10 @@ class Claim:
     valid_until: Optional[str] = None
     valid_during_ref: Optional[str] = None
     reified_event_id: Optional[str] = None
+    # v0.16 WS4: instead of silently dropping a malformed/non-checkworthy
+    # claim, the extractor stamps the reason here (an AbstentionReason value)
+    # and the walker short-circuits pre-lookup. None means a normal claim.
+    abstention_reason: Optional[str] = None
 
 
 class Extractor:
@@ -507,53 +549,62 @@ class Extractor:
         claims: list[Claim] = []
         for raw in flat:
             claim = self._build_claim(raw, text, context)
+            # v0.16 WS4: _build_claim now returns None ONLY for future-tense
+            # claims (Rule 4 filter). Every other shaped claim is returned,
+            # carrying an abstention_reason when malformed / not-checkworthy.
             if claim is not None:
                 claims.append(claim)
 
-        # (S1b) Compound-demonym decomposition ("Serbian-American inventor" →
+        # Compound-demonym decomposition ("Serbian-American inventor" →
         # instance_of(inventor) + has_nationality(Serbian) +
-        # has_nationality(American)) moved to the extraction prompt (Rule 22).
+        # has_nationality(American)) happens in the extraction prompt (Rule 22).
         # Each demonym object resolves via Wikidata P1549 at verification time.
         return claims
 
     def _build_claim(
         self, raw: dict, text: str, context: ExtractionContext
     ) -> Optional[Claim]:
+        # v0.16 WS4: this function NEVER returns None for a SHAPED claim. The
+        # four former early `return None` drops (hard-claim, self-referential,
+        # predicate==object, content-less-event) are gone; the first three now
+        # capture an abstention_reason and fall through to the single Claim(...)
+        # construction at the end (the content-less-event filter is DELETED
+        # outright). The walker short-circuits any claim carrying an
+        # abstention_reason pre-lookup (no KB/Tier U/Python/LLM call), so the
+        # §3.2 soundness intent of the old drops is preserved.
+        #
+        # Abstention-reason precedence (FIRST set wins; matches the old
+        # top-to-bottom drop order so a claim that today is dropped by the
+        # hard-claim check still carries subject_absent_from_source):
+        #   subject_absent_from_source → self_referential
+        #     → predicate_eq_object → not_checkworthy
+        #
+        # The ONE remaining `return None` is the future-tense drop (Rule 4):
+        # future claims are not shaped claims to verify. TestFutureTenseRejection
+        # depends on it.
         raw_subject = raw.get("subject", "")
         raw_object = raw.get("object", "")
         reified_id = raw.get("reified_event_id")
 
-        # Hard-claim discipline heuristic: reject claims whose entities don't appear in text
+        abstention_reason: Optional[str] = None
+
+        # Hard-claim discipline: subject/object absent from source text.
         if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
-            return None
+            abstention_reason = AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
 
-        # Phase 10.5 Step 6 Batch 6: reject standalone event-occurrence
-        # claims with no verifiable content. When the LLM mis-decomposes
-        # a temporal qualifier ("Churchill was PM during World War II")
-        # by emitting BOTH the primary claim AND a standalone
-        # `(World War II, occurred, '')` event claim, the event claim
-        # has empty object and routes through a predicate the walker
-        # can't ground. The compound aggregator then drags the overall
-        # verdict to abstain even when the primary claim verified. The
-        # right architectural fix is Rule 15 compliance (valid_during_ref
-        # qualifier on the primary), but until the extractor reliably
-        # applies it, filtering these content-less event claims preserves
-        # the primary's verdict.
-        raw_pred_check = (raw.get("predicate") or "").strip().lower()
-        if (
-            raw_pred_check in {"occurred", "happened", "took_place", "took place"}
-            and not raw_object.strip()
-            and not reified_id
-        ):
-            return None
+        # v0.16 WS4 Deletion #2: the content-less occurred/happened/took_place
+        # event filter is REMOVED (contract item 4, obsolete). A standalone
+        # `(World War II, occurred, '')` claim now flows; per-claim verdicts
+        # are independent (no compound-verdict drag), and an empty object
+        # grounds to no_grounding_found — abstention, the conservative outcome.
 
-        # (S2) Date-valued event predicate selection happens in the extraction
+        # Date-valued event predicate selection happens in the extraction
         # prompt (Rule 23): "Einstein was born in 1879" arrives as
         # born_on(Einstein, 1879), "Google was founded in 1994" as
         # founded_in_year(Google, 1994). No Python verb→predicate rewrite here;
         # a date-sense predicate routes to its date KB property via the oracle.
 
-        # Phase 10.5 Step 5 root-cause: reject self-referential triples
+        # Reject self-referential triples
         # (subject == object after trim/case-fold). The extractor
         # occasionally emits these when it fails to parse a non-entity
         # object — e.g. "Einstein was born in 1879" → (Einstein, born_in,
@@ -565,10 +616,11 @@ class Extractor:
         # dropping them costs nothing and prevents the walker from
         # contradicting a true claim via a malformed self-reference.
         #
-        # Phase 10.5 Step 6 evaluated relaxing this for inception-style
-        # claims with valid_from set (Rule 7 example: 'Google was founded
-        # in 1994' → subject=='Google', object=='Google'). The relaxation
-        # was reverted: the walker would then look up the
+        # Relaxing this for inception-style
+        # claims with valid_from set (Rule 7
+        # example: 'Google was founded
+        # in 1994' → subject=='Google', object=='Google') is unsound:
+        # the walker would then look up the
         # extracted predicate's KB property (P112 founder for `founded`,
         # P19 birthplace for `born_in`) and find subject != KB-value,
         # yielding a §3.2 false-contradiction. The year in valid_from is
@@ -577,12 +629,13 @@ class Extractor:
         # P571, `born_on` → P569) directly, the strict drop preserves
         # soundness at the cost of accuracy on these cases.
         if (
-            raw_subject.strip().casefold() == raw_object.strip().casefold()
+            abstention_reason is None
+            and raw_subject.strip().casefold() == raw_object.strip().casefold()
             and raw_subject.strip()
         ):
-            return None
+            abstention_reason = AbstentionReason.SELF_REFERENTIAL.value
 
-        # Phase 10.5 Step 6 Batch 8+: also drop claims where the
+        # Also drop claims where the
         # PREDICATE equals the object (after trim/case-fold). This is
         # the "verb repeated into the object slot" mis-extraction —
         # e.g. "The Berlin Wall fell in 1989" → (Berlin Wall, fell,
@@ -594,8 +647,11 @@ class Extractor:
         # potentially producing a §3.2 false-contradiction shape.
         raw_pred_check = (raw.get("predicate") or "").strip().casefold()
         raw_obj_check = raw_object.strip().casefold()
-        if raw_pred_check and raw_obj_check and raw_pred_check == raw_obj_check:
-            return None
+        if (
+            abstention_reason is None
+            and raw_pred_check and raw_obj_check and raw_pred_check == raw_obj_check
+        ):
+            abstention_reason = AbstentionReason.PREDICATE_EQ_OBJECT.value
 
         verb_tense = raw.get("verb_tense", "present")
         scope = extract_temporal_scope(
@@ -613,7 +669,7 @@ class Extractor:
         polarity = int(raw.get("polarity", 1))
         source_text = raw.get("source_text", "")
 
-        # Phase 10.5 Step 6 sub-cause F enforcement: when the source-text
+        # When the source-text
         # verb is a residence verb (lives/lived/resides/residing + in)
         # but the LLM emitted predicate='located_in', rewrite to
         # predicate='lives_in'. The extractor prompt's Rule 18 makes this
@@ -623,13 +679,13 @@ class Extractor:
         if predicate == "located_in" and _RESIDENCE_VERB.search(source_text):
             predicate = "lives_in"
 
-        # (S1b) Nationality recognition is handled by the extraction prompt
+        # Nationality recognition is handled by the extraction prompt
         # (Rule 21): "X is [Demonym]" / "X has [Demonym] nationality" already
         # arrive as has_nationality(X, "<demonym>"). The demonym object is
         # resolved to a country at verification time via Wikidata P1549 — no
         # post-extraction rewrite or hardcoded demonym table here.
 
-        # (T7) Quantitative count comparison ("Paris has more than 2 million
+        # Quantitative count comparison ("Paris has more than 2 million
         # people") arrives from the extraction prompt (Rule 24) already shaped
         # as population_greater_than(Paris, "2 million") etc. The oracle routes
         # it (kb_quantitative) and the walker compares — no population-only
@@ -644,6 +700,10 @@ class Extractor:
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
         )
+        # v0.16 WS4: inert prose is the lowest-precedence reason — only stamp
+        # it if no malformed reason was already captured above.
+        if abstention_reason is None and triage_decision == TriageDecision.INERT_PROSE:
+            abstention_reason = AbstentionReason.NOT_CHECKWORTHY.value
 
         return Claim(
             claim_id=str(uuid.uuid4()),
@@ -658,6 +718,7 @@ class Extractor:
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
             reified_event_id=reified_id,
+            abstention_reason=abstention_reason,
         )
 
     def _canonicalize(self, subject: str, asserting_party: str) -> str:

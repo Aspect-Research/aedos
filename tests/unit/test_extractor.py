@@ -13,7 +13,7 @@ from aedos.layer1_extraction.extractor import (
     ExtractionContext,
     Extractor,
 )
-from aedos.layer1_extraction.triage import TriageDecision
+from aedos.layer1_extraction.triage import AbstentionReason, TriageDecision
 from aedos.layer1_extraction.temporal import BEFORE_PRESENT
 from aedos.llm.client import LLMClient
 
@@ -240,6 +240,95 @@ class TestVerbShapePromptRules:
         assert c.valid_until == "2024"
 
 
+class TestRule25IntervalEndpointPromptRules:
+    """v0.16 WS6 T1: the prompt carries Rule 25 (interval endpoints emit a
+    SEPARATE date-in-object *_started/_ended claim) and Rules 12/13/14 are
+    amended to cross-reference it. These pins prevent a future prompt edit
+    from silently dropping the endpoint-emission instruction."""
+
+    def test_prompt_carries_rule_25_interval_endpoints(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "25. INTERVAL ENDPOINTS" in _SYSTEM_PROMPT
+        # The endpoint predicate naming convention.
+        assert "_started" in _SYSTEM_PROMPT
+        assert "_ended" in _SYSTEM_PROMPT
+        assert "employment_started" in _SYSTEM_PROMPT
+        assert "employment_ended" in _SYSTEM_PROMPT
+
+    def test_rule_25_carries_do_not_non_trigger(self):
+        # D45 discipline: Rule 25 must carry explicit non-triggering conditions.
+        # The load-bearing one: a bare relation with no date emits NO endpoint
+        # claim, and the endpoint claim's date is its object (not duplicated
+        # into valid_from/valid_until).
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "DO NOT apply Rule 25 when" in _SYSTEM_PROMPT
+        assert "No date/year is present" in _SYSTEM_PROMPT
+
+    def test_rules_12_13_14_cross_reference_rule_25(self):
+        # The three interval-bearing rules each instruct the LLM to ALSO emit
+        # the Rule 25 endpoint claim.
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert _SYSTEM_PROMPT.count("per Rule 25") >= 3
+
+
+class TestRule25EndpointClaimPipeline:
+    """v0.16 WS6 T1: a two-claim LLM output (employed_by + employment_started)
+    round-trips through _build_claim with BOTH claims fully shaped (non-empty
+    subject/predicate/object) and abstention_reason None — so the endpoint
+    claim survives the WS4 verify-every-claim drops and reaches the walker. No
+    live API: the MockTransport returns the rule-prescribed two-claim shape."""
+
+    def test_two_claim_output_both_shaped_and_survive(self):
+        base = _raw_claim(
+            subject="Asa", predicate="employed_by", object="Google",
+            valid_from="2020", source_text="Asa joined Google in 2020",
+        )
+        endpoint = _raw_claim(
+            subject="Asa", predicate="employment_started", object="2020",
+            source_text="Asa joined Google in 2020",
+        )
+        extractor, _ = _make_extractor([base, endpoint])
+        claims = extractor.extract("Asa joined Google in 2020", _default_context())
+        assert len(claims) == 2
+        by_pred = {c.predicate: c for c in claims}
+        assert set(by_pred) == {"employed_by", "employment_started"}
+
+        # The base relation keeps its scope.
+        rel = by_pred["employed_by"]
+        assert rel.object == "Google"
+        assert rel.valid_from == "2020"
+        assert rel.abstention_reason is None
+
+        # The endpoint claim is fully shaped: the year is the OBJECT (Rule 23
+        # date-in-object pattern), subject/predicate/object all non-empty, and
+        # it carries NO abstention_reason — so the walker routes it, not a drop.
+        ep = by_pred["employment_started"]
+        assert ep.subject == "Asa"
+        assert ep.predicate == "employment_started"
+        assert ep.object == "2020"
+        assert ep.abstention_reason is None
+        # Rule 25: the endpoint claim does not repeat the scope on itself.
+        assert ep.valid_from is None
+        assert ep.valid_until is None
+
+    def test_employment_ended_endpoint_claim_round_trips(self):
+        base = _raw_claim(
+            subject="Asa", predicate="employed_by", object="Microsoft",
+            valid_until="2019", source_text="Asa left Microsoft in 2019",
+        )
+        endpoint = _raw_claim(
+            subject="Asa", predicate="employment_ended", object="2019",
+            source_text="Asa left Microsoft in 2019",
+        )
+        extractor, _ = _make_extractor([base, endpoint])
+        claims = extractor.extract("Asa left Microsoft in 2019", _default_context())
+        by_pred = {c.predicate: c for c in claims}
+        assert "employment_ended" in by_pred
+        ep = by_pred["employment_ended"]
+        assert ep.object == "2019"
+        assert ep.abstention_reason is None
+
+
 class TestExtractorRoundtrip:
     def test_basic_extraction_returns_claim(self):
         raw = _raw_claim()
@@ -399,8 +488,12 @@ class TestSourceTextDiscipline:
 # ---------------------------------------------------------------------------
 
 class TestHardClaimDiscipline:
-    def test_entity_not_in_text_is_dropped(self):
-        # Bob is not in text — extractor should drop Bob's claim
+    def test_entity_not_in_text_emits_with_subject_absent_reason(self):
+        # v0.16 WS4 (4a): Bob's subject AND object are absent from the text.
+        # Previously the claim was SILENTLY DROPPED; it is now EMITTED carrying
+        # abstention_reason='subject_absent_from_source' (the walker
+        # short-circuits it pre-lookup to no_grounding_found — abstention, the
+        # conservative outcome). This inverts the v0.15 drop assertion.
         raws = [
             _raw_claim(subject="Asa", object="Google", source_text="Asa works at Google"),
             _raw_claim(subject="Bob", predicate="employed_by", object="Microsoft",
@@ -408,9 +501,14 @@ class TestHardClaimDiscipline:
         ]
         extractor, _ = _make_extractor(raws)
         claims = extractor.extract("Asa works at Google", _default_context())
-        subjects = {c.subject for c in claims}
-        assert "Asa" in subjects
-        assert "Bob" not in subjects
+        by_subject = {c.subject: c for c in claims}
+        assert "Asa" in by_subject
+        assert "Bob" in by_subject  # no longer dropped
+        assert by_subject["Asa"].abstention_reason is None
+        assert (
+            by_subject["Bob"].abstention_reason
+            == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+        )
 
     def test_entity_in_text_is_kept(self):
         raw = _raw_claim(subject="Williams College", object="Massachusetts",
@@ -453,6 +551,97 @@ class TestContrastiveCorrections:
         extractor, _ = _make_extractor([raw])
         claims = extractor.extract("Actually Paris, not London", _default_context())
         assert claims[0].polarity == 0
+
+
+# ---------------------------------------------------------------------------
+# TestAbstentionReasonStamping — v0.16 WS4 (4a): _build_claim NEVER drops a
+# shaped claim silently. The four former early `return None` drops now stamp
+# an abstention_reason and the claim is emitted; the walker short-circuits it
+# pre-lookup. The ONE remaining `return None` is the future-tense filter
+# (TestFutureTenseRejection, unchanged).
+# ---------------------------------------------------------------------------
+
+class TestAbstentionReasonStamping:
+    def test_abstention_reason_defaults_none(self):
+        # A well-formed, checkworthy claim carries no abstention_reason.
+        extractor, _ = _make_extractor([_raw_claim()])
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        assert len(claims) == 1
+        assert claims[0].abstention_reason is None
+
+    def test_self_referential_sets_reason(self):
+        # subject == object (after trim/casefold) → emitted with
+        # abstention_reason='self_referential' (was a silent drop in v0.15).
+        # Subject is present in the text so the hard-claim check passes and
+        # subject_absent does NOT pre-empt self_referential.
+        raw = _raw_claim(
+            subject="Einstein", predicate="born_in", object="Einstein",
+            source_text="Einstein was born in 1879",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Einstein was born in 1879", _default_context())
+        assert len(claims) == 1
+        assert claims[0].abstention_reason == AbstentionReason.SELF_REFERENTIAL.value
+
+    def test_predicate_eq_object_sets_reason(self):
+        # predicate == object (verb repeated into the object slot) → emitted
+        # with abstention_reason='predicate_eq_object'. Subject is in the text
+        # so the hard-claim check passes.
+        raw = _raw_claim(
+            subject="Berlin Wall", predicate="fell", object="fell",
+            source_text="The Berlin Wall fell in 1989",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("The Berlin Wall fell in 1989", _default_context())
+        assert len(claims) == 1
+        assert claims[0].abstention_reason == AbstentionReason.PREDICATE_EQ_OBJECT.value
+
+    def test_subject_absent_sets_reason(self):
+        # Both subject AND object are absent from the source text → emitted
+        # with abstention_reason='subject_absent_from_source'.
+        raw = _raw_claim(
+            subject="Zorblax", predicate="employed_by", object="Acme",
+            source_text="Zorblax works at Acme",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Something entirely unrelated here", _default_context())
+        assert len(claims) == 1
+        assert (
+            claims[0].abstention_reason
+            == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+        )
+
+    def test_inert_prose_sets_not_checkworthy(self):
+        # A claim triaging to INERT_PROSE (no named entity, no number, unknown
+        # predicate) → emitted with abstention_reason='not_checkworthy'. The
+        # subject is present in the text so the hard-claim check passes.
+        raw = _raw_claim(
+            subject="weather", predicate="is_nice", object="pleasant",
+            source_text="the weather is nice",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("the weather is nice", _default_context())
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.triage_decision == TriageDecision.INERT_PROSE
+        assert c.abstention_reason == AbstentionReason.NOT_CHECKWORTHY.value
+
+    def test_reason_precedence(self):
+        # When multiple reasons apply simultaneously, the FIRST in precedence
+        # order wins: subject_absent_from_source > self_referential. Here the
+        # subject == object AND both are absent from the source text — the
+        # hard-claim check (checked first) must win.
+        raw = _raw_claim(
+            subject="Zorblax", predicate="is", object="Zorblax",
+            source_text="Zorblax is Zorblax",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Completely different text", _default_context())
+        assert len(claims) == 1
+        assert (
+            claims[0].abstention_reason
+            == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+        )
 
 
 # ---------------------------------------------------------------------------

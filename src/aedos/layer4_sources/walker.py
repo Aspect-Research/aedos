@@ -5,14 +5,19 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..layer1_extraction.extractor import Claim
+from ..layer1_extraction.temporal import BEFORE_PRESENT
 from ..layer3_substrate import Substrate
 from ..layer3_substrate.subsumption import EntityRef
-from ..layer4_sources.kb_verifier import KBVerdictType
+from ..layer4_sources.kb_verifier import (
+    KBVerdictType,
+    _normalize_date_value,
+    _value_matches,
+)
 from ..layer4_sources.kb_protocol import KBProtocol, LocalContext
 from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
 
 
-# Phase H D5: per-relation KB neighbor properties. Mirrors
+# Per-relation KB neighbor properties. Mirrors
 # `_SUBSUMPTION_PROPERTIES` in `kb_wikidata.py` for is_a/part_of, plus
 # P17 (country) on part_of for country-level grounding (e.g. Williams
 # College P17 → United States; useful for "X is in the United States"
@@ -31,7 +36,7 @@ _D5_NEIGHBOR_PROPS_BY_RELATION: dict[str, tuple[str, ...]] = {
 class VerificationContext:
     current_time: str
     asserting_party: str
-    # Phase H D47: the full input text the extractor was originally called
+    # The full input text the extractor was originally called
     # with, threaded request-scoped so the resolver / normalizer can use it
     # for Stage 2 disambiguation context. Optional — callers that don't
     # have a meaningful source text (direct-resolver corpus runners,
@@ -43,6 +48,17 @@ class VerificationContext:
 class WalkerBudget:
     wall_clock_seconds: float = 30.0
     max_llm_calls: int = 10
+    # v0.16 WS2 §5: per-walk fanout bound on discovery candidates. The depth==0
+    # cap on KB-neighbor enumeration is removed to enable bidirectional/forward
+    # search, but un-capped blind incoming enumeration fans out
+    # multiplicatively across depth (the 18-min / OOM blowup). The
+    # wall-clock budget is only sampled at depth boundaries, so a single
+    # depth's frontier can explode before the next check; this bound is sampled
+    # WITHIN the frontier loop (every node's discovery) so the walker abstains
+    # the moment cumulative expansion crosses the bound — making the budget the
+    # true cost bound. Permissive default (config-tunable per contract §0.11
+    # decision 6); seeds + premise-forward keep real walks far below it.
+    max_frontier_expansions: int = 2000
 
 
 @dataclass
@@ -57,6 +73,33 @@ class WalkResult:
     trace: JustificationTrace
     abstention_reason: Optional[str] = None
     budget_consumption: BudgetConsumption = field(default_factory=BudgetConsumption)
+
+
+@dataclass
+class Interval:
+    """v0.16 WS6 T1: a bounded interval gathered from KB statement qualifiers
+    (P580 start / P582 end) and/or Tier U *_started/_ended facts.
+
+    `start` / `end` are ISO-date strings (YYYY-MM-DD or YYYY), compared
+    lexically (valid for zero-padded ISO). `start_known` / `end_known` are the
+    three-valued-logic discriminators: an UNKNOWN endpoint is NOT the same as a
+    known endpoint at some sentinel. An open end (end_known=False) means the
+    relation is ongoing (`holds_at` returns true once start<=T). BEFORE_PRESENT
+    maps to end_known=False (an unspecified past end never forces a false)."""
+    start: Optional[str] = None
+    end: Optional[str] = None
+    start_known: bool = False
+    end_known: bool = False
+    # Round-1 robustness follow-up (WS6, defense-in-depth): True iff this
+    # interval was built from a UNIQUELY-identified base statement (a single
+    # candidate, or a single preferred-ranked statement), rather than from an
+    # arbitrary collapse of ALL the subject's statements. Only a unique interval
+    # may license a *_started/_ended CONTRADICTED verdict — collapsing several
+    # statements that merely happen to AGREE on a start must never contradict an
+    # asserted endpoint (a future single_valued endpoint binding could otherwise
+    # false-contradict). Forward-defensive: all 8 endpoint seeds are
+    # single_valued=0 today, so no contradiction path is reachable yet.
+    unique: bool = False
 
 
 class BudgetExceeded(Exception):
@@ -76,7 +119,7 @@ _VAGUE_CLASS_PREFIXES = ("a ", "an ", "some ", "any ")
 _VAGUE_CLASS_RELCLAUSE = (" that ", " which ", " where ", " whose ", " who ")
 
 
-# Phase 10.5 Step 6 Tier A2: helpers for the kb_quantitative path.
+# Helpers for the kb_quantitative path.
 import re as _re_quant
 
 _QUANT_NUMBER_RE = _re_quant.compile(
@@ -125,8 +168,8 @@ def _apply_polarity_str(verdict: str, polarity: int) -> str:
 
 
 def _is_vague_class_object(object_value: str) -> bool:
-    """Phase 10.5 Step 6 sub-cause F follow-on: True if the object is a
-    descriptive class reference rather than a specific entity name.
+    """True if the object is a descriptive class reference rather than a
+    specific entity name.
 
     Triggers on:
       - Indefinite-article prefix: 'a town in the United States',
@@ -179,7 +222,7 @@ def _claim_from_parts(
 
 
 def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -> str:
-    """Phase H Cluster 2 step 3: convert a base verdict to its
+    """Convert a base verdict to its
     `_given_assertion` dual designation when the chain composition
     includes an asserted-unverified premise (or when the walk was
     pre-flagged for a `user_authoritative` claim).
@@ -190,7 +233,6 @@ def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -
     """
     if not trace.chain_includes_assertion:
         return base_verdict
-    from ..layer5_result.aggregator import _BASE_OF_DUAL  # noqa: F401  (sanity import)
     # Inverse of _BASE_OF_DUAL — base verdict → dual designation.
     mapping = {
         "verified": "verified_given_assertion",
@@ -201,11 +243,17 @@ def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -
 
 
 def _distribution_directions(verdict) -> set[str]:
-    """Neighbor directions the walker may traverse for a distribution verdict.
+    """Preferred neighbor directions (ranking hint), not a gate.
+
+    v0.16 WS2 §3: distribution is demoted from a GATE to a RANKER. This maps
+    a verdict to the directions the predicate is EXPECTED to distribute over;
+    `_discover_chains` uses the set to ORDER candidates (preferred-first), NOT
+    to skip a relation. Soundness moved to `_verify_chain` — a `neither`
+    verdict (empty set) no longer forecloses the relation; it deprioritizes it.
 
     distributes_up   (P(X) and X R Y => P(Y)): to verify P(E), descend to children.
     distributes_down (P(Y) and X R Y => P(X)): to verify P(E), ascend to parents.
-    both: either direction. neither: gate closed.
+    both: either direction. neither: no preference (empty — ranks last).
     """
     v = verdict.value if hasattr(verdict, "value") else verdict
     if v == "distributes_up":
@@ -229,6 +277,7 @@ class Walker:
         walker_max_llm_calls: Optional[int] = None,
         walker_max_depth: Optional[int] = None,
         kb: Optional[KBProtocol] = None,
+        exception_cache=None,
     ) -> None:
         """Resource budgets resolve in priority order:
 
@@ -239,7 +288,7 @@ class Walker:
              directly.
           3. Architecture defaults (`_DEFAULT_MAX_DEPTH` etc.).
 
-        Per F3 §5.1: the kwarg path is the new wiring; the dict path
+        The kwarg path is the new wiring; the dict path
         is preserved so existing tests don't churn.
         """
         self._tier_u = tier_u
@@ -254,11 +303,15 @@ class Walker:
         )
         self._default_wall_clock_seconds = walker_wall_clock_seconds
         self._default_max_llm_calls = walker_max_llm_calls
-        # Phase H D5: the KB adapter is threaded explicitly so the walker
-        # can call `enumerate_neighbors` directly. None disables the D5
-        # fallback (back-compat for test paths that construct the walker
+        # The KB adapter is threaded explicitly so the walker
+        # can call `enumerate_neighbors` directly. None disables the
+        # KB-neighbor fallback (back-compat for test paths that construct the walker
         # without a KB).
         self._kb = kb
+        # v0.16 WS3 §3D: the bounded nogood cache for _nogood_vetoes. When None
+        # the helper falls back to the kb_verifier's cache (then no-op), so the
+        # explicit wiring here and the fallback both work.
+        self._exception_cache = exception_cache
 
     def walk(
         self,
@@ -269,24 +322,24 @@ class Walker:
     ) -> WalkResult:
         """Verify `claim` against the three typed sources of belief.
 
-        Phase H Cluster 3 step 7 (2026-05-26): `excluded_tier_u_row_ids`
+        `excluded_tier_u_row_ids`
         lets the caller suppress specific Tier U rows from the lookup —
         used by the promote-then-walk corpus runner / chat-wrapper to
         prevent the walker from matching the claim's own freshly-promoted
         asserted_unverified row at Stage 1. With the row filtered out,
         the polarity-conflict and object-conflict belief-revision paths
         in `_direct_lookup` become reachable for cases like
-        `der_revision_003` ("Asa is not a student") where the corpus
+        "Asa is not a student" where the corpus
         relies on the walker finding the prior of opposite polarity.
-        Empty / None means no filtering (pre-step-7 behavior; idempotent
+        Empty / None means no filtering (idempotent
         promotions don't get filtered because the row pre-dates this
         walk's promotion attempt — those cases the walker should still
         match).
         """
         self._excluded_tier_u_row_ids: set[int] = excluded_tier_u_row_ids or set()
         if budget is None:
-            # Build a budget from the Walker's config-driven defaults
-            # (F3 §5.1). Each field falls back to the dataclass default
+            # Build a budget from the Walker's config-driven defaults.
+            # Each field falls back to the dataclass default
             # if not explicitly configured.
             kwargs: dict[str, Any] = {}
             if self._default_wall_clock_seconds is not None:
@@ -307,7 +360,28 @@ class Walker:
         )
         polarity_trace: list[int] = []
 
-        # Phase H Cluster 2 step 3 (Q-UserAuth): for predicates routed
+        # v0.16 WS4 (4b): a claim carrying an extraction-layer abstention_reason
+        # is malformed or not-checkworthy. Short-circuit to no_grounding_found
+        # BEFORE any Tier U / KB / Python / LLM lookup. The self_referential /
+        # predicate_eq_object reasons are the §3.2-soundness-critical ones: their
+        # malformed triples would, if looked up, risk a false contradiction (the
+        # reason the extractor dropped them). subject_absent_from_source
+        # and not_checkworthy are also returned here (nothing to ground). This
+        # is the pre-lookup guard — placed at walk entry, before the frontier
+        # loop and before any _direct_lookup. Base no_grounding_found (NOT
+        # _apply_assertion_designation): the user_authoritative chain-flag set
+        # happens after this guard, so it is irrelevant here.
+        if claim.abstention_reason:
+            trace.walk_metadata["short_circuit"] = claim.abstention_reason
+            trace.polarity_trace = []
+            return WalkResult(
+                verdict="no_grounding_found",
+                trace=trace,
+                abstention_reason=claim.abstention_reason,
+                budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
+            )
+
+        # For predicates routed
         # `user_authoritative`, external grounding is structurally
         # unreachable — no KB property maps to `prefers` / `believes` /
         # similar, and Python cannot compute first-person facts. Every
@@ -318,12 +392,18 @@ class Walker:
         # abstained_given_assertion case). See design doc §"User_authoritative
         # verdict semantics".
         if self._predicate_routing(claim.predicate) == "user_authoritative":
-            trace.chain_includes_assertion = True
+            self._record_premise(trace, source="tier_u", assertion=True)
 
         frontier: list[Claim] = [claim]
         visited: dict[str, Claim] = {}
         depth = 0
         current_verdict: Optional[str] = None
+        # v0.16 WS2 §5: cumulative discovery-expansion counter. Sampled WITHIN
+        # the frontier loop so an un-capped KB-enumeration fanout (the removed
+        # depth==0 cap's failure mode) can't explode a single depth's frontier
+        # past the budget before the depth-boundary wall-clock check fires.
+        total_expansions = 0
+        fanout_exceeded = False
 
         while frontier and depth < self._max_depth:
             # Budget check
@@ -374,10 +454,40 @@ class Walker:
                     # the rest of this frontier so a conflicting verdict is caught.
                     continue
 
-                # Expand via substrate (ungrounded nodes only)
-                expanded, llm_delta = self._expand_via_substrate(node, trace, depth)
+                # v0.16 WS2 §2: discover liberally, verify soundly. Discovery
+                # proposes candidate substitutions (subsumption neighbors +
+                # premise-forward) without the distribution gate; _verify_chain
+                # (called inside _discover_chains per candidate) admits a
+                # candidate only if the taxonomy/transitive edge is confirmed
+                # in a source. Soundness lives entirely at verify time (§3.2).
+                expanded, llm_delta = self._discover_chains(node, trace, depth)
                 llm_calls += llm_delta
                 next_frontier.extend(expanded)
+                total_expansions += len(expanded)
+
+                # v0.16 WS2 §5 fanout bound: abstain the moment cumulative
+                # discovery crosses the budget. This is the cost bound that
+                # replaces the removed depth==0 cap — without it, blind
+                # incoming enumeration fans out multiplicatively (OOM in the
+                # worst case). Breaking mid-frontier stops accumulation
+                # before the next node enumerates.
+                if total_expansions > budget.max_frontier_expansions:
+                    fanout_exceeded = True
+                    break
+
+            if fanout_exceeded:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "fanout"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_fanout",
+                    budget_consumption=consumption,
+                )
 
             if current_verdict in ("verified", "contradicted"):
                 break
@@ -408,20 +518,37 @@ class Walker:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _record_premise(self, trace, *, source, table=None, row_id=None,
+                        status=None, assertion=False):
+        """WS3 §3B: append one grounding premise to the trace's provenance
+        term as a fresh OR-alternative. Each grounded premise found in a walk
+        is an independent way the verdict could hold (OR); a future multi-hop
+        composition ANDs hops within one alternative. Centralizes literal
+        construction so every grounding site contributes provenance, and so
+        the DERIVED chain_includes_assertion (monotone-OR over literal
+        .assertion flags) reproduces the legacy boolean exactly."""
+        from ..layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        trace.provenance.add_alternative(
+            ProvenanceTerm.lit(ProvenanceLiteral(
+                source=source, table=table, row_id=row_id,
+                status=status, assertion=assertion,
+            ))
+        )
+
     def _direct_lookup(
         self, node: Claim, context: VerificationContext, trace: JustificationTrace
     ) -> tuple[Optional[str], str, int]:
         """Returns (verdict_or_None, source, llm_calls_used).
 
-        Phase H Cluster 2 step 3: status-aware Tier U handling.
+        Status-aware Tier U handling.
 
         Tier U match flow:
           - `externally_verified` row → plain verified, no chain flag.
           - `asserted_unverified` row:
-            * `user_authoritative` route (Q-UserAuth): short-circuit
+            * `user_authoritative` route: short-circuit
               → verified; chain flag was already set at walk start so
               the final verdict becomes `verified_given_assertion`.
-            * any other route (Q-Lookup α): try KB/Python for external
+            * any other route: try KB/Python for external
               grounding. If KB or Python verifies the same claim, call
               `tier_u.mark_externally_verified` to upgrade the row and
               return plain verified WITHOUT setting the chain flag
@@ -437,10 +564,10 @@ class Walker:
         """
         llm_delta = 0
 
-        # Phase H Cluster 3 step 7 fixup (2026-05-26): check belief-revision
-        # paths against PRIORS first, before Stage 1. Pre-fixup this code
-        # excluded the walk's own promoted row from Stage 1 — but that
-        # broke R3 cases (`der_multihop_001` "Asa lives in Williamstown")
+        # Check belief-revision
+        # paths against PRIORS first, before Stage 1. Excluding
+        # the walk's own promoted row from Stage 1
+        # breaks cases (e.g. "Asa lives in Williamstown")
         # where the promoted row IS the legitimate grounding and the
         # walker should match it to return verified_given_assertion.
         #
@@ -450,8 +577,8 @@ class Walker:
         # belief-revision fires and returns `contradicted`. If no
         # conflict, fall through to normal Stage 1 (no exclusion) so the
         # walker can match its own promotion as the in-vocabulary
-        # grounding source. Q-Lookup α and external grounding follow as
-        # before.
+        # grounding source. The literal lookup and external grounding
+        # follow as before.
         excluded = getattr(self, "_excluded_tier_u_row_ids", None) or None
 
         # Polarity-conflict belief revision (architecture 8.1): a
@@ -480,11 +607,14 @@ class Walker:
                     "premise_status": flipped_status,
                 },
             ))
-            if flipped_status == "asserted_unverified":
-                trace.chain_includes_assertion = True
+            self._record_premise(
+                trace, source="tier_u", table="tier_u",
+                row_id=flipped_row.get("id"), status=flipped_status,
+                assertion=(flipped_status == "asserted_unverified"),
+            )
             return "contradicted", "tier_u", 0
 
-        # Object-conflict belief revision (D16): a functional
+        # Object-conflict belief revision: a functional
         # (single_valued) predicate admits at most one object value per
         # subject. lookup_object_conflict already filters to DIFFERENT
         # objects so it can't return the walk's own promotion — no
@@ -496,7 +626,7 @@ class Walker:
             if (
                 oc_result.found
                 and self._predicate_is_functional(node.predicate)
-                # Phase 10.5 Step 6 sub-cause F follow-on: skip the
+                # Skip the
                 # object-conflict contradicted return when the claim's
                 # object is a vague descriptive phrase (indefinite-
                 # article noun-phrase like "a town in the US", "a state
@@ -505,7 +635,7 @@ class Walker:
                 # town in the United States" — so the conflict is a
                 # subsumption candidate, not a contradiction. The walker
                 # cannot resolve free-text class references to KB Q-IDs
-                # cheaply at this site (no class-instance oracle in v0.15),
+                # cheaply at this site (no class-instance oracle),
                 # so the §3.2 soundness invariant calls for abstaining
                 # rather than emitting a §3.2-violating false contradiction.
                 and not _is_vague_class_object(node.object)
@@ -522,16 +652,24 @@ class Walker:
                         "tier_u_row_id": oc_row.get("id"),
                         "belief_revision": "object_conflict",
                         "premise_status": oc_status,
+                        # WS5(a.3): a functional-predicate object conflict has a
+                        # distinct contradicting value — the conflicting Tier U
+                        # row's object ("the source indicates {object} instead").
+                        "contradicting_value": oc_row.get("object"),
+                        "contradicting_value_type": "literal",
                     },
                 ))
-                if oc_status == "asserted_unverified":
-                    trace.chain_includes_assertion = True
+                self._record_premise(
+                    trace, source="tier_u", table="tier_u",
+                    row_id=oc_row.get("id"), status=oc_status,
+                    assertion=(oc_status == "asserted_unverified"),
+                )
                 return "contradicted", "tier_u", 0
 
         # Stage 1 literal Tier U lookup. Now that belief-revision paths
         # against priors have already been checked, the walker is free to
-        # match its own promotion here — this is the Q-UserAuth /
-        # Q-Lookup α grounding path for R3 cases.
+        # match its own promotion here — the grounding path where a
+        # promoted assertion is the legitimate grounding source.
         tier_u_result = self._tier_u.lookup(
             node,
             current_time=context.current_time,
@@ -554,6 +692,14 @@ class Walker:
                     "premise_status": row_status,
                 },
             ))
+            # WS3 §3B: record the Stage-1 verified premise in the
+            # provenance term so it is retractable. assertion=False here; the
+            # external-grounding fallthrough below records an assertion literal
+            # when no external grounding upgrades the asserted_unverified row.
+            self._record_premise(
+                trace, source="tier_u", table="tier_u",
+                row_id=row_id, status=row_status, assertion=False,
+            )
             # TierU._stage1 matches polarity exactly: a `found` hit is an
             # assertion of the SAME polarity as the claim, hence verified —
             # including a negated claim grounded in a negated Tier U row.
@@ -565,11 +711,12 @@ class Walker:
             # asserted_unverified path.
             route = self._predicate_routing(node.predicate)
             if route == "user_authoritative":
-                # Q-UserAuth: chain flag was already set at walk start;
-                # do not attempt KB/Python (structurally unreachable).
+                # For user_authoritative predicates the chain flag was
+                # already set at walk start; do not attempt KB/Python
+                # (structurally unreachable).
                 return "verified", "tier_u", 0
 
-            # Q-Lookup α: try external grounding for an upgrade
+            # Try external grounding for an upgrade
             # opportunity. KB first, Python second (matches §6.5 order
             # for non-Tier-U lookups). On success, upgrade the row and
             # return plain verified — the chain flag is NOT set
@@ -586,8 +733,13 @@ class Walker:
                     )
                 return "verified", f"tier_u→{upgrade_source}_upgrade", llm_delta
             # No external grounding available; chain stays
-            # assertion-conditional.
-            trace.chain_includes_assertion = True
+            # assertion-conditional. Mark the Stage-1 premise literal
+            # assertion-conditional by appending an assertion literal
+            # (OR semantics: includes_assertion() now True).
+            self._record_premise(
+                trace, source="tier_u", table="tier_u",
+                row_id=row_id, status="asserted_unverified", assertion=True,
+            )
             return "verified", "tier_u", llm_delta
 
         if tier_u_result.historical_only:
@@ -595,8 +747,8 @@ class Walker:
             # but does NOT ground a present-tense claim → skip
             pass
 
-        # (Belief-revision paths moved BEFORE Stage 1 — see the
-        # Cluster 3 step 7 fixup block at the top of this method.
+        # (Belief-revision paths are checked BEFORE Stage 1 — see the
+        # belief-revision block at the top of this method.
         # Reaching here means there is no current Tier U premise of
         # either polarity / no functional-predicate object_conflict.)
 
@@ -621,15 +773,12 @@ class Walker:
         external grounding of `node`. Returns
         `(verdict_or_None, source, llm_delta, grounding_chain_dict)`.
 
-        Phase H Cluster 2 step 3: factored out of `_direct_lookup` so
-        the Q-Lookup-α upgrade path can share the same logic as the
-        standalone-fallthrough path. The grounding_chain dict is the
+        The grounding_chain dict is the
         structured detail consumed by `mark_externally_verified`'s
         audit event — KB statement coordinates or Python execution
-        identity, per the operator's audit-detail confirmation in
-        step 1.
+        identity.
         """
-        # Phase 10.5 Step 6 Batch 8+: skip KB verification when the
+        # Skip KB verification when the
         # claim's subject is a known user persona stipulated in Tier U
         # (via a "user identity X" row). Otherwise the entity resolver
         # may resolve the persona name (e.g. "Asa") to an unrelated
@@ -643,20 +792,72 @@ class Walker:
         if self._is_persona_subject(node):
             return None, "", 0, {}
 
-        # Phase 10.5 Step 6 Tier A2: kb_quantitative comparison path.
+        # kb_quantitative comparison path.
         # When the predicate's routing_hint is "kb_quantitative", the
         # claim asserts a numeric comparison against a KB-derivable
         # quantity (e.g. "France has more than 60 million people" →
         # P1082 (population) > 60000000). The walker queries KB, parses
         # the claim's object as a threshold, and compares.
         if self._predicate_routing(node.predicate) == "kb_quantitative":
-            verdict = self._verify_kb_quantitative(node, context, trace)
-            if verdict is not None:
+            quant = self._verify_kb_quantitative(node, context, trace)
+            if quant is not None:
+                verdict, detail = quant
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
-                return verdict, "kb_quantitative", 0, {
+                self._record_premise(trace, source="kb", assertion=False)
+                # WS5(a.2): the kb_quantitative path previously appended no
+                # trace edge — add one carrying the comparison detail
+                # (kb_value/threshold/comparator) so the walk is observable,
+                # and on contradiction the KB value IS the contradicting value
+                # ("the source indicates 67000000").
+                edge_md = {
+                    "source": "kb_quantitative",
+                    "verdict": verdict,
+                    "predicate": node.predicate,
+                    "kb_value": detail.get("kb_value"),
+                    "threshold": detail.get("threshold"),
+                    "comparator": detail.get("comparator"),
+                    "kb_property": detail.get("kb_property"),
+                }
+                if verdict == "contradicted":
+                    edge_md["contradicting_value"] = detail.get("kb_value")
+                    edge_md["contradicting_value_type"] = "quantity"
+                trace.edges.append(TraceEdge(
+                    edge_type="premise_lookup",
+                    source=trace.root,
+                    target=TraceNode("kb_statement", {"entity": node.subject}),
+                    metadata=edge_md,
+                ))
+                grounding = {
                     "source": "kb_quantitative",
                     "predicate": node.predicate,
+                    "kb_value": detail.get("kb_value"),
+                    "threshold": detail.get("threshold"),
                 }
+                if verdict == "contradicted":
+                    grounding["contradicting_value"] = detail.get("kb_value")
+                    grounding["contradicting_value_type"] = "quantity"
+                return verdict, "kb_quantitative", 0, grounding
+
+        # v0.16 WS6 T1: kb_interval endpoint path. A `*_started` / `*_ended`
+        # predicate asserts the START or END date of an interval-bearing
+        # relation (employment/membership/role). The walker resolves the
+        # subject, looks up the base-relation KB statement, reads the matching
+        # P580 (start) / P582 (end) QUALIFIER, and compares the claim's asserted
+        # year/date against it. Placed BEFORE the generic kb_verifier branch
+        # (mirrors the kb_quantitative placement) because the verifier's generic
+        # value-compare path cannot interpret the qualifier-keyed slot map. The
+        # resolver FAILS CLOSED (returns None) on any resolution/KB error,
+        # ambiguity, or unknown endpoint — never fabricates a verdict.
+        if self._predicate_routing(node.predicate) == "kb_interval":
+            iv = self._verify_interval_endpoint(node, context, trace)
+            if iv is not None:
+                # _verify_interval_endpoint emits its own trace edge + provenance
+                # premise; return its verdict + grounding chain directly.
+                verdict, grounding = iv
+                return verdict, "kb_interval", 0, grounding
+            # None => abstain on this path; fall through (there is no generic
+            # value-compare path for a qualifier-keyed object, so this returns
+            # no_grounding_found unless another source grounds it).
 
         # KB verification
         if self._kb_verifier is not None:
@@ -667,17 +868,26 @@ class Walker:
             )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+                # WS3: the resolver's entity_resolution_cache row the KB
+                # statement is keyed on — the retractable dependency of this
+                # KB verdict (None for mock/transient resolvers).
+                cache_row_id = kb_result.trace.get("resolution_cache_row_id")
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
                     source=trace.root,
                     target=TraceNode("kb_statement", {"entity": kb_result.subject_kb_id}),
                     metadata={
                         "source": "kb", "verdict": "verified",
-                        # R1: surface the D19 lookup direction on the result-level
-                        # trace so Phase 10.5 debugging can see inverted lookups.
+                        # Surface the lookup direction on the result-level
+                        # trace so debugging can see inverted lookups.
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                        "entity_resolution_cache_row_id": cache_row_id,
                     },
                 ))
+                self._record_premise(
+                    trace, source="kb", table="entity_resolution_cache",
+                    row_id=cache_row_id, assertion=False,
+                )
                 grounding = {
                     "source": "kb",
                     "entity": kb_result.subject_kb_id,
@@ -686,6 +896,18 @@ class Walker:
                 }
                 return "verified", "kb", 0, grounding
             elif kb_result.verdict == KBVerdictType.CONTRADICTED:
+                cache_row_id = kb_result.trace.get("resolution_cache_row_id")
+                # WS5(a): the contradicting KB value is the matched
+                # statement's value (the verifier also surfaces it on
+                # kb_result.trace['contradicting_value']). On the no-statements
+                # subsumption-fallback CONTRADICTED path matched_statement is
+                # None, so guard for None — that path carries no distinct
+                # "instead" value and falls back to the generic correction.
+                matched = kb_result.matched_statement
+                cv_raw = getattr(matched, "value", None) if matched is not None else None
+                cv_type = getattr(matched, "value_type", None) if matched is not None else None
+                if cv_raw is None:
+                    cv_raw = kb_result.trace.get("contradicting_value")
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
                     source=trace.root,
@@ -693,24 +915,35 @@ class Walker:
                     metadata={
                         "source": "kb", "verdict": "contradicted",
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                        "entity_resolution_cache_row_id": cache_row_id,
+                        # WS5(a): carry the contradicting KB value so the
+                        # aggregator can populate ClaimVerdict.contradicting_value
+                        # and the chat-wrapper can emit "the source indicates X".
+                        "contradicting_value": cv_raw,
+                        "contradicting_value_type": cv_type,
+                        "kb_property": kb_result.trace.get("kb_property"),
                     },
                 ))
+                self._record_premise(
+                    trace, source="kb", table="entity_resolution_cache",
+                    row_id=cache_row_id, assertion=False,
+                )
                 grounding = {
                     "source": "kb",
                     "entity": kb_result.subject_kb_id,
                     "kb_property": kb_result.trace.get("kb_property"),
                     "verdict": "contradicted",
+                    "contradicting_value": cv_raw,
+                    "contradicting_value_type": cv_type,
                 }
                 return "contradicted", "kb", 0, grounding
 
-        # Python verifier (F-042: gated on routing_hint=="python" per architecture
-        # §6.5 step 3: "Python verification if the route is Python." Before this
-        # gate, the walker invoked the Python verifier unconditionally — and for
+        # Python verifier: gated on routing_hint=="python" per architecture
+        # §6.5 step 3: "Python verification if the route is Python." Without this
+        # gate, the walker invokes the Python verifier unconditionally — and for
         # subjective / preference / opinion claims the live LLM-driven verifier
-        # cheerfully wrote `return False`, producing `contradicted` instead of
-        # `no_grounding_found`. That was a §3.2 soundness violation; see
-        # docs/v0.16_planning.md D40 for the structural-test follow-up and D41
-        # for the mock-fixture-discipline finding the bug surfaced.
+        # cheerfully writes `return False`, producing `contradicted` instead of
+        # `no_grounding_found`. That is a §3.2 soundness violation.
         if (
             self._python_verifier is not None
             and self._predicate_routing(node.predicate) == "python"
@@ -727,6 +960,7 @@ class Walker:
                     }),
                     metadata={"source": "python", "verdict": py_result.verdict},
                 ))
+                self._record_premise(trace, source="python", assertion=False)
                 grounding = {
                     "source": "python",
                     "output": str(getattr(py_result, "output", "")),
@@ -736,8 +970,8 @@ class Walker:
 
         return None, "", 0, {}
 
-    def _verify_kb_quantitative(self, claim: Claim, context: VerificationContext, trace) -> Optional[str]:
-        """Phase 10.5 Step 6 Tier A2: verify a kb_quantitative claim by
+    def _verify_kb_quantitative(self, claim: Claim, context: VerificationContext, trace) -> Optional[tuple[str, dict]]:
+        """Verify a kb_quantitative claim by
         querying KB for the subject's value of the predicate's
         kb_property and comparing against the claim's object as a
         numeric threshold.
@@ -777,7 +1011,7 @@ class Walker:
             return None
 
         # Resolve the subject to a KB Q-id via the kb_verifier's
-        # resolver (which wires up the Wikipedia normalizer for D47
+        # resolver (which wires up the Wikipedia normalizer for
         # robustness). Fail closed if the resolver is unwired.
         if self._kb_verifier is None or not hasattr(self._kb_verifier, "_resolver"):
             return None
@@ -838,10 +1072,439 @@ class Walker:
         else:  # lt
             verified = kb_value < threshold
         verdict = "verified" if verified else "contradicted"
-        return _apply_polarity_str(verdict, claim.polarity)
+        # WS5(a.2): return the comparison detail alongside the verdict so the
+        # caller can append an observability edge and, on contradiction,
+        # surface kb_value as the contradicting value.
+        detail = {
+            "kb_value": kb_value,
+            "threshold": threshold,
+            "comparator": comparator,
+            "kb_property": meta.kb_property,
+        }
+        return _apply_polarity_str(verdict, claim.polarity), detail
+
+    # ------------------------------------------------------------------
+    # v0.16 WS6 T1: interval-from-events resolver (holds-at-T)
+    #
+    # Wikidata data-model limits this resolver respects (spec §F):
+    #   * P580 (start) / P582 (end) are QUALIFIERS on a base-relation
+    #     statement (P108 employer / P463 member-of / P39 position), NOT
+    #     statements themselves — they cannot be looked up directly, only
+    #     read off the base statement. This is why the *_started/_ended
+    #     predicates route HERE (the resolver) rather than the generic
+    #     kb_verifier value-compare path, whose _lookup_targets cannot
+    #     interpret a `qualifier:Pxxx` object slot.
+    #   * No event-relative bounds exist in the data model — only absolute
+    #     dates. "before/after <event>" stays on the claim's valid_during_ref
+    #     (extractor Rule 16); this resolver only reads absolute qualifier dates.
+    #   * Day precision is the finest the parser keeps (_parse_time_value
+    #     truncates to YYYY-MM-DD); many P580/P582 are year-precision only —
+    #     the year-aware _value_matches / _normalize_date_value handle that.
+    # ------------------------------------------------------------------
+
+    def _gather_interval(
+        self, claim: Claim, base_property: str, context: VerificationContext
+    ) -> Optional[Interval]:
+        """Resolve the subject's KB Q-id, look up `base_property` statements,
+        and gather the P580/P582 qualifiers off the statement that matches the
+        claim's org/object — plus any Tier U *_started/_ended endpoint rows for
+        the same (asserting_party, subject, base-object).
+
+        Returns an Interval, or None on any resolution / KB failure or ambiguity
+        (§3.2 fail-closed: a None propagates to abstain, never a verdict). When
+        multiple statements carry CONFLICTING starts for the matched org, prefer
+        a `preferred`-ranked statement; if none is preferred, abstain (None) —
+        we do NOT max dates (a max would fabricate an interval the KB does not
+        assert)."""
+        # Resolve the subject via the SAME resolver pattern _verify_kb_quantitative
+        # uses (the kb_verifier's resolver wires the Wikipedia normalizer).
+        if self._kb_verifier is None or not hasattr(self._kb_verifier, "_resolver"):
+            return None
+        if self._kb is None:
+            return None
+        resolver = self._kb_verifier._resolver
+        lookup_ctx = LocalContext(
+            predicate=claim.predicate,
+            slot_position="subject",
+            asserting_party=claim.asserting_party,
+            source_text=context.source_text,
+            claim_subject=claim.subject,
+            claim_predicate=claim.predicate,
+            claim_object=claim.object,
+            claim_id=claim.claim_id,
+        )
+        try:
+            resolved = resolver.select(
+                resolver.resolve(claim.subject, lookup_ctx), lookup_ctx
+            )
+        except Exception:
+            return None
+        if resolved is None:
+            return None
+
+        try:
+            statements = self._kb.lookup_statements(resolved, base_property)
+        except Exception:
+            return None
+
+        # An endpoint claim (`<relation>_started/_ended(subject, year)`) carries
+        # only the DATE in its object slot — it never carries the org/value the
+        # base statement points at (Claim has no `object_org` field). So there is
+        # nothing to narrow the candidate set by: the interval is built from the
+        # subject's full set of base statements, and _interval_from_statements
+        # itself grounds against the UNIQUE-or-agreeing-start interval (a single
+        # candidate, or a preferred-unique, or agreeing starts; conflicting
+        # starts with no preferred discriminator -> abstain). The prior
+        # org-narrowing branch read getattr(claim, 'object_org', None), which was
+        # always None, so it was dead code (round-1 robustness follow-up: removed).
+        kb_interval = self._interval_from_statements(statements)
+        # DORMANT-MECHANISM NOTE (round-1 follow-up) — status_started/status_ended
+        # (kb_property P571 inception / P576 dissolution): the KB arm here is
+        # intentionally INERT for these two. _interval_from_statements reads the
+        # P580/P582 *qualifiers* off the base statement, but for P571/P576 the
+        # date is the statement VALUE itself, not a P580/P582 qualifier, so this
+        # call yields no start/end for them. That is by design: status endpoints
+        # ground via Tier U (below) or via the founded_in_year (P571) /
+        # dissolved_in_year (P576) date-in-object predicates on the normal KB
+        # path — NOT through this qualifier-gathering arm.
+
+        # ALSO gather Tier U endpoint rows for the same predicate (the
+        # *_started/_ended Tier U fact participates alongside the KB qualifier).
+        tier_u_interval = self._tier_u_endpoint(claim, context)
+
+        # Merge: KB is authoritative; Tier U fills an endpoint the KB left open.
+        # A conflict (both known, different values) is NOT silently reconciled —
+        # _interval_holds_at / _verify_interval_endpoint compare against the KB
+        # value, and the Tier U value only fills a gap. (Keeping the merge
+        # additive avoids fabricating an interval neither source asserts.)
+        merged = kb_interval or Interval()
+        if tier_u_interval is not None:
+            if not merged.start_known and tier_u_interval.start_known:
+                merged.start = tier_u_interval.start
+                merged.start_known = True
+            if not merged.end_known and tier_u_interval.end_known:
+                merged.end = tier_u_interval.end
+                merged.end_known = True
+            # A pure Tier-U interval inherits its uniqueness (the single-distinct-
+            # date invariant enforced in _tier_u_endpoint), so the contradiction
+            # gate in _verify_interval_endpoint is reachable for a uniquely-valued
+            # Tier-U-only endpoint. When the KB contributed the interval it stays
+            # authoritative and a Tier-U gap-fill must not flip its unique flag.
+            if kb_interval is None:
+                merged.unique = tier_u_interval.unique
+        if kb_interval is None and tier_u_interval is None:
+            return None
+        return merged
+
+    def _interval_from_statements(
+        self, statements: list
+    ) -> Optional[Interval]:
+        """Build an Interval from candidate base-relation statements' P580/P582
+        qualifiers. Fail-closed on a conflicting start across statements unless
+        exactly one is `preferred`-ranked.
+
+        BEFORE_PRESENT and a missing/empty P582 both map to end_known=False
+        (open / ongoing). A present P582 sets end_known=True."""
+        if not statements:
+            return None
+
+        # Prefer a single `preferred`-ranked statement when present (Wikidata
+        # marks the canonical/current value preferred). Else require the starts
+        # to agree; conflicting starts with no preferred ranking → abstain.
+        preferred = [s for s in statements if getattr(s, "rank", "normal") == "preferred"]
+        if len(preferred) == 1:
+            chosen = [preferred[0]]
+        elif len(preferred) > 1:
+            # Multiple preferred with potentially different starts — only safe
+            # when their starts agree; else abstain.
+            chosen = preferred
+        else:
+            chosen = statements
+
+        # Round-1 robustness follow-up (WS6, defense-in-depth): the interval is
+        # UNIQUELY identified iff it rests on a single base statement OR a single
+        # preferred-ranked one. An interval built by collapsing several
+        # statements that merely AGREE on a start is NOT unique — it must not
+        # license a *_started/_ended contradiction (see _verify_interval_endpoint).
+        unique = len(statements) == 1 or len(preferred) == 1
+
+        starts = {
+            self._iso_or_none(s.qualifiers.get("P580"))
+            for s in chosen
+        }
+        starts.discard(None)
+        if len(starts) > 1:
+            # Conflicting starts, no single preferred discriminator → abstain.
+            return None
+
+        ends_raw = [s.qualifiers.get("P582") for s in chosen]
+        ends = {self._iso_or_none(e) for e in ends_raw}
+        ends.discard(None)
+        # A genuine open end (some statement has NO P582) keeps the interval
+        # open even if another statement records an end (ongoing dominates).
+        any_open_end = any(
+            (not e) or e == BEFORE_PRESENT for e in ends_raw
+        )
+
+        start = next(iter(starts)) if starts else None
+        if len(ends) == 1 and not any_open_end:
+            end = next(iter(ends))
+            end_known = True
+        elif len(ends) > 1:
+            # Conflicting ends with no preferred discriminator → treat as open
+            # rather than fabricate a single end.
+            end = None
+            end_known = False
+        else:
+            end = None
+            end_known = False
+
+        return Interval(
+            start=start,
+            end=end,
+            start_known=start is not None,
+            end_known=end_known,
+            unique=unique,
+        )
+
+    @staticmethod
+    def _iso_or_none(value) -> Optional[str]:
+        """Normalize a qualifier value to a comparable ISO string, or None.
+        BEFORE_PRESENT (the extractor's implicit-past end sentinel) maps to None
+        so it is treated as an OPEN end (never forces a false holds_at)."""
+        if value is None:
+            return None
+        if value == BEFORE_PRESENT:
+            return None
+        s = str(value).strip()
+        return s or None
+
+    def _tier_u_endpoint(
+        self, claim: Claim, context: VerificationContext
+    ) -> Optional[Interval]:
+        """Gather a Tier U *_started/_ended endpoint fact for this claim into a
+        one-sided Interval. The endpoint kind comes from the predicate suffix.
+        Fail-open: any lookup failure returns None."""
+        try:
+            result = self._tier_u.lookup(claim, current_time=context.current_time)
+        except Exception:
+            return None
+        if not getattr(result, "found", False):
+            return None
+        rows = getattr(result, "rows", None) or []
+        if not rows:
+            return None
+        # Round-1 robustness follow-up (WS6): mirror the KB conflicting-start
+        # abstention (_interval_from_statements). Instead of trusting an
+        # arbitrary rows[0], collect the DISTINCT normalized endpoint dates
+        # across ALL rows; if more than one distinct non-None date is present
+        # the Tier U facts disagree on this endpoint — abstain (None) rather
+        # than pick a row by accident. Symmetric with the KB path; removes the
+        # arbitrary-row dependence.
+        dates = {self._iso_or_none(r.get("object")) for r in rows}
+        dates.discard(None)
+        if len(dates) != 1:
+            # Zero distinct dates (all None) -> nothing to ground; more than one
+            # -> conflicting Tier U endpoints. Either way, abstain.
+            return None
+        date = next(iter(dates))
+        # unique=True: the single-distinct-date invariant enforced one line
+        # above (len(dates) == 1) GUARANTEES this endpoint is uniquely valued,
+        # so a Tier-U endpoint may contradict symmetrically with the KB path.
+        # Without this the contradiction-branch gate `if not interval.unique`
+        # over-abstains for a uniquely-valued Tier-U endpoint (forward-defensive
+        # — all 8 endpoint seeds are single_valued=0 today, branch unreachable).
+        if claim.predicate.endswith("_started"):
+            return Interval(start=date, start_known=True, unique=True)
+        if claim.predicate.endswith("_ended"):
+            return Interval(end=date, end_known=True, unique=True)
+        return None
+
+    def _interval_holds_at(self, interval: Interval, T: str) -> str:
+        """Three-valued holds-at-T table (spec §B.2). Lexical ISO compare —
+        valid for zero-padded YYYY-MM-DD / YYYY strings.
+
+        DORMANT-MECHANISM NOTE (round-1 follow-up): this is a forward-looking
+        primitive (covered by unit tests) NOT yet consumed by any verdict path
+        — the holds-at-T base-relation-scope consumer is deferred. Endpoint
+        grounding today uses _verify_interval_endpoint's year-aware equality
+        compare, not this holds-at scoping. Kept inert/tested for that future.
+
+        Returns 'true' | 'false' | 'unknown'.
+
+          start_known and start > T                         -> false (not begun)
+          end_known and end < T                             -> false (already ended)
+          start_known and end_known and start<=T<=end       -> true
+          start_known, end UNKNOWN (open=ongoing), start<=T -> true
+          start UNKNOWN, end_known, T<=end                  -> unknown
+          both unknown                                      -> unknown
+        """
+        if not T:
+            return "unknown"
+        if interval.start_known and interval.start is not None and interval.start > T:
+            return "false"
+        if interval.end_known and interval.end is not None and interval.end < T:
+            return "false"
+        if (
+            interval.start_known
+            and interval.end_known
+            and interval.start is not None
+            and interval.end is not None
+            and interval.start <= T <= interval.end
+        ):
+            return "true"
+        if (
+            interval.start_known
+            and not interval.end_known
+            and interval.start is not None
+            and interval.start <= T
+        ):
+            return "true"
+        # start unknown (end_known or not) → cannot place T within the interval.
+        return "unknown"
+
+    def _verify_interval_endpoint(
+        self, claim: Claim, context: VerificationContext, trace
+    ) -> Optional[tuple[str, dict]]:
+        """Verdict for a *_started / *_ended endpoint claim (spec §B.3).
+
+        endpoint kind: `_started` -> P580 (start), `_ended` -> P582 (end).
+        The claim's object is the asserted year/date; compare it against the KB
+        qualifier date via the year-aware _value_matches. Match -> verified; a
+        single_valued/functional mismatch with a value-type-gate-satisfying
+        resolved date -> contradicted; else None (abstain).
+
+        FAIL-CLOSED: returns None on any resolution/KB error, ambiguity, or
+        unknown endpoint (§3.2). Returns (verdict, grounding_chain) on a
+        terminal verdict, having emitted a kb_statement trace edge + provenance
+        premise. Carries contradicting_value (WS5) on a contradiction and a
+        retractable resolution-cache row id (WS3) when one was touched."""
+        pred = claim.predicate
+        if pred.endswith("_started"):
+            qual_prop = "P580"
+        elif pred.endswith("_ended"):
+            qual_prop = "P582"
+        else:
+            return None
+
+        if not claim.object:
+            return None
+
+        # Read the base KB property + single_valued off predicate metadata
+        # (NO hardcoded Python table — the knowledge lives in the seed/oracle).
+        try:
+            meta = self._substrate.predicate_translation.consult(pred)
+        except Exception:
+            return None
+        base_property = meta.kb_property
+        if not base_property:
+            return None
+
+        interval = self._gather_interval(claim, base_property, context)
+        if interval is None:
+            return None
+
+        kb_date = interval.start if qual_prop == "P580" else interval.end
+        endpoint_known = interval.start_known if qual_prop == "P580" else interval.end_known
+        if not endpoint_known or kb_date is None:
+            # The KB records no value for this endpoint (open end / unknown
+            # start) — abstain rather than contradict (absence is not evidence).
+            return None
+
+        # Capture the retractable resolution-cache row id the subject resolution
+        # touched (WS3) — the dependency a correction would retract.
+        _last_row_id = getattr(self._kb_verifier._resolver, "last_cache_row_id", None)
+        cache_row_id = _last_row_id() if callable(_last_row_id) else None
+
+        # Year-aware compare (reuses the kb_verifier helper): the claim object
+        # is the asserted year/date, kb_date is YYYY-MM-DD / YYYY.
+        matches = _value_matches(kb_date, claim.object)
+
+        edge_md = {
+            "source": "kb_interval",
+            "qualifier": qual_prop,
+            "endpoint_value": kb_date,
+            "predicate": pred,
+            "kb_property": base_property,
+            "claim_object": claim.object,
+        }
+
+        if matches:
+            verdict = _apply_polarity_str("verified", claim.polarity)
+            edge_md["verdict"] = verdict
+            trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+            trace.edges.append(TraceEdge(
+                edge_type="premise_lookup",
+                source=trace.root,
+                target=TraceNode("kb_statement", {"entity": claim.subject}),
+                metadata=edge_md,
+            ))
+            self._record_premise(
+                trace, source="kb", table="entity_resolution_cache",
+                row_id=cache_row_id, assertion=False,
+            )
+            grounding = {
+                "source": "kb_interval",
+                "predicate": pred,
+                "qualifier": qual_prop,
+                "endpoint_value": kb_date,
+                "kb_property": base_property,
+            }
+            return verdict, grounding
+
+        # Mismatch. Only a functional (single_valued) endpoint with a resolved
+        # date value-type that satisfies the value-type gate may contradict;
+        # else abstain (§3.2 — multi-valued endpoints just hold other values).
+        if not meta.single_valued:
+            return None
+        # Round-1 robustness follow-up (WS6, defense-in-depth): a CONTRADICTED
+        # endpoint verdict is licensed ONLY when the interval was built from a
+        # UNIQUELY-identified statement (single candidate / preferred-unique),
+        # never from an arbitrary collapse of all the subject's statements that
+        # merely happened to agree on a start. Otherwise a future single_valued
+        # endpoint binding could false-contradict against a value that is just
+        # one of several the KB holds. Abstain when the interval is non-unique.
+        # (All 8 endpoint seeds are single_valued=0 today, so this branch is
+        # unreachable now — it is forward-defensive.)
+        if not interval.unique:
+            return None
+        # Value-type gate: the KB endpoint must normalize to a date for a
+        # `time` object_type predicate to contradict (mirrors kb_verifier's
+        # _contradiction_value_type_ok for object_type 'time' -> {date,literal}).
+        if _normalize_date_value(kb_date) is None:
+            return None
+
+        verdict = _apply_polarity_str("contradicted", claim.polarity)
+        edge_md["verdict"] = verdict
+        if verdict == "contradicted":
+            edge_md["contradicting_value"] = kb_date
+            edge_md["contradicting_value_type"] = "time"
+        trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=trace.root,
+            target=TraceNode("kb_statement", {"entity": claim.subject}),
+            metadata=edge_md,
+        ))
+        self._record_premise(
+            trace, source="kb", table="entity_resolution_cache",
+            row_id=cache_row_id, assertion=False,
+        )
+        grounding = {
+            "source": "kb_interval",
+            "predicate": pred,
+            "qualifier": qual_prop,
+            "endpoint_value": kb_date,
+            "kb_property": base_property,
+            "verdict": verdict,
+        }
+        if verdict == "contradicted":
+            grounding["contradicting_value"] = kb_date
+            grounding["contradicting_value_type"] = "time"
+        return verdict, grounding
 
     def _is_persona_subject(self, claim: Claim) -> bool:
-        """Phase 10.5 Step 6 Batch 8+: True when the claim's subject is
+        """True when the claim's subject is
         a known user persona stipulated in Tier U via a `user identity X`
         row. Used by `_direct_lookup` to skip KB verification — the
         entity resolver would otherwise resolve the persona name to an
@@ -904,32 +1567,40 @@ class Walker:
         except Exception:
             return False
 
-    def _expand_via_substrate(
+    def _discover_chains(
         self, node: Claim, trace: JustificationTrace, depth: int
     ) -> tuple[list[Claim], int]:
-        """Expand node into subsumed claims. Returns (new_nodes, llm_calls).
+        """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
+
+        Composes the (now un-gated)
+        subsumption-neighbor expansion with the new premise-forward frontier,
+        proposing candidate substitution claims WITHOUT the distribution gate
+        foreclosing relations. Each candidate is admitted to the returned
+        frontier only if `_verify_chain` confirms the taxonomy/transitive edge
+        in a source (§3.2 never-false-verify: soundness lives at verify time).
 
         The walker does not emit a predicate-equivalence expansion edge: an
         equivalent predicate shares the same `kb_property`, so its KB lookup is
         identical to the original's, and `TierU.lookup` stage 3 already
-        broadens by the same `predicate_translation` oracle. The edge was
-        redundant (D7); only distribution-gated subsumption traversal remains.
+        broadens by the same `predicate_translation` oracle.
 
-        Phase H D5: when the substrate's subsumption oracle produces no
-        expansion for a relation_type (no cached rows match), the walker
-        falls back to live KB neighbor enumeration via
-        `_expand_via_kb_neighbors`. Cheapest-path-first per D5 design
-        Decision 5.
+        Discovery sources (no gate; distribution demoted to RANKER per §3):
+          1. Subsumption-neighbor expansion. For each relation_type, consult
+             predicate_distribution to learn the PREFERRED direction (ranking
+             hint only — `neither` no longer skips the relation), gather
+             substrate `find_neighbors` AND (now un-capped, §5) KB
+             `enumerate_neighbors` candidates, ORDER preferred-direction
+             neighbors first, and admit each via `_verify_chain`.
+          2. Premise-forward expansion (`_expand_from_premises`, §4): seed a
+             forward frontier from Tier U facts about the goal's subject and
+             expand via bounded OUTGOING KB edges to meet the goal's object.
+
+        Trace edges carry the existing keys PLUS a `discovery_source`
+        observability key (`"subsumption_neighbor"` | `"premise_forward"`).
         """
         expanded: list[Claim] = []
         llm_delta = 0
 
-        # Distribution-gated subsumption traversal.
-        # For goal claim P(E): consult predicate_distribution to learn whether
-        # the predicate distributes over the relation; if so, substitute the
-        # slot entity with a taxonomy neighbor and emit a subsumption_traversal
-        # edge. distributes_up => descend to children; distributes_down =>
-        # ascend to parents; neither => gate closed.
         for relation_type in ("is_a", "part_of"):
             try:
                 dist = self._substrate.predicate_distribution.consult(
@@ -939,13 +1610,24 @@ class Walker:
             except Exception:
                 continue
 
-            directions = _distribution_directions(dist.verdict)
-            if not directions:
-                continue  # gate closed (neither)
+            # v0.16 WS2 §3: distribution is a RANKER, not a gate. `neither` no
+            # longer forecloses the relation — it deprioritizes it (empty
+            # preferred set ranks every direction last). Soundness is enforced
+            # downstream in _verify_chain (the transitive-path/substrate edge
+            # check), so a wrong `neither` can no longer cause a false-abstain
+            # by skipping a genuinely-entailing chain, and a wrong non-`neither`
+            # can no longer admit an unentailed chain.
+            preferred = _distribution_directions(dist.verdict)
+            verdict_label = (
+                dist.verdict.value if hasattr(dist.verdict, "value")
+                else str(dist.verdict)
+            )
 
             sub_produced: list[Claim] = []
             for slot in ("subject", "object"):
                 slot_val = node.subject if slot == "subject" else node.object
+                if not slot_val:
+                    continue
                 entity_ref = EntityRef(namespace="aedos", identifier=slot_val)
                 try:
                     sub_neighbors = self._substrate.subsumption.find_neighbors(
@@ -953,10 +1635,24 @@ class Walker:
                     )
                 except Exception:
                     continue
-                for sub in sub_neighbors:
-                    if sub.direction not in directions:
-                        continue
+                # Rank: preferred-direction neighbors first (ranking hint),
+                # but KEEP all of them (no direction gate, §3).
+                ranked = sorted(
+                    sub_neighbors,
+                    key=lambda s: 0 if s.direction in preferred else 1,
+                )
+                for sub in ranked:
                     new_id = sub.entity.identifier
+                    # SOUND admission: confirm the taxonomy edge before
+                    # substituting. _verify_chain routes child->parent through
+                    # the KB transitive primitive (Q-ids) or the substrate
+                    # consult (aedos surface forms), or — for intensional is_a
+                    # with no KB path — the distribution kind-entailment verdict.
+                    if not self._verify_chain(
+                        node, sub.entity.identifier, sub.direction,
+                        relation_type, slot, dist.verdict, trace,
+                    ):
+                        continue
                     if slot == "subject":
                         new_node = _claim_from_parts(node, subject=new_id)
                     else:
@@ -968,75 +1664,386 @@ class Walker:
                         metadata={
                             "relation_type": relation_type,
                             "direction": sub.direction,
-                            "distribution": dist.verdict.value,
+                            "distribution": verdict_label,
                             "subsumption_row_id": sub.row_id,
+                            "discovery_source": "subsumption_neighbor",
                             "polarity": node.polarity,
                         },
                     ))
+                    # WS3 single-source-of-truth: record the subsumption row as
+                    # a provenance premise so the dep lives in the provenance
+                    # TERM (not only in edge metadata). _extract_source_rows
+                    # short-circuits on provenance.source_rows(), so a dep that
+                    # is only in metadata is dropped from the term AND from the
+                    # retraction footprint. The term is the single source of
+                    # truth — the edge metadata is observability only.
+                    self._record_premise(
+                        trace, source="subsumption",
+                        table="subsumption", row_id=sub.row_id,
+                    )
                     sub_produced.append(new_node)
             expanded.extend(sub_produced)
 
-            # Phase H D5 fallback: substrate oracle had nothing for this
-            # relation_type → try live KB neighbor enumeration. Only fires
-            # when the distribution gate is open (`directions` non-empty)
-            # and substrate produced nothing. Capped to depth==0 (the
-            # initial frontier) — without this cap, the D51 reverse-direction
-            # fanout (~20 entities per call × 5 properties × 2 slots × 2
-            # relations × per-depth multiplication) blew past 18-min per-case
-            # wall-clock in the first D51 diagnostic. KB-enumerated
-            # children become Q-id-keyed claims that the walker still
-            # explores via Tier U / KB verifier; further KB enumeration
-            # on those Q-id claims rarely yields useful premises and
-            # multiplies cost catastrophically.
-            if not sub_produced and depth == 0:
+            # v0.16 WS2 §5: the depth==0 cap on KB-neighbor enumeration is
+            # REMOVED. The 18-min blowup was a multiplicative-fanout
+            # problem; it is now bounded structurally rather than by a depth
+            # cap: (a) _verify_chain admits only CONFIRMED edges to the
+            # frontier (collapsing the un-verified-substitution fanout the cap
+            # was guarding against), (b) the premise-forward frontier (§4)
+            # seeds expansion from a bounded Tier U premise set rather than
+            # blind taxonomy enumeration, and (c) the existing
+            # _DEFAULT_NEIGHBOR_REVERSE_LIMIT=20 + the walk loop's max_depth +
+            # wall-clock/LLM budget remain as the cost bounds. Removing the cap
+            # is required for the bidirectional/forward search (contract item e).
+            if not sub_produced:
                 kb_produced = self._expand_via_kb_neighbors(
-                    node, relation_type, directions, dist.verdict, trace
+                    node, relation_type, preferred, dist.verdict, trace
                 )
                 expanded.extend(kb_produced)
 
+        # Discovery source 2: premise-forward frontier (§4).
+        try:
+            premise_forward = self._expand_from_premises(node, trace)
+            expanded.extend(premise_forward)
+        except Exception:
+            pass
+
         return expanded, llm_delta
+
+    def _verify_chain(
+        self,
+        node: Claim,
+        neighbor_id: str,
+        direction: str,
+        relation_type: str,
+        slot: str,
+        distribution_verdict,
+        trace: JustificationTrace,
+    ) -> bool:
+        """v0.16 WS2 §2/§3.2/§6: the SOUND per-edge admission check.
+
+        Where `_discover_chains` proposes liberally, this gate admits a
+        substitution ONLY IF the taxonomy/transitive edge actually holds in a
+        source — preserving the §3.2 never-false-verify invariant now that the
+        distribution gate is demoted to a ranker. A `neither` predicate (e.g.
+        `prefers × is_a`) is still explored, but rejected here, so the OUTCOME
+        is identical to the old gate (no_grounding_found) for a SOUND reason
+        (verify-time rejection, not discovery-time skip).
+
+        Duality note (§2b): this handles the SLOT-SUBSTITUTION case (the goal
+        slot is a taxonomic ancestor/descendant of a grounded premise's slot).
+        The verifier-internal SPARQL ASK (`kb_verifier._subsumption_upgrades`)
+        handles the dual SUBJECT-FIXED/value-subsumption case (a KB statement
+        value is more specific than the claimed value). They are duals, not
+        duplicates, and must not be merged.
+
+        Two-axis soundness (contract item g — the predicate_distribution split):
+          - STRUCTURAL EDGE (does the taxonomy hop hold in a source?): confirmed
+            by the KB transitive primitive when both endpoints resolve to Q-ids,
+            else by `SubsumptionOracle.consult` (KB -> substrate -> LLM, §6) on
+            the aedos surface forms. For find_neighbors-derived candidates the
+            substrate row already exists, so consult resolves to that row (the
+            sound evidence) without an LLM call; only a genuinely-absent edge
+            reaches the LLM last-resort authority.
+          - ENTAILMENT VALIDITY (does the PREDICATE transfer across that hop?):
+            * `part_of` containment is a GRAPH property: locative-containment
+              predicates distribute over part_of, so a confirmed structural edge
+              IS sufficient and the distribution verdict is a pure RANKER here.
+            * `is_a` kind-entailment is a PREDICATE-SEMANTICS property: no KB
+              transitive path expresses "mortal distributes_down", so the
+              distribution oracle is the kind-entailment AUTHORITY — a confirmed
+              is_a structural edge is admitted ONLY IF the distribution verdict
+              is non-`neither`. This is exactly why `prefers × is_a` (verdict
+              `neither`) is REJECTED even though golden_retriever is_a dog holds
+              structurally: the edge is real, but `prefers` does not distribute.
+
+        The §3.2 never-false-verify invariant lives entirely here: with the
+        distribution gate demoted to a ranker, a `neither` predicate is still
+        EXPLORED but its substitution is REJECTED (verify-time), giving the same
+        OUTCOME as the old gate for a sound reason.
+
+        The WS3 nogood cache is consulted FIRST (entailment-safety): a nogood
+        flagging "this path does NOT hold" vetoes the edge before any
+        confirmation. Optional / fail-open no-op until WS3 wires the cache.
+        """
+        slot_val = node.subject if slot == "subject" else node.object
+
+        # Orient the edge child -> parent.
+        if direction == "parent":
+            child_surface, parent_surface = slot_val, neighbor_id
+        else:  # "child": the neighbor is subsumed by the slot value
+            child_surface, parent_surface = neighbor_id, slot_val
+
+        # is_a kind-entailment authority gate: the distribution oracle decides
+        # whether the predicate transfers across an is_a hop at all. A `neither`
+        # verdict forecloses is_a substitution regardless of a real structural
+        # edge (the `prefers × is_a` case). part_of containment is a graph
+        # property — distribution does not gate it (pure ranker, §3b).
+        if relation_type == "is_a":
+            dv = (
+                distribution_verdict.value
+                if hasattr(distribution_verdict, "value")
+                else distribution_verdict
+            )
+            if not dv or dv == "neither":
+                return False
+
+        # --- Structural edge confirmation ---
+        # `allow_llm` governs the §6 fall-through consult below. It stays True
+        # (full KB->substrate->LLM) when the KB was UNAVAILABLE, but is forced
+        # False on a DEFINITE KB negative: a cold LLM guess must never fabricate
+        # a positive over an authoritative KB negative (§3.2), yet a sound
+        # substrate row (operator-seeded / discovered — trust ordering:
+        # substrate > KB > LLM) may still confirm the step.
+        allow_llm = True
+        # 1. KB transitive-path (sound, when both endpoints resolve to Q-ids).
+        if self._kb is not None:
+            child_qid = self._resolve_qid(node, child_surface, slot)
+            parent_qid = self._resolve_qid(node, parent_surface, slot)
+            if child_qid and parent_qid:
+                # WS3 nogood cache consult FIRST (entailment-safety): a nogood
+                # vetoes a path flagged "does NOT hold". Optional — fail-open
+                # no-op until WS3 wires the cache. A True veto rejects the edge.
+                if self._nogood_vetoes(child_qid, parent_qid, relation_type):
+                    return False
+                try:
+                    tp = self._kb.verify_transitive_path(
+                        child_qid, parent_qid, None, relation_type=relation_type
+                    )
+                except Exception:
+                    tp = None
+                if tp is not None and getattr(tp, "error", None) is None:
+                    # The KB authoritatively answered (no fail-open error).
+                    # A definite hold confirms the edge immediately. A definite
+                    # non-hold is a NEGATIVE answer: do NOT return False
+                    # outright (that would discard a sound Priority-2 substrate
+                    # row — e.g. a seeded `Williamstown part_of Massachusetts`
+                    # when Wikidata's part_of closure is incomplete). Instead
+                    # fall through to the substrate consult in LLM-EXCLUDED mode
+                    # (allow_llm=False) so only a real substrate/KB row can
+                    # confirm — a cold LLM positive is never admitted over a KB
+                    # negative (§3.2 never-false-verify; trust: substrate > KB).
+                    if tp.holds:
+                        return True
+                    allow_llm = False
+                # KB unavailable (no result / fail-open error) — fall through
+                # to the FULL substrate/LLM consult on the aedos surface forms.
+
+        # 2. Substrate consult (KB -> substrate -> LLM, §6) on aedos surface
+        # forms. On a definite KB negative (allow_llm=False) the LLM tier is
+        # suppressed inside consult, so only a substrate row can confirm.
+        try:
+            verdict = self._substrate.subsumption.consult(
+                EntityRef("aedos", child_surface),
+                EntityRef("aedos", parent_surface),
+                relation_type,
+                allow_llm=allow_llm,
+            )
+            v = verdict.verdict
+            v = v.value if hasattr(v, "value") else v
+            # child -> parent edge: consistent verdicts are "child subsumed by
+            # parent" (a=child, b=parent => a_subsumed_by_b) or equivalent.
+            if v in ("a_subsumed_by_b", "equivalent"):
+                return True
+        except Exception:
+            pass
+
+        return False
+
+    def _resolve_qid(self, node: Claim, surface: str, slot: str) -> Optional[str]:
+        """Resolve a surface form to a KB Q-id via the substrate resolver.
+        Returns the Q-id string (starting with 'Q') or None. Fail-open: any
+        resolution failure / non-Q candidate returns None (the caller falls
+        back to the substrate consult path). Never raises."""
+        if not surface:
+            return None
+        # An already-resolved Q-id (e.g. a KB-enumerated neighbor) passes
+        # through without a redundant resolver round-trip.
+        if surface.startswith("Q") and surface[1:].isdigit():
+            return surface
+        try:
+            lc = LocalContext(
+                predicate=node.predicate,
+                slot_position=slot,
+                asserting_party=node.asserting_party,
+                source_text=node.source_text,
+                claim_subject=node.subject,
+                claim_predicate=node.predicate,
+                claim_object=node.object,
+                claim_id=node.claim_id,
+            )
+            candidates = self._substrate.resolver.resolve(surface, lc)
+        except Exception:
+            return None
+        if not candidates:
+            return None
+        qid = candidates[0].kb_identifier
+        if qid and qid.startswith("Q"):
+            return qid
+        return None
+
+    def _nogood_vetoes(
+        self, child_qid: str, parent_qid: str, relation_type: str
+    ) -> bool:
+        """v0.16 WS3 hook (entailment-safety): consult the bounded nogood
+        cache (substrate_exceptions) for a flag that this transitive path does
+        NOT hold for (relation_type, child -> parent). Until WS3 wires the
+        `SubstrateExceptionCache`, the lookup is an additive fail-open no-op
+        (always returns False — no veto). The walker accesses the optional
+        cache via `getattr` so this works before WS3 lands and after, with no
+        signature change here."""
+        cache = getattr(self, "_exception_cache", None)
+        if cache is None:
+            cache = getattr(self._kb_verifier, "_exception_cache", None)
+        if cache is None:
+            return False
+        try:
+            return bool(
+                cache.is_nogood(
+                    relation_type=relation_type,
+                    source_identifier=child_qid,
+                    target_identifier=parent_qid,
+                )
+            )
+        except Exception:
+            return False
+
+    def _expand_from_premises(
+        self, node: Claim, trace: JustificationTrace
+    ) -> list[Claim]:
+        """v0.16 WS2 §4: premise-forward frontier.
+
+        Seed a forward frontier from Tier U facts about the goal's subject and
+        expand via bounded OUTGOING KB edges, meeting the goal's object.
+
+        For goal P(S, O): the walker already has Tier U premises about S with a
+        DIFFERENT object O' (surfaced by `lookup_object_conflict`). Premise-
+        forward resolves O' to a Q-id, confirms the goal's object O is reachable
+        from O' via the part_of transitive path
+        (`verify_transitive_path(O'_qid, O_qid, part_of)`), and — when it grounds
+        — emits a `premise_forward` trace edge and the substituted claim P(S, O')
+        as a candidate (which the walk loop re-looks-up against the grounding
+        Tier U premise). This is the BIDIRECTIONAL meet: subsumption-neighbor
+        discovery expands DOWN from the goal object; premise-forward expands UP
+        from the premise object; they meet in the middle. It replaces the
+        depth==0 cap (§5) as the cost-control mechanism (the forward frontier is
+        seeded by a small set of premises, not blind enumeration).
+
+        Fail-open: any resolution/KB failure returns no candidate for that
+        premise; never raises. Bounded by the OUTGOING (un-LIMIT'd, naturally
+        small) fanout of `verify_transitive_path` and the walk loop's max_depth.
+        """
+        if self._kb is None:
+            return []
+        if node.polarity != 1 or not node.object:
+            return []
+
+        try:
+            oc_result = self._tier_u.lookup_object_conflict(node)
+        except Exception:
+            return []
+        if not oc_result.found:
+            return []
+
+        # Soundness gate: the substitution P(S,O') ⊢ P(S,O) over `O' part_of O`
+        # is valid ONLY IF the PREDICATE distributes UP over part_of (the
+        # definition: P(X) and X part_of Y => P(Y); here X=O' the child place,
+        # Y=O the ancestor). Consult predicate_distribution the same way the
+        # is_a arm of _verify_chain does, and admit ONLY a distributes_up/both
+        # verdict. A `neither` or down-only verdict FORECLOSES the substitution
+        # (a non-distributing place predicate must not ride a part_of edge to a
+        # false). Fail-closed (abstain) on any absent/uncertain verdict — §3.2
+        # never-false-verify.
+        try:
+            dist = self._substrate.predicate_distribution.consult(
+                node.predicate, node.polarity, "part_of"
+            )
+        except Exception:
+            return []
+        dv = dist.verdict.value if hasattr(dist.verdict, "value") else dist.verdict
+        if dv not in ("distributes_up", "both"):
+            return []
+
+        goal_qid = self._resolve_qid(node, node.object, "object")
+        if not goal_qid:
+            return []
+
+        expanded: list[Claim] = []
+        for row in oc_result.rows:
+            premise_obj = row.get("object")
+            if not premise_obj:
+                continue
+            premise_qid = self._resolve_qid(node, premise_obj, "object")
+            if not premise_qid:
+                continue
+            # Premise object O' reaches goal object O via part_of? (O' is the
+            # more specific place; O the ancestor — Williamstown -> US.)
+            try:
+                tp = self._kb.verify_transitive_path(
+                    premise_qid, goal_qid, None, relation_type="part_of"
+                )
+            except Exception:
+                continue
+            if tp is None or not getattr(tp, "holds", False):
+                continue
+            # Grounded: the goal is P(S, O), the premise is P(S, O'), and
+            # O' part_of O. Substitute the goal object with the premise object
+            # so the walk loop re-looks-up the grounded premise claim.
+            new_node = _claim_from_parts(node, object_val=premise_obj)
+            trace.edges.append(TraceEdge(
+                edge_type="premise_forward",
+                source=TraceNode("claim", {"object": node.object}),
+                target=TraceNode("claim", {"object": premise_obj}),
+                metadata={
+                    "relation_type": "part_of",
+                    "direction": "child",
+                    "discovery_source": "premise_forward",
+                    "premise_object_qid": premise_qid,
+                    "goal_object_qid": goal_qid,
+                    "tier_u_row_id": row.get("id"),
+                    "establishing_property": getattr(tp, "establishing_property", None),
+                    "polarity": node.polarity,
+                },
+            ))
+            expanded.append(new_node)
+
+        return expanded
 
     def _expand_via_kb_neighbors(
         self,
         node: Claim,
         relation_type: str,
-        directions: set[str],
+        preferred: set[str],
         distribution_verdict,
         trace: JustificationTrace,
     ) -> list[Claim]:
-        """Phase H D5 + D51: enumerate KB neighbors of `node`'s slot
-        entities and emit expanded claims with the slot substituted by
-        each neighbor.
+        """Enumerate KB neighbors of `node`'s slot entities
+        and emit expanded claims with the slot substituted by each neighbor.
 
-        Fires as a fallback when `_expand_via_substrate` produced no
-        expansion for `relation_type` (per D5 design Decision 5 —
-        cheapest-path-first).
+        Fires as the DISCOVERY enumerator when `find_neighbors` produced no
+        substrate expansion for `relation_type` (cheapest-path-first). v0.16
+        WS2 §3/§5: the distribution verdict is a RANKER (not a gate) and the
+        depth==0 cap is gone — BOTH directions (parent via outgoing, child via
+        incoming) are now enumerated regardless of the distribution verdict;
+        `preferred` only ORDERS the calls (preferred direction first). Like the
+        substrate-neighbor candidates, KB-enumerated neighbors are routed
+        through `_verify_chain`: the single enumeration hop is
+        structural evidence the neighbor EXISTS, but NOT that the substitution
+        is ENTAILED — an is_a `neither` predicate or an unentailed downward hop
+        must be rejected by the same gate. The neighbor is a Q-id, so the gate's
+        `_resolve_qid` passes it through and the transitive-path/is_a
+        distribution check adjudicates it; the per-walk fanout budget (§5)
+        bounds the cost the removed depth cap once guarded. The trace records
+        each direction (`"parent"` / `"child"`) and the KB property used.
 
-        Direction mapping (D5 + D51):
-          - `"parent"` ∈ directions (distributes_down, both): call
-            `enumerate_neighbors(direction="outgoing")` — yields E's
-            parents (entities E points to via P31/P361/P131/P17/P279).
-            Walker substitutes E with one of its parents.
-          - `"child"` ∈ directions (distributes_up, both): call
-            `enumerate_neighbors(direction="incoming")` — yields E's
-            children (entities pointing to E). Walker substitutes E
-            with one of its children. D51 (2026-05-24).
+        Direction mapping:
+          - `"parent"`: `enumerate_neighbors(direction="outgoing")` — yields E's
+            parents (entities E points to via the relation's property set).
+          - `"child"`: `enumerate_neighbors(direction="incoming")` — yields E's
+            children (entities pointing to E).
 
-        Both directions fire when distribution is `both`; the trace
-        records each direction separately so Phase 10.5 attribution
-        can distinguish.
-
-        Audit shape: each emitted expansion gets a
-        `kb_neighbor_enumeration` trace edge with the source slot value,
-        resolved Q-id, neighbor Q-id, KB property used, the
-        distribution-verdict that authorized the traversal, and the
-        direction (`"parent"` or `"child"`). The `_live_neighbors` call
-        itself writes a `kb_live_neighbors` audit-log event with
-        `direction` recorded.
-
-        Fail-open shape: any failure in resolution, KB call, or parsing
-        returns no expansion for the affected slot; the walker continues
-        with whatever expansions other slots produced. Never raises.
+        Fail-open: any failure in resolution, KB call, or parsing returns no
+        expansion for the affected slot; never raises.
         """
         if self._kb is None:
             return []
@@ -1044,18 +2051,10 @@ class Walker:
         if not properties:
             return []
 
-        # Map walker-direction → KB enumerate-neighbors-direction. The two
-        # vocabularies use different words for symmetric concepts (the
-        # walker thinks in terms of taxonomy direction; the KB call thinks
-        # in terms of edge direction). For each walker-direction the
-        # operator selected, do one enumeration call.
-        kb_calls: list[tuple[str, str]] = []  # (walker_dir, kb_dir)
-        if "parent" in directions:
-            kb_calls.append(("parent", "outgoing"))
-        if "child" in directions:
-            kb_calls.append(("child", "incoming"))
-        if not kb_calls:
-            return []
+        # v0.16 WS2 §3: both directions fire (gate removed); `preferred` ranks
+        # the enumeration order (the distribution-preferred direction first).
+        all_calls = [("parent", "outgoing"), ("child", "incoming")]  # (walker_dir, kb_dir)
+        kb_calls = sorted(all_calls, key=lambda c: 0 if c[0] in preferred else 1)
 
         verdict_label = (
             distribution_verdict.value
@@ -1070,7 +2069,7 @@ class Walker:
                 continue
 
             # Resolve the slot's surface form to a KB Q-id. Reuses the
-            # substrate's EntityResolver — same caching, same D47 normalization,
+            # substrate's EntityResolver — same caching, same normalization,
             # same per-purpose LLM routing as KBVerifier.
             try:
                 lc = LocalContext(
@@ -1102,6 +2101,21 @@ class Walker:
 
                 for prop_id, neighbor_qids in neighbors_by_prop.items():
                     for neighbor_qid in neighbor_qids:
+                        # v0.16 soundness (SS3 symmetry): route every KB-enum
+                        # candidate through the SAME entailment gate the
+                        # find_neighbors arm uses. The single enumeration hop
+                        # is structural evidence the neighbor EXISTS, but it is
+                        # not evidence the SUBSTITUTION is entailed: an is_a
+                        # `neither` predicate, or an unentailed downward hop,
+                        # must be rejected here exactly as for substrate
+                        # neighbors. The neighbor is a Q-id, so _resolve_qid
+                        # passes it through and the transitive-path/is_a
+                        # distribution gate adjudicates it. Skip on rejection.
+                        if not self._verify_chain(
+                            node, neighbor_qid, walker_dir,
+                            relation_type, slot, distribution_verdict, trace,
+                        ):
+                            continue
                         if slot == "subject":
                             new_node = _claim_from_parts(node, subject=neighbor_qid)
                         else:
@@ -1116,6 +2130,7 @@ class Walker:
                                 "distribution": verdict_label,
                                 "kb_property": prop_id,
                                 "subject_qid": entity_qid,
+                                "discovery_source": "kb_neighbor_enumeration",
                                 "polarity": node.polarity,
                             },
                         ))

@@ -145,16 +145,16 @@ class PredicateDistributionOracle:
         self, predicate: str, polarity: int, relation_type: str
     ) -> DistributionVerdict:
         polarity_label = "asserted" if polarity == 1 else "negated"
-        # Phase E5 prompt v2 (2026-05-23): adds distributes_down and `both`
-        # examples (only distributes_up and neither were exemplified before),
-        # adds explicit polarity guidance, and reframes the examples as
-        # authoritative rubric rather than illustrations the model can
-        # second-guess. Driver: Qwen 3-Next baseline showed strong
-        # "neither" bias (pd_up 1/12, pd_down 2/8) — the model has
-        # philosophical disagreements with the corpus's pinned verdicts on
-        # cases like `lives_in × part_of` (already in the prompt as
-        # distributes_up; Qwen still labeled it neither). v2 commits to the
-        # corpus's framings explicitly. See docs/phase_E_v2_report.md.
+        # v0.16 WS2 §3b: trimmed to neutral verdict definitions. The former
+        # "AUTHORITATIVE RUBRIC" (pinned lives_in/mortal/prefers framings) plus
+        # the polarity default were hand-seeded knowledge — a hardcoded-mapping
+        # smell that pre-committed the oracle to the corpus's verdicts rather
+        # than letting it reason from the predicate's semantics. The rubric
+        # was a band-aid for an under-discovered substrate; v0.16 removes the
+        # gate role (distribution is now only a RANKER for part_of and the
+        # kind-entailment authority for is_a, with structural soundness enforced
+        # at verify time in the walker), so the oracle no longer needs to be
+        # over-confident. Only the four verdict definitions remain.
         prompt = (
             f"Determine how the predicate '{predicate}' distributes over a "
             f"'{relation_type}' subsumption relation (one of is_a or part_of) "
@@ -163,35 +163,7 @@ class PredicateDistributionOracle:
             f"  distributes_up:   if P(X) and X {relation_type} Y, then P(Y).\n"
             f"  distributes_down: if P(Y) and X {relation_type} Y, then P(X).\n"
             f"  both:             distributes in both directions.\n"
-            f"  neither:          does not distribute in either direction.\n\n"
-            f"AUTHORITATIVE RUBRIC (use these framings; do not re-derive):\n"
-            f"  - 'lives_in' over 'part_of' → distributes_up. "
-            f"If Asa lives_in Williamstown and Williamstown part_of Massachusetts, "
-            f"then Asa lives_in Massachusetts. Similar locative-containment "
-            f"predicates over part_of (located_in, works_in, born_in, died_in, "
-            f"headquartered_in, citizen_of, member_of, registered_in, "
-            f"published_in, operates_in) also distribute_up over part_of.\n"
-            f"  - 'mortal' over 'is_a' → distributes_down. "
-            f"If humans (as a kind) are mortal and Asa is_a human, then Asa is "
-            f"mortal. Universal-property predicates of a kind (has_dna, "
-            f"has_nucleus, taxed, regulated_by_sec, requires_visa) similarly "
-            f"distribute_down over is_a — the property of the kind transfers "
-            f"to every member.\n"
-            f"  - 'prefers' over 'is_a' → neither. "
-            f"If Asa prefers golden_retrievers and golden_retriever is_a dog, "
-            f"it does NOT follow that Asa prefers dogs (over-specific to the "
-            f"subkind), nor the reverse. Attitudinal and intensional "
-            f"predicates do not distribute.\n"
-            f"  - 'both' is rare and reserved for predicates whose semantics "
-            f"genuinely transfer in both directions over the relation. Do not "
-            f"default to 'both' when uncertain; default to 'neither'.\n\n"
-            f"POLARITY RULE:\n"
-            f"  Negated polarity (polarity=0) typically becomes 'neither' "
-            f"because the contrapositive of a distributing rule does not "
-            f"hold: a counter-example at the subordinate level need not "
-            f"propagate up, and a counter-example at the kind level need not "
-            f"propagate down. Apply this default unless the predicate's "
-            f"semantics specifically support a directional negation."
+            f"  neither:          does not distribute in either direction."
         )
         try:
             result = self._llm.extract_with_tool(

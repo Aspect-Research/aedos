@@ -19,17 +19,18 @@ from .kb_protocol import (
     ResolutionCandidate,
     Statement,
     SubsumptionResult,
+    TransitivePathResult,
 )
 
 
 @dataclass
 class WBSearchCandidate:
-    """Phase H D53: a raw wbsearchentities result row.
+    """A raw wbsearchentities result row.
 
     Distinct from `ResolutionCandidate` (which is the KBProtocol-shaped
     score-wrapped form `KB.resolve_entity` returns). `WBSearchCandidate`
     preserves the API's full per-result payload — label, description,
-    aliases, match metadata — so the D53 normalizer's Stage C can drive
+    aliases, match metadata — so the normalizer's Stage C can drive
     the LLM with rich disambiguation context.
 
     `rank` is 1-based position in the API response (the API already
@@ -70,14 +71,14 @@ _ENTITY_ID_PATTERN = re.compile(r"^Q\d+$")
 _PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
 
 # Default qualifier set requested in every _live_lookup SPARQL query.
-# Per F2 design §5: P580 (start time) and P582 (end time) are required for
+# P580 (start time) and P582 (end time) are required for
 # universal scope checking; P642 (of) appears in the most-common seed
 # (holds_role / P39). Other qualifiers referenced by less-common predicates'
-# slot_to_qualifier maps are not collected here — v0.16 D32 captures the
+# slot_to_qualifier maps are not collected here — v0.16 captures the
 # dynamic-discovery follow-up.
 _DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
 
-# Phase G D33 (2026-05-23): when the wbsearchentities post-filter eliminates
+# When the wbsearchentities post-filter eliminates
 # all candidates AND expected_entity_types is non-empty, fall back to a SPARQL
 # label-OR-altLabel search constrained by P31. Live validation surfaced that
 # canonical entities (Q76 for "Obama", Q49112 for "Williams College") aren't
@@ -97,7 +98,7 @@ def _build_label_type_search_query(
       - rdfs:label catches the canonical English label.
       - skos:altLabel catches the "also known as" aliases (where Q76's "Obama"
         and Q49112's "Williams College" actually live).
-      - P31 type constraint enforces the D33 filter even at this fallback.
+      - P31 type constraint enforces the type filter even at this fallback.
     """
     if limit <= 0 or limit > 100:
         # Keep the LIMIT bounded — runaway SPARQL on a broad altLabel match
@@ -124,7 +125,7 @@ def _build_label_type_search_query(
 
 
 # Subsumption relation-type → SPARQL property-path alternation.
-# Per architecture §9.1 and F2 design §6:
+# Per architecture §9.1:
 #   is_a    → P31 (instance of), P279 (subclass of)
 #   part_of → P131 (located in admin entity), P361 (part of),
 #             P30  (continent — for country/region → continent chains),
@@ -132,20 +133,20 @@ def _build_label_type_search_query(
 #             P17  (country — for city → country fallback when P131 chain
 #                   doesn't reach the country directly).
 #
-# Phase 10.5 Step 6 sub-cause B fix: P30 lets the walker verify
+# P30 lets the walker verify
 # "France ⊂ Europe" directly (France P30 Europe) and chains through
 # P131 → P30 to verify city-to-continent ("Paris ⊂ Europe" via
-# Paris P131 Île-de-France → ... → France P30 Europe). Pre-fix,
+# Paris P131 Île-de-France → ... → France P30 Europe). Without P30,
 # part_of stopped at P131/P361 which deepest-runs out at the country
 # level; many country→continent statements in Wikidata are only
 # expressed via P30, so the chain truncated and the walker abstained
 # on multi-hop geographic claims.
 _SUBSUMPTION_PROPERTIES = {
     "is_a": ("P31", "P279"),
-    # Phase 10.5 Step 6 Run 6 follow-up: trimmed alternation to
-    # (P131, P30, P17). The fuller set initially used in Tier A1/A3
+    # Trimmed alternation to
+    # (P131, P30, P17). An earlier, fuller set
     # included P361 (part of) and P206 (located in body of water),
-    # both of which surfaced false-subsumption paths during Run 6:
+    # both of which surfaced false-subsumption paths:
     #
     #   subsumption(Warsaw, Germany, "part_of") → a_subsumed_by_b
     #     via Warsaw P206 Vistula → Vistula P17 Germany (the river's
@@ -177,19 +178,18 @@ _SUBSUMPTION_PROPERTIES = {
     "part_of": ("P131", "P30", "P17"),
 }
 
-# Phase H D5: default property set for KB neighbor enumeration. The
+# Default property set for KB neighbor enumeration. The
 # geographic/taxonomic core covers the dominant derivation_corpus
 # multi-hop shapes (X lives_in Y / part_of Z; X is_a Y / kind-properties).
 # Other properties (P50 author, P108 employer, P39 position) are deferred
-# to v0.16 driven by Phase 10.5 data per `docs/phase_H/d5_design.md`
-# Decision 1.
+# to v0.16.
 _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
 
 
-# Phase H D51: reverse enumeration's LIMIT. Unbounded properties like
+# Reverse enumeration's LIMIT. Unbounded properties like
 # P17=Q30 (country=USA) have millions of subjects; the walker only needs
 # a sample of candidate children for its substitution. 20 is the
-# conservative default after the first D51 diagnostic showed the walker
+# conservative default after a diagnostic showed the walker
 # fanning out catastrophically at LIMIT=100 (per-case wall-clock blew
 # past 18 min on der_multihop_002 before the run was killed): with
 # LIMIT=100 a single reverse call returns 100 candidate children, the
@@ -197,7 +197,7 @@ _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
 # substituted claim fires more KB calls + more enumeration. 20 keeps
 # fanout per call to ~20× rather than 100×, while still surfacing common
 # children. Paired with the walker.py depth==0 cap on KB enumeration
-# fallback (D51 step 3 cleanup) to bound aggregate walker cost.
+# fallback to bound aggregate walker cost.
 _DEFAULT_NEIGHBOR_REVERSE_LIMIT = 20
 
 
@@ -211,10 +211,10 @@ def _build_neighbors_query(
     neighbors along all `properties` in one round-trip.
 
     `direction`:
-      - "outgoing" (Phase H D5; default): `wd:E ?prop ?value` — yields
+      - "outgoing" (default): `wd:E ?prop ?value` — yields
         E's parents (entities E points to). No LIMIT (outgoing edges
         are bounded by the predicate's schema; a few hits per property).
-      - "incoming" (Phase H D51): `?value ?prop wd:E` — yields E's
+      - "incoming": `?value ?prop wd:E` — yields E's
         children (entities pointing to E). LIMIT'd to bound the query
         cost on unbounded properties (P17=Q30 has millions of subjects).
 
@@ -300,7 +300,7 @@ def _parse_neighbors_bindings(
 # ("part of") cleanly expresses CURRENT region containment between these types
 # (US state ⊂ region, country ⊂ supranational region), but is also used for
 # organizational membership, historical/former containment, and water-body
-# adjacency — the leaky paths the Run-6 trim removed wholesale. Restoring P361
+# adjacency — the leaky paths the part_of alternation trim removed wholesale. Restoring P361
 # only between two of these region types reopens region containment without
 # the Marie-Curie-class false-verify. Exact P31 (not P31/P279*) is deliberate:
 # it cannot admit a settlement via a subclass chain (a city is Q515, never a
@@ -321,30 +321,44 @@ _GEO_REGION_TYPES: tuple[str, ...] = (
 _PART_OF_BRIDGE_PROPERTY = "P361"  # geographic "part of", type-guarded above
 
 
-def _build_subsumption_ask_query(
-    source: KBEntityID, target: KBEntityID, relation_type: str
+def _build_transitive_ask_query(
+    source: KBEntityID,
+    target: KBEntityID,
+    properties: tuple[KBPropertyID, ...],
+    use_part_of_bridge: bool,
 ) -> str:
-    """Build an ASK query: does `source` reach `target` via the
-    relation_type's property alternation? Path-existence only — fast,
-    short-circuits on first match. Used per direction by `_live_subsumption`.
+    """v0.16 WS2 §1: build an ASK query asking whether `source` reaches
+    `target` via a transitive `(wdt:P)+` path over `properties`. Path-existence
+    only — ASK short-circuits on first match.
 
-    For `part_of`, the safe alternation (P131/P30/P17) is augmented with a
-    single TYPE-GUARDED P361 bridge: a P361 edge participates only between two
-    geographic-region-typed nodes (_GEO_REGION_TYPES). This reopens region
-    containment the Run-6 trim closed (Massachusetts ⊂ New England) without
-    reopening the leaky city/historical P361 paths (Warsaw ⊄ Germany)."""
+    Two shapes (extracted from the former `_build_subsumption_ask_query` body
+    so the verifier's subsumption ASK and the walker's transitive-path check
+    share ONE construction):
+      - `use_part_of_bridge=False`: a plain alternation path
+        `ASK {{ wd:source (wdt:P1|wdt:P2|...)+ wd:target . }}`. This serves
+        both the is_a relation alternation (P31|P279) and any single-property
+        generic transitive check (e.g. P171 parent-taxon).
+      - `use_part_of_bridge=True`: the safe alternation (P131/P30/P17) augmented
+        with a single TYPE-GUARDED P361 bridge — a P361 edge participates only
+        between two geographic-region-typed nodes (_GEO_REGION_TYPES). This
+        admits region containment (Massachusetts ⊂ New England) without
+        admitting the leaky city/historical P361 paths
+        (Warsaw ⊄ Germany). The bridge logic is preserved exactly;
+        do not edit without re-pinning Warsaw⊄Germany.
+
+    Defense-in-depth: validates source/target via `_ENTITY_ID_PATTERN` and
+    every property via `_PROPERTY_ID_PATTERN` at the SPARQL boundary."""
     if not _ENTITY_ID_PATTERN.match(source):
         raise ValueError(f"Invalid Wikidata entity ID: {source!r}")
     if not _ENTITY_ID_PATTERN.match(target):
         raise ValueError(f"Invalid Wikidata entity ID: {target!r}")
-    props = _SUBSUMPTION_PROPERTIES.get(relation_type)
-    if props is None:
-        raise ValueError(
-            f"Unsupported relation_type: {relation_type!r} "
-            f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
-        )
-    path = "|".join(f"wdt:{p}" for p in props)
-    if relation_type != "part_of":
+    if not properties:
+        raise ValueError("properties must be a non-empty sequence")
+    for prop in properties:
+        if not _PROPERTY_ID_PATTERN.match(prop):
+            raise ValueError(f"Invalid Wikidata property ID: {prop!r}")
+    path = "|".join(f"wdt:{p}" for p in properties)
+    if not use_part_of_bridge:
         return f"ASK {{ wd:{source} ({path})+ wd:{target} . }}"
     region_values = " ".join(f"wd:{t}" for t in _GEO_REGION_TYPES)
     bp = _PART_OF_BRIDGE_PROPERTY
@@ -362,6 +376,27 @@ def _build_subsumption_ask_query(
         f"    ?r1 wdt:P31 ?gt1 . wd:{target} wdt:P31 ?gt2 .\n"
         f"    VALUES ?gt1 {{ {region_values} }} VALUES ?gt2 {{ {region_values} }} }}\n"
         f"}}"
+    )
+
+
+def _build_subsumption_ask_query(
+    source: KBEntityID, target: KBEntityID, relation_type: str
+) -> str:
+    """Build an ASK query: does `source` reach `target` via the
+    relation_type's property alternation? Path-existence only — fast,
+    short-circuits on first match. Used per direction by `_live_subsumption`.
+
+    v0.16 WS2 §1: delegates to `_build_transitive_ask_query` (which holds the
+    path-construction + the type-guarded P361 bridge); output is byte-identical
+    for both the is_a and part_of cases."""
+    props = _SUBSUMPTION_PROPERTIES.get(relation_type)
+    if props is None:
+        raise ValueError(
+            f"Unsupported relation_type: {relation_type!r} "
+            f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
+        )
+    return _build_transitive_ask_query(
+        source, target, props, use_part_of_bridge=(relation_type == "part_of")
     )
 
 
@@ -383,6 +418,138 @@ def _build_establishing_property_query(
         f"}}\n"
         f"LIMIT 1"
     )
+
+
+# v0.16 WS1: Wikidata constraint/relation property IDs used by
+# `_build_property_ontology_query`. P2302 is "property constraint"; the
+# constraint *kind* is a qualifier (pq:P2306 -> constraint-type Q-id) and the
+# constrained classes ride pq:P2308. P1647/P1696/P1659 are direct relations.
+_ONTOLOGY_CONSTRAINT_PROPERTY = "P2302"            # property constraint
+_ONTOLOGY_CONSTRAINT_TYPE_QUALIFIER = "P2308"      # class (the constrained type)
+_ONTOLOGY_SUBJECT_TYPE_CONSTRAINT = "Q21503250"    # subject-type constraint
+_ONTOLOGY_VALUE_TYPE_CONSTRAINT = "Q21510865"      # value-type constraint
+_ONTOLOGY_SINGLE_VALUE_CONSTRAINT = "Q19474404"    # single-value constraint
+_ONTOLOGY_SUBPROPERTY_OF = "P1647"                 # subproperty of
+_ONTOLOGY_INVERSE_PROPERTY = "P1696"               # inverse property
+_ONTOLOGY_RELATED_PROPERTY = "P1659"               # related property
+
+
+def _build_property_ontology_query(prop: KBPropertyID) -> str:
+    """v0.16 WS1: P2302 constraint statements + P1647/P1696/P1659 relations
+    for `prop`, in a single SELECT round-trip.
+
+    Pulls four things the substrate uses to BUILD `PredicateBinding`s and to
+    discover sibling/inverse properties:
+      - subject-type constraint (P2302 / Q21503250): the constrained
+        subject classes ride pq:P2308.
+      - value-type constraint (P2302 / Q21510865): the constrained value
+        classes ride pq:P2308.
+      - single-value constraint (P2302 / Q19474404): presence flags the
+        property as functional.
+      - P1647 (subproperty of), P1696 (inverse property), P1659 (related
+        property): sibling/inverse properties.
+
+    Result columns: ?constraintKind (the constraint-type Q-id), ?cls (the
+    constrained class Q-id), ?subProp, ?invProp, ?relProp. A property has at
+    most a handful of constraint statements, so the cross-product is small.
+    `_parse_property_ontology_bindings` collapses the rows into a structured
+    dict; constraint rows without a P2308 class (single-value) still carry
+    ?constraintKind.
+
+    Defense-in-depth: validates the P-id before interpolation (the SPARQL
+    boundary stays clean even if a careless caller passes a raw string)."""
+    if not _PROPERTY_ID_PATTERN.match(prop):
+        raise ValueError(f"Invalid Wikidata property ID: {prop!r}")
+    return (
+        f"SELECT ?constraintKind ?cls ?subProp ?invProp ?relProp WHERE {{\n"
+        f"  {{\n"
+        f"    wd:{prop} p:{_ONTOLOGY_CONSTRAINT_PROPERTY} ?cstmt .\n"
+        f"    ?cstmt ps:{_ONTOLOGY_CONSTRAINT_PROPERTY} ?constraintKind .\n"
+        f"    OPTIONAL {{ ?cstmt pq:{_ONTOLOGY_CONSTRAINT_TYPE_QUALIFIER} ?cls . }}\n"
+        f"  }} UNION {{\n"
+        f"    wd:{prop} wdt:{_ONTOLOGY_SUBPROPERTY_OF} ?subProp .\n"
+        f"  }} UNION {{\n"
+        f"    wd:{prop} wdt:{_ONTOLOGY_INVERSE_PROPERTY} ?invProp .\n"
+        f"  }} UNION {{\n"
+        f"    wd:{prop} wdt:{_ONTOLOGY_RELATED_PROPERTY} ?relProp .\n"
+        f"  }}\n"
+        f"}}"
+    )
+
+
+def _empty_property_ontology() -> dict:
+    """The fail-open / miss result for `fetch_property_ontology`: all-empty
+    lists, single_valued=False. The discovery flow treats this as 'the
+    ontology cannot constrain this property' and falls back to the oracle's
+    primary binding (and, optionally, SLING)."""
+    return {
+        "subject_type_qids": [],
+        "value_type_qids": [],
+        "inverse_pids": [],
+        "subproperty_pids": [],
+        "related_pids": [],
+        "single_valued": False,
+    }
+
+
+def _parse_property_ontology_bindings(bindings: list) -> dict:
+    """Collapse `_build_property_ontology_query` SELECT rows into the dict
+    `WikidataAdapter.fetch_property_ontology` returns (and
+    `PropertyRelations.fetch` caches). Shape:
+
+        {
+          "subject_type_qids": [...],   # value-of-class constraints (subject)
+          "value_type_qids": [...],     # value-of-class constraints (value)
+          "inverse_pids": [...],
+          "subproperty_pids": [...],
+          "related_pids": [...],
+          "single_valued": bool,
+        }
+
+    Defensive: ignores rows whose URIs don't resolve to Q/P-ids and de-dupes.
+    Never raises on a malformed binding row (fail-open contract)."""
+    subject_type_qids: list[str] = []
+    value_type_qids: list[str] = []
+    inverse_pids: list[str] = []
+    subproperty_pids: list[str] = []
+    related_pids: list[str] = []
+    single_valued = False
+
+    for row in bindings:
+        if not isinstance(row, dict):
+            continue
+        kind_uri = row.get("constraintKind", {}).get("value", "")
+        kind_qid = _extract_entity_id(kind_uri) if kind_uri else ""
+        cls_uri = row.get("cls", {}).get("value", "")
+        cls_qid = _extract_entity_id(cls_uri) if cls_uri else ""
+        if kind_qid:
+            if kind_qid == _ONTOLOGY_SINGLE_VALUE_CONSTRAINT:
+                single_valued = True
+            elif kind_qid == _ONTOLOGY_SUBJECT_TYPE_CONSTRAINT and _ENTITY_ID_PATTERN.match(cls_qid):
+                if cls_qid not in subject_type_qids:
+                    subject_type_qids.append(cls_qid)
+            elif kind_qid == _ONTOLOGY_VALUE_TYPE_CONSTRAINT and _ENTITY_ID_PATTERN.match(cls_qid):
+                if cls_qid not in value_type_qids:
+                    value_type_qids.append(cls_qid)
+
+        for col, bucket, pattern in (
+            ("subProp", subproperty_pids, _PROPERTY_ID_PATTERN),
+            ("invProp", inverse_pids, _PROPERTY_ID_PATTERN),
+            ("relProp", related_pids, _PROPERTY_ID_PATTERN),
+        ):
+            uri = row.get(col, {}).get("value", "")
+            pid = _extract_entity_id(uri) if uri else ""
+            if pid and pattern.match(pid) and pid not in bucket:
+                bucket.append(pid)
+
+    return {
+        "subject_type_qids": subject_type_qids,
+        "value_type_qids": value_type_qids,
+        "inverse_pids": inverse_pids,
+        "subproperty_pids": subproperty_pids,
+        "related_pids": related_pids,
+        "single_valued": single_valued,
+    }
 
 
 def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
@@ -418,8 +585,7 @@ def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
 
 def _subsumption_verdict(a_to_b: bool, b_to_a: bool) -> str:
     """Map two directional ASK results to the SubsumptionResult verdict
-    string. Architecture §6.2 enumerates the four verdicts; F2 design
-    §6 specifies the truth table."""
+    string. Architecture §6.2 enumerates the four verdicts."""
     if a_to_b and b_to_a:
         return "equivalent"
     if a_to_b:
@@ -517,7 +683,7 @@ def _extract_entity_id(uri: str) -> str:
 
 
 def _extract_p31(entity_data: dict) -> list[str]:
-    """Phase G D33: extract P31 (instance-of) Q-ids from a wbgetentities
+    """Extract P31 (instance-of) Q-ids from a wbgetentities
     entity payload. Returns an empty list when the entity has no P31
     claims or the claim shape is unexpected (defensive — Wikidata's
     schema is stable in practice but downstream callers should not crash
@@ -545,6 +711,27 @@ def _parse_time_value(raw: str) -> str:
     return m.group(1) if m else raw
 
 
+def _extract_label_from_entities(data: dict, qid: KBEntityID) -> Optional[str]:
+    """v0.16 WS1: pull the English label for `qid` from a wbgetentities
+    payload (`{"entities": {"<Q>": {"labels": {"en": {"value": ...}}}}}`).
+    Also accepts a terse `{"label": "..."}` fixture shape. Returns None on any
+    missing/malformed shape — fail-open, never raises."""
+    try:
+        terse = data.get("label")
+        if isinstance(terse, str) and terse:
+            return terse
+        label = (
+            data.get("entities", {})
+            .get(qid, {})
+            .get("labels", {})
+            .get("en", {})
+            .get("value")
+        )
+    except AttributeError:
+        return None
+    return label if isinstance(label, str) and label else None
+
+
 class WikidataAdapter:
     def __init__(
         self,
@@ -560,10 +747,16 @@ class WikidataAdapter:
         self._config = config
         self._fixture_dir = fixture_dir or _FIXTURE_DIR
         self._live = os.environ.get("RUN_LIVE_KB") == "1"
+        # v0.16 WS3 §3D: bounded nogood cache (SubstrateExceptionCache). When
+        # build_pipeline wires it, verify_transitive_path consults it BEFORE the
+        # SPARQL ASK (return holds=False on a cached nogood — the leak guard) and
+        # EAGERLY records a nogood on a negative ASK. Defaults None — fixture/
+        # mock paths run exactly as before (no consult, no record).
+        self._exception_cache = None
 
-        # Rate limiters live as instance attributes (per F2 design Q3:
-        # owning the state here keeps future lock-protection a small
-        # change rather than a refactor of where the state lives).
+        # Rate limiters live as instance attributes: owning the state
+        # here keeps future lock-protection a small change rather than a
+        # refactor of where the state lives.
         override_ms_raw = os.getenv("AEDOS_KB_REQUEST_DELAY_MS")
         override_ms = int(override_ms_raw) if override_ms_raw else None
         search_rate = self._cfg_value("wikidata_search_rate_per_second", _DEFAULT_SEARCH_RATE)
@@ -604,15 +797,98 @@ class WikidataAdapter:
             return self._live_subsumption(entity_a, entity_b, relation_type)
         return self._fixture_subsumption(entity_a, entity_b, relation_type)
 
+    def verify_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        kb_property: KBPropertyID,
+        relation_type: Optional[str] = None,
+        *,
+        exception_cache=None,
+    ) -> TransitivePathResult:
+        """v0.16 WS2 §1: single-direction transitive-path existence check.
+
+        Resolves the property alternation:
+          - `relation_type` supplied: reuse the curated
+            `_SUBSUMPTION_PROPERTIES` alternation (+ type-guarded P361 bridge
+            for part_of). `kb_property` is ignored in this branch.
+          - `relation_type` None: a single-property `(wdt:{kb_property})+` path.
+
+        Single direction only (source -> target). FAIL-OPEN: any error returns
+        `TransitivePathResult(holds=False, error=...)`. See
+        `KBProtocol.verify_transitive_path`.
+
+        v0.16 WS3 §3D nogood consult: `exception_cache` is the bounded
+        SubstrateExceptionCache. When supplied (explicit arg or the adapter's
+        wired `self._exception_cache`), a matching nogood SHORT-CIRCUITS to
+        `holds=False` WITHOUT a SPARQL call (the leak guard); a negative ASK
+        result is EAGERLY recorded as a nogood. A stale nogood can only cause a
+        false abstain, never a false-verify — §3.2 stays safe."""
+        cache = exception_cache if exception_cache is not None else self._exception_cache
+        if relation_type is not None:
+            props = _SUBSUMPTION_PROPERTIES.get(relation_type)
+            if props is None:
+                raise ValueError(
+                    f"Unsupported relation_type: {relation_type!r} "
+                    f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
+                )
+            use_bridge = relation_type == "part_of"
+            cache_relation = relation_type
+        else:
+            props = (kb_property,)
+            use_bridge = False
+            cache_relation = kb_property or ""
+        path = "|".join(p for p in props if p) if props else ""
+
+        # Nogood consult FIRST — a cached "does NOT hold" closes the leak even
+        # if the alternation was later widened, without re-hitting the network.
+        if cache is not None and cache_relation:
+            try:
+                if cache.is_nogood(
+                    relation_type=cache_relation,
+                    source_identifier=source,
+                    target_identifier=target,
+                ):
+                    return TransitivePathResult(holds=False)
+            except Exception:
+                pass  # fail-open: a flaky cache must not block a sound check
+
+        if self._live:
+            result = self._live_transitive_path(source, target, props, use_bridge)
+        else:
+            result = self._fixture_transitive_path(
+                source, target, props, use_bridge, relation_type
+            )
+
+        # EAGER record on a negative result (no error). A path that errored is
+        # not a nogood — only a confirmed non-holding ASK is cached.
+        if (
+            cache is not None
+            and cache_relation
+            and not getattr(result, "holds", False)
+            and getattr(result, "error", None) is None
+        ):
+            try:
+                cache.record_nogood(
+                    relation_type=cache_relation,
+                    source_identifier=source,
+                    target_identifier=target,
+                    property_path=path,
+                    reason="ask_false",
+                )
+            except Exception:
+                pass  # fail-open
+        return result
+
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None
     ) -> list[WBSearchCandidate]:
-        """Phase H D53: raw wbsearchentities query.
+        """Raw wbsearchentities query.
 
         Returns ranked Wikidata entity candidates with full metadata
         (label, description, aliases, match info). Unlike
-        `resolve_entity`, this method does NOT apply the D33 type
-        filter — Stage C of the D53 normalizer flow runs the filter
+        `resolve_entity`, this method does NOT apply the type
+        filter — Stage C of the normalizer flow runs the filter
         downstream with knowledge of the claim's expected types.
 
         Fails open on error: returns `[]` and records an audit event
@@ -722,7 +998,7 @@ class WikidataAdapter:
         properties: list[KBPropertyID],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5/D51: enumerate `entity`'s direct KB neighbors along
+        """Enumerate `entity`'s direct KB neighbors along
         the given `properties`, in the given `direction`. Returns a dict
         keyed by property; each value is the list of neighbor entity Q-ids
         related to `entity` by that property in `direction`. Fails open
@@ -733,13 +1009,41 @@ class WikidataAdapter:
         other methods' input types — the live and fixture paths normalize
         it to a tuple before SPARQL construction.
 
-        `direction` is "outgoing" (D5; default) or "incoming" (D51); see
+        `direction` is "outgoing" (default) or "incoming"; see
         `KBProtocol.enumerate_neighbors` for the semantic distinction.
         """
         props_tuple = tuple(properties) if properties else _DEFAULT_NEIGHBOR_PROPERTIES
         if self._live:
             return self._live_neighbors(entity, props_tuple, direction)
         return self._fixture_neighbors(entity, props_tuple, direction)
+
+    def fetch_property_ontology(self, prop: KBPropertyID) -> dict:
+        """v0.16 WS1: fetch `prop`'s Wikidata constraint/relation ontology
+        (P2302 subject/value-type + single-value constraints, plus
+        P1647/P1696/P1659 sibling/inverse/related properties).
+
+        Returns the dict shape `_parse_property_ontology_bindings` produces
+        (subject_type_qids / value_type_qids / inverse_pids / subproperty_pids
+        / related_pids / single_valued). `PropertyRelations.fetch` caches it.
+
+        FAIL-OPEN: any error, a non-P-id input, or no constraints returns an
+        EMPTY ontology dict (all-empty lists, single_valued=False). Never
+        raises — discovery is additive enrichment; an ontology miss falls the
+        caller back to the oracle's primary binding (current behavior)."""
+        if self._live:
+            return self._live_property_ontology(prop)
+        return self._fixture_property_ontology(prop)
+
+    def fetch_label(self, qid: KBEntityID) -> Optional[str]:
+        """v0.16 WS1: fetch the English label of a Wikidata entity via
+        wbgetentities (props=labels). Used by the discovery flow and the
+        correction surface (WS5 `_format_correction` reverse-label).
+
+        FAIL-OPEN: a non-Q-id input, a missing label, or any error returns
+        None. Never raises."""
+        if self._live:
+            return self._live_label(qid)
+        return self._fixture_label(qid)
 
     # ------------------------------------------------------------------
     # Fixture-backed implementations
@@ -789,7 +1093,7 @@ class WikidataAdapter:
         properties: tuple[KBPropertyID, ...],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5/D51: fixture-backed enumeration. Reads
+        """Fixture-backed enumeration. Reads
         `tests/fixtures/wikidata/neighbors_<entity>.json` for the
         outgoing direction, `neighbors_<entity>_reverse.json` for
         incoming. Both mirror the SPARQL response format
@@ -808,6 +1112,42 @@ class WikidataAdapter:
             return {p: [] for p in properties}
         bindings = data.get("results", {}).get("bindings", [])
         return _parse_neighbors_bindings(bindings, properties)
+
+    def _fixture_property_ontology(self, prop: KBPropertyID) -> dict:
+        """v0.16 WS1: fixture-backed property ontology. Reads
+        `tests/fixtures/wikidata/property_ontology_<P>.json`, which mirrors
+        the SPARQL response format (`{"results": {"bindings": [...]}}`).
+        Missing fixture (or a non-P-id) returns an EMPTY ontology — the
+        ontology cannot constrain the property, so discovery falls back to
+        the oracle binding. Empty-on-miss keeps non-live tests deterministic."""
+        if not isinstance(prop, str) or not _PROPERTY_ID_PATTERN.match(prop):
+            return _empty_property_ontology()
+        try:
+            data = _load_fixture(f"property_ontology_{prop}.json")
+        except FixtureNotFoundError:
+            return _empty_property_ontology()
+        bindings = data.get("results", {}).get("bindings", []) if isinstance(data, dict) else []
+        return _parse_property_ontology_bindings(bindings)
+
+    def _fixture_label(self, qid: KBEntityID) -> Optional[str]:
+        """v0.16 WS1: fixture-backed label fetch. Reads
+        `tests/fixtures/wikidata/label_<Q>.json` (or `labels_<Q>.json`),
+        which mirrors the wbgetentities response
+        (`{"entities": {"<Q>": {"labels": {"en": {"value": "..."}}}}}`); a
+        bare `{"label": "..."}` shape is also accepted for terse fixtures.
+        Missing fixture, a non-Q-id, or no English label returns None."""
+        if not isinstance(qid, str) or not _ENTITY_ID_PATTERN.match(qid):
+            return None
+        data = None
+        for fixture_name in (f"label_{qid}.json", f"labels_{qid}.json"):
+            try:
+                data = _load_fixture(fixture_name)
+                break
+            except FixtureNotFoundError:
+                continue
+        if not isinstance(data, dict):
+            return None
+        return _extract_label_from_entities(data, qid)
 
     def _fixture_subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
@@ -835,8 +1175,52 @@ class WikidataAdapter:
             traversal_chain=chain,
         )
 
+    def _fixture_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        use_part_of_bridge: bool,
+        relation_type: Optional[str],
+    ) -> TransitivePathResult:
+        """v0.16 WS2 §1: fixture-backed transitive-path check. Reuses the
+        `_fixture_subsumption` keying convention — reads
+        `tests/fixtures/wikidata/sparql_subsumption_<source>.json` (mirroring
+        the SPARQL ASK/SELECT response format). The path is treated as
+        HOLDING (holds=True) when the fixture's `results.bindings` is
+        non-empty and `target` either ends the recorded chain or appears in
+        it; otherwise holds=False. Missing fixture => holds=False (no path).
+        Single direction (source -> target), consistent with the live ASK."""
+        fixture_name = f"sparql_subsumption_{source}.json"
+        try:
+            data = _load_fixture(fixture_name)
+        except FixtureNotFoundError:
+            return TransitivePathResult(holds=False)
+
+        # ASK-shaped fixture: {"boolean": true|false}.
+        if isinstance(data, dict) and "boolean" in data:
+            return TransitivePathResult(holds=bool(data.get("boolean")))
+
+        bindings = data.get("results", {}).get("bindings", [])
+        if not bindings:
+            return TransitivePathResult(holds=False)
+        chain = [
+            _extract_entity_id(row.get("intermediate", {}).get("value", ""))
+            for row in bindings
+            if row.get("intermediate", {}).get("value")
+        ]
+        # A chain to `target` exists iff target ends the recorded chain or
+        # appears within it; an empty/None chain with present bindings is
+        # treated as a hit (mirrors `_fixture_subsumption`'s any-chain rule).
+        holds = (not chain) or (target in chain)
+        establishing = properties[0] if properties else None
+        return TransitivePathResult(
+            holds=holds,
+            establishing_property=establishing if holds else None,
+        )
+
     # ------------------------------------------------------------------
-    # Live stubs (populated in Phase 10.5 live run)
+    # Live stubs
     # ------------------------------------------------------------------
 
     def _live_resolve(
@@ -845,7 +1229,7 @@ class WikidataAdapter:
         """Resolve a natural-language reference to ranked Wikidata candidates
         via the `wbsearchentities` API.
 
-        Honors the F2 design contract (§4):
+        Contract:
           - Returns search-ranked candidates with scores 1/(rank+1) so
             consumer behavior is identical to fixture mode.
           - Caches at the HTTP layer via the injected CachingHTTPClient
@@ -926,7 +1310,7 @@ class WikidataAdapter:
             last_error = None
             break
 
-        # Phase G D33: post-filter the candidate pool by P31 ∩ expected types.
+        # Post-filter the candidate pool by P31 ∩ expected types.
         pre_filter_count = len(candidates)
         filter_eliminated_count = 0
         filter_no_op_reason: Optional[str] = None
@@ -963,7 +1347,7 @@ class WikidataAdapter:
                 candidates = kept
                 filter_ran_cleanly = True
 
-        # Phase G D33 (2026-05-23, surfaced during live validation): the
+        # Surfaced during live validation: the
         # wbsearchentities top-N candidate pool sometimes does not contain the
         # canonical entity even after raising pool size — short ambiguous
         # references like "Obama" or "Williams College" return mostly
@@ -983,7 +1367,7 @@ class WikidataAdapter:
                 last_error = fb_error
             candidates = fb_candidates
 
-        # (S1b) Demonym → country fallback. When the slot is type-constrained
+        # Demonym → country fallback. When the slot is type-constrained
         # to a country (Q6256) and neither wbsearchentities nor the SPARQL
         # label/altLabel fallback resolved the reference, try a Wikidata P1549
         # (demonym) reverse lookup: the reference may be a demonym ("German",
@@ -1011,7 +1395,7 @@ class WikidataAdapter:
                 "duration_ms": round(duration_ms, 2),
                 "retry_count": retries,
                 "error": last_error,
-                # Phase G D33 audit fields.
+                # Type-filter audit fields.
                 "pre_filter_count": pre_filter_count,
                 "filter_eliminated_count": filter_eliminated_count,
                 "expected_entity_types": expected_types,
@@ -1026,7 +1410,7 @@ class WikidataAdapter:
     def _sparql_label_type_fallback(
         self, reference: str, expected_types: list[KBEntityID]
     ) -> tuple[list[ResolutionCandidate], Optional[str]]:
-        """Phase G D33: SPARQL fallback when the wbsearchentities post-filter
+        """SPARQL fallback when the wbsearchentities post-filter
         empties. Looks up items by rdfs:label OR skos:altLabel match in English,
         constrained by P31 ∈ expected_types. Returns (candidates, error).
 
@@ -1168,7 +1552,7 @@ class WikidataAdapter:
     def _fetch_p31_for_candidates(
         self, candidate_ids: list[KBEntityID]
     ) -> tuple[dict[str, list[str]], Optional[str]]:
-        """Phase G D33: batch-fetch P31 (instance-of) Q-ids for each candidate.
+        """Batch-fetch P31 (instance-of) Q-ids for each candidate.
 
         Calls ``wbgetentities`` with ``props=claims``, splitting into batches
         of at most ``Config.wikidata_type_filter_p31_batch_size`` (default 50,
@@ -1249,14 +1633,14 @@ class WikidataAdapter:
     ) -> list[Statement]:
         """Look up statements for (entity, predicate) via SPARQL against WDQS.
 
-        Honors the F2 design contract (§5):
+        Contract:
           - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
             (default `https://query.wikidata.org/sparql`).
           - Returns `Statement` objects with rank, qualifiers (default set
-            P580/P582/P642 per F2 §5), and provenance.
+            P580/P582/P642), and provenance.
           - Direction-neutral: looks up whatever entity/predicate it is
             given. `KBVerifier` is responsible for swapping the lookup
-            direction for inverse predicates (D19, fixup-3 resolution).
+            direction for inverse predicates.
           - Polarity-neutral: returns positive statements only; polarity
             handling lives in `KBVerifier._apply_polarity`.
           - HTTP-layer caching with statement TTL
@@ -1350,7 +1734,7 @@ class WikidataAdapter:
     ) -> SubsumptionResult:
         """Resolve subsumption between two Wikidata entities via SPARQL.
 
-        Honors the F2 design contract (§6):
+        Contract:
           - Two ASK queries (one per direction) for path-existence;
             ASK short-circuits on first match, so this is fast even on
             broad-fanout properties.
@@ -1465,6 +1849,97 @@ class WikidataAdapter:
 
         return (False, retries, "unreachable_code")  # pragma: no cover
 
+    def _live_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        use_part_of_bridge: bool,
+    ) -> TransitivePathResult:
+        """v0.16 WS2 §1: live single-direction transitive-path ASK.
+
+        One ASK (source -> target) via `_run_transitive_ask`, mirroring the
+        rate-limit/retry/cache shape of `_run_subsumption_ask`. Unlike
+        `_live_subsumption` (which runs BOTH directions + an establishing
+        SELECT for the four-verdict symmetric case), this is single-direction
+        and skips the establishing SELECT — the depth-1 anchor is approximated
+        by the alternation's first property for observability only.
+
+        FAIL-OPEN: on timeout/network/malformed the ASK returns False with an
+        error; this method surfaces it as `TransitivePathResult(holds=False,
+        error=...)`. One audit event `kb_verify_transitive_path`."""
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_transitive_path requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        start = time.monotonic()
+        holds, retries, error = self._run_transitive_ask(
+            source, target, properties, use_part_of_bridge
+        )
+        establishing = properties[0] if (holds and properties) else None
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_verify_transitive_path",
+            event_subject=f"{source}->{target}",
+            event_data={
+                "holds": holds,
+                "properties": list(properties),
+                "use_part_of_bridge": use_part_of_bridge,
+                "establishing_property": establishing,
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": error,
+            },
+        )
+        return TransitivePathResult(
+            holds=holds, establishing_property=establishing, error=error
+        )
+
+    def _run_transitive_ask(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        use_part_of_bridge: bool,
+    ) -> tuple[bool, int, Optional[str]]:
+        """Execute one transitive-path ASK (single direction). Returns
+        (boolean, retry_count, error_or_None). Mirrors `_run_subsumption_ask`
+        (rate-limit, single retry, treat timeout/error as a False ASK) but
+        builds the query via `_build_transitive_ask_query` so it serves the
+        single-property generic path as well as the relation alternation."""
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        query = _build_transitive_ask_query(
+            source, target, properties, use_part_of_bridge
+        )
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        retries = 0
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                return (False, retries, f"{type(exc).__name__}: {exc}")
+            except Exception as exc:
+                return (False, retries, f"{type(exc).__name__}: {exc}")
+
+            # ASK responses: {"head": {}, "boolean": true|false}
+            if not isinstance(data, dict):
+                return (False, retries, "malformed_response")
+            return (bool(data.get("boolean", False)), retries, None)
+
+        return (False, retries, "unreachable_code")  # pragma: no cover
+
     def _fetch_establishing_property(
         self, source: KBEntityID, target: KBEntityID, relation_type: str
     ) -> Optional[str]:
@@ -1504,12 +1979,11 @@ class WikidataAdapter:
         properties: tuple[KBPropertyID, ...],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5 + D51: live SPARQL enumeration of `entity`'s direct
+        """Live SPARQL enumeration of `entity`'s direct
         neighbors along `properties`, in the given `direction`. One
         round-trip, returns the parsed dict.
 
-        Honors the D5/D51 design contracts (`docs/phase_H/d5_design.md`
-        + `docs/v0.16_planning.md` D51 entry):
+        Contract:
           - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
             (default `https://query.wikidata.org/sparql`).
           - HTTP cache + 24h TTL via `Config.http_cache_statement_ttl_seconds`
@@ -1523,7 +1997,7 @@ class WikidataAdapter:
             honestly).
           - One audit-log event per call (`event_type="kb_live_neighbors"`,
             event_data carries `direction`).
-          - Reverse direction (D51): LIMIT bounds the query
+          - Reverse direction: LIMIT bounds the query
             (`Config.wikidata_neighbor_reverse_limit`, default 100) so
             unbounded properties like P17=Q30 don't blow up.
         """
@@ -1605,3 +2079,130 @@ class WikidataAdapter:
             },
         )
         return result
+
+    def _live_property_ontology(self, prop: KBPropertyID) -> dict:
+        """v0.16 WS1: live SPARQL fetch of `prop`'s P2302/P1647/P1696/P1659
+        ontology. One round-trip via `self._sparql_limiter`, statement TTL,
+        single retry on transient error. FAIL-OPEN: returns an empty ontology
+        on any error or a malformed P-id; one audit event either way."""
+        if not isinstance(prop, str) or not _PROPERTY_ID_PATTERN.match(prop):
+            return _empty_property_ontology()
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_property_ontology requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+        try:
+            query = _build_property_ontology_query(prop)
+        except ValueError:
+            return _empty_property_ontology()
+        params = {"query": query, "format": "json"}
+
+        start = time.monotonic()
+        retries = 0
+        last_error: Optional[str] = None
+        ontology = _empty_property_ontology()
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+            bindings = (
+                data.get("results", {}).get("bindings", [])
+                if isinstance(data, dict)
+                else []
+            )
+            ontology = _parse_property_ontology_bindings(bindings)
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_property_ontology",
+            event_subject=prop,
+            event_data={
+                "property": prop,
+                "subject_type_qids": ontology["subject_type_qids"],
+                "value_type_qids": ontology["value_type_qids"],
+                "inverse_pids": ontology["inverse_pids"],
+                "subproperty_pids": ontology["subproperty_pids"],
+                "related_pids": ontology["related_pids"],
+                "single_valued": ontology["single_valued"],
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return ontology
+
+    def _live_label(self, qid: KBEntityID) -> Optional[str]:
+        """v0.16 WS1: live wbgetentities (props=labels) fetch of `qid`'s
+        English label. One round-trip via `self._search_limiter` (the
+        action-API budget shared with wbsearchentities), entity TTL, single
+        retry. FAIL-OPEN: returns None on any error, a non-Q-id, or no label;
+        one audit event either way."""
+        if not isinstance(qid, str) or not _ENTITY_ID_PATTERN.match(qid):
+            return None
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_label requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+        url = self._cfg_value("wikidata_search_endpoint", _DEFAULT_SEARCH_ENDPOINT)
+        params = {
+            "action": "wbgetentities",
+            "ids": qid,
+            "props": "labels",
+            "languages": "en",
+            "format": "json",
+        }
+        ttl = self._cfg_value("http_cache_entity_ttl_seconds", _DEFAULT_ENTITY_TTL_SECONDS)
+
+        start = time.monotonic()
+        retries = 0
+        last_error: Optional[str] = None
+        label: Optional[str] = None
+        for attempt in range(2):
+            self._search_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+            label = _extract_label_from_entities(data, qid) if isinstance(data, dict) else None
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_fetch_label",
+            event_subject=qid,
+            event_data={
+                "qid": qid,
+                "label": label,
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return label
