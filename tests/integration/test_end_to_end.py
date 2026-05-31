@@ -366,3 +366,146 @@ class TestRetractionWiring:
         result = walker.walk(claim, _ctx())
         vr = aggregator.aggregate([claim], [result])
         assert len(vr.audit_log_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS3 §3C D13: KB verdicts are retractable via the entity_resolution_cache
+# row the resolved subject was keyed on. The walker stamps that row id on the KB
+# premise edge / provenance literal; the aggregator records it as a dependency;
+# retracting the cache row propagates to the KB verdict.
+# ---------------------------------------------------------------------------
+
+class TestD13KBVerdictRetractable:
+    def test_kb_verified_verdict_depends_on_entity_resolution_cache_row(self):
+        stmts = [Statement(value="Q11696", value_type="entity")]
+        walker, _, aggregator, _, propagator, _, db = _make_pipeline(kb_stmts=stmts)
+        c = _claim()
+        result = walker.walk(c, _ctx())
+        assert result.verdict == "verified"
+        # The walk grounded the verdict in KB and stamped the real resolver
+        # cache row id (the lookup-subject Obama→Q76 resolution) as the
+        # retractable dependency — surfaced via the provenance term.
+        prov_rows = result.trace.provenance.source_rows()
+        assert any(table == "entity_resolution_cache" for table, _ in prov_rows)
+        aggregator.aggregate([c], [result])
+        recorded = propagator._trace_index[c.claim_id]
+        assert any(table == "entity_resolution_cache" for table, _ in recorded)
+
+    def test_retracting_the_resolution_cache_row_propagates_to_kb_verdict(self):
+        stmts = [Statement(value="Q11696", value_type="entity")]
+        walker, _, aggregator, _, propagator, _, db = _make_pipeline(kb_stmts=stmts)
+        c = _claim()
+        result = walker.walk(c, _ctx())
+        aggregator.aggregate([c], [result])
+        cache_rows = [
+            (t, rid) for (t, rid) in propagator._trace_index[c.claim_id]
+            if t == "entity_resolution_cache"
+        ]
+        assert cache_rows, "KB verdict must record an entity_resolution_cache dependency"
+        _, cache_row_id = cache_rows[0]
+        retractions = propagator.propagate_retraction("entity_resolution_cache", cache_row_id)
+        assert any(r.claim_id == c.claim_id for r in retractions)
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS3 §3E: lazy premise-retraction. A *_given_assertion verdict resting on
+# an asserted_unverified Tier U premise goes STALE when that premise is
+# corrected/retracted; a base verdict (externally grounded) does NOT.
+# ---------------------------------------------------------------------------
+
+def _make_premise_retraction_pipeline():
+    """Like _make_pipeline but wires the retraction propagator into TierU (the
+    §3E premise-retraction entry point) and does NOT override write to
+    externally_verified — so a user assertion writes as asserted_unverified and
+    the walker can produce a *_given_assertion verdict."""
+    db = open_memory_db()
+    client = LLMClient(_transport=MockTransport())
+    kb = MockKB()
+    propagator = RetractionPropagator(db=db)
+    pt = PredicateTranslation(db=db, llm_client=client)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+    tier_u = TierU(db=db, predicate_translation=pt, retraction_propagator=propagator)
+    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=PythonVerifier(), substrate=substrate)
+    aggregator = Aggregator(retraction_propagator=propagator, db=db)
+    return walker, tier_u, aggregator, propagator, db
+
+
+class TestLazyPremiseRetraction:
+    def test_given_assertion_verdict_staled_when_premise_retracted(self):
+        walker, tier_u, aggregator, propagator, db = _make_premise_retraction_pipeline()
+        c = _claim()
+        # A bare user assertion with no external grounding → asserted_unverified
+        # premise → verified_given_assertion verdict.
+        write = tier_u.write(c, status="asserted_unverified")
+        result = walker.walk(c, _ctx())
+        assert result.verdict == "verified_given_assertion"
+        aggregator.aggregate([c], [result])
+        assert propagator.is_stale(c.claim_id) is False
+        # The user corrects/retracts the premise — the dependent
+        # *_given_assertion verdict is marked STALE for lazy re-derivation.
+        tier_u.retract(write.row_id, reason="user corrected the premise")
+        assert propagator.is_stale(c.claim_id) is True
+
+    def test_base_verdict_not_staled_when_premise_retracted(self):
+        walker, tier_u, aggregator, propagator, db = _make_premise_retraction_pipeline()
+        c = _claim("c_base")
+        # An externally_verified premise → plain `verified` base verdict.
+        write = tier_u.write(c, status="externally_verified")
+        result = walker.walk(c, _ctx())
+        assert result.verdict == "verified"
+        aggregator.aggregate([c], [result])
+        # Retracting the premise records the dependency (audit) but does NOT
+        # stale the base verdict — asymmetric trust (§3E).
+        retractions = propagator.propagate_retraction("tier_u", write.row_id)
+        assert any(r.claim_id == c.claim_id for r in retractions)
+        assert all(r.stale is False for r in retractions if r.claim_id == c.claim_id)
+        assert propagator.is_stale(c.claim_id) is False
+
+    def test_write_closure_propagates_via_propagator(self):
+        # The §3E entry point: TierU.write's closed_row_ids loop drives
+        # propagate_retraction. We exercise it directly through TierU.retract
+        # (the explicit retraction) — the closure path shares the same call.
+        walker, tier_u, aggregator, propagator, db = _make_premise_retraction_pipeline()
+        c = _claim("c_clo")
+        write = tier_u.write(c, status="asserted_unverified")
+        result = walker.walk(c, _ctx())
+        aggregator.aggregate([c], [result])
+        # No propagator call yet → not stale.
+        assert propagator.is_stale(c.claim_id) is False
+        tier_u.retract(write.row_id, reason="superseded")
+        assert propagator.is_stale(c.claim_id) is True
+        # Lazy re-derivation surface: once re-derived, clear_stale resets it.
+        propagator.clear_stale(c.claim_id)
+        assert propagator.is_stale(c.claim_id) is False
+
+    def test_get_verification_lazily_re_derives_stale_verdict(self):
+        # §3E lazy re-derivation surface end-to-end: a stored
+        # verified_given_assertion verdict goes stale when its premise is
+        # retracted; get_verification must re-walk, re-aggregate, and clear the
+        # stale flag — returning a refreshed result without raising.
+        from aedos.deployment.chat_wrapper import ChatWrapper
+        walker, tier_u, aggregator, propagator, db = _make_premise_retraction_pipeline()
+        client = LLMClient(_transport=MockTransport())
+        wrapper = ChatWrapper(
+            extractor=None, walker=walker, aggregator=aggregator,
+            llm_client=client, tier_u=tier_u,
+        )
+        c = _claim()
+        write = tier_u.write(c, status="asserted_unverified")
+        result = walker.walk(c, _ctx())
+        vr = aggregator.aggregate([c], [result])
+        assert vr.per_claim_verdicts["c1"] == "verified_given_assertion"
+        wrapper._verification_store["vid"] = vr
+
+        # Correct the premise → the dependent verdict is marked STALE.
+        tier_u.retract(write.row_id, reason="user corrected the premise")
+        assert propagator.is_stale("c1") is True
+
+        # Lazy re-derivation on next reference: re-walk + re-aggregate + clear.
+        refreshed = wrapper.get_verification("vid")
+        assert refreshed is not None
+        assert propagator.is_stale("c1") is False

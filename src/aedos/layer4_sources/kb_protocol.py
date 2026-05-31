@@ -131,6 +131,8 @@ class KBProtocol(Protocol):
         target: KBEntityID,
         kb_property: KBPropertyID,
         relation_type: Optional[str] = None,
+        *,
+        exception_cache=None,
     ) -> "TransitivePathResult": ...
 
     # v0.16 WS1: two ontology/label operations supporting multi-property

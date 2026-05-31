@@ -92,24 +92,25 @@ class JustificationTrace:
     polarity_trace: list[int] = field(default_factory=list)
     source_breakdown: dict = field(default_factory=dict)  # tier_u | kb | python counts
     walk_metadata: dict = field(default_factory=dict)  # depth, llm_calls, wall_clock_ms
-    # Phase H Cluster 2 step 1: set True (monotonically) when any premise on
-    # the derivation chain was an `asserted_unverified` Tier U row. The
-    # aggregator reads this flag and converts a base verdict to its
-    # `*_given_assertion` variant. Individual contributing edges carry
-    # `metadata['premise_status']` for fine-grained audit; this flag is
-    # the aggregated signal used at verdict-designation time. (Walker
-    # step 3 sets this; the field exists in step 1 so the schema is
-    # stable across the cluster.)
-    #
-    # v0.16 WS3 (Phase 1, additive): kept as a normal settable field for now.
-    # A later phase makes it a derived read-only property over `provenance`;
-    # in this foundation phase the walker still writes it directly.
-    chain_includes_assertion: bool = False
-    # v0.16 WS3: lazy AND/OR provenance term. A later phase has the walker
-    # populate it as edges are appended and derives chain_includes_assertion
-    # from it. In this foundation phase the field exists (default empty term)
-    # so the schema is stable across the workstream.
+    # v0.16 WS3 (§3A): lazy AND/OR provenance term. The walker populates it as
+    # edges are appended (via Walker._record_premise). It is the source of
+    # truth for assertion-conditionality; chain_includes_assertion is now a
+    # DERIVED read-only property over it. Lazy/discard-per-session — only the
+    # flattened (table,row_id) list is persisted (via verdict_recorded).
     provenance: ProvenanceTerm = field(default_factory=ProvenanceTerm)
+
+    # Phase H Cluster 2: True (monotonically) when any premise on the
+    # derivation chain is assertion-conditional (an asserted_unverified Tier U
+    # row, or the Q-UserAuth pre-seed). The aggregator reads this and converts
+    # a base verdict to its `*_given_assertion` variant. Individual edges carry
+    # `metadata['premise_status']` for fine-grained audit; this is the
+    # aggregated signal used at verdict-designation time.
+    #
+    # v0.16 WS3 (§3A): now a DERIVED read-only property over `provenance`
+    # (monotone-OR over its literals), reproducing the legacy boolean exactly.
+    @property
+    def chain_includes_assertion(self) -> bool:
+        return self.provenance.includes_assertion()
 
 
 def trace_to_json(trace: JustificationTrace) -> dict:

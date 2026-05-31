@@ -314,6 +314,14 @@ class KBVerifier:
         lookup_subject_id = self._resolver.select(
             self._resolver.resolve(lookup_ref, lookup_ctx), lookup_ctx
         )
+        # v0.16 WS3 D13: capture the entity_resolution_cache row id the
+        # lookup-subject resolution touched, BEFORE the value-entity resolve
+        # below overwrites the resolver's request-scoped state. This is the
+        # retractable dependency the KB verdict rests on — a wrong subject
+        # resolution is what a correction would retract. `getattr` guards mock
+        # resolvers that predate the accessor; None when no cache row was hit.
+        _last_row_id = getattr(self._resolver, "last_cache_row_id", None)
+        resolution_cache_row_id = _last_row_id() if callable(_last_row_id) else None
         if lookup_subject_id is None:
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
@@ -322,6 +330,7 @@ class KBVerifier:
                     "reference": lookup_ref,
                     "abstention_reason": "lookup_subject_unresolved",
                     "lookup_inverted": lookup_inverted,
+                    "resolution_cache_row_id": resolution_cache_row_id,
                 },
             )
 
@@ -397,6 +406,7 @@ class KBVerifier:
                         "positive_verdict": pos_verdict.value,
                         "lookup_inverted": lookup_inverted,
                         "no_statements_subsumption_fallback": True,
+                        "resolution_cache_row_id": resolution_cache_row_id,
                     },
                 )
             # NO_MATCH is polarity-invariant — absence of evidence is not evidence.
@@ -409,6 +419,7 @@ class KBVerifier:
                     "property": binding.kb_property,
                     "abstention_reason": "no_statements",
                     "lookup_inverted": lookup_inverted,
+                    "resolution_cache_row_id": resolution_cache_row_id,
                 },
             )
 
@@ -445,6 +456,7 @@ class KBVerifier:
                         "polarity": claim.polarity,
                         "lookup_inverted": lookup_inverted,
                         "abstention_reason": "value_type_incompatible_binding",
+                        "resolution_cache_row_id": resolution_cache_row_id,
                     },
                 )
 
@@ -461,6 +473,7 @@ class KBVerifier:
             "positive_verdict": pos_verdict.value,
             "single_valued": binding.single_valued,
             "lookup_inverted": lookup_inverted,
+            "resolution_cache_row_id": resolution_cache_row_id,
         }
         # When the verdict is an abstention (NO_MATCH), record *why* — Phase 10.5
         # debugging needs to tell a resolution failure apart from a genuine

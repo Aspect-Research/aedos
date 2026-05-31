@@ -328,14 +328,22 @@ class TestVerdictSetStructuralConsistency:
         assert dual_plan.per_claim_actions[0].action_type.value == "correct"
 
     def test_trace_serialization_round_trip_carries_assertion_flag(self):
-        # JustificationTrace.chain_includes_assertion survives trace_to_json.
-        from aedos.layer5_result.trace import trace_to_json
-        trace = JustificationTrace(
-            root=TraceNode("claim"),
-            chain_includes_assertion=True,
+        # JustificationTrace.chain_includes_assertion (now DERIVED from the
+        # provenance term, v0.16 WS3 §3A) survives trace_to_json. Populate the
+        # term with an assertion-conditional literal; the derived boolean must
+        # serialize True and the provenance view must be present.
+        from aedos.layer5_result.trace import (
+            ProvenanceLiteral,
+            ProvenanceTerm,
+            trace_to_json,
+        )
+        trace = JustificationTrace(root=TraceNode("claim"))
+        trace.provenance.add_alternative(
+            ProvenanceTerm.lit(ProvenanceLiteral(source="tier_u", assertion=True))
         )
         j = trace_to_json(trace)
         assert j["chain_includes_assertion"] is True
+        assert "provenance" in j
 
     def test_corpus_runner_accepts_every_verdict(self):
         # The corpus runner's expected-verdict comparison must accept all
@@ -351,6 +359,67 @@ class TestVerdictSetStructuralConsistency:
                 f"verdict {v!r} missing from _VERDICT_TO_BASE_COUNT — "
                 "the six-way verdict set has drifted"
             )
+
+
+class TestExtractSourceRows:
+    """v0.16 WS3 §3C/D13: _extract_source_rows feeds the retraction propagator's
+    dependency index. It prefers the structured provenance term when populated
+    (the walker's source of truth) and falls back to the legacy edge-metadata
+    scan for hand-built test traces. The D13 entity_resolution_cache key makes
+    KB-grounded verdicts retractable when a cached entity resolution is retracted.
+    """
+
+    def test_entity_resolution_cache_key_registered(self):
+        from aedos.layer5_result.aggregator import _TRACE_ROW_ID_KEYS
+        assert _TRACE_ROW_ID_KEYS["entity_resolution_cache_row_id"] == "entity_resolution_cache"
+
+    def test_edge_scan_extracts_entity_resolution_cache_row(self):
+        # D13: a KB premise edge stamping entity_resolution_cache_row_id is
+        # pulled into source_rows via the legacy edge scan (no provenance term).
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        from aedos.layer5_result.trace import TraceEdge
+        root = TraceNode("claim")
+        trace = JustificationTrace(root=root)
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup", source=root,
+            target=TraceNode("kb_statement"),
+            metadata={"source": "kb", "entity_resolution_cache_row_id": 42},
+        ))
+        assert _extract_source_rows(trace) == [("entity_resolution_cache", 42)]
+
+    def test_provenance_term_preferred_over_edge_scan(self):
+        # When the provenance term carries source rows, it is the single source
+        # of truth — the edge scan is not consulted (so a term-only KB verdict,
+        # with no edge metadata, still surfaces its entity_resolution_cache dep).
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        from aedos.layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        root = TraceNode("claim")
+        trace = JustificationTrace(root=root)
+        trace.provenance.add_alternative(ProvenanceTerm.lit(
+            ProvenanceLiteral(source="kb", table="entity_resolution_cache", row_id=9)))
+        assert _extract_source_rows(trace) == [("entity_resolution_cache", 9)]
+
+    def test_empty_trace_extracts_nothing(self):
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        trace = JustificationTrace(root=TraceNode("claim"))
+        assert _extract_source_rows(trace) == []
+
+    def test_aggregate_records_entity_resolution_cache_dependency(self):
+        # End of the chain: the aggregator records the D13 dependency into the
+        # propagator's trace index, so retracting that cache row propagates to
+        # the KB verdict.
+        from aedos.layer5_result.retraction import RetractionPropagator
+        from aedos.layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        prop = RetractionPropagator()
+        agg = Aggregator(retraction_propagator=prop)
+        c = _claim("c1")
+        wr = _walk_result("verified")
+        wr.trace.provenance.add_alternative(ProvenanceTerm.lit(
+            ProvenanceLiteral(source="kb", table="entity_resolution_cache", row_id=7)))
+        agg.aggregate([c], [wr])
+        assert ("entity_resolution_cache", 7) in prop._trace_index["c1"]
+        retracted = prop.propagate_retraction("entity_resolution_cache", 7)
+        assert any(r.claim_id == "c1" for r in retracted)
 
 
 class TestAggregatorTraces:

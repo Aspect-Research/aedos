@@ -15,6 +15,14 @@ class VerdictRetraction:
     retracted_row_id: int
     retracted_table: str
     retracted_at: str
+    # v0.16 WS3 §3E: lazy staleness. `stale` is True when the verdict was
+    # marked for lazy re-derivation (scoped to *_given_assertion verdicts —
+    # the assertion-conditional ones a premise correction can invalidate).
+    # `scoped_given_assertion` records whether the verdict was *_given_assertion
+    # (the scope predicate). Defaulted so the existing return shape is preserved
+    # for callers that read only the original five fields.
+    stale: bool = False
+    scoped_given_assertion: bool = False
 
 
 class RetractionPropagator:
@@ -24,6 +32,11 @@ class RetractionPropagator:
     during aggregation. replay() rehydrates it from persisted `verdict_recorded`
     audit events at process startup, so retraction propagation survives process
     restarts (D6 — architecture 7.3, over-time soundness).
+
+    v0.16 WS3 §3E: propagate_retraction is now CONSUMED — its return is
+    load-bearing, and it marks dependent *_given_assertion verdicts STALE
+    (lazy re-derivation) via a `_stale` set the deployment layer consults on
+    next reference.
     """
 
     def __init__(self, db=None) -> None:
@@ -32,6 +45,9 @@ class RetractionPropagator:
         self._trace_index: dict[str, list[tuple[str, int]]] = {}
         # claim_id → last known verdict
         self._verdict_index: dict[str, str] = {}
+        # v0.16 WS3 §3E: claim_ids whose *_given_assertion verdict had a premise
+        # retracted/corrected and has not yet been re-derived.
+        self._stale: set[str] = set()
 
     def record_verdict_trace(self, claim_id: str, verdict: str, source_rows: list[tuple[str, int]]) -> None:
         """Record which rows a verdict's trace depends on."""
@@ -76,32 +92,62 @@ class RetractionPropagator:
         return count
 
     def propagate_retraction(self, table: str, row_id: int) -> list[VerdictRetraction]:
-        """Find all verdicts that depend on (table, row_id) and mark them retracted."""
+        """Find all verdicts depending on (table, row_id); mark the
+        *_given_assertion ones STALE for lazy re-derivation.
+
+        v0.16 WS3 §3E: staleness is SCOPED to *_given_assertion verdicts — the
+        assertion-conditional verdicts a premise correction/retraction can
+        invalidate. A base verified/contradicted verdict grounded in an
+        externally-verified source is NOT made stale by a Tier U premise
+        retraction (asymmetric trust). The dependency on a base verdict is still
+        recorded in the returned VerdictRetraction (for audit), just with
+        stale=False, so resolver-cache retractions on base KB verdicts surface
+        without auto-staling them (open decision §0.11 #3 default: strict scope).
+        """
+        from .aggregator import is_given_assertion  # lazy: avoid import cycle
+
         now = datetime.now(timezone.utc).isoformat()
         retracted: list[VerdictRetraction] = []
 
         for claim_id, rows in self._trace_index.items():
-            if (table, row_id) in rows:
-                verdict = self._verdict_index.get(claim_id, "unknown")
-                retraction = VerdictRetraction(
+            if (table, row_id) not in rows:
+                continue
+            verdict = self._verdict_index.get(claim_id, "unknown")
+            ga = is_given_assertion(verdict)
+            if ga:
+                self._stale.add(claim_id)
+            retracted.append(
+                VerdictRetraction(
                     claim_id=claim_id,
                     verdict=verdict,
                     retracted_row_id=row_id,
                     retracted_table=table,
                     retracted_at=now,
+                    stale=ga,
+                    scoped_given_assertion=ga,
                 )
-                retracted.append(retraction)
-
-                if self._db is not None:
-                    log_event(
-                        self._db,
-                        event_type="verdict_retracted",
-                        event_subject=claim_id,
-                        event_data={
-                            "verdict": verdict,
-                            "retracted_row_id": row_id,
-                            "retracted_table": table,
-                        },
-                    )
+            )
+            if self._db is not None:
+                log_event(
+                    self._db,
+                    event_type="verdict_retracted",
+                    event_subject=claim_id,
+                    event_data={
+                        "verdict": verdict,
+                        "retracted_row_id": row_id,
+                        "retracted_table": table,
+                        "stale": ga,
+                    },
+                )
 
         return retracted
+
+    def is_stale(self, claim_id: str) -> bool:
+        """v0.16 WS3 §3E: True iff a dependent premise was retracted/corrected
+        and the verdict has not yet been re-derived. The deployment layer
+        consults this lazily on next reference and re-walks stale claims."""
+        return claim_id in self._stale
+
+    def clear_stale(self, claim_id: str) -> None:
+        """v0.16 WS3 §3E: called after a stale verdict has been re-derived."""
+        self._stale.discard(claim_id)

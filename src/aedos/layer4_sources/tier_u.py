@@ -63,6 +63,7 @@ class TierU:
         entity_resolver=None,  # stub in Phase 3; wired in Phase 4
         predicate_translation: Optional[PredicateTranslation] = None,
         wikipedia_normalizer=None,
+        retraction_propagator=None,
     ) -> None:
         # `db` is required; audit events are written via log_event(db, ...)
         # unconditionally — the vestigial `audit_log` flag (a D8 leftover that
@@ -80,6 +81,12 @@ class TierU:
         self._resolver = entity_resolver
         self._oracle = predicate_translation
         self._normalizer = wikipedia_normalizer
+        # v0.16 WS3 §3E: the premise-retraction entry point. When a user
+        # correction closes a prior Tier U row (write's closed_row_ids loop) or
+        # retract() soft-deletes one, propagate_retraction marks any
+        # *_given_assertion verdict that depended on that premise STALE for lazy
+        # re-derivation. Optional — None (test paths) skips the propagation.
+        self._propagator = retraction_propagator
 
     def _normalize_slot(self, value: str, claim: Claim, slot: str) -> str:
         """Phase H D47: return the canonical Wikipedia form for a claim
@@ -325,6 +332,14 @@ class TierU:
         self._db.commit()
         row_id: int = self._db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
+        # v0.16 WS3 §3E: a closed (superseded) premise is a retraction of the
+        # prior belief. Mark any *_given_assertion verdict that rested on it
+        # STALE for lazy re-derivation. Fires once per closed row; a None
+        # propagator (test paths) no-ops.
+        if self._propagator is not None:
+            for closed_id in closed_row_ids:
+                self._propagator.propagate_retraction("tier_u", closed_id)
+
         contradiction_closed = bool(closed_row_ids)
         log_event(
             self._db,
@@ -489,6 +504,10 @@ class TierU:
             event_subject=f"tier_u:{row_id}",
             event_data={"reason": reason},
         )
+        # v0.16 WS3 §3E: propagate the retraction — mark dependent
+        # *_given_assertion verdicts STALE for lazy re-derivation.
+        if self._propagator is not None:
+            self._propagator.propagate_retraction("tier_u", row_id)
 
     def mark_externally_verified(
         self,
