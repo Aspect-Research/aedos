@@ -1,0 +1,331 @@
+"""Offline (mocked, no live API/network) regression net for the v0.16.x
+soundness + coverage fixes — the DURABLE replacement for the operator-only live
+medium bar. Lives under tests/integration so it runs in the gated suite / CI
+(no live calls — pure mock doubles).
+
+Each case drives the REAL verdict pipeline — the real `Walker` (routing +
+discover/verify), the real `KBVerifier` (the WS1/WS2/WS5 verdict code), and the
+real `Aggregator.compose_statement_verdict` (the WS3 traced rollup AedosRunner
+uses) — against MOCK KB + LLM doubles. The mocks supply only the KB facts and
+the predicate-metadata routing; every verdict decision is made by production
+code. The benchmark harness's `compute_metrics` then confirms the run would
+clear the two HARD soundness gates (`false_verified == 0`,
+`false_contradicted == 0`).
+
+Pinned fixes:
+  - mhd_018-shape "Vatican is in Africa" -> contradicted   (WS5a geo-disjoint)
+  - circa-date "Tadhg ... born c. 1550" vs KB year 1550 -> NOT contradicted
+    (WS1 approximate-date false-contradict fix)
+  - copula-occupation "Robby Krieger is a guitarist" -> verified via P106 (WS2)
+"""
+
+from __future__ import annotations
+
+from aedos.database import open_memory_db
+from aedos.layer1_extraction.extractor import Claim
+from aedos.layer1_extraction.triage import TriageDecision
+from aedos.layer3_substrate import Substrate
+from aedos.layer3_substrate.predicate_translation import (
+    PredicateBinding,
+    PredicateMetadata,
+)
+from aedos.layer3_substrate.resolver import EntityResolver
+from aedos.layer4_sources.kb_protocol import (
+    ResolutionCandidate,
+    Statement,
+    SubsumptionResult,
+)
+from aedos.layer4_sources.kb_verifier import KBVerifier
+from aedos.layer4_sources.tier_u import TierU
+from aedos.layer4_sources.walker import VerificationContext, Walker
+from aedos.layer5_result.aggregator import Aggregator
+# v0.16.1 WS5a: the geo predicate cluster lives in the WikidataAdapter behind
+# the kb_protocol seam. The mock KB mixes in the relocated accessors so the
+# walker/verifier geo-disjoint path runs the SAME production code under mocks.
+from aedos.layer4_sources.kb_wikidata import (
+    _GEO_CONTAINER_TYPES,
+    _LOCATION_KB_PROPERTIES,
+    _geographic_disjoint,
+)
+from tests.evaluation.benchmark import (
+    BenchmarkCase,
+    RunResult,
+    compute_metrics,
+    soundness_gates,
+)
+
+
+# ---------------------------------------------------------------------------
+# Mock doubles (no live API / network)
+# ---------------------------------------------------------------------------
+
+class _GeoMixin:
+    """Relocated geographic protocol surface, delegating to the adapter's real
+    logic driven by the mock's own `subsumption` — keeps the geo-disjoint path
+    byte-identical under mocks."""
+
+    def is_location_property(self, kb_property):
+        return kb_property in _LOCATION_KB_PROPERTIES
+
+    def geo_container_types(self):
+        return _GEO_CONTAINER_TYPES
+
+    def geographic_disjoint(self, value_qid, expected_qid):
+        return _geographic_disjoint(self.subsumption, value_qid, expected_qid)
+
+
+class _MockKB(_GeoMixin):
+    """KB keyed BY PROPERTY for lookups, with configurable resolutions and
+    pairwise subsumptions. Nothing here decides a verdict — it only returns
+    facts the production verifier reasons over."""
+
+    def __init__(self, statements_by_property=None, resolutions=None, subsumptions=None):
+        self._by_prop = statements_by_property or {}
+        self._resolutions = resolutions or {}
+        self._subsumptions = subsumptions or {}
+
+    def resolve_entity(self, reference, local_context):
+        qid = self._resolutions.get(reference)
+        return [ResolutionCandidate(kb_identifier=qid, score=0.95)] if qid else []
+
+    def lookup_statements(self, entity, predicate):
+        return list(self._by_prop.get(predicate, []))
+
+    def subsumption(self, entity_a, entity_b, relation_type):
+        verdict = self._subsumptions.get((entity_a, entity_b, relation_type), "unrelated")
+        return SubsumptionResult(verdict=verdict)
+
+
+class _StubPT:
+    """PredicateTranslation stand-in: `consult` returns a fixed
+    PredicateMetadata so the test pins the exact routing + binding shape the
+    walker and verifier both read. No LLM call is ever made."""
+
+    def __init__(self, meta: PredicateMetadata):
+        self._meta = meta
+
+    def consult(self, predicate, kb_namespace=None):
+        return self._meta
+
+
+def _meta(predicate, bindings, *, object_type="entity", single_valued=0):
+    return PredicateMetadata(
+        id=1,
+        aedos_predicate=predicate,
+        object_type=object_type,
+        user_subject_required=False,
+        distinct_slots=None,
+        routing_hint="kb_resolvable",
+        kb_namespace=None,
+        kb_property=None,
+        slot_to_qualifier=None,
+        reason="offline-regression",
+        created_at="t",
+        bindings=bindings,
+        single_valued=single_valued,
+    )
+
+
+def _build(meta: PredicateMetadata, kb: _MockKB):
+    """Construct the REAL Walker + Substrate + KBVerifier + Aggregator + TierU
+    over a fresh in-memory DB. Tier U is empty (every lookup misses), so the
+    walk falls through to the real external-grounding KB path."""
+    db = open_memory_db()
+    pt = _StubPT(meta)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    # The walker reads routing only off substrate.predicate_translation.consult;
+    # the kb_resolvable cases here never touch subsumption / predicate_distribution.
+    substrate = Substrate(
+        resolver=resolver,
+        predicate_translation=pt,
+        subsumption=None,
+        predicate_distribution=None,
+    )
+    walker = Walker(
+        tier_u=TierU(db=db),
+        kb_verifier=kb_verifier,
+        python_verifier=None,
+        substrate=substrate,
+        kb=kb,
+    )
+    aggregator = Aggregator(db=db)
+    return walker, aggregator
+
+
+def _claim(subject, predicate, obj, polarity=1):
+    return Claim(
+        claim_id="c1",
+        subject=subject,
+        predicate=predicate,
+        object=obj,
+        polarity=polarity,
+        source_text=f"{subject} {predicate} {obj}",
+        asserting_party="offline_regression",
+        triage_decision=TriageDecision.VERIFY,
+    )
+
+
+def _verdict(meta, kb, claim):
+    """Run the claim through the real walk + the real statement-verdict
+    composition — exactly the path AedosRunner uses — and return the verdict."""
+    walker, aggregator = _build(meta, kb)
+    ctx = VerificationContext(
+        current_time="2026-01-01T00:00:00Z",
+        asserting_party="offline_regression",
+        source_text=claim.source_text,
+    )
+    result = walker.walk(claim, ctx)
+    statement = aggregator.compose_statement_verdict([result], source_text=claim.source_text)
+    return statement.verdict
+
+
+# ---------------------------------------------------------------------------
+# Pinned regression cases
+# ---------------------------------------------------------------------------
+
+class TestOfflineRegression:
+    def test_mhd_018_vatican_in_africa_contradicted(self):
+        # WS5a geo-disjoint. The Vatican (Q237) has no P131 statement but is
+        # part_of Europe (Q46) and unrelated to the claimed container Africa
+        # (Q15) — geographically disjoint => CONTRADICTED. (mhd_018 shape.)
+        kb = _MockKB(
+            statements_by_property={"P131": []},
+            resolutions={"Vatican": "Q237", "Africa": "Q15"},
+            subsumptions={("Q237", "Q46", "part_of"): "a_subsumed_by_b"},
+        )
+        meta = _meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verdict = _verdict(meta, kb, _claim("Vatican", "located_in", "Africa"))
+        assert verdict == "contradicted"
+
+    def test_circa_date_not_contradicted(self):
+        # WS1 approximate-date fix. "born c. 1550" against KB year 1550 must
+        # MATCH on year-equality (verified), never CONTRADICTED — the
+        # false-contradict the v0.16 review missed. born_on is single_valued, so
+        # pre-fix it flipped to contradicted; post-fix it verifies.
+        # value_type="literal" mirrors the REAL WikidataAdapter: its SPARQL
+        # binds `IF(isURI(?value), "entity", "literal")`, so a P569 date literal
+        # is tagged "literal" (never "time"/"date"). single_valued=True on the
+        # BINDING (not just the metadata) is what licenses the contradiction
+        # promotion — without it the predicate is multi-valued and can never
+        # contradict, so the pin below would pass vacuously.
+        kb = _MockKB(
+            statements_by_property={"P569": [Statement(value="1550-01-01T00:00:00Z", value_type="literal")]},
+            resolutions={"Tadhg Dall O hUiginn": "Q1"},
+        )
+        meta = _meta("born_on", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P569", source="oracle",
+                             single_valued=True),
+        ], object_type="time", single_valued=1)
+        verdict = _verdict(meta, kb, _claim("Tadhg Dall O hUiginn", "born_on", "c. 1550"))
+        assert verdict != "contradicted"
+        assert verdict == "verified"
+
+    def test_circa_date_mismatch_abstains_not_contradicts(self):
+        # The soundness dual: "born c. 1550" against KB year 1600 must ABSTAIN
+        # (an approximation cannot soundly contradict a nearby exact date), never
+        # CONTRADICTED — even though born_on is single_valued.
+        # Faithful mock (value_type="literal") + single_valued BINDING so the
+        # single-valued contradiction-promotion path is actually reachable —
+        # this is what makes the abstain assertion a genuine pin of the WS1
+        # suppression (line kb_verifier _is_approx_year). With value_type="time"
+        # or a multi-valued binding the verdict abstains for an unrelated reason
+        # and the pin is vacuous; here, reverting the WS1 suppression flips this
+        # to CONTRADICTED.
+        kb = _MockKB(
+            statements_by_property={"P569": [Statement(value="1600-01-01T00:00:00Z", value_type="literal")]},
+            resolutions={"Tadhg Dall O hUiginn": "Q1"},
+        )
+        meta = _meta("born_on", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P569", source="oracle",
+                             single_valued=True),
+        ], object_type="time", single_valued=1)
+        verdict = _verdict(meta, kb, _claim("Tadhg Dall O hUiginn", "born_on", "c. 1550"))
+        assert verdict != "contradicted"
+
+    def test_copula_occupation_verified_via_p106(self):
+        # WS2 occupation-copula grounding. "Robby Krieger is a guitarist"
+        # routes the instance_of copula to bindings [P31, P106]; P31 (Q5 human)
+        # never grounds the occupation, but P106 holds the guitarist Q-id and
+        # the resolved object is a confirmed occupation class (P106's value
+        # type) => VERIFIED via the positive P106 path.
+        guitarist_qid = "Q855091"
+        occupation_class = "Q28640"  # profession (P106 value type)
+        kb = _MockKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],         # human (no match)
+                "P106": [Statement(value=guitarist_qid, value_type="entity")],  # guitarist (match)
+            },
+            resolutions={"Robby Krieger": "Q314459", "guitarist": guitarist_qid},
+            # The object (guitarist) is a confirmed occupation/profession class,
+            # gating the positive P106 match (fail-closed otherwise).
+            subsumptions={(guitarist_qid, occupation_class, "is_a"): "a_subsumed_by_b"},
+        )
+        # The P106 candidate is synthesized exactly as production does it
+        # (predicate_translation.py WS2): source="candidate", value_type_gated=True.
+        # value_type_gated is LOAD-BEARING here: it routes the positive match
+        # through the FAIL-CLOSED `_object_confirms_value_type` gate, so the
+        # `subsumptions` occupation evidence is what licenses VERIFIED. Without
+        # value_type_gated the binding would verify on a plain value match and
+        # the WS2 type-gate would never be exercised (a vacuous pin); reverting
+        # the WS2 positive gate then flips this to abstain.
+        meta = _meta("instance_of", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P31", source="oracle"),
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P106", source="candidate",
+                object_entity_types=[occupation_class], value_type_gated=True,
+            ),
+        ])
+        verdict = _verdict(meta, kb, _claim("Robby Krieger", "instance_of", "guitarist"))
+        assert verdict == "verified"
+
+    def test_pinned_cases_clear_both_hard_soundness_gates(self):
+        # End-to-end: feed the pinned verdicts (each produced by a real walk
+        # above) through the benchmark harness's compute_metrics and confirm
+        # BOTH hard gates pass and accuracy is perfect — the offline net mirrors
+        # exactly what the live harness would gate on.
+        vatican_kb = _MockKB(
+            statements_by_property={"P131": []},
+            resolutions={"Vatican": "Q237", "Africa": "Q15"},
+            subsumptions={("Q237", "Q46", "part_of"): "a_subsumed_by_b"})
+        vatican_meta = _meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle")])
+
+        circa_kb = _MockKB(
+            statements_by_property={"P569": [Statement(value="1550-01-01T00:00:00Z", value_type="literal")]},
+            resolutions={"Tadhg": "Q1"})
+        circa_meta = _meta("born_on", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P569", source="oracle",
+                             single_valued=True)],
+            object_type="time", single_valued=1)
+
+        guitarist = "Q855091"
+        cop_kb = _MockKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],
+                "P106": [Statement(value=guitarist, value_type="entity")]},
+            resolutions={"Krieger": "Q314459", "guitarist": guitarist},
+            subsumptions={(guitarist, "Q28640", "is_a"): "a_subsumed_by_b"})
+        cop_meta = _meta("instance_of", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P31", source="oracle"),
+            PredicateBinding(kb_namespace="wikidata", kb_property="P106", source="candidate",
+                             object_entity_types=["Q28640"], value_type_gated=True)])
+
+        runs = [
+            ("vatican", "contradicted",
+             _verdict(vatican_meta, vatican_kb, _claim("Vatican", "located_in", "Africa"))),
+            ("circa", "verified",
+             _verdict(circa_meta, circa_kb, _claim("Tadhg", "born_on", "c. 1550"))),
+            ("copula", "verified",
+             _verdict(cop_meta, cop_kb, _claim("Krieger", "instance_of", "guitarist"))),
+        ]
+        cases = [BenchmarkCase(cid, "s", gt, "regression", "") for cid, gt, _ in runs]
+        results = [RunResult(cid, verdict) for cid, _, verdict in runs]
+
+        metrics = compute_metrics(cases, results)
+        gates = soundness_gates(metrics)
+        assert gates["false_verified == 0"] is True, [r.verdict for r in results]
+        assert gates["false_contradicted == 0"] is True, [r.verdict for r in results]
+        assert metrics.accuracy == 1.0
