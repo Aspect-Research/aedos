@@ -65,6 +65,8 @@ def triage(
     valid_from: Optional[str] = None,
     valid_until: Optional[str] = None,
     valid_during_ref: Optional[str] = None,
+    valid_from_ref: Optional[str] = None,
+    valid_until_ref: Optional[str] = None,
 ) -> TriageDecision:
     """Decide whether a claim is worth routing (VERIFY) or is inert prose."""
     if predicate in _ALWAYS_VERIFY:
@@ -77,6 +79,6 @@ def triage(
         return TriageDecision.VERIFY
     if _has_named_entity(subject) or _has_named_entity(object_value):
         return TriageDecision.VERIFY
-    if valid_from or valid_until or valid_during_ref:
+    if valid_from or valid_until or valid_during_ref or valid_from_ref or valid_until_ref:
         return TriageDecision.VERIFY
     return TriageDecision.INERT_PROSE

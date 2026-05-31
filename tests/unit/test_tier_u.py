@@ -27,6 +27,8 @@ def _claim(
     valid_from=None,
     valid_until=None,
     valid_during_ref=None,
+    valid_from_ref=None,
+    valid_until_ref=None,
 ):
     return Claim(
         claim_id="c1",
@@ -40,6 +42,8 @@ def _claim(
         valid_from=valid_from,
         valid_until=valid_until,
         valid_during_ref=valid_during_ref,
+        valid_from_ref=valid_from_ref,
+        valid_until_ref=valid_until_ref,
     )
 
 
@@ -874,3 +878,135 @@ class TestTierUIntervalEndpointRows:
         )
         assert result.found is True
         assert result.rows[0]["object"] == "2011"
+
+
+# ---------------------------------------------------------------------------
+# TestTierUEventRelativeRefRows — v0.16.1 WS8 Stage 1: a claim carrying the
+# event-relative bound refs (valid_from_ref / valid_until_ref) WRITES and READS
+# BACK the new tier_u columns, and the additive DB migration is idempotent
+# (re-running create_schema on an existing-schema DB neither errors nor drops
+# rows). WRITE-ONLY metadata — no grounding/verdict path reads them.
+# ---------------------------------------------------------------------------
+
+class TestTierUEventRelativeRefRows:
+    def test_valid_until_ref_writes_and_reads_back(self):
+        tu, db = _tier_u()
+        wr = tu.write(
+            _claim(
+                subject="The team", predicate="had", object_val="five members",
+                valid_until_ref="claim_acquisition",
+            )
+        )
+        row = db.execute(
+            "SELECT valid_from_ref, valid_until_ref FROM tier_u WHERE id=?",
+            (wr.row_id,),
+        ).fetchone()
+        assert row["valid_until_ref"] == "claim_acquisition"
+        assert row["valid_from_ref"] is None
+
+    def test_valid_from_ref_writes_and_reads_back(self):
+        tu, db = _tier_u()
+        wr = tu.write(
+            _claim(
+                subject="she", predicate="was", object_val="President",
+                valid_from_ref="claim_election",
+            )
+        )
+        row = db.execute(
+            "SELECT valid_from_ref, valid_until_ref FROM tier_u WHERE id=?",
+            (wr.row_id,),
+        ).fetchone()
+        assert row["valid_from_ref"] == "claim_election"
+        assert row["valid_until_ref"] is None
+
+    def test_both_refs_persist_alongside_dates(self):
+        tu, db = _tier_u()
+        wr = tu.write(
+            _claim(
+                subject="X", predicate="held", object_val="office",
+                valid_from="2008", valid_until="2016",
+                valid_from_ref="claim_start", valid_until_ref="claim_end",
+            )
+        )
+        row = db.execute(
+            """SELECT valid_from, valid_until, valid_from_ref, valid_until_ref
+               FROM tier_u WHERE id=?""",
+            (wr.row_id,),
+        ).fetchone()
+        assert row["valid_from"] == "2008"
+        assert row["valid_until"] == "2016"
+        assert row["valid_from_ref"] == "claim_start"
+        assert row["valid_until_ref"] == "claim_end"
+
+    def test_ref_columns_default_null_when_unset(self):
+        # A plain claim with no refs leaves the new columns NULL — preserving
+        # prior-row semantics (the additive migration's NULL default).
+        tu, db = _tier_u()
+        wr = tu.write(_claim(subject="Asa", predicate="holds_role", object_val="President"))
+        row = db.execute(
+            "SELECT valid_from_ref, valid_until_ref FROM tier_u WHERE id=?",
+            (wr.row_id,),
+        ).fetchone()
+        assert row["valid_from_ref"] is None
+        assert row["valid_until_ref"] is None
+
+    def test_migration_is_idempotent_and_non_destructive(self):
+        # Simulate a pre-WS8 DB: a tier_u table WITHOUT the event-relative ref
+        # columns, carrying a prior row. Running create_schema must ADD the
+        # columns (additive), leave the prior row intact (non-destructive, NULL
+        # default), and re-running create_schema again must neither error nor
+        # alter the data (idempotent ALTER guarded by OperationalError).
+        import sqlite3
+
+        from aedos.database import create_schema
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        # Minimal legacy tier_u missing valid_from_ref / valid_until_ref.
+        conn.execute(
+            """CREATE TABLE tier_u (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asserting_party TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                object TEXT NOT NULL,
+                polarity INTEGER NOT NULL,
+                valid_from TEXT,
+                valid_until TEXT,
+                valid_during_ref TEXT,
+                source_text TEXT NOT NULL,
+                asserted_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            """INSERT INTO tier_u
+               (asserting_party, subject, predicate, object, polarity,
+                source_text, asserted_at)
+               VALUES ('user_test', 'Legacy', 'p', 'o', 1, 'seed', '2026-01-01')"""
+        )
+        conn.commit()
+        legacy_cols = {r[1] for r in conn.execute("PRAGMA table_info(tier_u)")}
+        assert "valid_from_ref" not in legacy_cols
+        assert "valid_until_ref" not in legacy_cols
+
+        # First migration: additive — columns appear, prior row preserved.
+        create_schema(conn)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tier_u)")}
+        assert "valid_from_ref" in cols
+        assert "valid_until_ref" in cols
+        legacy = conn.execute(
+            "SELECT subject, valid_from_ref, valid_until_ref FROM tier_u WHERE subject='Legacy'"
+        ).fetchone()
+        assert legacy is not None  # non-destructive: prior row survives
+        assert legacy["valid_from_ref"] is None
+        assert legacy["valid_until_ref"] is None
+
+        # Second migration on the same (now-current-schema) connection: the
+        # guarded ALTER hits OperationalError and is swallowed — no raise, no
+        # data loss.
+        create_schema(conn)
+        row_count = conn.execute(
+            "SELECT COUNT(*) FROM tier_u WHERE subject='Legacy'"
+        ).fetchone()[0]
+        assert row_count == 1
+        conn.close()

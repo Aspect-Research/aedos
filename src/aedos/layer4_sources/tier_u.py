@@ -307,9 +307,10 @@ class TierU:
             """INSERT INTO tier_u
                (asserting_party, subject, predicate, object, polarity,
                 valid_from, valid_until, valid_during_ref,
+                valid_from_ref, valid_until_ref,
                 source_text, source_context, asserted_at,
                 subject_surface, object_surface, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 claim.asserting_party,
                 subject_canonical,
@@ -319,6 +320,8 @@ class TierU:
                 claim.valid_from,
                 claim.valid_until,
                 claim.valid_during_ref,
+                claim.valid_from_ref,
+                claim.valid_until_ref,
                 claim.source_text,
                 source_ctx_json,
                 now,

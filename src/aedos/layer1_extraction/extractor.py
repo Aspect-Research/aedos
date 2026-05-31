@@ -79,6 +79,8 @@ EXTRACTION_TOOL: dict[str, Any] = {
                         "valid_from": {"type": ["string", "null"]},
                         "valid_until": {"type": ["string", "null"]},
                         "valid_during_ref": {"type": ["string", "null"]},
+                        "valid_from_ref": {"type": ["string", "null"]},
+                        "valid_until_ref": {"type": ["string", "null"]},
                         "source_text": {
                             "type": "string",
                             "description": "Verbatim assertion span from text",
@@ -287,25 +289,30 @@ predicate='was', object='high', valid_during_ref='claim_recession'.
 (emit B as a separate claim and reference it).
 
 16. EVENT-RELATIVE BOUNDS — when the text bounds a claim by a NAMED EVENT \
-("before X", "after X", "until X", "since X" where X is a named event, \
-not a date), set valid_during_ref to a generated id referencing the \
-event AND leave valid_from / valid_until as None. The v0.15 Claim \
-shape lacks dedicated valid_from_ref / valid_until_ref fields for \
-event-relative bounds, so valid_during_ref carries the event reference \
-as the in-vocabulary representation. (Semantically "before X" and \
-"after X" differ from "during X"; the v0.16 plan adds valid_from_ref / \
-valid_until_ref to disambiguate. v0.15 expresses all three via \
-valid_during_ref to preserve the event reference.)
-    - 'The team had five members before the acquisition' → \
+(not a date), set a generated id referencing the event AND leave \
+valid_from / valid_until as None. Pick the field by the DIRECTION of the \
+bound:
+    - An UPPER bound — "before X" or "until X" (the claim holds up to the \
+event) → set valid_until_ref to the generated id. Leave valid_from_ref / \
+valid_during_ref None.
+      'The team had five members before the acquisition' → \
 subject='The team', predicate='had', object='five members', \
-valid_during_ref='claim_acquisition', valid_from=None, valid_until=None.
-    - 'After the election, she was President' → subject='she', \
-predicate='was', object='President', valid_during_ref='claim_election', \
-valid_from=None, valid_until=None.
-    - 'Since the merger, performance improved' → subject='performance', \
-predicate='improved', valid_during_ref='claim_merger', valid_from=None, \
-valid_until=None.
-    Emitting valid_during_ref is load-bearing: it suppresses the \
+valid_until_ref='claim_acquisition', valid_from=None, valid_until=None, \
+valid_from_ref=None, valid_during_ref=None.
+    - A LOWER bound — "after X" or "since X" (the claim holds from the \
+event onward) → set valid_from_ref to the generated id. Leave \
+valid_until_ref / valid_during_ref None.
+      'After the election, she was President' → subject='she', \
+predicate='was', object='President', valid_from_ref='claim_election', \
+valid_from=None, valid_until=None, valid_until_ref=None, \
+valid_during_ref=None.
+      'Since the merger, performance improved' → subject='performance', \
+predicate='improved', valid_from_ref='claim_merger', valid_from=None, \
+valid_until=None, valid_until_ref=None, valid_during_ref=None.
+    A CO-TEMPORAL "during X" bound is Rule 15, not Rule 16 — it sets \
+valid_during_ref (the claim holds throughout the event, not merely before \
+or after it).
+    Emitting an event ref is load-bearing: it suppresses the \
 implicit-past-tense default (valid_until='before_present') that would \
 otherwise fire for past-tense verbs without other temporal signals.
     DO NOT apply Rule 16 when:
@@ -520,6 +527,12 @@ class Claim:
     valid_from: Optional[str] = None
     valid_until: Optional[str] = None
     valid_during_ref: Optional[str] = None
+    # v0.16.1 WS8 Stage 1: event-relative bound refs, mirroring
+    # valid_during_ref. WRITE-ONLY metadata; no grounding/verdict path reads
+    # them (Stage 2 resolver deferred). "after/since <event>" → valid_from_ref;
+    # "before <event>" → valid_until_ref; "during <event>" → valid_during_ref.
+    valid_from_ref: Optional[str] = None
+    valid_until_ref: Optional[str] = None
     reified_event_id: Optional[str] = None
     # v0.16 WS4: instead of silently dropping a malformed/non-checkworthy
     # claim, the extractor stamps the reason here (an AbstentionReason value)
@@ -659,6 +672,8 @@ class Extractor:
             valid_from_raw=raw.get("valid_from"),
             valid_until_raw=raw.get("valid_until"),
             valid_during_ref=raw.get("valid_during_ref"),
+            valid_from_ref=raw.get("valid_from_ref"),
+            valid_until_ref=raw.get("valid_until_ref"),
         )
         if scope.is_future:
             return None
@@ -699,6 +714,8 @@ class Extractor:
             valid_from=scope.valid_from,
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
+            valid_from_ref=scope.valid_from_ref,
+            valid_until_ref=scope.valid_until_ref,
         )
         # v0.16 WS4: inert prose is the lowest-precedence reason — only stamp
         # it if no malformed reason was already captured above.
@@ -717,6 +734,8 @@ class Extractor:
             valid_from=scope.valid_from,
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
+            valid_from_ref=scope.valid_from_ref,
+            valid_until_ref=scope.valid_until_ref,
             reified_event_id=reified_id,
             abstention_reason=abstention_reason,
         )

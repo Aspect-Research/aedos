@@ -941,3 +941,54 @@ class TestWalkerAbstentionReasonShortCircuit:
         result = walker.walk(claim, _ctx())
         assert result.verdict != "contradicted"
         assert result.verdict == "no_grounding_found"
+
+
+# ---------------------------------------------------------------------------
+# TestEventRelativeRefsZeroVerdictRisk — v0.16.1 WS8 Stage 1: valid_from_ref /
+# valid_until_ref are WRITE-ONLY metadata. No grounding/verdict path reads them
+# (Stage 2 resolver deferred). This pins the zero-verdict-risk invariant: a
+# claim carrying the new *_ref fields walks to the SAME verdict as the identical
+# claim without them, across every verdict outcome.
+# ---------------------------------------------------------------------------
+
+def _ref_claim(valid_from_ref=None, valid_until_ref=None, **kw):
+    """A standard walker claim, optionally carrying the WS8 event-relative
+    bound refs. Everything else matches the module's _claim()."""
+    return Claim(
+        claim_id="cref",
+        subject=kw.get("subject", "Obama"),
+        predicate=kw.get("predicate", "holds_role"),
+        object=kw.get("object_val", "President"),
+        polarity=kw.get("polarity", 1),
+        source_text="test",
+        asserting_party="user_test",
+        triage_decision=TriageDecision.VERIFY,
+        valid_from_ref=valid_from_ref,
+        valid_until_ref=valid_until_ref,
+    )
+
+
+class TestEventRelativeRefsZeroVerdictRisk:
+    @pytest.mark.parametrize(
+        "make_kwargs",
+        [
+            dict(tier_u_found=False, kb_verdict=KBVerdictType.NO_MATCH),
+            dict(kb_verdict=KBVerdictType.VERIFIED),
+            dict(kb_verdict=KBVerdictType.CONTRADICTED),
+            dict(tier_u_found=True),
+        ],
+    )
+    def test_refs_do_not_change_verdict(self, make_kwargs):
+        # Same walker configuration; the only difference between the two walks
+        # is the presence of the event-relative refs on the claim. The verdict
+        # must be identical — nothing in the grounding/verdict path reads them.
+        without = _make_walker(**make_kwargs).walk(_ref_claim(), _ctx())
+        with_refs = _make_walker(**make_kwargs).walk(
+            _ref_claim(
+                valid_from_ref="claim_election",
+                valid_until_ref="claim_acquisition",
+            ),
+            _ctx(),
+        )
+        assert with_refs.verdict == without.verdict
+        assert with_refs.abstention_reason == without.abstention_reason

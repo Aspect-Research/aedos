@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS tier_u (
     valid_from TEXT,
     valid_until TEXT,
     valid_during_ref TEXT,
+    valid_from_ref TEXT,
+    valid_until_ref TEXT,
     source_text TEXT NOT NULL,
     source_context TEXT,
     asserted_at TEXT NOT NULL,
@@ -220,6 +222,17 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     # idempotent ALTER pattern as the entity-types columns; NULL default
     # preserves prior row semantics.
     for col in ("subject_surface", "object_surface"):
+        try:
+            conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
+    # v0.16.1 WS8 Stage 1: tier_u.valid_from_ref / valid_until_ref — event-relative
+    # bound references mirroring valid_during_ref ("after/since <event>" lower
+    # bound, "before <event>" upper bound). WRITE-ONLY metadata: no grounding /
+    # verdict path reads them (Stage 2 resolver deferred). Same idempotent ALTER
+    # pattern as the surface columns; additive, non-destructive, NULL default
+    # preserves all prior row semantics.
+    for col in ("valid_from_ref", "valid_until_ref"):
         try:
             conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:

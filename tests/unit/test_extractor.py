@@ -51,6 +51,8 @@ def _raw_claim(**kwargs) -> dict[str, Any]:
         "valid_from": None,
         "valid_until": None,
         "valid_during_ref": None,
+        "valid_from_ref": None,
+        "valid_until_ref": None,
     }
     return {**defaults, **kwargs}
 
@@ -102,6 +104,9 @@ class TestClaimDataclass:
         assert c.valid_from is None
         assert c.valid_until is None
         assert c.valid_during_ref is None
+        # v0.16.1 WS8 Stage 1: the event-relative bound refs default None.
+        assert c.valid_from_ref is None
+        assert c.valid_until_ref is None
         assert c.reified_event_id is None
 
     def test_polarity_is_integer(self):
@@ -327,6 +332,92 @@ class TestRule25EndpointClaimPipeline:
         ep = by_pred["employment_ended"]
         assert ep.object == "2019"
         assert ep.abstention_reason is None
+
+
+class TestEventRelativeBoundRefs:
+    """v0.16.1 WS8 Stage 1: valid_from_ref / valid_until_ref are event-relative
+    bound references mirroring valid_during_ref. WRITE-ONLY metadata — no
+    grounding/verdict path reads them (Stage 2 resolver deferred).
+
+    These pin (1) the round-trip through _build_claim's
+    extract_temporal_scope call and single Claim construction, and (2) the split
+    Rule 16 prompt wording (before→valid_until_ref, after/since→valid_from_ref,
+    during→valid_during_ref) so a future prompt edit cannot silently collapse the
+    three directions back onto one field."""
+
+    def test_valid_until_ref_round_trips_through_build_claim(self):
+        # "before X" upper bound → valid_until_ref. The LLM emits the ref on the
+        # raw claim; _build_claim must thread it onto the produced Claim.
+        raw = _raw_claim(
+            subject="The team", predicate="had", object="five members",
+            verb_tense="past", valid_until_ref="claim_acquisition",
+            source_text="The team had five members before the acquisition",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract(
+            "The team had five members before the acquisition", _default_context()
+        )
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.valid_until_ref == "claim_acquisition"
+        assert c.valid_from_ref is None
+        assert c.valid_during_ref is None
+        # The ref suppresses the implicit-past-tense before_present default.
+        assert c.valid_until is None
+        assert c.valid_until != BEFORE_PRESENT
+
+    def test_valid_from_ref_round_trips_through_build_claim(self):
+        # "after/since X" lower bound → valid_from_ref.
+        raw = _raw_claim(
+            subject="she", predicate="was", object="President",
+            verb_tense="past", valid_from_ref="claim_election",
+            source_text="After the election, she was President",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract(
+            "After the election, she was President", _default_context()
+        )
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.valid_from_ref == "claim_election"
+        assert c.valid_until_ref is None
+        assert c.valid_during_ref is None
+        assert c.valid_until is None  # ref suppresses before_present
+
+    def test_refs_default_none_when_unset(self):
+        # A normal claim carries no event-relative refs.
+        raw = _raw_claim()
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        c = claims[0]
+        assert c.valid_from_ref is None
+        assert c.valid_until_ref is None
+
+    def test_prompt_rule_16_splits_before_to_valid_until_ref(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "16. EVENT-RELATIVE BOUNDS" in _SYSTEM_PROMPT
+        # Upper bound: "before X" / "until X" → valid_until_ref.
+        assert '"before X" or "until X"' in _SYSTEM_PROMPT
+        assert "set valid_until_ref" in _SYSTEM_PROMPT
+
+    def test_prompt_rule_16_splits_after_since_to_valid_from_ref(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        # Lower bound: "after X" / "since X" → valid_from_ref.
+        assert '"after X" or "since X"' in _SYSTEM_PROMPT
+        assert "set valid_from_ref" in _SYSTEM_PROMPT
+
+    def test_prompt_rule_16_redirects_during_to_rule_15_valid_during_ref(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        # The co-temporal "during X" bound stays Rule 15 / valid_during_ref —
+        # Rule 16 explicitly cedes it, not collapsing all three onto one field.
+        assert 'A CO-TEMPORAL "during X" bound is Rule 15, not Rule 16' in _SYSTEM_PROMPT
+
+    def test_prompt_rule_16_carries_d45_non_triggers(self):
+        # D45 discipline: Rule 16 must carry explicit non-triggering conditions
+        # (date/year, plain past-tense, Rule-9 subordinate clause).
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "DO NOT apply Rule 16 when" in _SYSTEM_PROMPT
+        assert "X is a date or year" in _SYSTEM_PROMPT
 
 
 class TestExtractorRoundtrip:
@@ -664,3 +755,12 @@ class TestExtractionToolSchema:
         required = item_schema["required"]
         for field in ("subject", "predicate", "object", "polarity", "source_text", "verb_tense"):
             assert field in required
+
+    def test_event_relative_ref_properties_in_schema(self):
+        # v0.16.1 WS8 Stage 1: the extract tool advertises the event-relative
+        # bound refs as optional (nullable) string properties, mirroring
+        # valid_during_ref, so the LLM can populate them.
+        props = EXTRACTION_TOOL["input_schema"]["properties"]["claims"]["items"]["properties"]
+        for field in ("valid_during_ref", "valid_from_ref", "valid_until_ref"):
+            assert field in props
+            assert props[field]["type"] == ["string", "null"]
