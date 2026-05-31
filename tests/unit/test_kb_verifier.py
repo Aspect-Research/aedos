@@ -526,6 +526,79 @@ class TestKBVerifierTimeObjectTypeGate:
         assert result.verdict == KBVerdictType.VERIFIED
 
 
+# ---------------------------------------------------------------------------
+# TestValueMatchesApproximateYear  (v0.16.1 WS1: an approximate-year claim
+# ("c. 1550", "circa 1550", "~1550") strips its leading approximation marker on
+# the CLAIM side and matches the KB on EXACT year equality — never a fuzzy
+# window. This is the unit-level surface of the confirmed §3.2 false-contradict
+# defect: pre-fix, "c. 1550" failed `_BARE_YEAR_RE`, _value_matches returned
+# False, and a single_valued date predicate with a KB statement present
+# promoted to a (false) CONTRADICTED. The fix can only turn a previously-failing
+# compare into a match when the KB year LITERALLY equals the claimed year — it
+# can never false-verify. The precise-ISO strict compare is preserved.)
+# ---------------------------------------------------------------------------
+
+from aedos.layer4_sources.kb_verifier import _value_matches
+
+
+class TestValueMatchesApproximateYear:
+    @pytest.mark.parametrize("claim", [
+        "c. 1550",
+        "circa 1550",
+        "ca. 1550",
+        "~1550",
+        "about 1550",
+        "approximately 1550",
+        "around 1550",
+        "approx 1550",
+        "approx. 1550",
+    ])
+    def test_approx_year_matches_kb_date_on_year_equality(self, claim):
+        # KB holds a precise date whose YEAR is 1550. Every approximation marker
+        # strips to "1550" and matches on year equality → True. This is the
+        # match that, pre-fix, fell through to a false CONTRADICTED for a
+        # single_valued date predicate (the PopQA "Tadhg Dall born_on c. 1550"
+        # case, where the KB year was 1550).
+        assert _value_matches("1550-01-01T00:00:00Z", claim) is True
+
+    def test_approx_year_does_not_match_different_kb_year(self):
+        # SOUNDNESS: the match is EXACT year equality, never a fuzzy +/-N window.
+        # "c. 1550" against a KB year of 1600 is NOT a match (it abstains, and on
+        # the contradiction side it must abstain too — covered end-to-end below).
+        assert _value_matches("1600-01-01T00:00:00Z", "c. 1550") is False
+
+    def test_bare_year_exact_match_unchanged(self):
+        # The bare-year path (no marker) is untouched: "1550" vs KB "1550".
+        assert _value_matches("1550", "1550") is True
+
+    def test_bare_year_vs_precise_kb_date_unchanged(self):
+        # A bare-year claim still matches a precise KB date on the year — the
+        # pre-existing year-aware compare, unchanged by the marker strip.
+        assert _value_matches("1879-03-14T00:00:00Z", "1879") is True
+
+    def test_precise_year_mismatch_still_not_a_match(self):
+        # A PRECISE (non-approx) bare-year claim that differs from the KB year is
+        # NOT a match (it is the input to the legitimate single_valued
+        # CONTRADICTED path): "1998" vs KB "1999" → False.
+        assert _value_matches("1999", "1998") is False
+
+    def test_two_precise_dates_compare_strictly(self):
+        # The precise-ISO strict compare is preserved: a full claim date does NOT
+        # enter the year-only path (it is not a bare year), so "1998-09-04" vs KB
+        # "1998-09-04T00:00:00Z" stays a strict literal compare → False (and two
+        # genuinely different precise dates likewise don't year-collapse to a
+        # match). This pins that the approx-strip never loosened precise compares.
+        assert _value_matches("1998-09-04T00:00:00Z", "1998-09-04") is False
+        assert _value_matches("1998-01-01T00:00:00Z", "1998-09-04") is False
+
+    def test_precise_approx_date_does_not_year_collapse(self):
+        # An approximate but PRECISE date "c. 1550-03-01" returns None from the
+        # stripper (remainder is not a bare year) and never enters the year path,
+        # so it does NOT match KB year 1550 — it stays a strict literal compare.
+        # This guards against the marker strip accidentally widening to dates.
+        assert _value_matches("1550-01-01T00:00:00Z", "c. 1550-03-01") is False
+
+
 # ===========================================================================
 # v0.16 WS1 — MULTI-PROPERTY BINDING ARBITRATION
 #
@@ -997,3 +1070,62 @@ class TestKBVerifierNoStatementsDisjointArm:
         assert result.verdict == KBVerdictType.NO_MATCH
         assert result.trace.get("lookup_inverted") is True
         assert result.trace.get("no_statements_disjoint_fallback") is None
+
+
+# ===========================================================================
+# v0.16.1 WS1 — APPROXIMATE-DATE FALSE-CONTRADICT FIX (end-to-end)
+#
+# The confirmed §3.2 defect: a functional ('time' + single_valued) date
+# predicate (born_on / P569) whose KB statement is present but did NOT
+# year-match an APPROXIMATE-year claim promoted to a (false) CONTRADICTED.
+# Two soundness guarantees, proven end-to-end through verify():
+#   (1) when the KB date's year EQUALS the approximate claim's year, the claim
+#       VERIFIES (the year-equality match in _value_matches) — never a false
+#       contradict, never a false verify (matches only on exact year equality);
+#   (2) when the approximate claim's year DIFFERS from the KB year, the verdict
+#       is NO_MATCH/abstain — an approximation ("around 1550") cannot soundly
+#       contradict a nearby exact KB date; the marker disclaims precision.
+# A PRECISE (no-marker) wrong year still CONTRADICTS — the legitimate
+# single_valued date-contradiction path is unchanged (the N1/value-type tests'
+# sibling). These mirror TestKBVerifierTimeObjectTypeGate's date-predicate
+# pattern (object_type="time", single_valued=1, kb_property="P569").
+# ===========================================================================
+
+
+class TestKBVerifierApproximateDate:
+    def test_approx_year_equals_kb_year_is_verified(self):
+        # The PopQA "Tadhg Dall born_on c. 1550" shape. KB statement is a precise
+        # date whose YEAR is 1550; the approximate claim "c. 1550" year-matches →
+        # VERIFIED. Pre-fix this fell through to a false CONTRADICTED.
+        stmts = [Statement(value="1550-01-01T00:00:00Z", value_type="date")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="c. 1550"))
+        assert result.verdict == KBVerdictType.VERIFIED
+
+    def test_approx_year_differs_from_kb_year_abstains_not_contradicts(self):
+        # The contradiction-suppression backstop: the approximate claim "c. 1550"
+        # does NOT year-match the KB date (year 1600). A single_valued date
+        # predicate would, pre-fix, promote this to CONTRADICTED. The fix
+        # downgrades it to NO_MATCH/abstain — an approximation may never contradict
+        # a nearby exact date. NOT CONTRADICTED, NOT VERIFIED.
+        stmts = [Statement(value="1600-01-01T00:00:00Z", value_type="date")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="c. 1550"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "approximate_date_no_year_match"
+
+    def test_precise_wrong_year_still_contradicts(self):
+        # Control / regression pin: a PRECISE (no-marker) wrong year on the same
+        # functional date predicate still CONTRADICTS. The approx-suppression
+        # only loosens APPROXIMATE claims toward abstain; a bare "1600" vs KB year
+        # 1550 is the legitimate single_valued contradiction and must be unchanged.
+        stmts = [Statement(value="1550-01-01T00:00:00Z", value_type="date")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="1600"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
