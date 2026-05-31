@@ -5,7 +5,11 @@ from typing import Any, Optional
 
 from ..audit.log import log_event
 from ..layer1_extraction.extractor import Claim
-from ..layer5_result.trace import JustificationTrace
+from ..layer5_result.trace import (
+    JustificationTrace,
+    ProvenanceTerm,
+    TraceNode,
+)
 
 
 # The six-way verdict set. Three base verdicts
@@ -109,6 +113,27 @@ class VerificationResult:
     # the audit log consume them); `claim_verdicts` is the additive,
     # iteration-friendly shape `select_interventions` consumes.
     claim_verdicts: list["ClaimVerdict"] = field(default_factory=list)
+
+
+@dataclass
+class StatementVerdict:
+    """v0.16.1 WS3 Step 1: the rolled-up verdict of a compound statement
+    ("X and Y"), composed from the per-claim verdicts by the monotone
+    conjunction that the benchmark runner used to apply inline. Carries the
+    composed base verdict plus a `JustificationTrace` whose `ProvenanceTerm`
+    AND-composes the per-claim sub-traces — so the rollup is now TRACED and
+    carries a retraction footprint (the union of the conjuncts' source rows),
+    not just a boolean.
+
+    `verdict` is always a BASE verdict (verified / contradicted /
+    no_grounding_found): the conjunction collapses each conjunct's
+    dual-designation (`*_given_assertion`) to its base before composing, exactly
+    as the benchmark's `_strip_chain_flag` did, so the result is verdict-neutral
+    with the old inline boolean.
+    """
+    verdict: str
+    trace: JustificationTrace
+    per_claim_verdicts: list[str] = field(default_factory=list)
 
 
 # Trace-edge metadata keys that carry a retractable substrate/Tier U row id,
@@ -285,4 +310,91 @@ class Aggregator:
             text_input=text_input or {},
             consistency_warnings=consistency_warnings,
             claim_verdicts=claim_verdicts,
+        )
+
+    def compose_statement_verdict(
+        self,
+        per_claim_results: list,  # list[WalkResult] | list[ClaimVerdict] | list with .verdict/.trace
+        *,
+        source_text: Optional[str] = None,
+    ) -> StatementVerdict:
+        """v0.16.1 WS3 Step 1: compose a single statement-level verdict from
+        the per-claim verdicts of a compound statement ("X and Y"), as a real
+        TRACED conjunction.
+
+        This MOVES the boolean AND that lived inline in the benchmark runner
+        (`contradicted` if any contradicted; else `verified` iff ALL verified;
+        else `no_grounding_found`) into the aggregator, with ZERO verdict
+        change, and additionally:
+          * builds a statement-level `JustificationTrace` whose `ProvenanceTerm`
+            is an `op="and"` node AND-composing each conjunct's per-claim
+            provenance term (the op="and" path that already exists in trace.py
+            but was never constructed), so the rollup carries a real retraction
+            footprint (the union of the conjuncts' source rows); and
+          * preserves the EXACT monotone semantics — including collapsing each
+            conjunct's dual-designation verdict (`*_given_assertion`) to its
+            base verdict first, exactly as the benchmark's `_strip_chain_flag`
+            did.
+
+        Accepts any per-claim objects exposing `.verdict` (str) and `.trace`
+        (a JustificationTrace) — `WalkResult` and `ClaimVerdict` both qualify.
+
+        Monotone semantics (UNCHANGED from the old inline boolean):
+          - no conjuncts            -> no_grounding_found (vacuous; nothing to ground)
+          - exactly one conjunct    -> that conjunct's base verdict
+          - any conjunct contradicted -> contradicted   (contradicted-wins)
+          - else all verified       -> verified
+          - else                    -> no_grounding_found  (any abstain abstains)
+        """
+        base_verdicts: list[str] = [
+            base_verdict_of(getattr(r, "verdict", "no_grounding_found"))
+            for r in per_claim_results
+        ]
+
+        # Monotone conjunction — bit-for-bit the old inline boolean. The
+        # single-conjunct case returns that conjunct's verdict directly (so a
+        # lone contradicted/abstain is preserved); the multi-conjunct case is
+        # contradicted-wins, then verified-iff-all, else abstain.
+        if not base_verdicts:
+            composed = "no_grounding_found"
+        elif len(base_verdicts) == 1:
+            composed = base_verdicts[0]
+        elif "contradicted" in base_verdicts:
+            composed = "contradicted"
+        elif all(v == "verified" for v in base_verdicts):
+            composed = "verified"
+        else:
+            composed = "no_grounding_found"
+
+        # Build the AND-composed provenance term + statement trace. The AND node
+        # carries each conjunct's provenance term as a child, so source_rows()
+        # over it is the UNION of the conjuncts' retraction footprints, and
+        # includes_assertion() is the monotone-OR over all conjuncts' literals
+        # (a single assertion-conditional conjunct flags the whole rollup).
+        children: list[ProvenanceTerm] = []
+        for r in per_claim_results:
+            trace = getattr(r, "trace", None)
+            prov = getattr(trace, "provenance", None) if trace is not None else None
+            if prov is not None:
+                children.append(prov)
+        statement_provenance = ProvenanceTerm(op="and", children=children)
+
+        statement_trace = JustificationTrace(
+            root=TraceNode("statement", {"source_text": source_text} if source_text else {}),
+            provenance=statement_provenance,
+        )
+        # Record the shared source text + the conjunct verdicts as walk metadata
+        # so the rollup is observable. No verdict path reads this.
+        statement_trace.walk_metadata["rollup"] = {
+            "op": "and",
+            "conjunct_verdicts": list(base_verdicts),
+            "composed_verdict": composed,
+        }
+        if source_text is not None:
+            statement_trace.walk_metadata["source_text"] = source_text
+
+        return StatementVerdict(
+            verdict=composed,
+            trace=statement_trace,
+            per_claim_verdicts=base_verdicts,
         )

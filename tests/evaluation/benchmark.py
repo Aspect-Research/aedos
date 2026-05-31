@@ -243,25 +243,19 @@ class AedosRunner:
                 source_text=case.statement,
             )
             results = [walker.walk(c, vctx) for c in claims]
-            vr = aggregator.aggregate(claims, results)
-            # Phase 10.5 Step 6 sub-cause F: walker emits chain-flagged
-            # verdicts (*_given_assertion) for user-authoritative claims
-            # whose verdict depends on a Tier U assertion. The chain flag
-            # carries provenance, not a different verdict — fold it into
-            # the underlying verdict before aggregating.
-            def _strip_chain_flag(v: str) -> str:
-                if v in ("verified_given_assertion",):
-                    return "verified"
-                if v in ("contradicted_given_assertion",):
-                    return "contradicted"
-                if v in ("abstained_given_assertion",):
-                    return "no_grounding_found"
-                return v
-            verdicts = [_strip_chain_flag(v) for v in vr.per_claim_verdicts.values()]
-            verdict = verdicts[0] if len(verdicts) == 1 else (
-                "contradicted" if "contradicted" in verdicts else
-                ("verified" if all(v == "verified" for v in verdicts) else "no_grounding_found")
+            aggregator.aggregate(claims, results)
+            # v0.16.1 WS3 Step 1: the compound-statement conjunction is now a
+            # real TRACED operation on the aggregator (an op="and" provenance
+            # term over the per-claim sub-traces), not an inline boolean here.
+            # `compose_statement_verdict` collapses each conjunct's chain-flagged
+            # verdict (*_given_assertion) to its base verdict internally —
+            # exactly what the old inline `_strip_chain_flag` did — and applies
+            # the identical monotone semantics (contradicted-wins; verified iff
+            # ALL verified; else no_grounding_found). Verdict-neutral.
+            statement = aggregator.compose_statement_verdict(
+                results, source_text=case.statement
             )
+            verdict = statement.verdict
         except Exception as exc:
             verdict = "error"
         latency = time.monotonic() - start
