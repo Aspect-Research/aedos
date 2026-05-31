@@ -419,6 +419,48 @@ class KBVerifier:
                         "resolution_cache_row_id": resolution_cache_row_id,
                     },
                 )
+            # Symmetric CONTRADICTED arm to the VERIFIED subsumption-upgrade
+            # above: when the subject itself is geographically disjoint from the
+            # claimed container, that is a sound contradiction even with no
+            # statement on this binding's property. Example: "The Vatican is in
+            # Africa" — the Vatican carries no P131 statement (only P30=Europe),
+            # so the in-statements disjoint check (_compare_positive, gated on a
+            # scope_mismatch statement) never fires. This restores the v0.15
+            # "X in [wrong continent]" fast contradiction that the multi-property
+            # binding rewrite left only on the in-statements arm, and avoids the
+            # open-ended KB-neighbor fan-out (budget_wall_clock abstain) the walk
+            # otherwise falls into. Gated identically to the in-statements arm
+            # (location property, entity object, both Q-ids, standard direction)
+            # and uses the same fail-closed _location_disjoint helper, which
+            # requires positive KB subsumption into a different continent — no
+            # new soundness surface. The VERIFIED arm above runs first, so a true
+            # "X in [right continent]" verifies and never reaches this check.
+            if (
+                meta.object_type == "entity"
+                and value_resolved
+                and not lookup_inverted
+                and isinstance(lookup_subject_id, str)
+                and isinstance(expected_value, str)
+                and binding.kb_property in _LOCATION_KB_PROPERTIES
+                and self._location_disjoint(lookup_subject_id, expected_value)
+            ):
+                pos_verdict = KBVerdictType.CONTRADICTED
+                final_verdict = _apply_polarity(pos_verdict, claim.polarity)
+                return KBVerdict(
+                    verdict=final_verdict,
+                    matched_statement=None,
+                    subject_kb_id=lookup_subject_id,
+                    trace={
+                        "entity": lookup_subject_id,
+                        "value_entity": expected_value,
+                        "value_resolved": True,
+                        "polarity": claim.polarity,
+                        "positive_verdict": pos_verdict.value,
+                        "lookup_inverted": lookup_inverted,
+                        "no_statements_disjoint_fallback": True,
+                        "resolution_cache_row_id": resolution_cache_row_id,
+                    },
+                )
             # NO_MATCH is polarity-invariant — absence of evidence is not evidence.
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
