@@ -14,55 +14,19 @@ from .kb_protocol import KBEntityID, KBProtocol, LocalContext, Statement
 
 _NOW = lambda: datetime.now(timezone.utc).isoformat()
 
-# Canonical Q-ids for the seven
-# continents + the principal supercontinent groupings the medium-bar
-# test set uses. Used by _disjoint_continent to confidently flag KB-
-# grounded "X is in [wrong continent]" claims as CONTRADICTED rather
-# than abstaining on the non-functional-predicate NO_MATCH path.
-# Hand-validated against Wikidata's canonical labels:
-#   Europe         Q46
-#   Asia           Q48
-#   Africa         Q15
-#   North America  Q49
-#   South America  Q18
-#   Oceania        Q55643
-#   Antarctica     Q51
-#   Australia      Q3960   (continent; the country is Q408)
-CONTINENT_QIDS: frozenset[str] = frozenset([
-    "Q46", "Q48", "Q15", "Q49", "Q18", "Q55643", "Q51", "Q3960",
-])
-
-# KB properties whose
-# semantics are GEOGRAPHIC location-containment, for which the
-# location-disjoint check is sound. Non-geographic relational
-# predicates (employed_by P108, member_of P463, child_of P40, etc.)
-# must NOT use the disjoint check — two distinct entities can both
-# satisfy a multi-valued relational predicate without contradicting
-# each other.
-_LOCATION_KB_PROPERTIES: frozenset[str] = frozenset([
-    "P131",  # located in the administrative territorial entity
-    "P17",   # country
-    "P30",   # continent
-    "P361",  # part of (used for geographic part_of)
-    "P206",  # located in body of water
-    "P276",  # location
-])
-
-# Geographic-container entity types that the per-predicate object-type lists
-# (e.g. located_in = [country, city, settlement, …]) historically omit. A
-# claim like "Paris is in Europe" needs to resolve "Europe" to the continent
-# (Q46, instance-of continent Q5107); without continent in the accepted-type
-# set the resolver's type filter rejects Q46 and lands on a non-continent
-# homonym, so the containment subsumption (France ⊂ Europe via P30) can never
-# match. `_object_resolution_types` widens the object's type filter with these
-# only for geographic-location predicates (kb_property in
-# _LOCATION_KB_PROPERTIES). Continents are a closed 7-member set, so admitting
-# them cannot over-broaden resolution. (Region Q82794 is deliberately NOT
-# included — it is open-ended and the cases that would need it also need the
-# trimmed P361 subsumption path.)
-_GEO_CONTAINER_TYPES: frozenset[str] = frozenset([
-    "Q5107",  # continent
-])
+# v0.16.1 WS5a: the geographic predicate cluster (the closed continent Q-id set,
+# the geographic location-property P-ids, the geographic-container entity types,
+# and the location-disjoint logic) was RELOCATED out of CORE behind the
+# kb_protocol seam into the WikidataAdapter — those are genuine Wikidata facts.
+# CORE now consults them only through the protocol's geo accessors
+# (`is_location_property`, `geo_container_types`, `geographic_disjoint`), held
+# behind the small `_is_location_property` / `_geo_container_types` /
+# `_geographic_disjoint` shims below, which FAIL CLOSED (no disjoint / not a
+# location property / empty container set => abstain) when the injected KB
+# predates WS5a or errors. CORE holds NO continent Q-ids and NO geo P-id
+# literals. (`_subsumption_upgrades` stays in CORE: it is the backend-neutral
+# value-subsumption dual — it tries the opaque relation_types "part_of" AND
+# "is_a", serves the taxonomic upgrade too, and carries no Wikidata literals.)
 
 
 class KBVerdictType(str, Enum):
@@ -312,12 +276,15 @@ class KBVerifier:
             # For a geographic-location predicate, widen the object's
             # accepted-type filter to admit continents — the per-predicate type
             # lists omit them, which otherwise blocks "X is in Europe" from
-            # resolving "Europe" to the continent (see _GEO_CONTAINER_TYPES).
-            # Only widens an existing non-empty filter; an open (None/empty)
-            # filter is left open.
+            # resolving "Europe" to the continent (the geo-container types live
+            # behind the protocol's geo_container_types, relocated WS5a). Only
+            # widens an existing non-empty filter; an open (None/empty) filter
+            # is left open.
             value_types = _types_for_slot(binding, value_slot)
-            if value_types and binding.kb_property in _LOCATION_KB_PROPERTIES:
-                value_types = list(dict.fromkeys([*value_types, *_GEO_CONTAINER_TYPES]))
+            if value_types and self._is_location_property(binding.kb_property):
+                value_types = list(
+                    dict.fromkeys([*value_types, *self._geo_container_types()])
+                )
             value_ctx = LocalContext(
                 predicate=claim.predicate,
                 slot_position=value_slot,
@@ -389,9 +356,10 @@ class KBVerifier:
             # open-ended KB-neighbor fan-out (budget_wall_clock abstain) the walk
             # otherwise falls into. Gated identically to the in-statements arm
             # (location property, entity object, both Q-ids, standard direction)
-            # and uses the same fail-closed _location_disjoint helper, which
-            # requires positive KB subsumption into a different continent — no
-            # new soundness surface. The VERIFIED arm above runs first, so a true
+            # and uses the same fail-closed geographic_disjoint protocol op
+            # (relocated WS5a), which requires positive KB subsumption into a
+            # different continent — no new soundness surface. The VERIFIED arm
+            # above runs first, so a true
             # "X in [right continent]" verifies and never reaches this check.
             if (
                 meta.object_type == "entity"
@@ -399,8 +367,8 @@ class KBVerifier:
                 and not lookup_inverted
                 and isinstance(lookup_subject_id, str)
                 and isinstance(expected_value, str)
-                and binding.kb_property in _LOCATION_KB_PROPERTIES
-                and self._location_disjoint(lookup_subject_id, expected_value)
+                and self._is_location_property(binding.kb_property)
+                and self._geographic_disjoint(lookup_subject_id, expected_value)
             ):
                 pos_verdict = KBVerdictType.CONTRADICTED
                 final_verdict = _apply_polarity(pos_verdict, claim.polarity)
@@ -716,77 +684,58 @@ class KBVerifier:
             and value_resolved
             and isinstance(scope_mismatch.value, str)
             and isinstance(expected_value, str)
-            and binding.kb_property in _LOCATION_KB_PROPERTIES
-            and self._location_disjoint(scope_mismatch.value, expected_value)
+            and self._is_location_property(binding.kb_property)
+            and self._geographic_disjoint(scope_mismatch.value, expected_value)
         ):
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
         reason = "value_unresolved" if value_unresolved else "no_matching_statement"
         return KBVerdictType.NO_MATCH, None, reason
 
-    def _location_disjoint(self, kb_value: str, expected_value: str) -> bool:
-        """True when KB confirms the KB statement value is geographically
-        disjoint from the claim's expected value.
-
-        Two paths, both requiring positive KB evidence (a continent
-        ancestor confirmed by subsumption):
-
-        (a) Continent-level. expected_value is itself a known continent
-            (CONTINENT_QIDS) and the KB value is subsumed by a DIFFERENT
-            continent. Direct evidence of disjoint continent.
-            Targets "Thames in Asia" / "Vatican in Africa".
-
-        (b) Shared-continent sub-region. Both values are subsumed by the
-            SAME continent AND subsumption is `unrelated` in both
-            directions between them. Two sub-regions sharing a continent
-            ancestor with no mutual containment are structurally disjoint
-            within that continent (Italy and Germany are both in Europe;
-            neither contains the other; therefore they're disjoint
-            countries). Targets "Rome in Germany" — KB returns Rome's
-            P131 = Lazio (a sub-region of Italy), Italy's continent is
-            Europe, Germany's continent is Europe, and Lazio is unrelated
-            to Germany in both subsumption directions.
-
-        Fails closed on error: any uncertainty preserves NO_MATCH
-        (abstain). §3.2 soundness-over-completeness.
-        """
-        if not isinstance(kb_value, str) or not isinstance(expected_value, str):
+    def _is_location_property(self, kb_property) -> bool:
+        """v0.16.1 WS5a: protocol shim. True when the KB property is a
+        geographic location-containment property, per the adapter's
+        `is_location_property` (which holds the closed P-id set). Optional on
+        the protocol — consulted via getattr so a pre-WS5a stub KB keeps
+        working; FAILS CLOSED (returns False => the disjoint arm and the
+        continent-widening are skipped, i.e. abstain) when the method is absent
+        or errors. §3.2 soundness-over-completeness."""
+        fn = getattr(self._kb, "is_location_property", None)
+        if not callable(fn):
             return False
-        if kb_value == expected_value:
+        try:
+            return bool(fn(kb_property))
+        except Exception:
             return False
 
-        # (a) Continent-level path
-        if expected_value in CONTINENT_QIDS:
-            for continent in CONTINENT_QIDS:
-                if continent == expected_value:
-                    continue
-                try:
-                    r = self._kb.subsumption(kb_value, continent, "part_of")
-                except Exception:
-                    continue
-                if r.verdict in ("a_subsumed_by_b", "equivalent"):
-                    return True
-            return False
+    def _geo_container_types(self) -> frozenset:
+        """v0.16.1 WS5a: protocol shim. The geographic-container entity types
+        (continent) used to widen a location predicate's object-type filter, per
+        the adapter's `geo_container_types`. Optional on the protocol; FAILS
+        CLOSED (empty set => no widening) when absent or on error."""
+        fn = getattr(self._kb, "geo_container_types", None)
+        if not callable(fn):
+            return frozenset()
+        try:
+            return frozenset(fn())
+        except Exception:
+            return frozenset()
 
-        # (b) Shared-continent sub-region path
-        for continent in CONTINENT_QIDS:
-            try:
-                kb_in = self._kb.subsumption(kb_value, continent, "part_of").verdict
-                exp_in = self._kb.subsumption(expected_value, continent, "part_of").verdict
-            except Exception:
-                continue
-            kb_in_ok = kb_in in ("a_subsumed_by_b", "equivalent")
-            exp_in_ok = exp_in in ("a_subsumed_by_b", "equivalent")
-            if not (kb_in_ok and exp_in_ok):
-                continue
-            # Both confirmed in the same continent; check mutual non-containment
-            try:
-                fwd = self._kb.subsumption(kb_value, expected_value, "part_of").verdict
-                rev = self._kb.subsumption(expected_value, kb_value, "part_of").verdict
-            except Exception:
-                return False
-            return fwd == "unrelated" and rev == "unrelated"
-        return False
+    def _geographic_disjoint(self, kb_value: str, expected_value: str) -> bool:
+        """v0.16.1 WS5a: protocol shim for the relocated `_location_disjoint`.
+        True when KB confirms `kb_value` is geographically disjoint from
+        `expected_value`, per the adapter's `geographic_disjoint` (which holds
+        the continent set + the two-path subsumption logic). Optional on the
+        protocol; FAILS CLOSED (returns False => no contradiction => abstain)
+        when the method is absent or errors — never fabricates a disjoint
+        verdict. §3.2 soundness-over-completeness."""
+        fn = getattr(self._kb, "geographic_disjoint", None)
+        if not callable(fn):
+            return False
+        try:
+            return bool(fn(kb_value, expected_value))
+        except Exception:
+            return False
 
     def _subsumption_upgrades(self, kb_value: str, expected_value: str) -> bool:
         """Query the KB for whether the

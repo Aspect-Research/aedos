@@ -321,6 +321,118 @@ _GEO_REGION_TYPES: tuple[str, ...] = (
 _PART_OF_BRIDGE_PROPERTY = "P361"  # geographic "part of", type-guarded above
 
 
+# v0.16.1 WS5a: the geographic predicate cluster, relocated here from CORE
+# (kb_verifier) behind the kb_protocol seam. The closed seven-continent set and
+# the geographic P-ids are genuine Wikidata facts and belong inside the adapter.
+#
+# Canonical Q-ids for the seven continents + the principal supercontinent
+# groupings the medium-bar test set uses. Used by `geographic_disjoint` to
+# confidently flag KB-grounded "X is in [wrong continent]" claims as
+# CONTRADICTED rather than abstaining on the non-functional-predicate NO_MATCH
+# path. Hand-validated against Wikidata's canonical labels:
+#   Europe Q46, Asia Q48, Africa Q15, North America Q49, South America Q18,
+#   Oceania Q55643, Antarctica Q51, Australia Q3960 (continent; country is Q408).
+_CONTINENT_QIDS: frozenset[str] = frozenset([
+    "Q46", "Q48", "Q15", "Q49", "Q18", "Q55643", "Q51", "Q3960",
+])
+
+# KB properties whose semantics are GEOGRAPHIC location-containment, for which
+# the location-disjoint check is sound. Non-geographic relational predicates
+# (employed_by P108, member_of P463, child_of P40, ...) must NOT use the
+# disjoint check — two distinct entities can both satisfy a multi-valued
+# relational predicate without contradicting each other.
+_LOCATION_KB_PROPERTIES: frozenset[str] = frozenset([
+    "P131",  # located in the administrative territorial entity
+    "P17",   # country
+    "P30",   # continent
+    "P361",  # part of (used for geographic part_of)
+    "P206",  # located in body of water
+    "P276",  # location
+])
+
+# Geographic-container entity types that the per-predicate object-type lists
+# (e.g. located_in = [country, city, settlement, ...]) historically omit. A
+# claim like "Paris is in Europe" needs to resolve "Europe" to the continent
+# (Q46, instance-of continent Q5107); without continent in the accepted-type
+# set the resolver's type filter rejects Q46 and lands on a non-continent
+# homonym, so the containment subsumption (France subset Europe via P30) can
+# never match. CORE widens the object's type filter with these only for
+# geographic-location predicates. Continents are a closed 7-member set, so
+# admitting them cannot over-broaden resolution. (Region Q82794 is deliberately
+# NOT included — it is open-ended and the cases that would need it also need the
+# trimmed P361 subsumption path.)
+_GEO_CONTAINER_TYPES: frozenset[str] = frozenset([
+    "Q5107",  # continent
+])
+
+
+def _geographic_disjoint(subsumption_fn, kb_value: str, expected_value: str) -> bool:
+    """v0.16.1 WS5a: relocated from `kb_verifier._location_disjoint`. True when
+    KB confirms the KB statement value is geographically disjoint from the
+    claim's expected value. `subsumption_fn(a, b, relation_type)` is the
+    KBProtocol `subsumption` callable (the adapter passes its own bound method,
+    so the live/fixture path and the SubsumptionResult shape are unchanged).
+
+    Two paths, both requiring positive KB evidence (a continent ancestor
+    confirmed by subsumption):
+
+    (a) Continent-level. expected_value is itself a known continent
+        (_CONTINENT_QIDS) and the KB value is subsumed by a DIFFERENT continent.
+        Direct evidence of disjoint continent. Targets "Thames in Asia" /
+        "Vatican in Africa".
+
+    (b) Shared-continent sub-region. Both values are subsumed by the SAME
+        continent AND subsumption is `unrelated` in both directions between
+        them. Two sub-regions sharing a continent ancestor with no mutual
+        containment are structurally disjoint within that continent (Italy and
+        Germany are both in Europe; neither contains the other; therefore
+        they're disjoint countries). Targets "Rome in Germany" — Rome's P131 =
+        Lazio (a sub-region of Italy), Italy's continent is Europe, Germany's
+        continent is Europe, and Lazio is unrelated to Germany in both
+        subsumption directions.
+
+    Fails closed on error: any uncertainty preserves NO_MATCH (abstain). §3.2
+    soundness-over-completeness.
+    """
+    if not isinstance(kb_value, str) or not isinstance(expected_value, str):
+        return False
+    if kb_value == expected_value:
+        return False
+
+    # (a) Continent-level path
+    if expected_value in _CONTINENT_QIDS:
+        for continent in _CONTINENT_QIDS:
+            if continent == expected_value:
+                continue
+            try:
+                r = subsumption_fn(kb_value, continent, "part_of")
+            except Exception:
+                continue
+            if r.verdict in ("a_subsumed_by_b", "equivalent"):
+                return True
+        return False
+
+    # (b) Shared-continent sub-region path
+    for continent in _CONTINENT_QIDS:
+        try:
+            kb_in = subsumption_fn(kb_value, continent, "part_of").verdict
+            exp_in = subsumption_fn(expected_value, continent, "part_of").verdict
+        except Exception:
+            continue
+        kb_in_ok = kb_in in ("a_subsumed_by_b", "equivalent")
+        exp_in_ok = exp_in in ("a_subsumed_by_b", "equivalent")
+        if not (kb_in_ok and exp_in_ok):
+            continue
+        # Both confirmed in the same continent; check mutual non-containment
+        try:
+            fwd = subsumption_fn(kb_value, expected_value, "part_of").verdict
+            rev = subsumption_fn(expected_value, kb_value, "part_of").verdict
+        except Exception:
+            return False
+        return fwd == "unrelated" and rev == "unrelated"
+    return False
+
+
 def _build_transitive_ask_query(
     source: KBEntityID,
     target: KBEntityID,
@@ -1044,6 +1156,35 @@ class WikidataAdapter:
         if self._live:
             return self._live_label(qid)
         return self._fixture_label(qid)
+
+    # ------------------------------------------------------------------
+    # v0.16.1 WS5a: geographic predicate cluster (relocated from CORE)
+    # ------------------------------------------------------------------
+
+    def is_location_property(self, kb_property: KBPropertyID) -> bool:
+        """v0.16.1 WS5a: True when `kb_property` is a GEOGRAPHIC
+        location-containment property (_LOCATION_KB_PROPERTIES = P131/P17/P30/
+        P361/P206/P276), for which the geographic-disjoint contradiction is
+        sound. Relocated from CORE's `binding.kb_property in
+        _LOCATION_KB_PROPERTIES` gate — behavior-identical."""
+        return kb_property in _LOCATION_KB_PROPERTIES
+
+    def geo_container_types(self) -> frozenset[KBEntityID]:
+        """v0.16.1 WS5a: the geographic-container entity types (Q5107 continent)
+        CORE uses to widen a location predicate's object-type filter. Relocated
+        from CORE's `_GEO_CONTAINER_TYPES` — same closed set."""
+        return _GEO_CONTAINER_TYPES
+
+    def geographic_disjoint(
+        self, value_qid: KBEntityID, expected_qid: KBEntityID
+    ) -> bool:
+        """v0.16.1 WS5a: True when KB confirms `value_qid` is geographically
+        DISJOINT from `expected_qid`. Relocated from CORE's `_location_disjoint`
+        (the logic lives in the module-level `_geographic_disjoint`, driven by
+        this adapter's own `subsumption` — the same self.subsumption calls the
+        CORE helper made on self._kb, so the live/fixture path and verdict are
+        byte-identical). Fails closed on uncertainty (§3.2)."""
+        return _geographic_disjoint(self.subsumption, value_qid, expected_qid)
 
     # ------------------------------------------------------------------
     # Fixture-backed implementations
