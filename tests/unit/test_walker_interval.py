@@ -395,6 +395,62 @@ class TestTierUEndpoint:
         assert iv.start == "2020"
         assert iv.start_known is True
 
+    def test_uniquely_valued_started_endpoint_is_unique(self):
+        # PATCH-C r2c-1: the single-distinct-date invariant (len(dates)==1)
+        # GUARANTEES the endpoint is uniquely valued, so a Tier-U _started
+        # endpoint carries unique=True — enabling it to drive the
+        # _verify_interval_endpoint contradiction branch (which gates on
+        # interval.unique) symmetrically with the KB grounding path.
+        tu = _StubTierU(rows=[{"object": "2020"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is not None
+        assert iv.unique is True
+
+    def test_uniquely_valued_ended_endpoint_is_unique(self):
+        # Symmetric for the _ended endpoint.
+        tu = _StubTierU(rows=[{"object": "2024"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_ended"), _ctx())
+        assert iv is not None
+        assert iv.unique is True
+
+    def test_agreeing_rows_collapse_to_unique(self):
+        # Multiple rows that AGREE collapse to one distinct date → still a
+        # uniquely-valued endpoint (unique=True). Agreement is not a conflict.
+        tu = _StubTierU(rows=[{"object": "2020"}, {"object": "2020"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is not None
+        assert iv.start == "2020"
+        assert iv.unique is True
+
+    def test_conflicting_rows_never_set_unique(self):
+        # On a CONFLICT (more than one distinct date) the method abstains (None)
+        # — so a non-unique interval is never produced and unique is never set
+        # on a conflict. This is the soundness guarantee behind the contradiction
+        # gate: a conflicting Tier-U endpoint can never license a contradiction.
+        tu = _StubTierU(rows=[{"object": "2020"}, {"object": "2021"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is None
+
+    def test_unique_endpoint_satisfies_the_contradiction_gate(self):
+        # PATCH-C r2c-1, behavioral: the contradiction branch in
+        # _verify_interval_endpoint abstains when `not interval.unique`. A
+        # uniquely-valued Tier-U endpoint now carries unique=True, so it SATISFIES
+        # that gate — feeding such an interval straight into the contradiction
+        # branch no longer over-abstains on the uniqueness check. (We assert the
+        # gate condition directly: a unique Tier-U interval clears `not unique`.)
+        tu = _StubTierU(rows=[{"object": "2020"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is not None and iv.unique is True
+        # The gate at _verify_interval_endpoint (`if not interval.unique`) would
+        # NOT short-circuit this interval — symmetric with the KB grounding path,
+        # whose preferred-unique interval is also unique=True.
+        assert not (not iv.unique)
+
 
 # ---------------------------------------------------------------------------
 # _verify_interval_endpoint — verified / contradicted / abstain

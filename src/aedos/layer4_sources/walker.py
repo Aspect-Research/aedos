@@ -1190,6 +1190,13 @@ class Walker:
             if not merged.end_known and tier_u_interval.end_known:
                 merged.end = tier_u_interval.end
                 merged.end_known = True
+            # A pure Tier-U interval inherits its uniqueness (the single-distinct-
+            # date invariant enforced in _tier_u_endpoint), so the contradiction
+            # gate in _verify_interval_endpoint is reachable for a uniquely-valued
+            # Tier-U-only endpoint. When the KB contributed the interval it stays
+            # authoritative and a Tier-U gap-fill must not flip its unique flag.
+            if kb_interval is None:
+                merged.unique = tier_u_interval.unique
         if kb_interval is None and tier_u_interval is None:
             return None
         return merged
@@ -1306,10 +1313,16 @@ class Walker:
             # -> conflicting Tier U endpoints. Either way, abstain.
             return None
         date = next(iter(dates))
+        # unique=True: the single-distinct-date invariant enforced one line
+        # above (len(dates) == 1) GUARANTEES this endpoint is uniquely valued,
+        # so a Tier-U endpoint may contradict symmetrically with the KB path.
+        # Without this the contradiction-branch gate `if not interval.unique`
+        # over-abstains for a uniquely-valued Tier-U endpoint (forward-defensive
+        # — all 8 endpoint seeds are single_valued=0 today, branch unreachable).
         if claim.predicate.endswith("_started"):
-            return Interval(start=date, start_known=True)
+            return Interval(start=date, start_known=True, unique=True)
         if claim.predicate.endswith("_ended"):
-            return Interval(end=date, end_known=True)
+            return Interval(end=date, end_known=True, unique=True)
         return None
 
     def _interval_holds_at(self, interval: Interval, T: str) -> str:
@@ -1781,6 +1794,13 @@ class Walker:
                 return False
 
         # --- Structural edge confirmation ---
+        # `allow_llm` governs the §6 fall-through consult below. It stays True
+        # (full KB->substrate->LLM) when the KB was UNAVAILABLE, but is forced
+        # False on a DEFINITE KB negative: a cold LLM guess must never fabricate
+        # a positive over an authoritative KB negative (§3.2), yet a sound
+        # substrate row (operator-seeded / discovered — trust ordering:
+        # substrate > KB > LLM) may still confirm the step.
+        allow_llm = True
         # 1. KB transitive-path (sound, when both endpoints resolve to Q-ids).
         if self._kb is not None:
             child_qid = self._resolve_qid(node, child_surface, slot)
@@ -1798,24 +1818,31 @@ class Walker:
                 except Exception:
                     tp = None
                 if tp is not None and getattr(tp, "error", None) is None:
-                    # The KB authoritatively answered (no fail-open error):
-                    # honor BOTH its verdicts. A definite hold confirms the
-                    # edge; a definite non-hold is a NEGATIVE answer — return
-                    # False here rather than falling through to the
-                    # substrate/LLM consult, which could fabricate a positive
-                    # (Priority-3) over an authoritative KB negative (§3.2:
-                    # never false-verify). Only an UNAVAILABLE answer (tp is
-                    # None, or tp.error set => fail-open) may fall through.
-                    return bool(tp.holds)
+                    # The KB authoritatively answered (no fail-open error).
+                    # A definite hold confirms the edge immediately. A definite
+                    # non-hold is a NEGATIVE answer: do NOT return False
+                    # outright (that would discard a sound Priority-2 substrate
+                    # row — e.g. a seeded `Williamstown part_of Massachusetts`
+                    # when Wikidata's part_of closure is incomplete). Instead
+                    # fall through to the substrate consult in LLM-EXCLUDED mode
+                    # (allow_llm=False) so only a real substrate/KB row can
+                    # confirm — a cold LLM positive is never admitted over a KB
+                    # negative (§3.2 never-false-verify; trust: substrate > KB).
+                    if tp.holds:
+                        return True
+                    allow_llm = False
                 # KB unavailable (no result / fail-open error) — fall through
-                # to the substrate/LLM consult on the aedos surface forms.
+                # to the FULL substrate/LLM consult on the aedos surface forms.
 
-        # 2. Substrate consult (KB -> substrate -> LLM, §6) on aedos surface forms.
+        # 2. Substrate consult (KB -> substrate -> LLM, §6) on aedos surface
+        # forms. On a definite KB negative (allow_llm=False) the LLM tier is
+        # suppressed inside consult, so only a substrate row can confirm.
         try:
             verdict = self._substrate.subsumption.consult(
                 EntityRef("aedos", child_surface),
                 EntityRef("aedos", parent_surface),
                 relation_type,
+                allow_llm=allow_llm,
             )
             v = verdict.verdict
             v = v.value if hasattr(v, "value") else v

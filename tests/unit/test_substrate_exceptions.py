@@ -93,6 +93,77 @@ class TestSubstrateExceptionCache:
         ).fetchone()[0]
         assert live <= 3
 
+    def test_leak_guard_row_exempt_from_eviction(self, tmp_path):
+        # PATCH-C r2c-2: a reason='leak_guard' row is NEVER an eviction
+        # candidate — excluded from BOTH the cap COUNT and the eviction
+        # subquery (contract §0.11 #2). No production path records this reason
+        # yet, so we write the guard row directly via the db; the test proves
+        # the SQL exemption holds.
+        N = 3
+        db = _db(tmp_path)
+        cache = SubstrateExceptionCache(db, max_rows=N)
+
+        # The guard row is given the OLDEST created_at/last_consulted_at, so a
+        # plain LRU (oldest-consulted-first) would evict it FIRST were it not
+        # exempt. This is the adversarial placement that proves the exemption.
+        db.execute(
+            """INSERT INTO substrate_exceptions
+               (exception_kind, relation_type, property_path, source_identifier,
+                target_identifier, reason, created_at, last_consulted_at, used_count)
+               VALUES ('transitive_path','part_of','P131','Q_GUARD','Q999',
+                       'leak_guard','2000-01-01T00:00:00+00:00',
+                       '2000-01-01T00:00:00+00:00',0)""",
+        )
+        db.commit()
+
+        # Now insert N+1 ask_false rows (each newer than the guard row). The
+        # final record_nogood triggers _evict_if_over_cap; with N+1 ask_false
+        # rows and a cap of N, exactly one ask_false row must be evicted — and
+        # it must be an ask_false row, never the older leak_guard row.
+        for i in range(N + 1):
+            cache.record_nogood(
+                relation_type="part_of", source_identifier=f"Q{i}",
+                target_identifier="Q999", property_path="P131", reason="ask_false",
+            )
+
+        # (a) the leak_guard row still exists and is NOT retracted.
+        guard = db.execute(
+            "SELECT retracted_at FROM substrate_exceptions WHERE reason='leak_guard'"
+        ).fetchall()
+        assert len(guard) == 1, "the leak_guard row must survive eviction"
+        assert guard[0]["retracted_at"] is None, (
+            "the leak_guard row must remain live (retracted_at IS NULL)"
+        )
+
+        # (b) surplus ask_false rows were deleted: N+1 inserted, cap N → exactly
+        # one evicted, N live ask_false rows remain.
+        live_ask_false = db.execute(
+            "SELECT COUNT(*) FROM substrate_exceptions "
+            "WHERE reason='ask_false' AND retracted_at IS NULL"
+        ).fetchone()[0]
+        assert live_ask_false == N, (
+            f"surplus ask_false rows must be evicted to the cap; got "
+            f"{live_ask_false} live, expected {N}"
+        )
+
+        # (c) the guard row is EXCLUDED from the cap count: the cap-relevant
+        # count (the same predicate _evict_if_over_cap uses) tallies only the N
+        # ask_false rows, never the guard row — so the guard does not consume
+        # capacity.
+        cap_count = db.execute(
+            "SELECT COUNT(*) FROM substrate_exceptions WHERE retracted_at IS NULL "
+            "AND reason NOT IN ('leak_guard','operator_marked')"
+        ).fetchone()[0]
+        assert cap_count == N, (
+            f"the guard row must be excluded from the cap count; cap count is "
+            f"{cap_count}, expected {N}"
+        )
+        # The guard row IS present in the table overall (N ask_false + 1 guard).
+        total_live = db.execute(
+            "SELECT COUNT(*) FROM substrate_exceptions WHERE retracted_at IS NULL"
+        ).fetchone()[0]
+        assert total_live == N + 1
+
     def test_vetoes_binding_path(self, tmp_path):
         db = _db(tmp_path)
         cache = SubstrateExceptionCache(db)
