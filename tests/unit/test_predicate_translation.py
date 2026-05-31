@@ -12,6 +12,7 @@ from aedos.database import open_memory_db
 from aedos.llm.client import LLMClient
 from aedos.layer3_substrate.predicate_translation import (
     PREDICATE_METADATA_TOOL,
+    PredicateBinding,
     PredicateMetadata,
     PredicateTranslation,
     PredicateTranslationError,
@@ -133,6 +134,90 @@ class TestPredicateMetadataDataclass:
         )
         assert m.subject_entity_types == ["Q5"]
         assert m.object_entity_types == ["Q43229"]
+
+
+# ---------------------------------------------------------------------------
+# TestPredicateMetadataBindings (v0.16 WS1)
+# ---------------------------------------------------------------------------
+
+class TestPredicateMetadataBindings:
+    """v0.16 WS1: PredicateMetadata gains a `bindings` list. A legacy scalar
+    construction synthesizes exactly one PredicateBinding mirroring the scalar
+    fields; an explicit bindings list round-trips and mirrors bindings[0] back
+    onto the scalar accessors."""
+
+    def test_legacy_scalar_synthesizes_one_binding(self):
+        # Construct with only the scalar fields (no `bindings=`). __post_init__
+        # must synthesize exactly one binding mirroring the scalars.
+        m = PredicateMetadata(
+            id=1,
+            aedos_predicate="holds_role",
+            object_type="entity",
+            user_subject_required=False,
+            distinct_slots=None,
+            routing_hint="kb_resolvable",
+            kb_namespace="wikidata",
+            kb_property="P39",
+            slot_to_qualifier=None,
+            reason="maps to position held",
+            created_at="2026-01-01T00:00:00+00:00",
+            single_valued=True,
+            subject_entity_types=["Q5"],
+            object_entity_types=["Q4164871"],
+        )
+        assert m.bindings  # non-empty
+        assert len(m.bindings) == 1
+        b = m.bindings[0]
+        assert isinstance(b, PredicateBinding)
+        assert b.kb_property == m.kb_property == "P39"
+        assert b.kb_namespace == "wikidata"
+        assert b.single_valued is True
+        assert b.subject_entity_types == ["Q5"]
+        assert b.object_entity_types == ["Q4164871"]
+        assert b.source == "legacy_scalar"
+
+    def test_explicit_bindings_round_trip_and_mirror_scalars(self):
+        # Construct with an explicit bindings list; bindings round-trips and
+        # bindings[0]'s values mirror back onto the scalar accessors so the
+        # ~18 existing scalar readers stay correct.
+        primary = PredicateBinding(
+            kb_namespace="wikidata",
+            kb_property="P106",
+            slot_to_qualifier={"start": "P580"},
+            single_valued=False,
+            subject_entity_types=["Q5"],
+            object_entity_types=["Q28640"],
+            source="ontology_p2302",
+            rank=0.9,
+        )
+        secondary = PredicateBinding(
+            kb_namespace="wikidata",
+            kb_property="P39",
+            source="oracle",
+            rank=0.4,
+        )
+        m = PredicateMetadata(
+            id=2,
+            aedos_predicate="works_as",
+            object_type="entity",
+            user_subject_required=False,
+            distinct_slots=None,
+            routing_hint="kb_resolvable",
+            kb_namespace=None,
+            kb_property=None,
+            slot_to_qualifier=None,
+            reason="r",
+            created_at="t",
+            bindings=[primary, secondary],
+        )
+        # bindings round-trips intact (order + count preserved).
+        assert m.bindings == [primary, secondary]
+        # bindings[0] mirrored onto the scalar accessors.
+        assert m.kb_property == "P106"
+        assert m.kb_namespace == "wikidata"
+        assert m.slot_to_qualifier == {"start": "P580"}
+        assert m.subject_entity_types == ["Q5"]
+        assert m.object_entity_types == ["Q28640"]
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,8 @@ import pytest
 
 from aedos.layer5_result.trace import (
     JustificationTrace,
+    ProvenanceLiteral,
+    ProvenanceTerm,
     TraceEdge,
     TraceNode,
     trace_to_json,
@@ -51,6 +53,18 @@ class TestJustificationTrace:
         assert t.source_breakdown == {}
         assert t.walk_metadata == {}
 
+    def test_provenance_defaults_to_empty_term(self):
+        # v0.16 WS3: JustificationTrace gains a lazy AND/OR `provenance` term.
+        # In this foundation phase it defaults to an empty (no-literal) term so
+        # the schema is stable across the workstream.
+        root = TraceNode("claim", {"subject": "Obama"})
+        t = JustificationTrace(root=root)
+        assert isinstance(t.provenance, ProvenanceTerm)
+        assert t.provenance.literals() == []
+        # An empty term carries no assertion-conditional premise, so the
+        # derived chain_includes_assertion signal is False.
+        assert t.provenance.includes_assertion() is False
+
     def test_edges_appended(self):
         root = TraceNode("claim")
         t = JustificationTrace(root=root)
@@ -94,3 +108,30 @@ class TestTraceToJson:
         t = JustificationTrace(root=root, source_breakdown={"tier_u": 1, "kb": 0})
         d = trace_to_json(t)
         assert d["source_breakdown"]["tier_u"] == 1
+
+    def test_provenance_key_present_and_serializable(self):
+        # v0.16 WS3: trace_to_json gains an additive `provenance` key. The
+        # default empty term serializes (and dumps) without raising.
+        root = TraceNode("claim")
+        t = JustificationTrace(root=root)
+        d = trace_to_json(t)
+        assert "provenance" in d
+        json.dumps(d)  # must not raise
+
+    def test_provenance_literal_serialized(self):
+        # A populated provenance term (one OR alternative wrapping a literal)
+        # serializes its literal under the `provenance` key.
+        root = TraceNode("claim")
+        t = JustificationTrace(root=root)
+        lit = ProvenanceLiteral(
+            source="tier_u", table="tier_u", row_id=7,
+            status="asserted_unverified", assertion=True,
+        )
+        t.provenance.add_alternative(ProvenanceTerm.lit(lit))
+        d = trace_to_json(t)
+        json.dumps(d)  # must not raise
+        prov = d["provenance"]
+        assert prov["op"] == "or"
+        assert prov["children"][0]["op"] == "lit"
+        assert prov["children"][0]["literal"]["row_id"] == 7
+        assert prov["children"][0]["literal"]["assertion"] is True

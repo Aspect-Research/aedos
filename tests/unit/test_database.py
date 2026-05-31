@@ -102,6 +102,40 @@ class TestPredicateTranslationSchema:
         }
         assert required.issubset(cols)
 
+    def test_bindings_column_present(self, conn):
+        # v0.16 M1: predicate_translation gains a `bindings` TEXT (JSON) column
+        # holding the multi-property ranked PredicateBinding set. Legacy scalar
+        # columns are retained alongside it (read-synthesis when bindings IS
+        # NULL), so this is purely additive.
+        cols = _column_names(conn, "predicate_translation")
+        assert "bindings" in cols
+
+    def test_bindings_column_accepts_json_and_null(self, conn):
+        # bindings is nullable (legacy rows synthesize from scalars) and stores
+        # JSON text when present.
+        conn.execute(
+            "INSERT INTO predicate_translation "
+            "(aedos_predicate, object_type, routing_hint, reason, created_at, "
+            " kb_namespace, kb_property, bindings) "
+            "VALUES ('held_position', 'entity', 'kb_resolvable', 'seed', "
+            "'2026-01-01', 'wikidata', 'P39', ?)",
+            (json.dumps([{"kb_namespace": "wikidata", "kb_property": "P39"}]),),
+        )
+        conn.execute(
+            "INSERT INTO predicate_translation "
+            "(aedos_predicate, object_type, routing_hint, reason, created_at, kb_namespace) "
+            "VALUES ('legacy_pred', 'entity', 'kb_resolvable', 'seed', '2026-01-01', 'wikidata')"
+        )
+        conn.commit()
+        with_bindings = conn.execute(
+            "SELECT bindings FROM predicate_translation WHERE aedos_predicate='held_position'"
+        ).fetchone()
+        assert json.loads(with_bindings["bindings"])[0]["kb_property"] == "P39"
+        legacy = conn.execute(
+            "SELECT bindings FROM predicate_translation WHERE aedos_predicate='legacy_pred'"
+        ).fetchone()
+        assert legacy["bindings"] is None
+
     def test_unique_predicate_namespace(self, conn):
         conn.execute(
             "INSERT INTO predicate_translation "
@@ -184,6 +218,78 @@ class TestEntityResolutionCacheSchema:
             "retracted_at", "retraction_reason",
         }
         assert required.issubset(cols)
+
+
+# ---------------------------------------------------------------------------
+# v0.16 M2: property_relations — cached Wikidata property ontology used to
+# discover candidate PredicateBindings. WS1-canonical schema (§0.4 #2).
+# ---------------------------------------------------------------------------
+
+class TestPropertyRelationsSchema:
+    def test_table_exists(self, conn):
+        assert _table_exists(conn, "property_relations")
+
+    def test_required_columns(self, conn):
+        cols = _column_names(conn, "property_relations")
+        required = {
+            "id", "kb_namespace", "kb_property", "relation_type",
+            "related_value", "source", "created_at", "last_consulted_at",
+            "used_count", "retracted_at", "retraction_reason",
+        }
+        assert required.issubset(cols)
+
+    def test_unique_constraint(self, conn):
+        conn.execute(
+            "INSERT INTO property_relations "
+            "(kb_namespace, kb_property, relation_type, related_value, source, created_at) "
+            "VALUES ('wikidata', 'P39', 'value_type_constraint', 'Q4164871', "
+            "'wikidata_p2302', '2026-01-01')"
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO property_relations "
+                "(kb_namespace, kb_property, relation_type, related_value, source, created_at) "
+                "VALUES ('wikidata', 'P39', 'value_type_constraint', 'Q4164871', "
+                "'wikidata_p2302', '2026-01-02')"
+            )
+
+
+# ---------------------------------------------------------------------------
+# v0.16 M3: substrate_exceptions — bounded nogood/exception cache. WS3-
+# canonical schema (§0.3 / §0.4 #1).
+# ---------------------------------------------------------------------------
+
+class TestSubstrateExceptionsSchema:
+    def test_table_exists(self, conn):
+        assert _table_exists(conn, "substrate_exceptions")
+
+    def test_required_columns(self, conn):
+        cols = _column_names(conn, "substrate_exceptions")
+        required = {
+            "id", "exception_kind", "relation_type", "property_path",
+            "source_identifier", "target_identifier", "reason", "created_at",
+            "last_consulted_at", "used_count", "retracted_at", "retraction_reason",
+        }
+        assert required.issubset(cols)
+
+    def test_unique_constraint(self, conn):
+        conn.execute(
+            "INSERT INTO substrate_exceptions "
+            "(exception_kind, relation_type, property_path, source_identifier, "
+            " target_identifier, reason, created_at) "
+            "VALUES ('subsumption', 'part_of', 'P131|P30|P17', 'Q270', 'Q183', "
+            "'leak_guard', '2026-01-01')"
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO substrate_exceptions "
+                "(exception_kind, relation_type, property_path, source_identifier, "
+                " target_identifier, reason, created_at) "
+                "VALUES ('subsumption', 'part_of', 'P131|P30|P17', 'Q270', 'Q183', "
+                "'ask_false', '2026-01-02')"
+            )
 
 
 # ---------------------------------------------------------------------------
