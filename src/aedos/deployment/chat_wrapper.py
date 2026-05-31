@@ -302,4 +302,55 @@ class ChatWrapper:
         )
 
     def get_verification(self, verification_id: str) -> Optional[VerificationResult]:
-        return self._verification_store.get(verification_id)
+        """Return the stored VerificationResult, lazily re-deriving any stale
+        verdict first (v0.16 WS3 §3E).
+
+        A verdict goes STALE when a Tier U premise it rested on is later closed
+        or retracted (TierU.write/retract → propagate_retraction). Staleness is
+        scoped to *_given_assertion verdicts. On next reference here, re-walk
+        each stale claim (the walk IS the re-derivation), re-aggregate the whole
+        result so the stored shape stays consistent, clear the stale flags, and
+        return the refreshed result. No propagator (test paths) → return as-is.
+        """
+        vr = self._verification_store.get(verification_id)
+        if vr is None:
+            return None
+        propagator = getattr(self._aggregator, "_propagator", None)
+        if propagator is None:
+            return vr
+
+        stale_ids = [
+            cv.claim_id
+            for cv in vr.claim_verdicts
+            if propagator.is_stale(cv.claim_id)
+        ]
+        if not stale_ids:
+            return vr
+
+        # Re-walk EVERY claim and re-aggregate — the cheapest correct path that
+        # keeps per_claim_verdicts / claim_verdicts / aggregate_metadata mutually
+        # consistent (a partial re-walk would desync the aggregate counts).
+        # v0.16 WS3 §3E: re-derivation needs a real VerificationContext —
+        # Walker.walk dereferences context.current_time. Rebuild one from the
+        # stored claims (they share the turn's asserting party) and the draft
+        # that was verified, with a fresh timestamp.
+        rederive_context = VerificationContext(
+            current_time=datetime.now(timezone.utc).isoformat(),
+            asserting_party=(
+                vr.claims_extracted[0].asserting_party
+                if vr.claims_extracted else "user"
+            ),
+            source_text=vr.text_input.get("draft") if vr.text_input else None,
+        )
+        walk_results = [
+            self._walker.walk(c, rederive_context) for c in vr.claims_extracted
+        ]
+        refreshed = self._aggregator.aggregate(
+            claims=vr.claims_extracted,
+            per_claim_results=walk_results,
+            text_input=vr.text_input,
+        )
+        for cid in stale_ids:
+            propagator.clear_stale(cid)
+        self._verification_store[verification_id] = refreshed
+        return refreshed

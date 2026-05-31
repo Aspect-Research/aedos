@@ -23,6 +23,7 @@ from .layer3_substrate.predicate_translation import PredicateTranslation
 from .layer3_substrate.property_relations import PropertyRelations
 from .layer3_substrate.resolver import EntityResolver
 from .layer3_substrate.sling_fallback import SlingFallback
+from .layer3_substrate.substrate_exceptions import SubstrateExceptionCache
 from .layer3_substrate.subsumption import SubsumptionOracle
 from .layer4_sources.kb_verifier import KBVerifier
 from .layer4_sources.kb_wikidata import WikidataAdapter
@@ -128,6 +129,16 @@ def build_pipeline(
     # D6: rehydrate the verdict-trace index from persisted verdict_recorded
     # events so retraction propagation survives process restarts (arch 7.3).
     propagator.replay()
+
+    # v0.16 WS3 §3D: the bounded nogood cache. Wired into the KB adapter
+    # (verify_transitive_path consult/record), the subsumption oracle, the
+    # walker (_nogood_vetoes), and the kb_verifier (binding-loop veto). Discovered
+    # nogoods only — never seeded; an absent/flaky cache fails open everywhere.
+    exception_cache = SubstrateExceptionCache(db)
+    # Attribute injection keeps the adapter constructor (build_default_kb /
+    # injected mocks) unchanged; verify_transitive_path reads self._exception_cache.
+    if hasattr(kb, "_exception_cache"):
+        kb._exception_cache = exception_cache
     consistency = ConsistencyChecker(
         db=db,
         retraction_propagator=propagator,
@@ -181,7 +192,8 @@ def build_pipeline(
         wikipedia_normalizer=wikipedia_normalizer,
     )
     subsumption = SubsumptionOracle(
-        db=db, llm_client=client, kb_protocol=kb, consistency_checker=consistency
+        db=db, llm_client=client, kb_protocol=kb, consistency_checker=consistency,
+        exception_cache=exception_cache,
     )
     distribution = PredicateDistributionOracle(
         db=db, llm_client=client, consistency_checker=consistency
@@ -197,8 +209,14 @@ def build_pipeline(
         db=db,
         predicate_translation=pt,
         wikipedia_normalizer=wikipedia_normalizer,
+        # v0.16 WS3 §3E: the premise-retraction entry point — a closed/retracted
+        # Tier U premise marks dependent *_given_assertion verdicts stale.
+        retraction_propagator=propagator,
     )
-    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    kb_verifier = KBVerifier(
+        kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt,
+        exception_cache=exception_cache,
+    )
     python_verifier = PythonVerifier(llm_client=client)
     walker = Walker(
         tier_u=tier_u,
@@ -213,6 +231,8 @@ def build_pipeline(
         # call `enumerate_neighbors` as a fallback when substrate-cached
         # subsumption is empty.
         kb=kb,
+        # v0.16 WS3 §3D: the bounded nogood cache for _nogood_vetoes.
+        exception_cache=exception_cache,
     )
     extractor = Extractor(llm_client=client)
     aggregator = Aggregator(retraction_propagator=propagator, db=db)

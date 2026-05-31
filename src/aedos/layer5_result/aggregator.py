@@ -127,7 +127,16 @@ def _extract_source_rows(trace: JustificationTrace) -> list[tuple[str, int]]:
     """Pull the (table, row_id) pairs a verdict's justification trace depended
     on. These feed the retraction propagator's dependency index so that
     retracting a contributing row propagates to this verdict (architecture 7.3).
+
+    v0.16 WS3 §3C: prefer the structured provenance term as the single source
+    of truth when the walker populated it; the term's source_rows() is the
+    retraction dependency footprint. Fall back to the legacy edge scan for
+    traces that carry only edge metadata (hand-built test traces), so both
+    shapes feed the propagator.
     """
+    prov_rows = trace.provenance.source_rows()
+    if prov_rows:
+        return prov_rows
     rows: list[tuple[str, int]] = []
     seen: set[tuple[str, int]] = set()
     for edge in trace.edges:

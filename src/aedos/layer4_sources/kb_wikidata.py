@@ -750,6 +750,12 @@ class WikidataAdapter:
         self._config = config
         self._fixture_dir = fixture_dir or _FIXTURE_DIR
         self._live = os.environ.get("RUN_LIVE_KB") == "1"
+        # v0.16 WS3 §3D: bounded nogood cache (SubstrateExceptionCache). When
+        # build_pipeline wires it, verify_transitive_path consults it BEFORE the
+        # SPARQL ASK (return holds=False on a cached nogood — the leak guard) and
+        # EAGERLY records a nogood on a negative ASK. Defaults None — fixture/
+        # mock paths run exactly as before (no consult, no record).
+        self._exception_cache = None
 
         # Rate limiters live as instance attributes (per F2 design Q3:
         # owning the state here keeps future lock-protection a small
@@ -800,6 +806,8 @@ class WikidataAdapter:
         target: KBEntityID,
         kb_property: KBPropertyID,
         relation_type: Optional[str] = None,
+        *,
+        exception_cache=None,
     ) -> TransitivePathResult:
         """v0.16 WS2 §1: single-direction transitive-path existence check.
 
@@ -811,7 +819,15 @@ class WikidataAdapter:
 
         Single direction only (source -> target). FAIL-OPEN: any error returns
         `TransitivePathResult(holds=False, error=...)`. See
-        `KBProtocol.verify_transitive_path`."""
+        `KBProtocol.verify_transitive_path`.
+
+        v0.16 WS3 §3D nogood consult: `exception_cache` is the bounded
+        SubstrateExceptionCache. When supplied (explicit arg or the adapter's
+        wired `self._exception_cache`), a matching nogood SHORT-CIRCUITS to
+        `holds=False` WITHOUT a SPARQL call (the leak guard); a negative ASK
+        result is EAGERLY recorded as a nogood. A stale nogood can only cause a
+        false abstain, never a false-verify — §3.2 stays safe."""
+        cache = exception_cache if exception_cache is not None else self._exception_cache
         if relation_type is not None:
             props = _SUBSUMPTION_PROPERTIES.get(relation_type)
             if props is None:
@@ -820,14 +836,52 @@ class WikidataAdapter:
                     f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
                 )
             use_bridge = relation_type == "part_of"
+            cache_relation = relation_type
         else:
             props = (kb_property,)
             use_bridge = False
+            cache_relation = kb_property or ""
+        path = "|".join(p for p in props if p) if props else ""
+
+        # Nogood consult FIRST — a cached "does NOT hold" closes the leak even
+        # if the alternation was later widened, without re-hitting the network.
+        if cache is not None and cache_relation:
+            try:
+                if cache.is_nogood(
+                    relation_type=cache_relation,
+                    source_identifier=source,
+                    target_identifier=target,
+                ):
+                    return TransitivePathResult(holds=False)
+            except Exception:
+                pass  # fail-open: a flaky cache must not block a sound check
+
         if self._live:
-            return self._live_transitive_path(source, target, props, use_bridge)
-        return self._fixture_transitive_path(
-            source, target, props, use_bridge, relation_type
-        )
+            result = self._live_transitive_path(source, target, props, use_bridge)
+        else:
+            result = self._fixture_transitive_path(
+                source, target, props, use_bridge, relation_type
+            )
+
+        # EAGER record on a negative result (no error). A path that errored is
+        # not a nogood — only a confirmed non-holding ASK is cached.
+        if (
+            cache is not None
+            and cache_relation
+            and not getattr(result, "holds", False)
+            and getattr(result, "error", None) is None
+        ):
+            try:
+                cache.record_nogood(
+                    relation_type=cache_relation,
+                    source_identifier=source,
+                    target_identifier=target,
+                    property_path=path,
+                    reason="ask_false",
+                )
+            except Exception:
+                pass  # fail-open
+        return result
 
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None

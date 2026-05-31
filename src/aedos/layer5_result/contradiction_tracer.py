@@ -7,11 +7,14 @@ from ..audit.log import log_event
 from .retraction import RetractionPropagator, VerdictRetraction
 
 # Tables that carry a retracted_at column and may hold a verdict's premises.
+# v0.16 WS3 §3E: `predicate_distribution` dropped — no walker edge ever stamps
+# a predicate_distribution row id (aggregator._TRACE_ROW_ID_KEYS has no
+# distribution key), so the entry was dead. The remaining four are exactly the
+# tables a trace's source_rows can reference.
 _RETRACTABLE_TABLES = {
     "tier_u",
     "predicate_translation",
     "subsumption",
-    "predicate_distribution",
     "entity_resolution_cache",
 }
 
@@ -21,7 +24,12 @@ def _now() -> str:
 
 
 class ContradictionTracer:
-    """Walk a verdict's justification trace and retract contributing rows."""
+    """v0.16 WS3 §3E: on an external premise correction/retraction, retract the
+    contributing row(s) and mark dependent *_given_assertion verdicts STALE for
+    lazy re-derivation. Replaces the dormant eager-cascade tracer — the per-row
+    retracted_at UPDATE stays (the actual retraction), but the cascade is now
+    the propagator's provenance-driven stale-marking, whose return this method
+    consumes."""
 
     def __init__(
         self,
@@ -45,14 +53,17 @@ class ContradictionTracer:
         contradicted_claim_id: str,
         contradicting_premise: dict,
     ) -> list[VerdictRetraction]:
-        """Given an external correction, retract the verdict's source rows.
+        """Given an external correction, retract the verdict's source rows and
+        mark dependent *_given_assertion verdicts STALE.
 
         contradicting_premise: dict with at least {"source": "tier_u" | "kb" | "python", ...}
-        Returns list of VerdictRetraction for all affected verdicts.
+        Returns the propagator's stale-aware VerdictRetraction list for all
+        affected verdicts (the return is now load-bearing — the caller surfaces
+        which verdicts went stale).
 
         For each contributing row this issues the `retracted_at` UPDATE on the
-        row itself (architecture 7.3) and then propagates the retraction to
-        every verdict whose trace included that row.
+        row itself (architecture 7.3) and then propagates the retraction, which
+        marks dependent *_given_assertion verdicts stale for lazy re-derivation.
         """
         source_rows = self._propagator._trace_index.get(contradicted_claim_id, [])
         all_retracted: list[VerdictRetraction] = []
@@ -69,8 +80,8 @@ class ContradictionTracer:
                 )
                 self._db.commit()
 
-            retracted = self._propagator.propagate_retraction(table, row_id)
-            all_retracted.extend(retracted)
+            # Consume the stale-aware propagation result (§3E).
+            all_retracted.extend(self._propagator.propagate_retraction(table, row_id))
 
             if self._db is not None:
                 log_event(

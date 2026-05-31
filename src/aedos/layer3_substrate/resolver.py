@@ -44,6 +44,17 @@ class EntityResolver:
         self._db = db
         self._llm = llm_client
         self._normalizer = wikipedia_normalizer
+        # WS3 D13: entity_resolution_cache row id touched by the most recent
+        # resolve() — the retractable dependency a KB verdict rests on.
+        self._last_cache_row_id: Optional[int] = None
+
+    def last_cache_row_id(self) -> Optional[int]:
+        """WS3 D13: the entity_resolution_cache row id touched by the most
+        recent resolve() on this resolver. None when the last resolve did not
+        hit/create a cache row (mock paths, normalizer Stage-C INSERT OR
+        IGNORE that collided). Request-scoped; the KBVerifier reads it
+        immediately after select() to stamp the premise edge."""
+        return self._last_cache_row_id
 
     def resolve(self, reference: str, local_context: LocalContext) -> list[ResolutionCandidate]:
         """Cache-first resolution. On miss, delegates to KB and writes cache.
@@ -69,6 +80,10 @@ class EntityResolver:
           - the reference looks like a synthetic event id (starts with
             "event_").
         """
+        # WS3 D13: reset per-call; each branch below sets it to the touched
+        # cache row id (or leaves None when no row is hit/created).
+        self._last_cache_row_id = None
+
         normalized_reference, selected_qid = self._normalize_if_applicable(
             reference, local_context
         )
@@ -96,6 +111,8 @@ class EntityResolver:
                 ),
             )
             self._db.commit()
+            self._last_cache_row_id = self._db.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
             return [ResolutionCandidate(
                 kb_identifier=selected_qid,
                 provenance={"source": "wikipedia_normalizer_stage_c", "label": normalized_reference},
@@ -115,6 +132,7 @@ class EntityResolver:
         ).fetchone()
 
         if cached is not None:
+            self._last_cache_row_id = cached["id"]
             self._db.execute(
                 "UPDATE entity_resolution_cache SET used_count=used_count+1, last_used_at=? WHERE id=?",
                 (_NOW(), cached["id"]),
@@ -155,6 +173,8 @@ class EntityResolver:
                 ),
             )
             self._db.commit()
+            self._last_cache_row_id = self._db.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
         else:
             # Negative cache write. The Cluster 1 diagnostic surfaced
             # that abstain-then-no-match cases re-queried KB on every
@@ -178,6 +198,8 @@ class EntityResolver:
                 ),
             )
             self._db.commit()
+            self._last_cache_row_id = self._db.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
 
         return candidates
 

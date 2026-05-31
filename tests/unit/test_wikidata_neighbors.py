@@ -17,6 +17,7 @@ import pytest
 
 from aedos.config import Config
 from aedos.database import open_memory_db
+from aedos.layer3_substrate.substrate_exceptions import SubstrateExceptionCache
 from aedos.layer4_sources.kb_protocol import TransitivePathResult
 from aedos.layer4_sources.kb_wikidata import (
     WikidataAdapter,
@@ -516,3 +517,87 @@ class TestVerifyTransitivePathLiveFailOpen:
                 "Q1", "Q2", ("P171",), use_part_of_bridge=False
             )
         assert result.holds is False
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS3 §3D: verify_transitive_path consults + records the bounded nogood
+# cache. A confirmed non-holding path is EAGERLY recorded as `ask_false`; a
+# later consult of the same (source, target, relation) short-circuits to
+# holds=False WITHOUT a SPARQL ASK — the Marie-Curie / Warsaw⊄Germany leak
+# guard. Because the recorded nogood is matched path-agnostically by relation,
+# widening the property alternation later cannot resurrect the closed leak.
+# ---------------------------------------------------------------------------
+
+class TestVerifyTransitivePathNogoodCache:
+    def test_negative_result_records_nogood(self):
+        adapter, db = _make_adapter()  # fixture path: Warsaw⊄Germany → holds False
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        res = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert res.holds is False
+        # The negative ASK was eagerly recorded as a nogood.
+        rows = db.execute(
+            "SELECT relation_type, source_identifier, target_identifier, reason "
+            "FROM substrate_exceptions"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["relation_type"] == "part_of"
+        assert rows[0]["source_identifier"] == "Q270"
+        assert rows[0]["target_identifier"] == "Q183"
+        assert rows[0]["reason"] == "ask_false"
+
+    def test_nogood_short_circuits_without_ask(self):
+        adapter, db = _make_adapter()
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        # First call records the nogood.
+        adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+
+        # A leak-guard regression: even if the alternation were widened so the
+        # underlying ASK now (wrongly) returns True, the recorded nogood must
+        # short-circuit BEFORE any ASK fires. We assert the ASK is not reached
+        # by making the fixture path raise if it is consulted.
+        def _boom(*a, **k):
+            raise AssertionError("verify_transitive_path must not ASK on a cached nogood")
+        adapter._fixture_transitive_path = _boom  # type: ignore[method-assign]
+
+        res2 = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert res2.holds is False
+
+    def test_retracted_nogood_no_longer_short_circuits(self):
+        adapter, db = _make_adapter()
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        row_id = db.execute(
+            "SELECT id FROM substrate_exceptions ORDER BY id LIMIT 1"
+        ).fetchone()["id"]
+        cache.retract(row_id, reason="operator: path now holds")
+        # After retraction the nogood no longer matches, so the consult does NOT
+        # short-circuit — the ASK runs again. We prove the ASK is reached by
+        # making the fixture path observable.
+        ran = {"asked": False}
+        orig = adapter._fixture_transitive_path
+
+        def _spy(*a, **k):
+            ran["asked"] = True
+            return orig(*a, **k)
+        adapter._fixture_transitive_path = _spy  # type: ignore[method-assign]
+        res = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert ran["asked"] is True
+        assert res.holds is False
+        # The retracted row stays soft-deleted (its UNIQUE key collides with the
+        # eager re-record's INSERT OR IGNORE), so the operator's retraction is
+        # durable — an `ask_false` re-record cannot silently resurrect it.
+        assert cache.is_nogood(
+            relation_type="part_of", source_identifier="Q270", target_identifier="Q183",
+        ) is False
+
+    def test_no_cache_wired_runs_as_before(self):
+        # Without an exception cache the method behaves exactly as the WS2
+        # fixture path — no consult, no record, no substrate_exceptions row.
+        adapter, db = _make_adapter()
+        res = adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert res.holds is False
+        count = db.execute("SELECT COUNT(*) FROM substrate_exceptions").fetchone()[0]
+        assert count == 0

@@ -636,3 +636,62 @@ The system stays functional after each step: steps 1-3 are additive; step 4's `_
 
 
 ##########################################################################################
+
+## Deferred: D2/D3 geo-deletion (SS1 — soundness paramount; NOT deleted in WS3)
+
+**Decision (WS3 implementation round): DEFER both D2 and D3. The geo guards are KEPT.**
+The discovered transitivity (`verify_transitive_path`) + the new `substrate_exceptions`
+nogood cache do **not** yet prove out as a sound replacement for the Marie-Curie leak
+guards. Deleting either reopens a false-VERIFY. Per the operator directive ("Do NOT delete
+on faith — never reopen a false-verify") and the no-seeded-guards rule, the guards stay and
+the replacement is a review-round / operator item.
+
+### Why the nogood cache cannot replace D3 (kb_wikidata type-guarded P361 bridge / trim)
+- The **Warsaw⊄Germany** pin is a **false-VERIFY guard**, and the leak is a property of the
+  SPARQL ASK *query shape*: the trimmed `_SUBSUMPTION_PROPERTIES["part_of"] = (P131,P30,P17)`
+  excludes the leaky P361/P206 hops from the unbounded path, and the P361 *bridge* is
+  re-admitted only between two `_GEO_REGION_TYPES`-typed nodes. Warsaw is a city (Q515, never
+  a region type), so the bridge provably cannot apply to it. Both the trim and the type guard
+  are load-bearing.
+- The `SubstrateExceptionCache` records **negatives only** (`reason='ask_false'`), eagerly,
+  on a confirmed non-holding ASK. A *leaky* alternation `(P131|P30|P17|P361)+` makes the
+  Warsaw→Germany ASK return `holds=True`, so **no nogood is ever recorded** for that pair —
+  the cache structurally cannot close a false-*positive* leak. (Verified empirically against
+  `_build_transitive_ask_query`: with the guards, the unbounded path is `(wdt:P131|wdt:P30|
+  wdt:P17)+` and the P361 hop carries two `VALUES ?gt1/?gt2 ∈ region-types` guards; without
+  them it collapses to a bare `(wdt:P131|wdt:P30|wdt:P17|wdt:P361)+` — the documented leak.)
+- The only cache-based mechanism that *could* close it is an **operator-seeded `leak_guard`
+  row**, which the operator explicitly forbade ("no seeded guards; discovered only"). WS1's
+  discovered `object_entity_types` address entity *resolution*, not the transitive *path
+  shape*, so they do not help here either.
+
+### Why the nogood cache cannot replace D2 (kb_verifier `_location_disjoint` / CONTINENT_QIDS)
+- `_location_disjoint` is a **CONTRADICTED-producer**: it is what turns **Rome⊄Germany**,
+  **Thames⊄Asia**, **Vatican⊄Africa** into CONTRADICTED rather than abstain. The nogood cache
+  *gates positive* transitive paths (a nogood vetoes a path → `holds=False`); it does not
+  *synthesize* a contradiction verdict. Removing D2 downgrades those three pins from
+  CONTRADICTED to NO_MATCH (abstain) — a loss of the disjoint contradictions the medium-bar
+  requires, not a soundness reopening, but still a coverage regression with no replacement.
+
+### Pin status (all five HELD under the kept guards; verified)
+| Pin | Class | Mechanism that holds it | Status |
+|---|---|---|---|
+| Warsaw⊄Germany | false-VERIFY guard | D3 trim + type-guarded P361 bridge (query shape) | HELD (kept) |
+| Rome⊄Germany | CONTRADICTED | D2 `_location_disjoint` shared-continent path | HELD (kept) |
+| Thames⊄Asia | CONTRADICTED | D2 `_location_disjoint` continent-level path | HELD (kept) |
+| Vatican⊄Africa | CONTRADICTED | D2 `_location_disjoint` continent-level path | HELD (kept) |
+| Massachusetts⊂New England | region containment | D3 type-guarded P361 bridge | HELD (kept) |
+
+The full suite stays green with the guards kept (`1196 passed, 1 xfailed, 1 xpassed`); the
+query-shape soundness pins are exercised by `tests/unit/test_wikidata_neighbors.py`
+(`test_part_of_bridge_is_type_guarded`, `test_part_of_query_byte_identical_to_subsumption_ask`).
+
+### What a future sound deletion would require (operator/review-round item)
+1. A POSITIVE-path soundness mechanism (not a negative cache): e.g. WS2-discovered per-relation
+   property sets with the same type-guard semantics expressed as *data* (a discovered
+   constraint that P361 only bridges region-typed nodes), proven to keep the bare alternation
+   from folding the leaky hops in.
+2. A disjoint-contradiction derivation that does not enumerate a hardcoded continent set —
+   e.g. derive "different discovered top-level container ⇒ disjoint" from the ontology, with
+   the four CONTRADICTED pins re-pinned against it.
+3. Only then delete D2/D3, with all five pins re-verified AFTER deletion.

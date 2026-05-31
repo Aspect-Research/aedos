@@ -246,6 +246,7 @@ class Walker:
         walker_max_llm_calls: Optional[int] = None,
         walker_max_depth: Optional[int] = None,
         kb: Optional[KBProtocol] = None,
+        exception_cache=None,
     ) -> None:
         """Resource budgets resolve in priority order:
 
@@ -276,6 +277,10 @@ class Walker:
         # fallback (back-compat for test paths that construct the walker
         # without a KB).
         self._kb = kb
+        # v0.16 WS3 §3D: the bounded nogood cache for _nogood_vetoes. When None
+        # the helper falls back to the kb_verifier's cache (then no-op), so the
+        # explicit wiring here and the fallback both work.
+        self._exception_cache = exception_cache
 
     def walk(
         self,
@@ -335,7 +340,7 @@ class Walker:
         # abstained_given_assertion case). See design doc §"User_authoritative
         # verdict semantics".
         if self._predicate_routing(claim.predicate) == "user_authoritative":
-            trace.chain_includes_assertion = True
+            self._record_premise(trace, source="tier_u", assertion=True)
 
         frontier: list[Claim] = [claim]
         visited: dict[str, Claim] = {}
@@ -461,6 +466,23 @@ class Walker:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _record_premise(self, trace, *, source, table=None, row_id=None,
+                        status=None, assertion=False):
+        """WS3 §3B: append one grounding premise to the trace's provenance
+        term as a fresh OR-alternative. Each grounded premise found in a walk
+        is an independent way the verdict could hold (OR); a future multi-hop
+        composition ANDs hops within one alternative. Centralizes literal
+        construction so every grounding site contributes provenance, and so
+        the DERIVED chain_includes_assertion (monotone-OR over literal
+        .assertion flags) reproduces the legacy boolean exactly."""
+        from ..layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        trace.provenance.add_alternative(
+            ProvenanceTerm.lit(ProvenanceLiteral(
+                source=source, table=table, row_id=row_id,
+                status=status, assertion=assertion,
+            ))
+        )
+
     def _direct_lookup(
         self, node: Claim, context: VerificationContext, trace: JustificationTrace
     ) -> tuple[Optional[str], str, int]:
@@ -533,8 +555,11 @@ class Walker:
                     "premise_status": flipped_status,
                 },
             ))
-            if flipped_status == "asserted_unverified":
-                trace.chain_includes_assertion = True
+            self._record_premise(
+                trace, source="tier_u", table="tier_u",
+                row_id=flipped_row.get("id"), status=flipped_status,
+                assertion=(flipped_status == "asserted_unverified"),
+            )
             return "contradicted", "tier_u", 0
 
         # Object-conflict belief revision (D16): a functional
@@ -577,8 +602,11 @@ class Walker:
                         "premise_status": oc_status,
                     },
                 ))
-                if oc_status == "asserted_unverified":
-                    trace.chain_includes_assertion = True
+                self._record_premise(
+                    trace, source="tier_u", table="tier_u",
+                    row_id=oc_row.get("id"), status=oc_status,
+                    assertion=(oc_status == "asserted_unverified"),
+                )
                 return "contradicted", "tier_u", 0
 
         # Stage 1 literal Tier U lookup. Now that belief-revision paths
@@ -607,6 +635,14 @@ class Walker:
                     "premise_status": row_status,
                 },
             ))
+            # WS3 §3B Edit 4: record the Stage-1 verified premise in the
+            # provenance term so it is retractable. assertion=False here; the
+            # Q-Lookup-α fallthrough below records an assertion literal when no
+            # external grounding upgrades the asserted_unverified row.
+            self._record_premise(
+                trace, source="tier_u", table="tier_u",
+                row_id=row_id, status=row_status, assertion=False,
+            )
             # TierU._stage1 matches polarity exactly: a `found` hit is an
             # assertion of the SAME polarity as the claim, hence verified —
             # including a negated claim grounded in a negated Tier U row.
@@ -639,8 +675,13 @@ class Walker:
                     )
                 return "verified", f"tier_u→{upgrade_source}_upgrade", llm_delta
             # No external grounding available; chain stays
-            # assertion-conditional.
-            trace.chain_includes_assertion = True
+            # assertion-conditional. Mark the Stage-1 premise literal
+            # assertion-conditional by appending an assertion literal
+            # (OR semantics: includes_assertion() now True).
+            self._record_premise(
+                trace, source="tier_u", table="tier_u",
+                row_id=row_id, status="asserted_unverified", assertion=True,
+            )
             return "verified", "tier_u", llm_delta
 
         if tier_u_result.historical_only:
@@ -706,6 +747,7 @@ class Walker:
             verdict = self._verify_kb_quantitative(node, context, trace)
             if verdict is not None:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+                self._record_premise(trace, source="kb", assertion=False)
                 return verdict, "kb_quantitative", 0, {
                     "source": "kb_quantitative",
                     "predicate": node.predicate,
@@ -720,6 +762,10 @@ class Walker:
             )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+                # WS3 D13: the resolver's entity_resolution_cache row the KB
+                # statement is keyed on — the retractable dependency of this
+                # KB verdict (None for mock/transient resolvers).
+                cache_row_id = kb_result.trace.get("resolution_cache_row_id")
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
                     source=trace.root,
@@ -729,8 +775,13 @@ class Walker:
                         # R1: surface the D19 lookup direction on the result-level
                         # trace so Phase 10.5 debugging can see inverted lookups.
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                        "entity_resolution_cache_row_id": cache_row_id,
                     },
                 ))
+                self._record_premise(
+                    trace, source="kb", table="entity_resolution_cache",
+                    row_id=cache_row_id, assertion=False,
+                )
                 grounding = {
                     "source": "kb",
                     "entity": kb_result.subject_kb_id,
@@ -739,6 +790,7 @@ class Walker:
                 }
                 return "verified", "kb", 0, grounding
             elif kb_result.verdict == KBVerdictType.CONTRADICTED:
+                cache_row_id = kb_result.trace.get("resolution_cache_row_id")
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
                     source=trace.root,
@@ -746,8 +798,13 @@ class Walker:
                     metadata={
                         "source": "kb", "verdict": "contradicted",
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
+                        "entity_resolution_cache_row_id": cache_row_id,
                     },
                 ))
+                self._record_premise(
+                    trace, source="kb", table="entity_resolution_cache",
+                    row_id=cache_row_id, assertion=False,
+                )
                 grounding = {
                     "source": "kb",
                     "entity": kb_result.subject_kb_id,
@@ -780,6 +837,7 @@ class Walker:
                     }),
                     metadata={"source": "python", "verdict": py_result.verdict},
                 ))
+                self._record_premise(trace, source="python", assertion=False)
                 grounding = {
                     "source": "python",
                     "output": str(getattr(py_result, "output", "")),

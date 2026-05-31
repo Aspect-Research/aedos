@@ -86,11 +86,17 @@ class SubsumptionOracle:
         llm_client: LLMClient,
         kb_protocol=None,
         consistency_checker=None,
+        exception_cache=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
         self._kb = kb_protocol
         self._consistency = consistency_checker
+        # v0.16 WS3 §3D: bounded nogood cache passed through to the KB-mediated
+        # transitive checks (build_pipeline wires it). Defaults None — the
+        # Priority-1 KB branch then calls verify_transitive_path with no cache,
+        # exactly as before.
+        self._exception_cache = exception_cache
 
     def consult(
         self, entity_a: EntityRef, entity_b: EntityRef, relation_type: str

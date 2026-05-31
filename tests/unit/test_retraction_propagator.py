@@ -116,6 +116,84 @@ class TestRetractionPropagator:
 
 
 # ---------------------------------------------------------------------------
+# v0.16 WS3 §3E: lazy staleness, scoped to *_given_assertion verdicts
+# ---------------------------------------------------------------------------
+
+class TestRetractionStaleScoping:
+    """propagate_retraction marks dependent *_given_assertion verdicts STALE
+    (lazy re-derivation) but leaves base verdicts un-staled — asymmetric trust:
+    a Tier U premise correction can invalidate an assertion-conditional verdict,
+    but a base verified/contradicted verdict is externally grounded and stands.
+    The dependency on a base verdict is still RECORDED in the returned
+    VerdictRetraction (for audit), just with stale=False."""
+
+    def test_given_assertion_verdict_marked_stale(self):
+        prop = RetractionPropagator()
+        prop.record_verdict_trace("c1", "verified_given_assertion", [("tier_u", 7)])
+        out = prop.propagate_retraction("tier_u", 7)
+        assert len(out) == 1
+        assert out[0].stale is True
+        assert out[0].scoped_given_assertion is True
+        assert prop.is_stale("c1") is True
+
+    def test_base_verdict_recorded_but_not_staled(self):
+        prop = RetractionPropagator()
+        prop.record_verdict_trace("c2", "verified", [("tier_u", 8)])
+        out = prop.propagate_retraction("tier_u", 8)
+        # Returned (audit) but NOT staled.
+        assert len(out) == 1
+        assert out[0].verdict == "verified"
+        assert out[0].stale is False
+        assert out[0].scoped_given_assertion is False
+        assert prop.is_stale("c2") is False
+
+    def test_contradicted_given_assertion_also_staled(self):
+        prop = RetractionPropagator()
+        prop.record_verdict_trace("c3", "contradicted_given_assertion", [("tier_u", 9)])
+        out = prop.propagate_retraction("tier_u", 9)
+        assert out[0].stale is True
+        assert prop.is_stale("c3") is True
+
+    def test_clear_stale_resets_flag(self):
+        prop = RetractionPropagator()
+        prop.record_verdict_trace("c1", "abstained_given_assertion", [("tier_u", 1)])
+        prop.propagate_retraction("tier_u", 1)
+        assert prop.is_stale("c1") is True
+        prop.clear_stale("c1")
+        assert prop.is_stale("c1") is False
+        # Idempotent: clearing an already-clear claim is a no-op, not an error.
+        prop.clear_stale("c1")
+        assert prop.is_stale("c1") is False
+
+    def test_is_stale_false_for_unknown_claim(self):
+        prop = RetractionPropagator()
+        assert prop.is_stale("never_seen") is False
+
+    def test_unmatched_row_does_not_stale(self):
+        # A retraction of a row the verdict does NOT depend on leaves it fresh.
+        prop = RetractionPropagator()
+        prop.record_verdict_trace("c1", "verified_given_assertion", [("tier_u", 7)])
+        out = prop.propagate_retraction("tier_u", 999)
+        assert out == []
+        assert prop.is_stale("c1") is False
+
+    def test_stale_marking_persists_verdict_retracted_audit_event(self, tmp_path):
+        # The stale flag is carried into the verdict_retracted audit event so an
+        # out-of-process reader can see which verdicts went stale.
+        db = open_db(str(tmp_path / "aedos.db"))
+        prop = RetractionPropagator(db=db)
+        prop.record_verdict_trace("c1", "verified_given_assertion", [("tier_u", 5)])
+        prop.propagate_retraction("tier_u", 5)
+        import json
+        row = db.execute(
+            "SELECT event_data FROM audit_log WHERE event_type='verdict_retracted' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert json.loads(row["event_data"])["stale"] is True
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # ContradictionTracer
 # ---------------------------------------------------------------------------
 
