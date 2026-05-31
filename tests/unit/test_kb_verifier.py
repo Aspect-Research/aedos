@@ -807,3 +807,193 @@ class TestKBVerifierCopulaValueTypeFix:
         verifier = _make_multi_verifier(kb, meta)
         result = verifier.verify(_claim(predicate="born_in", object_val="Honolulu"))
         assert result.verdict == KBVerdictType.CONTRADICTED
+
+
+# ===========================================================================
+# v0.16 — NO-STATEMENTS DISJOINT-FALLBACK CONTRADICTED ARM
+#
+# Symmetric counterpart to the no-statements subsumption-UPGRADE (VERIFIED)
+# arm. When a LOCATION-property binding finds NO statement on the lookup
+# subject for that property, but the subject is geographically DISJOINT from
+# the claimed container, the arm returns CONTRADICTED (the "Vatican is in
+# Africa" shape — the Vatican has no P131 statement, only P30=Europe, so the
+# in-statements disjoint path never fires). Soundness mirrors the in-statements
+# arm: entity object, value_resolved, standard (non-inverted) direction, both
+# sides resolved to Q-ids, kb_property in _LOCATION_KB_PROPERTIES, and the
+# fail-closed _location_disjoint helper requiring positive KB subsumption into
+# a DIFFERENT continent. The VERIFIED subsumption-upgrade arm runs FIRST, so a
+# true "X in [right continent]" verifies and never reaches this arm.
+#
+# These tests import the genuine CONTINENT_QIDS / _LOCATION_KB_PROPERTIES and
+# use real continent Q-ids (Q46 Europe, Q15 Africa) plus the real location
+# property P131, driving the _location_disjoint path (a) directly: the subject
+# is `a_subsumed_by_b` one continent under "part_of" and `unrelated` to the
+# claimed (different) continent.
+# ===========================================================================
+
+from aedos.layer4_sources.kb_verifier import CONTINENT_QIDS, _LOCATION_KB_PROPERTIES
+
+
+class TestKBVerifierNoStatementsDisjointArm:
+    # Sanity: the genuine constants the new arm is gated on hold the Q-ids the
+    # tests rely on, so a constant rename can't make these pass vacuously.
+    def test_constants_are_genuine(self):
+        assert "Q46" in CONTINENT_QIDS  # Europe
+        assert "Q15" in CONTINENT_QIDS  # Africa
+        assert "P131" in _LOCATION_KB_PROPERTIES
+
+    def test_no_statements_disjoint_contradicts(self):
+        # The Vatican/Africa shape. P131 binding finds NO statement for the
+        # subject. The subject (Q237 Vatican) resolves; the claim object
+        # "Africa" resolves to Q15 (a genuine CONTINENT_QID). _location_disjoint
+        # path (a): the subject is a_subsumed_by_b Q46 (Europe, a DIFFERENT
+        # continent) under "part_of", and unrelated to Q15 (Africa) — so the
+        # subject is geographically disjoint from the claimed container.
+        # polarity 1 ⇒ CONTRADICTED, with the no_statements_disjoint_fallback
+        # trace key set.
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},  # no statement on this property
+            resolutions={"Vatican": "Q237", "Africa": "Q15"},
+            subsumptions={
+                ("Q237", "Q46", "part_of"): "a_subsumed_by_b",  # Vatican ⊂ Europe
+                # unrelated to Africa (default for ("Q237","Q15","part_of"))
+            },
+        )
+        meta = _make_meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Vatican", predicate="located_in", object_val="Africa")
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+        assert result.trace.get("no_statements_disjoint_fallback") is True
+
+    def test_no_statements_disjoint_unrelated_abstains(self):
+        # Same no-statements shape, but the subject is `unrelated` to ALL
+        # continents (no subsumption entries at all → every part_of probe
+        # returns the default "unrelated"). _location_disjoint cannot confirm a
+        # different-continent ancestor, so it returns False (fail-closed) and
+        # the arm does NOT contradict ⇒ NO_MATCH, not CONTRADICTED.
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},
+            resolutions={"Atlantis": "Q9999", "Africa": "Q15"},
+            subsumptions={},  # unrelated to every continent
+        )
+        meta = _make_meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Atlantis", predicate="located_in", object_val="Africa")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("no_statements_disjoint_fallback") is None
+        assert result.trace.get("abstention_reason") == "no_statements"
+
+    def test_no_statements_subsumption_upgrade_still_verifies_first(self):
+        # Ordering proof: the subject is a_subsumed_by_b the EXPECTED continent
+        # (Q15 Africa). The pre-existing no-statements subsumption-UPGRADE arm
+        # runs FIRST and returns VERIFIED — the new disjoint arm is never
+        # reached (it would otherwise mis-evaluate). "Cairo is in Africa": no
+        # P131 statement, but Cairo ⊂ Africa via part_of ⇒ VERIFIED.
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},
+            resolutions={"Cairo": "Q85", "Africa": "Q15"},
+            subsumptions={
+                ("Q85", "Q15", "part_of"): "a_subsumed_by_b",  # Cairo ⊂ Africa
+            },
+        )
+        meta = _make_meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Cairo", predicate="located_in", object_val="Africa")
+        )
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("no_statements_subsumption_fallback") is True
+        # The disjoint arm was not reached.
+        assert result.trace.get("no_statements_disjoint_fallback") is None
+
+    def test_no_statements_disjoint_skipped_for_nonlocation_property(self):
+        # The kb_property gate: a binding whose property is NOT in
+        # _LOCATION_KB_PROPERTIES (here P108 employer) must NEVER trigger the
+        # disjoint arm, even with a disjoint-looking subsumption present. Two
+        # distinct entities can both satisfy a relational predicate without
+        # contradicting ⇒ NO_MATCH, never CONTRADICTED.
+        assert "P108" not in _LOCATION_KB_PROPERTIES
+        kb = _MultiPropKB(
+            statements_by_property={"P108": []},
+            resolutions={"Vatican": "Q237", "Africa": "Q15"},
+            subsumptions={
+                ("Q237", "Q46", "part_of"): "a_subsumed_by_b",  # would be disjoint
+            },
+        )
+        meta = _make_meta("employed_by", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P108", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Vatican", predicate="employed_by", object_val="Africa")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("no_statements_disjoint_fallback") is None
+
+    def test_no_statements_disjoint_negated_claim_verifies(self):
+        # The Vatican/Africa shape but the claim is NEGATED ("The Vatican is NOT
+        # in Africa"). The positive content is CONTRADICTED (disjoint), and
+        # _apply_polarity flips a CONTRADICTED positive verdict to VERIFIED for
+        # polarity 0 ⇒ VERIFIED, still via the no_statements_disjoint_fallback
+        # arm.
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},
+            resolutions={"Vatican": "Q237", "Africa": "Q15"},
+            subsumptions={
+                ("Q237", "Q46", "part_of"): "a_subsumed_by_b",  # Vatican ⊂ Europe
+            },
+        )
+        meta = _make_meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Vatican", predicate="located_in", object_val="Africa", polarity=0)
+        )
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("no_statements_disjoint_fallback") is True
+        assert result.trace.get("positive_verdict") == "contradicted"
+        assert result.trace.get("polarity") == 0
+
+    def test_no_statements_disjoint_skipped_for_inverse_binding(self):
+        # The `not lookup_inverted` gate. An inverse binding (slot_to_qualifier
+        # maps the Aedos subject to statement_value) keys the lookup on the
+        # claim's OBJECT and treats the subject as the expected value. The
+        # disjoint arm requires the standard direction, so an inverse binding —
+        # even with a disjoint-looking subsumption — must skip it ⇒ NO_MATCH.
+        #
+        # Inverse direction: lookup_ref = claim.object ("Africa" → Q15),
+        # expected_ref = claim.subject ("Vatican" → Q237). Both resolve, so
+        # value_resolved is True; statements empty; lookup_inverted is True ⇒
+        # the disjoint arm is gated off.
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},
+            resolutions={"Vatican": "Q237", "Africa": "Q15"},
+            subsumptions={
+                ("Q237", "Q46", "part_of"): "a_subsumed_by_b",
+            },
+        )
+        meta = _make_meta("contains_place", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P131",
+                slot_to_qualifier={"subject": "statement_value", "object": "statement_subject"},
+                source="oracle",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Vatican", predicate="contains_place", object_val="Africa")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("lookup_inverted") is True
+        assert result.trace.get("no_statements_disjoint_fallback") is None
