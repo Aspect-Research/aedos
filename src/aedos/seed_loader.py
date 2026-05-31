@@ -46,7 +46,14 @@ _REQUIRED_FIELDS = {
     "reason",
 }
 
-_VALID_ROUTING_HINTS = {"user_authoritative", "kb_resolvable", "python", "abstain"}
+# v0.16 WS6 T1: `kb_interval` is the interval-endpoint routing hint (parallels
+# the runtime-only `kb_quantitative` hint). A `*_started` / `*_ended` predicate
+# grounds against the P580 (start time) / P582 (end time) qualifier on its base
+# relation's KB statement, via the walker's interval resolver — not the generic
+# value-compare path. Admitted here so the new seed rows load.
+_VALID_ROUTING_HINTS = {
+    "user_authoritative", "kb_resolvable", "python", "abstain", "kb_interval",
+}
 
 
 def _validate_entry(entry: dict, idx: int) -> None:

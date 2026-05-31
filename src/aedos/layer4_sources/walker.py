@@ -5,9 +5,14 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..layer1_extraction.extractor import Claim
+from ..layer1_extraction.temporal import BEFORE_PRESENT
 from ..layer3_substrate import Substrate
 from ..layer3_substrate.subsumption import EntityRef
-from ..layer4_sources.kb_verifier import KBVerdictType
+from ..layer4_sources.kb_verifier import (
+    KBVerdictType,
+    _normalize_date_value,
+    _value_matches,
+)
 from ..layer4_sources.kb_protocol import KBProtocol, LocalContext
 from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
 
@@ -68,6 +73,23 @@ class WalkResult:
     trace: JustificationTrace
     abstention_reason: Optional[str] = None
     budget_consumption: BudgetConsumption = field(default_factory=BudgetConsumption)
+
+
+@dataclass
+class Interval:
+    """v0.16 WS6 T1: a bounded interval gathered from KB statement qualifiers
+    (P580 start / P582 end) and/or Tier U *_started/_ended facts.
+
+    `start` / `end` are ISO-date strings (YYYY-MM-DD or YYYY), compared
+    lexically (valid for zero-padded ISO). `start_known` / `end_known` are the
+    three-valued-logic discriminators: an UNKNOWN endpoint is NOT the same as a
+    known endpoint at some sentinel. An open end (end_known=False) means the
+    relation is ongoing (`holds_at` returns true once start<=T). BEFORE_PRESENT
+    maps to end_known=False (an unspecified past end never forces a false)."""
+    start: Optional[str] = None
+    end: Optional[str] = None
+    start_known: bool = False
+    end_known: bool = False
 
 
 class BudgetExceeded(Exception):
@@ -809,6 +831,27 @@ class Walker:
                     grounding["contradicting_value_type"] = "quantity"
                 return verdict, "kb_quantitative", 0, grounding
 
+        # v0.16 WS6 T1: kb_interval endpoint path. A `*_started` / `*_ended`
+        # predicate asserts the START or END date of an interval-bearing
+        # relation (employment/membership/role). The walker resolves the
+        # subject, looks up the base-relation KB statement, reads the matching
+        # P580 (start) / P582 (end) QUALIFIER, and compares the claim's asserted
+        # year/date against it. Placed BEFORE the generic kb_verifier branch
+        # (mirrors the kb_quantitative placement) because the verifier's generic
+        # value-compare path cannot interpret the qualifier-keyed slot map. The
+        # resolver FAILS CLOSED (returns None) on any resolution/KB error,
+        # ambiguity, or unknown endpoint — never fabricates a verdict.
+        if self._predicate_routing(node.predicate) == "kb_interval":
+            iv = self._verify_interval_endpoint(node, context, trace)
+            if iv is not None:
+                # _verify_interval_endpoint emits its own trace edge + provenance
+                # premise; return its verdict + grounding chain directly.
+                verdict, grounding = iv
+                return verdict, "kb_interval", 0, grounding
+            # None => abstain on this path; fall through (there is no generic
+            # value-compare path for a qualifier-keyed object, so this returns
+            # no_grounding_found unless another source grounds it).
+
         # KB verification
         if self._kb_verifier is not None:
             kb_result = self._kb_verifier.verify(
@@ -1034,6 +1077,392 @@ class Walker:
             "kb_property": meta.kb_property,
         }
         return _apply_polarity_str(verdict, claim.polarity), detail
+
+    # ------------------------------------------------------------------
+    # v0.16 WS6 T1: interval-from-events resolver (holds-at-T)
+    #
+    # Wikidata data-model limits this resolver respects (spec §F):
+    #   * P580 (start) / P582 (end) are QUALIFIERS on a base-relation
+    #     statement (P108 employer / P463 member-of / P39 position), NOT
+    #     statements themselves — they cannot be looked up directly, only
+    #     read off the base statement. This is why the *_started/_ended
+    #     predicates route HERE (the resolver) rather than the generic
+    #     kb_verifier value-compare path, whose _lookup_targets cannot
+    #     interpret a `qualifier:Pxxx` object slot.
+    #   * No event-relative bounds exist in the data model — only absolute
+    #     dates. "before/after <event>" stays on the claim's valid_during_ref
+    #     (extractor Rule 16); this resolver only reads absolute qualifier dates.
+    #   * Day precision is the finest the parser keeps (_parse_time_value
+    #     truncates to YYYY-MM-DD); many P580/P582 are year-precision only —
+    #     the year-aware _value_matches / _normalize_date_value handle that.
+    # ------------------------------------------------------------------
+
+    def _gather_interval(
+        self, claim: Claim, base_property: str, context: VerificationContext
+    ) -> Optional[Interval]:
+        """Resolve the subject's KB Q-id, look up `base_property` statements,
+        and gather the P580/P582 qualifiers off the statement that matches the
+        claim's org/object — plus any Tier U *_started/_ended endpoint rows for
+        the same (asserting_party, subject, base-object).
+
+        Returns an Interval, or None on any resolution / KB failure or ambiguity
+        (§3.2 fail-closed: a None propagates to abstain, never a verdict). When
+        multiple statements carry CONFLICTING starts for the matched org, prefer
+        a `preferred`-ranked statement; if none is preferred, abstain (None) —
+        we do NOT max dates (a max would fabricate an interval the KB does not
+        assert)."""
+        # Resolve the subject via the SAME resolver pattern _verify_kb_quantitative
+        # uses (the kb_verifier's resolver wires the D47 Wikipedia normalizer).
+        if self._kb_verifier is None or not hasattr(self._kb_verifier, "_resolver"):
+            return None
+        if self._kb is None:
+            return None
+        resolver = self._kb_verifier._resolver
+        lookup_ctx = LocalContext(
+            predicate=claim.predicate,
+            slot_position="subject",
+            asserting_party=claim.asserting_party,
+            source_text=context.source_text,
+            claim_subject=claim.subject,
+            claim_predicate=claim.predicate,
+            claim_object=claim.object,
+            claim_id=claim.claim_id,
+        )
+        try:
+            resolved = resolver.select(
+                resolver.resolve(claim.subject, lookup_ctx), lookup_ctx
+            )
+        except Exception:
+            return None
+        if resolved is None:
+            return None
+
+        try:
+            statements = self._kb.lookup_statements(resolved, base_property)
+        except Exception:
+            return None
+
+        # Resolve the claim's org/object (the entity the base statement values
+        # against) so we can pick the matching statement. The org lives in the
+        # claim's OBJECT slot for a plain `<relation>_started(subject, year)`
+        # claim only carries the DATE — so the org is usually absent. When the
+        # claim carries no org we fall back to a unique-statement interval (a
+        # single base statement is unambiguous); with several we require either
+        # an org match or a preferred statement, else abstain.
+        org_qid: Optional[str] = None
+        org_ref = getattr(claim, "object_org", None)  # reserved; usually None
+        if isinstance(org_ref, str) and org_ref:
+            try:
+                org_ctx = LocalContext(
+                    predicate=claim.predicate,
+                    slot_position="object",
+                    asserting_party=claim.asserting_party,
+                    source_text=context.source_text,
+                    claim_subject=claim.subject,
+                    claim_predicate=claim.predicate,
+                    claim_object=claim.object,
+                    claim_id=claim.claim_id,
+                )
+                org_qid = resolver.select(
+                    resolver.resolve(org_ref, org_ctx), org_ctx
+                )
+            except Exception:
+                org_qid = None
+
+        # Candidate statements: those whose value matches the org (when an org
+        # resolved), else all statements.
+        if org_qid is not None:
+            candidates = [s for s in statements if str(s.value) == org_qid]
+        else:
+            candidates = list(statements)
+
+        kb_interval = self._interval_from_statements(candidates)
+
+        # ALSO gather Tier U endpoint rows for the same predicate (the
+        # *_started/_ended Tier U fact participates alongside the KB qualifier).
+        tier_u_interval = self._tier_u_endpoint(claim, context)
+
+        # Merge: KB is authoritative; Tier U fills an endpoint the KB left open.
+        # A conflict (both known, different values) is NOT silently reconciled —
+        # _interval_holds_at / _verify_interval_endpoint compare against the KB
+        # value, and the Tier U value only fills a gap. (Keeping the merge
+        # additive avoids fabricating an interval neither source asserts.)
+        merged = kb_interval or Interval()
+        if tier_u_interval is not None:
+            if not merged.start_known and tier_u_interval.start_known:
+                merged.start = tier_u_interval.start
+                merged.start_known = True
+            if not merged.end_known and tier_u_interval.end_known:
+                merged.end = tier_u_interval.end
+                merged.end_known = True
+        if kb_interval is None and tier_u_interval is None:
+            return None
+        return merged
+
+    def _interval_from_statements(
+        self, statements: list
+    ) -> Optional[Interval]:
+        """Build an Interval from candidate base-relation statements' P580/P582
+        qualifiers. Fail-closed on a conflicting start across statements unless
+        exactly one is `preferred`-ranked.
+
+        BEFORE_PRESENT and a missing/empty P582 both map to end_known=False
+        (open / ongoing). A present P582 sets end_known=True."""
+        if not statements:
+            return None
+
+        # Prefer a single `preferred`-ranked statement when present (Wikidata
+        # marks the canonical/current value preferred). Else require the starts
+        # to agree; conflicting starts with no preferred ranking → abstain.
+        preferred = [s for s in statements if getattr(s, "rank", "normal") == "preferred"]
+        if len(preferred) == 1:
+            chosen = [preferred[0]]
+        elif len(preferred) > 1:
+            # Multiple preferred with potentially different starts — only safe
+            # when their starts agree; else abstain.
+            chosen = preferred
+        else:
+            chosen = statements
+
+        starts = {
+            self._iso_or_none(s.qualifiers.get("P580"))
+            for s in chosen
+        }
+        starts.discard(None)
+        if len(starts) > 1:
+            # Conflicting starts, no single preferred discriminator → abstain.
+            return None
+
+        ends_raw = [s.qualifiers.get("P582") for s in chosen]
+        ends = {self._iso_or_none(e) for e in ends_raw}
+        ends.discard(None)
+        # A genuine open end (some statement has NO P582) keeps the interval
+        # open even if another statement records an end (ongoing dominates).
+        any_open_end = any(
+            (not e) or e == BEFORE_PRESENT for e in ends_raw
+        )
+
+        start = next(iter(starts)) if starts else None
+        if len(ends) == 1 and not any_open_end:
+            end = next(iter(ends))
+            end_known = True
+        elif len(ends) > 1:
+            # Conflicting ends with no preferred discriminator → treat as open
+            # rather than fabricate a single end.
+            end = None
+            end_known = False
+        else:
+            end = None
+            end_known = False
+
+        return Interval(
+            start=start,
+            end=end,
+            start_known=start is not None,
+            end_known=end_known,
+        )
+
+    @staticmethod
+    def _iso_or_none(value) -> Optional[str]:
+        """Normalize a qualifier value to a comparable ISO string, or None.
+        BEFORE_PRESENT (the extractor's implicit-past end sentinel) maps to None
+        so it is treated as an OPEN end (never forces a false holds_at)."""
+        if value is None:
+            return None
+        if value == BEFORE_PRESENT:
+            return None
+        s = str(value).strip()
+        return s or None
+
+    def _tier_u_endpoint(
+        self, claim: Claim, context: VerificationContext
+    ) -> Optional[Interval]:
+        """Gather a Tier U *_started/_ended endpoint fact for this claim into a
+        one-sided Interval. The endpoint kind comes from the predicate suffix.
+        Fail-open: any lookup failure returns None."""
+        try:
+            result = self._tier_u.lookup(claim, current_time=context.current_time)
+        except Exception:
+            return None
+        if not getattr(result, "found", False):
+            return None
+        rows = getattr(result, "rows", None) or []
+        if not rows:
+            return None
+        date = self._iso_or_none(rows[0].get("object"))
+        if date is None:
+            return None
+        if claim.predicate.endswith("_started"):
+            return Interval(start=date, start_known=True)
+        if claim.predicate.endswith("_ended"):
+            return Interval(end=date, end_known=True)
+        return None
+
+    def _interval_holds_at(self, interval: Interval, T: str) -> str:
+        """Three-valued holds-at-T table (spec §B.2). Lexical ISO compare —
+        valid for zero-padded YYYY-MM-DD / YYYY strings.
+
+        Returns 'true' | 'false' | 'unknown'.
+
+          start_known and start > T                         -> false (not begun)
+          end_known and end < T                             -> false (already ended)
+          start_known and end_known and start<=T<=end       -> true
+          start_known, end UNKNOWN (open=ongoing), start<=T -> true
+          start UNKNOWN, end_known, T<=end                  -> unknown
+          both unknown                                      -> unknown
+        """
+        if not T:
+            return "unknown"
+        if interval.start_known and interval.start is not None and interval.start > T:
+            return "false"
+        if interval.end_known and interval.end is not None and interval.end < T:
+            return "false"
+        if (
+            interval.start_known
+            and interval.end_known
+            and interval.start is not None
+            and interval.end is not None
+            and interval.start <= T <= interval.end
+        ):
+            return "true"
+        if (
+            interval.start_known
+            and not interval.end_known
+            and interval.start is not None
+            and interval.start <= T
+        ):
+            return "true"
+        # start unknown (end_known or not) → cannot place T within the interval.
+        return "unknown"
+
+    def _verify_interval_endpoint(
+        self, claim: Claim, context: VerificationContext, trace
+    ) -> Optional[tuple[str, dict]]:
+        """Verdict for a *_started / *_ended endpoint claim (spec §B.3).
+
+        endpoint kind: `_started` -> P580 (start), `_ended` -> P582 (end).
+        The claim's object is the asserted year/date; compare it against the KB
+        qualifier date via the year-aware _value_matches. Match -> verified; a
+        single_valued/functional mismatch with a value-type-gate-satisfying
+        resolved date -> contradicted; else None (abstain).
+
+        FAIL-CLOSED: returns None on any resolution/KB error, ambiguity, or
+        unknown endpoint (§3.2). Returns (verdict, grounding_chain) on a
+        terminal verdict, having emitted a kb_statement trace edge + provenance
+        premise. Carries contradicting_value (WS5) on a contradiction and a
+        retractable resolution-cache row id (WS3) when one was touched."""
+        pred = claim.predicate
+        if pred.endswith("_started"):
+            qual_prop = "P580"
+        elif pred.endswith("_ended"):
+            qual_prop = "P582"
+        else:
+            return None
+
+        if not claim.object:
+            return None
+
+        # Read the base KB property + single_valued off predicate metadata
+        # (NO hardcoded Python table — the knowledge lives in the seed/oracle).
+        try:
+            meta = self._substrate.predicate_translation.consult(pred)
+        except Exception:
+            return None
+        base_property = meta.kb_property
+        if not base_property:
+            return None
+
+        interval = self._gather_interval(claim, base_property, context)
+        if interval is None:
+            return None
+
+        kb_date = interval.start if qual_prop == "P580" else interval.end
+        endpoint_known = interval.start_known if qual_prop == "P580" else interval.end_known
+        if not endpoint_known or kb_date is None:
+            # The KB records no value for this endpoint (open end / unknown
+            # start) — abstain rather than contradict (absence is not evidence).
+            return None
+
+        # Capture the retractable resolution-cache row id the subject resolution
+        # touched (WS3 D13) — the dependency a correction would retract.
+        _last_row_id = getattr(self._kb_verifier._resolver, "last_cache_row_id", None)
+        cache_row_id = _last_row_id() if callable(_last_row_id) else None
+
+        # Year-aware compare (reuses the kb_verifier helper): the claim object
+        # is the asserted year/date, kb_date is YYYY-MM-DD / YYYY.
+        matches = _value_matches(kb_date, claim.object)
+
+        edge_md = {
+            "source": "kb_interval",
+            "qualifier": qual_prop,
+            "endpoint_value": kb_date,
+            "predicate": pred,
+            "kb_property": base_property,
+            "claim_object": claim.object,
+        }
+
+        if matches:
+            verdict = _apply_polarity_str("verified", claim.polarity)
+            edge_md["verdict"] = verdict
+            trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+            trace.edges.append(TraceEdge(
+                edge_type="premise_lookup",
+                source=trace.root,
+                target=TraceNode("kb_statement", {"entity": claim.subject}),
+                metadata=edge_md,
+            ))
+            self._record_premise(
+                trace, source="kb", table="entity_resolution_cache",
+                row_id=cache_row_id, assertion=False,
+            )
+            grounding = {
+                "source": "kb_interval",
+                "predicate": pred,
+                "qualifier": qual_prop,
+                "endpoint_value": kb_date,
+                "kb_property": base_property,
+            }
+            return verdict, grounding
+
+        # Mismatch. Only a functional (single_valued) endpoint with a resolved
+        # date value-type that satisfies the value-type gate may contradict;
+        # else abstain (§3.2 — multi-valued endpoints just hold other values).
+        if not meta.single_valued:
+            return None
+        # Value-type gate: the KB endpoint must normalize to a date for a
+        # `time` object_type predicate to contradict (mirrors kb_verifier's
+        # _contradiction_value_type_ok for object_type 'time' -> {date,literal}).
+        if _normalize_date_value(kb_date) is None:
+            return None
+
+        verdict = _apply_polarity_str("contradicted", claim.polarity)
+        edge_md["verdict"] = verdict
+        if verdict == "contradicted":
+            edge_md["contradicting_value"] = kb_date
+            edge_md["contradicting_value_type"] = "time"
+        trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=trace.root,
+            target=TraceNode("kb_statement", {"entity": claim.subject}),
+            metadata=edge_md,
+        ))
+        self._record_premise(
+            trace, source="kb", table="entity_resolution_cache",
+            row_id=cache_row_id, assertion=False,
+        )
+        grounding = {
+            "source": "kb_interval",
+            "predicate": pred,
+            "qualifier": qual_prop,
+            "endpoint_value": kb_date,
+            "kb_property": base_property,
+            "verdict": verdict,
+        }
+        if verdict == "contradicted":
+            grounding["contradicting_value"] = kb_date
+            grounding["contradicting_value_type"] = "time"
+        return verdict, grounding
 
     def _is_persona_subject(self, claim: Claim) -> bool:
         """Phase 10.5 Step 6 Batch 8+: True when the claim's subject is

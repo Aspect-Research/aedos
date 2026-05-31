@@ -1,0 +1,13 @@
+{
+  "results": {
+    "bindings": [
+      {
+        "value": {"type": "uri", "value": "http://www.wikidata.org/entity/Q463303"},
+        "valueType": {"type": "literal", "value": "entity"},
+        "rank": {"type": "uri", "value": "http://wikiba.se/ontology#NormalRank"},
+        "qual_P580": {"type": "literal", "value": "+1922-01-01T00:00:00Z", "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"},
+        "qual_P582": {"type": "literal", "value": "+1932-01-01T00:00:00Z", "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"}
+      }
+    ]
+  }
+}

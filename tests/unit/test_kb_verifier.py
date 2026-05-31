@@ -445,6 +445,87 @@ class TestKBVerifierValueTypeGuard:
         assert result.verdict == KBVerdictType.CONTRADICTED
 
 
+# ---------------------------------------------------------------------------
+# TestKBVerifierTimeObjectTypeGate  (v0.16 WS6 §A.4: the date→time
+# reconciliation makes the _OBJECT_TYPE_COMPATIBLE_VALUE_TYPES gate
+# 'time' → {date, literal} LIVE for the date predicates. A functional
+# 'time' predicate may CONTRADICT only on a statement whose value_type is
+# date or literal; an entity/quantity-typed statement abstains instead of
+# fabricating a contradiction. Before §A.4 these rows carried object_type
+# 'date', which keys to None in the gate map and short-circuited to
+# "don't block" — so the gate was a no-op.)
+# ---------------------------------------------------------------------------
+
+class TestKBVerifierTimeObjectTypeGate:
+    def test_time_predicate_contradicts_on_date_value_type(self):
+        # born_on / P569 is functional + object_type='time'. The KB statement is
+        # a DATE (1869) that does not match the claimed year (1879) → the
+        # value-type gate permits the contradiction (time → {date, literal}).
+        stmts = [Statement(value="1869-01-01T00:00:00Z", value_type="date")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(
+            _claim(predicate="born_on", object_val="1879")
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_time_predicate_contradicts_on_literal_value_type(self):
+        # literal is also in the allowed set for object_type='time'. A
+        # non-matching literal statement on a functional time predicate
+        # contradicts.
+        stmts = [Statement(value="not-a-year-literal", value_type="literal")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(
+            _claim(predicate="born_on", object_val="1879")
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_time_predicate_abstains_on_entity_value_type(self):
+        # The KB statement is an ENTITY (as it would be if the time predicate
+        # were mis-mapped to a wikibase-item property). entity ∉ {date,
+        # literal} for object_type='time', so the functional-contradiction
+        # branch is blocked: NO_MATCH with the value-type-mismatch reason, NOT
+        # a fabricated CONTRADICTED. This is the gate the §A.4 reconciliation
+        # turned on.
+        stmts = [Statement(value="Q18094", value_type="entity")]  # Honolulu
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(
+            _claim(predicate="born_on", object_val="1879")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "value_type_object_type_mismatch"
+
+    def test_time_predicate_abstains_on_quantity_value_type(self):
+        # quantity ∉ {date, literal} for object_type='time' → also blocked.
+        stmts = [Statement(value="42", value_type="quantity")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(
+            _claim(predicate="born_on", object_val="1879")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "value_type_object_type_mismatch"
+
+    def test_time_predicate_verifies_on_matching_year(self):
+        # Control: a matching date statement (year-aware compare) VERIFIES,
+        # confirming the reconciliation did not break the positive path for the
+        # date predicates.
+        stmts = [Statement(value="1879-03-14T00:00:00Z", value_type="date")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(
+            _claim(predicate="born_on", object_val="1879")
+        )
+        assert result.verdict == KBVerdictType.VERIFIED
+
+
 # ===========================================================================
 # v0.16 WS1 — MULTI-PROPERTY BINDING ARBITRATION
 #

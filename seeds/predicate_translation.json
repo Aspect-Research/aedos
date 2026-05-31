@@ -109,7 +109,7 @@
   },
   {
     "aedos_predicate": "born_on",
-    "object_type": "date",
+    "object_type": "time",
     "user_subject_required": 0,
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
@@ -117,11 +117,11 @@
     "kb_property": "P569",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 1,
-    "reason": "Seed mapping. Wikidata P569 (date of birth). Functional: a person has exactly one birth date."
+    "reason": "Seed mapping. Wikidata P569 (date of birth). Functional: a person has exactly one birth date. v0.16 T1 migration: object_type 'date'->'time' so the kb_verifier value-type gate (time:{date,literal}) is live for date predicates."
   },
   {
     "aedos_predicate": "died_on",
-    "object_type": "date",
+    "object_type": "time",
     "user_subject_required": 0,
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
@@ -373,7 +373,7 @@
   },
   {
     "aedos_predicate": "founded_in_year",
-    "object_type": "date",
+    "object_type": "time",
     "user_subject_required": 0,
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
@@ -445,7 +445,7 @@
   },
   {
     "aedos_predicate": "published_in_year",
-    "object_type": "date",
+    "object_type": "time",
     "user_subject_required": 0,
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
@@ -481,7 +481,7 @@
   },
   {
     "aedos_predicate": "released_in_year",
-    "object_type": "date",
+    "object_type": "time",
     "user_subject_required": 0,
     "distinct_slots": null,
     "routing_hint": "kb_resolvable",
@@ -709,7 +709,7 @@
   },
   {
     "aedos_predicate": "born_in_year",
-    "object_type": "date",
+    "object_type": "time",
     "subject_entity_types": ["Q5"],
     "object_entity_types": ["Q577"],
     "user_subject_required": 0,
@@ -744,5 +744,101 @@
     "slot_to_qualifier": null,
     "single_valued": 1,
     "reason": "Phase G D39 (2026-05-23). Status (project/marriage/role/etc.) is user-authoritative; the asserting party tracks it. Functional: one current status at a time, revisable (der_revision_005 'project status ongoing' + 'The project ended in 2024' = contradicted). Entity-types omitted: status values are state labels (e.g. 'ongoing', 'ended'), not Wikidata-resolvable entities. v0.16 candidate: re-evaluate if corpus additions introduce multiple senses (project status vs marital status vs employment status), in which case split into status_project / status_marital / status_employment."
+  },
+  {
+    "aedos_predicate": "employment_started",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P108",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P580"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. Employment start date = P580 (start time) qualifier on the P108 (employer) statement. The object is the date; it grounds against the qualifier, not the statement value, so the walker's interval resolver (routing_hint=kb_interval) reads P580 off the base P108 statement rather than the generic value-compare path. Multi-valued: a person may have several employments, each with its own start. The org slot maps to statement_value so the resolver can pick the matching employer statement."
+  },
+  {
+    "aedos_predicate": "employment_ended",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P108",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P582"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. Employment end date = P582 (end time) qualifier on the P108 (employer) statement. Object is the date; grounds against the qualifier via the kb_interval resolver. Multi-valued: several employments, each with its own end."
+  },
+  {
+    "aedos_predicate": "membership_started",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P463",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P580"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. Membership start date = P580 (start time) qualifier on the P463 (member of) statement. kb_interval resolver reads P580 off the base P463 statement. Multi-valued."
+  },
+  {
+    "aedos_predicate": "membership_ended",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P463",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P582"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. Membership end date = P582 (end time) qualifier on the P463 (member of) statement. kb_interval resolver. Multi-valued."
+  },
+  {
+    "aedos_predicate": "role_started",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P39",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P580"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. Role/position start date = P580 (start time) qualifier on the P39 (position held) statement. kb_interval resolver reads P580 off the base P39 statement. Multi-valued: a person may hold several positions, each with its own start."
+  },
+  {
+    "aedos_predicate": "role_ended",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P39",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P582"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. Role/position end date = P582 (end time) qualifier on the P39 (position held) statement. kb_interval resolver. Multi-valued."
+  },
+  {
+    "aedos_predicate": "status_started",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P571",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P580"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. State-bearing-subject start = inception (P571). Unlike the employment/membership/role endpoints, inception/dissolution are STATEMENTS, not qualifiers, but the kb_interval resolver also gathers a Tier U started/ended row; for an org subject prefer founded_in_year (P571) / dissolved_in_year (P576) directly. Object is the date. Multi-valued (conservative)."
+  },
+  {
+    "aedos_predicate": "status_ended",
+    "object_type": "time",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_interval",
+    "kb_namespace": "wikidata",
+    "kb_property": "P576",
+    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P582"},
+    "single_valued": 0,
+    "reason": "v0.16 T1. State-bearing-subject end = dissolution (P576). See status_started. Object is the date. Multi-valued (conservative)."
   }
 ]

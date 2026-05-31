@@ -22,7 +22,14 @@ _REQUIRED_FIELDS = {
     "single_valued",
     "reason",
 }
-_VALID_ROUTING_HINTS = {"user_authoritative", "kb_resolvable", "python", "abstain"}
+# v0.16 WS6 T1: `kb_interval` is the interval-endpoint routing hint (the
+# *_started/_ended date-in-object predicates ground against the P580/P582
+# qualifier on the base relation's KB statement, via the walker's interval
+# resolver). Mirror the SRC loader's `_VALID_ROUTING_HINTS` (seed_loader.py),
+# which was extended for the new seed rows.
+_VALID_ROUTING_HINTS = {
+    "user_authoritative", "kb_resolvable", "python", "abstain", "kb_interval",
+}
 
 # The functional (single-valued) predicates in the seed pack — a subject has at
 # most one true object (M4 backfill). See docs/v0.15_build_log/fixup2_report.md
@@ -245,12 +252,15 @@ class TestSeedAliasDeletions:
             f"{sorted(missing)}"
         )
 
-    def test_seed_count_is_62_after_deletions(self, seeds):
-        # 83 pre-v0.16 rows minus 21 deleted aliases = 62. A hard count guards
-        # against an accidental re-add of an alias or a silent drop of a
-        # canonical row.
-        assert len(seeds) == 62, (
-            f"expected 62 seed rows after the 21 alias deletions, got {len(seeds)}"
+    def test_seed_count_is_70_after_deletions_and_t1_additions(self, seeds):
+        # 83 pre-v0.16 rows minus 21 deleted aliases = 62, plus the 8 v0.16 WS6
+        # T1 interval-endpoint rows (employment/membership/role/status
+        # _started/_ended) = 70. A hard count guards against an accidental
+        # re-add of an alias, a silent drop of a canonical row, or a dropped
+        # endpoint row.
+        assert len(seeds) == 70, (
+            f"expected 70 seed rows (62 after the 21 alias deletions + 8 T1 "
+            f"interval-endpoint rows), got {len(seeds)}"
         )
 
     def test_every_kb_resolvable_row_synthesizes_a_binding(self, seeds):
@@ -281,6 +291,185 @@ class TestSeedAliasDeletions:
             b = meta.bindings[0]
             assert b.source == "legacy_scalar"
             assert b.kb_property == entry.get("kb_property")
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS6 T1 — interval-endpoint seed rows + date→time reconciliation
+# ---------------------------------------------------------------------------
+
+# The 8 new *_started/_ended date-in-object endpoint predicates. Each grounds
+# against the P580 (start time) / P582 (end time) qualifier on the base
+# relation's KB statement; object_type='time', routing_hint='kb_interval',
+# slot_to_qualifier maps subject→statement_subject, org→statement_value,
+# object→qualifier:P580|P582.
+_T1_ENDPOINT_BASE_PROPERTY = {
+    "employment_started": "P108", "employment_ended": "P108",
+    "membership_started": "P463", "membership_ended": "P463",
+    "role_started": "P39", "role_ended": "P39",
+    # status_* maps to the org inception/dissolution statement properties.
+    "status_started": "P571", "status_ended": "P576",
+}
+
+# The 6 existing date predicates reconciled from object_type 'date' → 'time' in
+# §A.4 so the kb_verifier value-type gate ('time' → {date, literal}) is live.
+_RECONCILED_TIME_PREDICATES = {
+    "born_on", "died_on", "founded_in_year", "published_in_year",
+    "released_in_year", "born_in_year",
+}
+
+
+class TestSeedT1IntervalEndpoints:
+    """v0.16 WS6 T1: the new *_started/_ended interval-endpoint seed rows load
+    with object_type='time', the correct base kb_property, routing_hint
+    'kb_interval', and a qualifier-keyed slot_to_qualifier — and synthesize a
+    single legacy_scalar PredicateBinding."""
+
+    @pytest.fixture(scope="class")
+    def by_pred(self):
+        seeds = json.loads(_SEEDS_FILE.read_text(encoding="utf-8"))
+        return {e["aedos_predicate"]: e for e in seeds}
+
+    def test_all_endpoint_rows_present(self, by_pred):
+        missing = set(_T1_ENDPOINT_BASE_PROPERTY) - set(by_pred)
+        assert not missing, f"missing T1 endpoint seed rows: {sorted(missing)}"
+
+    def test_endpoint_rows_object_type_is_time(self, by_pred):
+        for pred in _T1_ENDPOINT_BASE_PROPERTY:
+            assert by_pred[pred]["object_type"] == "time", (
+                f"{pred}: object_type must be 'time' (value-type gate), "
+                f"got {by_pred[pred]['object_type']!r}"
+            )
+
+    def test_endpoint_rows_routing_hint_is_kb_interval(self, by_pred):
+        for pred in _T1_ENDPOINT_BASE_PROPERTY:
+            assert by_pred[pred]["routing_hint"] == "kb_interval", (
+                f"{pred}: routing_hint must be 'kb_interval'"
+            )
+
+    def test_endpoint_rows_kb_property_is_base_relation(self, by_pred):
+        for pred, base_prop in _T1_ENDPOINT_BASE_PROPERTY.items():
+            assert by_pred[pred]["kb_property"] == base_prop, (
+                f"{pred}: kb_property must be the BASE relation property "
+                f"{base_prop} (the resolver reads the P580/P582 qualifier off "
+                f"it), got {by_pred[pred]['kb_property']!r}"
+            )
+
+    def test_employment_membership_role_kb_properties(self, by_pred):
+        # Explicit pin on the spec'd P108/P463/P39 mapping the test plan names.
+        assert by_pred["employment_started"]["kb_property"] == "P108"
+        assert by_pred["employment_ended"]["kb_property"] == "P108"
+        assert by_pred["membership_started"]["kb_property"] == "P463"
+        assert by_pred["membership_ended"]["kb_property"] == "P463"
+        assert by_pred["role_started"]["kb_property"] == "P39"
+        assert by_pred["role_ended"]["kb_property"] == "P39"
+
+    def test_started_rows_map_object_to_p580_qualifier(self, by_pred):
+        for pred in (p for p in _T1_ENDPOINT_BASE_PROPERTY if p.endswith("_started")):
+            stq = by_pred[pred]["slot_to_qualifier"]
+            assert stq is not None, f"{pred}: missing slot_to_qualifier"
+            assert stq.get("subject") == "statement_subject", pred
+            assert stq.get("object") == "qualifier:P580", (
+                f"{pred}: object slot must map to the P580 (start time) qualifier, "
+                f"got {stq.get('object')!r}"
+            )
+
+    def test_ended_rows_map_object_to_p582_qualifier(self, by_pred):
+        for pred in (p for p in _T1_ENDPOINT_BASE_PROPERTY if p.endswith("_ended")):
+            stq = by_pred[pred]["slot_to_qualifier"]
+            assert stq is not None, f"{pred}: missing slot_to_qualifier"
+            assert stq.get("object") == "qualifier:P582", (
+                f"{pred}: object slot must map to the P582 (end time) qualifier, "
+                f"got {stq.get('object')!r}"
+            )
+
+    def test_endpoint_rows_synthesize_a_binding(self, by_pred):
+        # WS1 read-synthesis: a scalar-shaped endpoint row builds exactly one
+        # legacy_scalar PredicateBinding from its scalar columns, carrying the
+        # base kb_property and the qualifier-keyed slot map.
+        from aedos.layer3_substrate.predicate_translation import PredicateMetadata
+
+        for pred, base_prop in _T1_ENDPOINT_BASE_PROPERTY.items():
+            entry = by_pred[pred]
+            meta = PredicateMetadata(
+                id=0,
+                aedos_predicate=entry["aedos_predicate"],
+                object_type=entry["object_type"],
+                user_subject_required=bool(entry["user_subject_required"]),
+                distinct_slots=entry.get("distinct_slots"),
+                routing_hint=entry["routing_hint"],
+                kb_namespace=entry.get("kb_namespace"),
+                kb_property=entry.get("kb_property"),
+                slot_to_qualifier=entry.get("slot_to_qualifier"),
+                reason=entry["reason"],
+                created_at="t",
+                single_valued=bool(entry.get("single_valued", 0)),
+            )
+            assert len(meta.bindings) == 1, pred
+            b = meta.bindings[0]
+            assert b.source == "legacy_scalar"
+            assert b.kb_property == base_prop
+            assert b.slot_to_qualifier == entry.get("slot_to_qualifier")
+
+    def test_endpoint_rows_load_without_tripping_loader(self, tmp_path):
+        # The reconciled date→time object_type and the new kb_interval routing
+        # hint must both pass the seed loader's _validate_entry (the only
+        # load-time enum gate). A full load lands all 8 endpoint rows.
+        from aedos.database import open_db
+        from aedos.seed_loader import load_seeds_into_connection
+
+        db_file = tmp_path / "t1.db"
+        conn = open_db(str(db_file))
+        n = load_seeds_into_connection(conn)
+        assert n == 70
+        conn.row_factory = __import__("sqlite3").Row
+        rows = conn.execute(
+            "SELECT aedos_predicate, object_type, routing_hint, kb_property "
+            "FROM predicate_translation WHERE routing_hint='kb_interval'"
+        ).fetchall()
+        conn.close()
+        loaded = {r["aedos_predicate"]: r for r in rows}
+        assert set(loaded) == set(_T1_ENDPOINT_BASE_PROPERTY)
+        for pred, base_prop in _T1_ENDPOINT_BASE_PROPERTY.items():
+            assert loaded[pred]["object_type"] == "time"
+            assert loaded[pred]["kb_property"] == base_prop
+
+
+class TestSeedDateToTimeReconciliation:
+    """v0.16 WS6 §A.4: the date predicates were reconciled from object_type
+    'date' → 'time' so the kb_verifier value-type gate (_OBJECT_TYPE_COMPATIBLE_
+    VALUE_TYPES key 'time' → {date, literal}) is live for them. No seed row may
+    carry the stale 'date' object_type, and the loader must not trip on it."""
+
+    @pytest.fixture(scope="class")
+    def seeds(self):
+        return json.loads(_SEEDS_FILE.read_text(encoding="utf-8"))
+
+    def test_no_seed_row_carries_stale_date_object_type(self, seeds):
+        stale = [e["aedos_predicate"] for e in seeds if e["object_type"] == "date"]
+        assert not stale, (
+            f"these rows still use the stale object_type 'date'; §A.4 reconciles "
+            f"date→time so the value-type gate is live: {stale}"
+        )
+
+    def test_reconciled_date_predicates_are_time(self, seeds):
+        by_pred = {e["aedos_predicate"]: e for e in seeds}
+        for pred in _RECONCILED_TIME_PREDICATES:
+            assert pred in by_pred, f"{pred} missing from seed pack"
+            assert by_pred[pred]["object_type"] == "time", (
+                f"{pred}: object_type must be 'time' after the §A.4 reconciliation"
+            )
+
+    def test_reconciled_rows_load_cleanly(self, tmp_path):
+        # The reconciliation is a pure value edit; a full load must still land
+        # all rows (no loader enum check on object_type).
+        from aedos.database import open_db
+        from aedos.seed_loader import load_seeds_into_connection
+
+        db_file = tmp_path / "recon.db"
+        conn = open_db(str(db_file))
+        n = load_seeds_into_connection(conn)
+        conn.close()
+        assert n == 70
 
 
 # ---------------------------------------------------------------------------

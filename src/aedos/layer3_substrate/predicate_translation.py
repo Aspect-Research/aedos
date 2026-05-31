@@ -163,6 +163,16 @@ routing_hint — pick the SINGLE most-applicable verification source:
         published_in_year / released_in_year P577 (publication date — time)
         occurred_in_year P585 (point in time — object_type=time)
         educated_at    P69   member_of       P463
+      INTERVAL ENDPOINTS (v0.16 T1): a `<relation>_started` / `<relation>_ended`
+        predicate (employment_started, membership_ended, role_started, …)
+        grounds against the start-time (P580) / end-time (P582) QUALIFIER on
+        the BASE relation's statement, NOT a statement value. Set kb_property to
+        the BASE property (employment→P108, membership→P463, role→P39),
+        object_type=time, routing_hint=kb_interval, and
+        slot_to_qualifier={"subject":"statement_subject","org":"statement_value",
+        "object":"qualifier:P580" (started) | "qualifier:P582" (ended)}. The
+        walker's interval resolver reads the qualifier; do not route these to
+        the generic value-compare path.
         occupation     P106  parent          P22 / P25
         successor_of   P1365 (replaces; note: P155 is `follows` in a sequence)
         has_isbn       P212  (identifier of a book — object_type=entity, since
