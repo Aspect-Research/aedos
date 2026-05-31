@@ -49,17 +49,17 @@ class Config:
     wikidata_sparql_endpoint: str = "https://query.wikidata.org/sparql"
     wikidata_search_endpoint: str = "https://www.wikidata.org/w/api.php"
     wikidata_subsumption_depth: int = 6
-    # Phase G D33: pool raised from 10 to 30. The post-filter prunes
+    # Pool raised from 10 to 30. The post-filter prunes
     # wrong-type candidates; a larger initial pool gives the filter more
     # to work with so the canonical entity is more likely to survive.
     wikidata_candidate_pool_size: int = 30
-    # Rate limits (per Phase F2 design §7.4). WDQS soft limit is ~5 req/s
+    # Rate limits. WDQS soft limit is ~5 req/s
     # SPARQL; wbsearchentities tolerates ~50 req/s. AEDOS_KB_REQUEST_DELAY_MS
     # (env, optional) overrides both with an explicit delay — the runbook's
     # existing knob now reaches the limiter.
     wikidata_sparql_rate_per_second: float = 5.0
     wikidata_search_rate_per_second: float = 50.0
-    # Phase G D33: post-filter entity-resolution candidates by P31. The
+    # Post-filter entity-resolution candidates by P31. The
     # candidate-pool size is raised to 30 (from 10) so the canonical
     # entity has a better chance of being in the pool before filtering.
     wikidata_type_filter_enabled: bool = True
@@ -67,14 +67,14 @@ class Config:
     # caps how many candidates we fetch P31 for in a single roundtrip.
     wikidata_type_filter_p31_batch_size: int = 50
 
-    # Phase H D53 (2026-05-24): wbsearchentities `limit` parameter.
+    # wbsearchentities `limit` parameter.
     # 20 is the design-doc default — gives Stage C's LLM a usefully
     # ranked candidate pool without bloating the prompt. The API caps
     # at 50 per call; values above 50 will be silently truncated by
     # Wikidata.
     wikidata_wbsearch_limit: int = 20
 
-    # Phase H D47 (2026-05-23): MediaWiki / Wikipedia normalizer.
+    # MediaWiki / Wikipedia normalizer.
     # Stage 1 resolves bare ambiguous references to canonical Wikipedia
     # article titles via the redirects API; Stage 2 falls back to an LLM
     # selection over disambiguation-page links when Stage 1 surfaces
@@ -83,16 +83,16 @@ class Config:
     wikipedia_api_url: str = "https://en.wikipedia.org/w/api.php"
     wikipedia_request_rate_per_second: float = 10.0
     wikipedia_normalizer_enabled: bool = True  # diagnostic kill switch
-    # Phase H D53 step 3 (2026-05-24): `wikipedia_stage_2_max_candidates`
-    # was removed in the D53 cleanup. The Wikipedia disambig-page
-    # candidate scraping it bounded is gone; wbsearchentities's `limit`
-    # parameter (Config.wikidata_wbsearch_limit) bounds the new flow.
+    # There is no `wikipedia_stage_2_max_candidates`: the Wikipedia
+    # disambig-page candidate scraping it once bounded is gone;
+    # wbsearchentities's `limit` parameter
+    # (Config.wikidata_wbsearch_limit) bounds the flow instead.
 
     # HTTP User-Agent for external services (Wikimedia policy requires
     # contact info — URL or email). Privacy caveat: the contact info
     # appears in HTTP headers to Wikimedia and any network observers
     # between client and Wikidata; acceptable for research-scale traffic.
-    # Commercial deployment should revisit (Phase F2 design §7.3).
+    # Commercial deployment should revisit.
     user_agent: str = field(
         default_factory=lambda: os.getenv(
             "AEDOS_USER_AGENT",
@@ -191,7 +191,7 @@ class Config:
                 f"{self.wikidata_wbsearch_limit!r}"
             )
 
-        # Phase H D47 — Wikipedia normalizer fields.
+        # Wikipedia normalizer fields.
         if not isinstance(self.wikipedia_api_url, str) or not self.wikipedia_api_url.startswith(("http://", "https://")):
             raise ValueError(
                 f"wikipedia_api_url must be a http(s) URL; got "

@@ -324,7 +324,7 @@ class PredicateMetadata:
     retracted_at: Optional[str] = None
     retraction_reason: Optional[str] = None
     single_valued: bool = False  # functional predicate: licenses KB contradiction
-    # Phase G D33 (2026-05-23): Wikidata Q-ids of acceptable entity types for
+    # Wikidata Q-ids of acceptable entity types for
     # each slot. None means no filtering for that slot (open-type predicate or
     # predicate not yet annotated). Surfaced from the seed pack (predicates
     # annotated in seeds/predicate_translation.json) or from the substrate
@@ -526,9 +526,9 @@ class PredicateTranslation:
         effective_kb_namespace = raw.get("kb_namespace") or kb_namespace
         distinct_slots_raw = raw.get("distinct_slots")
 
-        # Phase 10.5 Step 6 sub-cause C: when the oracle declared a
+        # When the oracle declared a
         # kb_property but provided no slot_to_qualifier (the common
-        # malformed-runtime shape that motivated Fix 1's consistency-check
+        # malformed-runtime shape that motivated the consistency-check
         # skip), borrow the slot_to_qualifier from any well-formed seed or
         # prior runtime row that maps to the same (kb_namespace,
         # kb_property). Predicates sharing a KB property are aliases at the
@@ -825,8 +825,8 @@ class PredicateTranslation:
             except (json.JSONDecodeError, TypeError):
                 return None
 
-        # subject_entity_types / object_entity_types are Phase G D33 additions
-        # and may be absent from older DBs. sqlite3.Row raises IndexError when
+        # subject_entity_types / object_entity_types are later column
+        # additions and may be absent from older DBs. sqlite3.Row raises IndexError when
         # the column is missing, so fall back to None defensively.
         try:
             subject_types = _parse_json(row["subject_entity_types"])

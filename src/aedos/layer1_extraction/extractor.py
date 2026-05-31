@@ -15,7 +15,7 @@ _FIRST_PERSON = re.compile(
     r"^(I|me|my|mine|myself|we|us|our|ours|ourselves)$", re.IGNORECASE
 )
 
-# Phase 10.5 Step 6 sub-cause F enforcement: Rule 18 (RESIDENCE VOCABULARY)
+# Rule 18 (RESIDENCE VOCABULARY)
 # says "lives in" / "lived in" / "resides in" should produce predicate
 # 'lives_in', not 'located_in'. The extractor LLM has a strong "located_in"
 # prior on these inputs and ignores Rule 18 about half the time. This regex
@@ -25,27 +25,27 @@ _RESIDENCE_VERB = re.compile(
     r"\b(lives?|lived|resides?|residing)\s+in\b", re.IGNORECASE
 )
 
-# (S1b) Nationality recognition moved to the extraction prompt (Rule 21):
+# Nationality recognition happens in the extraction prompt (Rule 21):
 # the LLM emits has_nationality(X, "<demonym>") directly. The demonym object
 # ("German", "American") is resolved to a country Q-id at verification time by
 # the adapter's P1549 reverse lookup (see WikidataAdapter._resolve_demonym_to_
 # country), so no hardcoded demonym table or post-extraction regex remains.
 
-# (S2/T7) The population-only comparison regexes are gone. Quantitative count
-# comparisons now arrive from the extraction prompt (Rule 24) shaped as a
+# There are no population-only comparison regexes. Quantitative count
+# comparisons arrive from the extraction prompt (Rule 24) shaped as a
 # '<measure>_greater_than' / '<measure>_less_than' predicate with the numeric
 # threshold in the object slot, for any count measure (population, members,
 # employees, …). The predicate-translation oracle routes these via the
 # kb_quantitative routing_hint and supplies the count KB property (P1082,
 # P2124, P1128, …); the walker reads comparator + property from metadata.
 
-# (S1b) The hand-curated _DEMONYM_TO_COUNTRY map is gone. Demonym → country
+# There is no hand-curated _DEMONYM_TO_COUNTRY map. Demonym → country
 # resolution is sourced from Wikidata P1549 (demonym) at verification time
 # (WikidataAdapter._resolve_demonym_to_country), gated on a country-typed
 # (Q6256) object slot. This generalizes to every demonym Wikidata records.
 
-# (S2) The hand-curated _YEAR_AWARE_REWRITES verb→predicate table is gone.
-# Date-valued event claims now arrive from the extraction prompt (Rule 23)
+# There is no hand-curated _YEAR_AWARE_REWRITES verb→predicate table.
+# Date-valued event claims arrive from the extraction prompt (Rule 23)
 # already shaped as a date-sense predicate with the date in the object slot
 # (born_on, died_on, founded_in_year, dissolved_in_year, published_in_year,
 # released_in_year, occurred_in_year). Each date-sense predicate maps to its
@@ -101,13 +101,8 @@ EXTRACTION_TOOL: dict[str, Any] = {
     },
 }
 
-# Phase E5 prompt — the v5 result of Phase E3's prompt-engineering iteration
-# (baseline → v1 → v2 → v3 → v4 → v5). The baseline 6-rule prompt produced 45/57
-# = 78.95% on the original extraction corpus with Haiku 4.5; v5 produces 53/53
-# = 100% on the cleaned 53-case corpus. The iteration sequence and per-case
-# triage are documented in docs/phase_E_report.md / docs/phase_E/results/
-# augmented_prompt_v{1..5}/. Each rule's "do this / do NOT do this" structure
-# is the v0.16 D45 process pattern: component prompts encoding Aedos-specific
+# The extraction prompt. Each rule's "do this / do NOT do this" structure
+# follows the process pattern that component prompts encoding Aedos-specific
 # contracts must specify both positive triggers AND explicit non-triggering
 # conditions to prevent over-application.
 _SYSTEM_PROMPT = """\
@@ -560,9 +555,9 @@ class Extractor:
             if claim is not None:
                 claims.append(claim)
 
-        # (S1b) Compound-demonym decomposition ("Serbian-American inventor" →
+        # Compound-demonym decomposition ("Serbian-American inventor" →
         # instance_of(inventor) + has_nationality(Serbian) +
-        # has_nationality(American)) moved to the extraction prompt (Rule 22).
+        # has_nationality(American)) happens in the extraction prompt (Rule 22).
         # Each demonym object resolves via Wikidata P1549 at verification time.
         return claims
 
@@ -603,13 +598,13 @@ class Extractor:
         # are independent (no compound-verdict drag), and an empty object
         # grounds to no_grounding_found — abstention, the conservative outcome.
 
-        # (S2) Date-valued event predicate selection happens in the extraction
+        # Date-valued event predicate selection happens in the extraction
         # prompt (Rule 23): "Einstein was born in 1879" arrives as
         # born_on(Einstein, 1879), "Google was founded in 1994" as
         # founded_in_year(Google, 1994). No Python verb→predicate rewrite here;
         # a date-sense predicate routes to its date KB property via the oracle.
 
-        # Phase 10.5 Step 5 root-cause: reject self-referential triples
+        # Reject self-referential triples
         # (subject == object after trim/case-fold). The extractor
         # occasionally emits these when it fails to parse a non-entity
         # object — e.g. "Einstein was born in 1879" → (Einstein, born_in,
@@ -621,10 +616,11 @@ class Extractor:
         # dropping them costs nothing and prevents the walker from
         # contradicting a true claim via a malformed self-reference.
         #
-        # Phase 10.5 Step 6 evaluated relaxing this for inception-style
-        # claims with valid_from set (Rule 7 example: 'Google was founded
-        # in 1994' → subject=='Google', object=='Google'). The relaxation
-        # was reverted: the walker would then look up the
+        # Relaxing this for inception-style
+        # claims with valid_from set (Rule 7
+        # example: 'Google was founded
+        # in 1994' → subject=='Google', object=='Google') is unsound:
+        # the walker would then look up the
         # extracted predicate's KB property (P112 founder for `founded`,
         # P19 birthplace for `born_in`) and find subject != KB-value,
         # yielding a §3.2 false-contradiction. The year in valid_from is
@@ -639,7 +635,7 @@ class Extractor:
         ):
             abstention_reason = AbstentionReason.SELF_REFERENTIAL.value
 
-        # Phase 10.5 Step 6 Batch 8+: also drop claims where the
+        # Also drop claims where the
         # PREDICATE equals the object (after trim/case-fold). This is
         # the "verb repeated into the object slot" mis-extraction —
         # e.g. "The Berlin Wall fell in 1989" → (Berlin Wall, fell,
@@ -673,7 +669,7 @@ class Extractor:
         polarity = int(raw.get("polarity", 1))
         source_text = raw.get("source_text", "")
 
-        # Phase 10.5 Step 6 sub-cause F enforcement: when the source-text
+        # When the source-text
         # verb is a residence verb (lives/lived/resides/residing + in)
         # but the LLM emitted predicate='located_in', rewrite to
         # predicate='lives_in'. The extractor prompt's Rule 18 makes this
@@ -683,13 +679,13 @@ class Extractor:
         if predicate == "located_in" and _RESIDENCE_VERB.search(source_text):
             predicate = "lives_in"
 
-        # (S1b) Nationality recognition is handled by the extraction prompt
+        # Nationality recognition is handled by the extraction prompt
         # (Rule 21): "X is [Demonym]" / "X has [Demonym] nationality" already
         # arrive as has_nationality(X, "<demonym>"). The demonym object is
         # resolved to a country at verification time via Wikidata P1549 — no
         # post-extraction rewrite or hardcoded demonym table here.
 
-        # (T7) Quantitative count comparison ("Paris has more than 2 million
+        # Quantitative count comparison ("Paris has more than 2 million
         # people") arrives from the extraction prompt (Rule 24) already shaped
         # as population_greater_than(Paris, "2 million") etc. The oracle routes
         # it (kb_quantitative) and the walker compares — no population-only

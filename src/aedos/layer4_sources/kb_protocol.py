@@ -13,11 +13,11 @@ class LocalContext:
     slot_position: str  # 'subject' or 'object'
     asserting_party: Optional[str] = None
     prior_resolutions: list["ResolutionCandidate"] = field(default_factory=list)
-    # Phase G D33 (2026-05-23): Wikidata Q-ids of acceptable entity types for
+    # Wikidata Q-ids of acceptable entity types for
     # the slot being resolved. When non-empty, _live_resolve post-filters
     # candidates whose P31 intersects this list. Empty/absent means no filter.
     expected_entity_types: list["KBEntityID"] = field(default_factory=list)
-    # Phase H D47 (2026-05-23): context for the Wikipedia normalizer's Stage 2
+    # Context for the Wikipedia normalizer's Stage 2
     # LLM-mediated selection. `source_text` is the full input text the
     # extractor saw (request-scoped, not stored on Claim). The three claim_*
     # fields surface the immediate claim's slot values for the Stage 2 prompt.
@@ -80,18 +80,17 @@ class KBProtocol(Protocol):
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
     ) -> SubsumptionResult: ...
 
-    # Phase H D5 (2026-05-23): a fourth operation. The first three check or
+    # A fourth operation. The first three check or
     # fetch for a *known* entity/pair; `enumerate_neighbors` discovers an
     # entity's KB neighbors along a constrained property set, so the walker
     # can ground a derivation in KB-sourced premises it didn't already have.
-    # Per `docs/phase_H/d5_design.md`: the property set is bounded (Decision
-    # 1 — 5-property geographic/taxonomic core), depth is one-hop-per-call
-    # (Decision 2 — walker recurses via existing `max_depth`), failures
-    # fail-open (return empty dict).
+    # The property set is bounded (a 5-property geographic/taxonomic core),
+    # depth is one-hop-per-call (the walker recurses via existing
+    # `max_depth`), and failures fail-open (return empty dict).
     #
-    # Phase H D51 (2026-05-24): the `direction` parameter selects which
+    # The `direction` parameter selects which
     # SPARQL direction the enumeration traverses.
-    #   - "outgoing" (default; the v0.15 D5 shape): wd:E ?prop ?value —
+    #   - "outgoing" (default): wd:E ?prop ?value —
     #     returns E's *parents* / containers (Williamstown's P361 → its
     #     containing entities). Serves the walker's `parent` direction.
     #   - "incoming": ?value ?prop wd:E — returns E's *children*

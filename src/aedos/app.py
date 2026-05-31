@@ -24,9 +24,9 @@ _chat_wrapper = None  # populated lazily on first POST /chat call
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _db, _config
-    # F-013: load .env before Config.from_env() so the env-var reads
+    # Load .env before Config.from_env() so the env-var reads
     # in Config's default_factory pick up values from the file. Safe
-    # to call repeatedly (idempotent per F3 §6 / aedos.utils.env).
+    # to call repeatedly (idempotent; see aedos.utils.env).
     # No-op if the file isn't present or python-dotenv isn't installed.
     from aedos.utils.env import load_dotenv_if_present
     load_dotenv_if_present()
@@ -115,17 +115,16 @@ async def chat(request: ChatRequest) -> JSONResponse:
         # build_pipeline assembles the full verification pipeline with the
         # correctness mechanisms wired in (architecture 5.4 / 7.3). It is shared
         # with the medium-bar benchmark so app and benchmark have one wiring
-        # definition rather than two drifting copies. Phase F2 threads `_config`
+        # definition rather than two drifting copies. `_config` is threaded
         # through so the deployed pipeline reaches Wikidata with the configured
-        # endpoints, HTTP cache, and User-Agent (F-004/F-005/F-006/F-007).
+        # endpoints, HTTP cache, and User-Agent.
         pipeline = build_pipeline(_db, config=_config)
         _chat_wrapper = ChatWrapper(
             extractor=pipeline.extractor,
             walker=pipeline.walker,
             aggregator=pipeline.aggregator,
             llm_client=pipeline.llm_client,
-            # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): thread
-            # Tier U through so the wrapper can promote user-message
+            # Thread Tier U through so the wrapper can promote user-message
             # claims as `asserted_unverified` premises before draft
             # generation.
             tier_u=pipeline.tier_u,
@@ -140,7 +139,7 @@ async def chat(request: ChatRequest) -> JSONResponse:
     response = _chat_wrapper.respond(request.message, conversation_context=ctx)
     return JSONResponse({
         "final_message": response.final_message,
-        # Phase 10.5 Session 2 Item 1: 3-value top-level
+        # 3-value top-level
         # (pass_through / intervene / decline) plus the new per-claim
         # action list. The 4-value rollup (CORRECT / ABSTAIN) is gone;
         # callers that need per-claim detail read `per_claim_actions`.

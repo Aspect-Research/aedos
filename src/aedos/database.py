@@ -200,7 +200,7 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
         )
     except sqlite3.OperationalError:
         pass  # column already exists
-    # Phase G D33 (2026-05-23): subject_entity_types / object_entity_types
+    # subject_entity_types / object_entity_types
     # columns. Same idempotent ALTER pattern as single_valued. NULL default
     # — predicates without entity types skip the type filter, preserving
     # current behavior.
@@ -211,24 +211,24 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
             )
         except sqlite3.OperationalError:
             pass  # column already exists
-    # Phase H D47 (2026-05-23): subject_surface / object_surface columns on
+    # subject_surface / object_surface columns on
     # tier_u. With the Wikipedia normalizer wired, TierU keys subject /
     # object on the normalized (canonical) form so cross-utterance
     # references to the same entity dedupe to one row. The original
     # surface form is preserved in *_surface for trace inspection. Same
-    # idempotent ALTER pattern as the D33 columns; NULL default
-    # preserves pre-D47 row semantics.
+    # idempotent ALTER pattern as the entity-types columns; NULL default
+    # preserves prior row semantics.
     for col in ("subject_surface", "object_surface"):
         try:
             conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
-    # v0.16 M1 (2026-05-30): predicate_translation.bindings — JSON list of
+    # v0.16: predicate_translation.bindings — JSON list of
     # the multi-property PredicateBinding ranked set discovered from
     # Wikidata's ontology. Legacy scalar columns are retained; rows with
     # bindings IS NULL read-synthesize one binding from the scalar columns
     # (_row_to_metadata / PredicateMetadata.__post_init__). Same idempotent
-    # ALTER pattern as the D33 columns; additive and non-destructive.
+    # ALTER pattern as the entity-types columns; additive and non-destructive.
     try:
         conn.execute("ALTER TABLE predicate_translation ADD COLUMN bindings TEXT")
     except sqlite3.OperationalError:
@@ -236,7 +236,7 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
 
     if load_seeds:
         _maybe_load_seeds(conn)
-    # Phase H Cluster 2 step 1: tier_u.status. Three-value enum tracking
+    # tier_u.status. Three-value enum tracking
     # provenance of the row — `asserted_unverified` (entered via user
     # assertion promotion), `externally_verified` (either pre-seeded as
     # established fact or upgraded by a successful KB/Python grounding
@@ -245,9 +245,9 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     # code (TierU.write / mark_externally_verified) enforces validity.
     # The CREATE TABLE above carries the CHECK for fresh DBs.
     #
-    # Migration: pre-Cluster-2 rows pre-date the promotion path, so
-    # they represent established external knowledge (operator seeds,
-    # runbook Step 3 inserts) rather than in-session assertions. The
+    # Migration: rows that pre-date the promotion path represent
+    # established external knowledge (operator seeds, runbook
+    # inserts) rather than in-session assertions. The
     # ALTER's `DEFAULT 'asserted_unverified'` would mis-label them; we
     # flip pre-existing rows to `externally_verified` only when the
     # ALTER succeeded (signal that the column is new to this DB).

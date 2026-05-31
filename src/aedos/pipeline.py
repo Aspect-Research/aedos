@@ -120,13 +120,13 @@ def build_pipeline(
         config = Config.from_env()
     client = llm_client if llm_client is not None else LLMClient()
     if kb is None:
-        # F-004 closure: construct the live-ready Wikidata adapter with
+        # Construct the live-ready Wikidata adapter with
         # HTTP cache and configuration. Adapter still runs in fixture mode
         # when RUN_LIVE_KB != 1 — only the wiring shape changes here.
         kb = build_default_kb(db, client, config)
 
     propagator = RetractionPropagator(db=db)
-    # D6: rehydrate the verdict-trace index from persisted verdict_recorded
+    # Rehydrate the verdict-trace index from persisted verdict_recorded
     # events so retraction propagation survives process restarts (arch 7.3).
     propagator.replay()
 
@@ -142,7 +142,7 @@ def build_pipeline(
     consistency = ConsistencyChecker(
         db=db,
         retraction_propagator=propagator,
-        # F-026: thread circuit-breaker threshold through Config.
+        # Thread circuit-breaker threshold through Config.
         circuit_breaker_threshold=config.circuit_breaker_threshold,
     )
 
@@ -158,7 +158,7 @@ def build_pipeline(
         sling=SlingFallback(db, kb, client),
     )
 
-    # Phase H D47: Wikipedia normalizer wired into the resolver. The
+    # Wikipedia normalizer wired into the resolver. The
     # normalizer shares the HTTP cache layer that build_default_kb already
     # set up (CachingHTTPClient with User-Agent + LRU + TTL from Config);
     # we reuse `kb._http` to avoid building a second cache. When the
@@ -181,7 +181,7 @@ def build_pipeline(
         llm_client=client,
         db=db,
         config=config,
-        # Phase H D53 step 2: hand the KB adapter to the normalizer so
+        # Hand the KB adapter to the normalizer so
         # Stage B can call wbsearchentities and Stage C can call the
         # batched P31 type-filter fetch.
         kb_adapter=kb,
@@ -223,11 +223,11 @@ def build_pipeline(
         kb_verifier=kb_verifier,
         python_verifier=python_verifier,
         substrate=substrate,
-        # F-025: thread walker budgets / depth through Config.
+        # Thread walker budgets / depth through Config.
         walker_wall_clock_seconds=config.walker_wall_clock_seconds,
         walker_max_llm_calls=config.walker_max_llm_calls,
         walker_max_depth=config.walker_max_depth,
-        # Phase H D5: thread the KB adapter explicitly so the walker can
+        # Thread the KB adapter explicitly so the walker can
         # call `enumerate_neighbors` as a fallback when substrate-cached
         # subsumption is empty.
         kb=kb,
