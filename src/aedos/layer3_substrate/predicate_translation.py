@@ -666,7 +666,8 @@ class PredicateTranslation:
           2. For each candidate, fetch the Wikidata property ontology
              (PropertyRelations). When the ontology constrains the property,
              build an `ontology_p2302` binding (constrained value/subject types
-             from the ontology, single_valued from the ontology OR the oracle).
+             from the ontology; single_valued mirrors the oracle's flag —
+             authoritative, never OR-promoted by the ontology).
              When the ontology is empty, build an `oracle` binding from the
              oracle scalars; and (SLING) ask the distant-supervision fallback
              for additional low-rank candidates.
@@ -759,11 +760,15 @@ class PredicateTranslation:
                         kb_property=pid,
                         # Ontology doesn't carry Aedos slot maps; reuse oracle's.
                         slot_to_qualifier=slot_to_qualifier,
-                        # Ontology single-value constraint is authoritative when
-                        # present; else fall back to the oracle's flag.
-                        single_valued=bool(
-                            ontology.single_valued or oracle_single_valued
-                        ),
+                        # single_valued is the ONLY flag that licenses a
+                        # CONTRADICTED verdict, so the oracle stays AUTHORITATIVE
+                        # for it: the oracle prompt is explicitly conservative
+                        # ("when unsure choose 0 — a wrong single_valued=1
+                        # produces a FALSE CONTRADICTION"). The ontology supplies
+                        # only types/constraints; it may NOT OR-promote the flag
+                        # past the oracle's deliberate 0 (§3.2 never-false-
+                        # contradict). Mirror the oracle's flag verbatim.
+                        single_valued=oracle_single_valued,
                         subject_entity_types=(
                             ontology.subject_type_qids or oracle_subject_types
                         ),

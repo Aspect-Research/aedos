@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import sqlite3
 from collections import Counter
-from typing import Optional
 
 from ..audit.log import log_event
 from .predicate_translation import PredicateBinding

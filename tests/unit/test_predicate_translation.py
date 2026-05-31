@@ -754,6 +754,8 @@ class TestBindingDiscoveryFromOntology:
     def test_ontology_typed_binding_supersedes_oracle_for_primary(self):
         # The primary property's ontology constrains it → the ontology binding
         # for P39 dedupes out the plain oracle binding for the same P-id.
+        # The ontology supplies TYPES; the ORACLE supplies single_valued. Here
+        # the oracle says single_valued=1, so the ontology binding mirrors it.
         pr = _StubPropertyRelations({
             "P39": PropertyOntology(
                 subject_type_qids=["Q5"],
@@ -762,7 +764,7 @@ class TestBindingDiscoveryFromOntology:
             )
         })
         oracle, _, _ = _make_discovery_oracle(
-            _default_metadata_response(), property_relations=pr
+            _default_metadata_response(single_valued=1), property_relations=pr
         )
         meta = oracle.consult("holds_role")
         assert len(meta.bindings) == 1  # deduped by (namespace, P-id)
@@ -770,11 +772,40 @@ class TestBindingDiscoveryFromOntology:
         assert b.source == "ontology_p2302"
         assert b.object_entity_types == ["Q4164871"]
         assert b.subject_entity_types == ["Q5"]
-        # The ontology's single-value constraint is authoritative.
+        # single_valued comes from the ORACLE (authoritative), not the ontology.
         assert b.single_valued is True
         # bindings[0] mirrors onto the scalar accessors (back-compat).
         assert meta.single_valued is True
         assert meta.object_entity_types == ["Q4164871"]
+
+    def test_oracle_authoritative_for_single_valued_not_ontology(self):
+        # PATCH-A fix (4) / §3.2 never-false-contradict: single_valued is the
+        # ONLY flag that licenses a CONTRADICTED verdict, so the conservative
+        # oracle stays authoritative for it. An ontology that asserts
+        # single_valued=True must NOT OR-promote the flag past the oracle's
+        # deliberate 0 — the primary binding's single_valued stays False, so
+        # this binding alone cannot license a false contradiction.
+        pr = _StubPropertyRelations({
+            "P39": PropertyOntology(
+                subject_type_qids=["Q5"],
+                value_type_qids=["Q4164871"],
+                single_valued=True,  # ontology says functional...
+            )
+        })
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(),  # ...but the oracle is silent (=> 0)
+            property_relations=pr,
+        )
+        meta = oracle.consult("holds_role")
+        assert len(meta.bindings) == 1
+        b = meta.bindings[0]
+        assert b.source == "ontology_p2302"
+        # Types still flow from the ontology (enrichment is intact)...
+        assert b.object_entity_types == ["Q4164871"]
+        assert b.subject_entity_types == ["Q5"]
+        # ...but single_valued does NOT: the oracle's 0 is authoritative.
+        assert b.single_valued is False
+        assert meta.single_valued is False
 
     def test_candidate_property_adds_second_binding_ranked_above_oracle(self):
         # The copula case: oracle primary P31, candidate P106. P106's ontology

@@ -1631,6 +1631,17 @@ class Walker:
                             "polarity": node.polarity,
                         },
                     ))
+                    # WS3 single-source-of-truth: record the subsumption row as
+                    # a provenance premise so the dep lives in the provenance
+                    # TERM (not only in edge metadata). _extract_source_rows
+                    # short-circuits on provenance.source_rows(), so a dep that
+                    # is only in metadata is dropped from the term AND from the
+                    # retraction footprint. The term is the single source of
+                    # truth — the edge metadata is observability only.
+                    self._record_premise(
+                        trace, source="subsumption",
+                        table="subsumption", row_id=sub.row_id,
+                    )
                     sub_produced.append(new_node)
             expanded.extend(sub_produced)
 
@@ -1755,9 +1766,18 @@ class Walker:
                     )
                 except Exception:
                     tp = None
-                if tp is not None and getattr(tp, "holds", False):
-                    return True
-                # Path not confirmed — fall through to substrate/LLM consult.
+                if tp is not None and getattr(tp, "error", None) is None:
+                    # The KB authoritatively answered (no fail-open error):
+                    # honor BOTH its verdicts. A definite hold confirms the
+                    # edge; a definite non-hold is a NEGATIVE answer — return
+                    # False here rather than falling through to the
+                    # substrate/LLM consult, which could fabricate a positive
+                    # (Priority-3) over an authoritative KB negative (§3.2:
+                    # never false-verify). Only an UNAVAILABLE answer (tp is
+                    # None, or tp.error set => fail-open) may fall through.
+                    return bool(tp.holds)
+                # KB unavailable (no result / fail-open error) — fall through
+                # to the substrate/LLM consult on the aedos surface forms.
 
         # 2. Substrate consult (KB -> substrate -> LLM, §6) on aedos surface forms.
         try:
@@ -1872,6 +1892,25 @@ class Walker:
         if not oc_result.found:
             return []
 
+        # Soundness gate: the substitution P(S,O') ⊢ P(S,O) over `O' part_of O`
+        # is valid ONLY IF the PREDICATE distributes UP over part_of (the
+        # definition: P(X) and X part_of Y => P(Y); here X=O' the child place,
+        # Y=O the ancestor). Consult predicate_distribution the same way the
+        # is_a arm of _verify_chain does, and admit ONLY a distributes_up/both
+        # verdict. A `neither` or down-only verdict FORECLOSES the substitution
+        # (a non-distributing place predicate must not ride a part_of edge to a
+        # false). Fail-closed (abstain) on any absent/uncertain verdict — §3.2
+        # never-false-verify.
+        try:
+            dist = self._substrate.predicate_distribution.consult(
+                node.predicate, node.polarity, "part_of"
+            )
+        except Exception:
+            return []
+        dv = dist.verdict.value if hasattr(dist.verdict, "value") else dist.verdict
+        if dv not in ("distributes_up", "both"):
+            return []
+
         goal_qid = self._resolve_qid(node, node.object, "object")
         if not goal_qid:
             return []
@@ -1933,15 +1972,16 @@ class Walker:
         WS2 §3/§5: the distribution verdict is a RANKER (not a gate) and the
         depth==0 cap is gone — BOTH directions (parent via outgoing, child via
         incoming) are now enumerated regardless of the distribution verdict;
-        `preferred` only ORDERS the calls (preferred direction first). Unlike
-        the substrate-neighbor candidates, KB-enumerated neighbors do NOT pass
-        through `_verify_chain`: each is a KB Q-id reached by the relation's
-        property set in a SINGLE confirmed hop (E -> neighbor), so the
-        enumeration edge IS the structural evidence; the substituted claim is
-        grounded at the next depth via Tier U / KB verifier re-lookup, and the
-        per-walk fanout budget (§5) bounds the cost the removed cap once guarded.
-        The trace records each direction (`"parent"` / `"child"`) and the KB
-        property used.
+        `preferred` only ORDERS the calls (preferred direction first). Like the
+        substrate-neighbor candidates, KB-enumerated neighbors are routed
+        through `_verify_chain` (SS3 symmetry): the single enumeration hop is
+        structural evidence the neighbor EXISTS, but NOT that the substitution
+        is ENTAILED — an is_a `neither` predicate or an unentailed downward hop
+        must be rejected by the same gate. The neighbor is a Q-id, so the gate's
+        `_resolve_qid` passes it through and the transitive-path/is_a
+        distribution check adjudicates it; the per-walk fanout budget (§5)
+        bounds the cost the removed depth cap once guarded. The trace records
+        each direction (`"parent"` / `"child"`) and the KB property used.
 
         Direction mapping (D5 + D51):
           - `"parent"`: `enumerate_neighbors(direction="outgoing")` — yields E's
@@ -2008,6 +2048,21 @@ class Walker:
 
                 for prop_id, neighbor_qids in neighbors_by_prop.items():
                     for neighbor_qid in neighbor_qids:
+                        # v0.16 soundness (SS3 symmetry): route every KB-enum
+                        # candidate through the SAME entailment gate the
+                        # find_neighbors arm uses. The single enumeration hop
+                        # is structural evidence the neighbor EXISTS, but it is
+                        # not evidence the SUBSTITUTION is entailed: an is_a
+                        # `neither` predicate, or an unentailed downward hop,
+                        # must be rejected here exactly as for substrate
+                        # neighbors. The neighbor is a Q-id, so _resolve_qid
+                        # passes it through and the transitive-path/is_a
+                        # distribution gate adjudicates it. Skip on rejection.
+                        if not self._verify_chain(
+                            node, neighbor_qid, walker_dir,
+                            relation_type, slot, distribution_verdict, trace,
+                        ):
+                            continue
                         if slot == "subject":
                             new_node = _claim_from_parts(node, subject=neighbor_qid)
                         else:
