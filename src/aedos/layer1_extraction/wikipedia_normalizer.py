@@ -69,8 +69,8 @@ from ..audit.log import log_event
 from ..utils.rate_limit import RateLimiter
 
 
-# Phase H Cluster 1 step 1 (2026-05-24): Wikidata Q-id pattern. The
-# walker's D5 KB neighbor enumeration substitutes Q-id-keyed children
+# Wikidata Q-id pattern. The
+# walker's KB neighbor enumeration substitutes Q-id-keyed children
 # into claims that then re-enter `EntityResolver.resolve`, which calls
 # this normalizer. A Q-id IS already a canonical KB identifier — sending
 # it through Wikipedia normalization either (a) returns not_found
@@ -80,15 +80,15 @@ from ..utils.rate_limit import RateLimiter
 # wasted LLM/HTTP cost. Skip Q-ids at entry.
 _QID_PATTERN = re.compile(r"^Q\d+$")
 
-# Phase 10.5 Step 6 generalization (S1a): the hand-curated _KNOWN_ROLE_TITLES
-# title→Q-id map is gone. Stage 1's MediaWiki query already requests
+# There is no hand-curated _KNOWN_ROLE_TITLES
+# title→Q-id map. Stage 1's MediaWiki query already requests
 # prop=pageprops, and a single canonical article's pageprops carries
 # `wikibase_item` — the title's canonical Wikidata Q-id. `_compose_result`
 # surfaces that Q-id directly for clean (non-disambiguation) article
 # resolutions, which generalizes the old 6-entry allow-list to every titled
 # entity at zero extra API cost. See Stage1Outcome.wikibase_item.
 
-# Phase H D53 step 2: Stage C tool — closed-set selection over Wikidata
+# Stage C tool — closed-set selection over Wikidata
 # Q-id candidates. The model picks a Q-id (not a label, not a Wikipedia
 # article title) so downstream KB lookup is keyed on the canonical
 # identifier directly. Abstention discipline preserved verbatim from
@@ -169,7 +169,7 @@ OUTCOME_CLEAN_REDIRECT = "clean_redirect"
 OUTCOME_DISAMBIGUATION_PAGE = "disambiguation_page"
 OUTCOME_NOT_FOUND = "not_found"
 OUTCOME_API_ERROR = "api_error"
-# Phase H Cluster 1 step 1: short-circuit outcome for Q-id surface forms.
+# Short-circuit outcome for Q-id surface forms.
 # Distinct from the four real Stage 1 outcomes so audit log readers can
 # count "skipped vs. attempted" separately.
 OUTCOME_SKIPPED_KB_IDENTIFIER = "skipped_kb_identifier"
@@ -215,7 +215,7 @@ class NormalizationResult:
     # Common.
     duration_ms: float = 0.0
     error: Optional[str] = None
-    # Phase H Cluster 1 step 1: True when this result was served from
+    # True when this result was served from
     # the per-instance memo rather than freshly computed. The audit
     # event still fires (observability of resolver call patterns), so
     # downstream readers count memo hits via this flag rather than via
@@ -234,7 +234,7 @@ class Stage1Outcome:
     outcome: str
     canonical_title: Optional[str] = None  # set when clean_redirect or canonical_no_redirect
     disambiguation_title: Optional[str] = None  # set when disambiguation_page
-    # Phase 10.5 Step 6 (S1a): the page's Wikidata Q-id from pageprops
+    # The page's Wikidata Q-id from pageprops
     # wikibase_item — set when the title resolves to a single canonical
     # article (clean_redirect / canonical_no_redirect), None otherwise.
     wikibase_item: Optional[str] = None
@@ -254,7 +254,7 @@ class WikipediaNormalizer:
         self._llm = llm_client
         self._db = db
         self._config = config
-        # Phase H D53 step 2: KB adapter (typically `WikidataAdapter`)
+        # KB adapter (typically `WikidataAdapter`)
         # supplies the Stage B wbsearchentities client and the Stage C
         # P31 type-filter batch fetch. When None, Stage B/C abstain
         # visibly (test paths that don't wire it; production
@@ -264,8 +264,8 @@ class WikipediaNormalizer:
         rate = self._cfg_value("wikipedia_request_rate_per_second", _DEFAULT_RATE)
         self._limiter = RateLimiter(rate)
 
-        # Phase H Cluster 1 step 1: per-instance memo of normalize()
-        # outcomes. The Cluster 1 diagnostic surfaced that the walker
+        # Per-instance memo of normalize()
+        # outcomes. The walker
         # calls `EntityResolver.resolve("President", ctx)` eight or more
         # times per case (multiple slots × KB neighbor enumeration paths).
         # Each call drove a fresh Stage 2 Haiku invocation, multiplying
@@ -325,7 +325,7 @@ class WikipediaNormalizer:
         wbsearchentities call, and Stage C's Haiku call happens at most
         once per (surface, context) per normalizer instance.
         """
-        # Q-id short-circuit (Mechanism F fix). Skips Stage A/B/C and
+        # Q-id short-circuit. Skips Stage A/B/C and
         # the memo — the answer is structural, not data-driven.
         if isinstance(surface_form, str) and _QID_PATTERN.match(surface_form):
             result = NormalizationResult(
@@ -345,7 +345,7 @@ class WikipediaNormalizer:
             )
             return result
 
-        # (S1a) The hand-curated known-title short-circuit is gone; the
+        # There is no hand-curated known-title short-circuit; the
         # general title→Q-id path lives in _compose_result via Stage 1's
         # pageprops wikibase_item. The leading-"the" retry remains in
         # EntityResolver (layer3) for surfaces Wikipedia doesn't redirect.
@@ -801,8 +801,8 @@ class WikipediaNormalizer:
             expected_entity_types=expected_entity_types,
         )
 
-        # (S1a) Canonical-article rescue — the general replacement for the
-        # hand-curated _KNOWN_ROLE_TITLES map. When Stage C did NOT select an
+        # Canonical-article rescue — the general replacement for a
+        # hand-curated title→Q-id map. When Stage C did NOT select an
         # entity AND Stage 1 resolved the surface to a single canonical
         # Wikipedia article whose pageprops carry a wikibase_item that
         # wbsearchentities never surfaced as a candidate, use that Q-id —
@@ -879,7 +879,7 @@ class WikipediaNormalizer:
         return bool(set(expected_entity_types) & set(p31_by_qid.get(qid, [])))
 
     # ------------------------------------------------------------------
-    # Stage C — type filter + heuristic + LLM selection (D53 step 2)
+    # Stage C — type filter + heuristic + LLM selection
     # ------------------------------------------------------------------
 
     def _stage_c_select(
@@ -905,7 +905,7 @@ class WikipediaNormalizer:
           candidates_shown: list[dict]   — what was presented (filtered set)
           error: Optional[str]
         """
-        # ----- Type filter (D33) ------------------------------------
+        # ----- Type filter ------------------------------------------
         filter_applied = False
         filtered: list = list(candidates)
         if expected_entity_types and self._kb_adapter is not None:
@@ -923,7 +923,7 @@ class WikipediaNormalizer:
                     if type_set & set(p31_by_qid.get(c.qid, []))
                 ]
                 filter_applied = True
-                # D33 fail-open: if the filter eliminates all, pass the
+                # Fail-open: if the filter eliminates all, pass the
                 # unfiltered list to Stage C's LLM rather than abstain
                 # silently. The audit log records that the filter ran
                 # but produced an empty set.

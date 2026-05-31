@@ -8,8 +8,8 @@ from ..layer1_extraction.extractor import Claim
 from ..layer5_result.trace import JustificationTrace
 
 
-# Phase H Cluster 2 step 1: the six-way verdict set. Three base verdicts
-# (the existing v0.15 semantics) and three dual-designation verdicts
+# The six-way verdict set. Three base verdicts
+# (the existing base semantics) and three dual-designation verdicts
 # tagged with `_given_assertion` when the chain includes any
 # `asserted_unverified` Tier U premise. The aggregator's count buckets,
 # the chat-wrapper's intervention selection, the corpus runner's
@@ -28,7 +28,7 @@ GIVEN_ASSERTION_VERDICTS: tuple[str, ...] = (
 ALL_VERDICTS: tuple[str, ...] = BASE_VERDICTS + GIVEN_ASSERTION_VERDICTS
 
 # Dual designation collapses to its base verdict for intervention
-# selection (Q-Aggregation). The dual flag is metadata for Phase 10.5;
+# selection. The dual flag is observability metadata;
 # user-facing behavior keys off the base verdict only.
 _BASE_OF_DUAL: dict[str, str] = {
     "verified_given_assertion": "verified",
@@ -40,7 +40,7 @@ _BASE_OF_DUAL: dict[str, str] = {
 # `aggregate_metadata` counts. The three base counts
 # (`verified` / `contradicted` / `abstained`) stay as the user-facing
 # rollup that `select_intervention` reads; the three dual counts are
-# additive observability for Phase 10.5.
+# additive observability.
 _VERDICT_TO_BASE_COUNT: dict[str, str] = {
     "verified": "verified",
     "contradicted": "contradicted",
@@ -103,7 +103,7 @@ class VerificationResult:
     audit_log_entries: list[int]
     text_input: dict
     consistency_warnings: list[dict] = field(default_factory=list)
-    # Phase 10.5 Session 2 Item 1 (per-claim intervention): structured
+    # Per-claim intervention: structured
     # per-claim verdict list for the intervention layer. The dict-based
     # `per_claim_verdicts` / `per_claim_traces` fields stay (callers and
     # the audit log consume them); `claim_verdicts` is the additive,
@@ -117,7 +117,7 @@ _TRACE_ROW_ID_KEYS = {
     "tier_u_row_id": "tier_u",
     "predicate_translation_row_id": "predicate_translation",
     "subsumption_row_id": "subsumption",
-    # v0.16 WS3 D13: KB premise edges stamp the resolver's cache row id so
+    # v0.16 WS3: KB premise edges stamp the resolver's cache row id so
     # KB-grounded verdicts become retractable when a cached entity
     # resolution is retracted. The walker stamps the id in a later phase;
     # the key is registered here (additive) so the dependency footprint
@@ -190,12 +190,12 @@ class Aggregator:
         consistency_warnings: list[dict] = []
         audit_log_entries: list[int] = []
 
-        # Phase H Cluster 2 step 1: base-count buckets stay verified /
+        # Base-count buckets stay verified /
         # contradicted / abstained (the rollup `select_intervention`
-        # consumes — Q-Aggregation collapses dual designations to their
+        # consumes — dual designations collapse to their
         # base). Additive observability counts for the three
-        # `*_given_assertion` variants give Phase 10.5 a per-claim
-        # source-of-grounding view without changing v0.15-shaped behavior.
+        # `*_given_assertion` variants give a per-claim
+        # source-of-grounding view without changing the base-shaped behavior.
         verdict_counts: dict[str, int] = {"verified": 0, "contradicted": 0, "abstained": 0}
         given_assertion_counts: dict[str, int] = {
             "verified_given_assertion": 0,

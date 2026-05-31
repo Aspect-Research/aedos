@@ -44,7 +44,7 @@ class EntityResolver:
         self._db = db
         self._llm = llm_client
         self._normalizer = wikipedia_normalizer
-        # WS3 D13: entity_resolution_cache row id touched by the most recent
+        # WS3: entity_resolution_cache row id touched by the most recent
         # resolve() — the retractable dependency a KB verdict rests on.
         self._last_cache_row_id: Optional[int] = None
 
@@ -80,7 +80,7 @@ class EntityResolver:
           - the reference looks like a synthetic event id (starts with
             "event_").
         """
-        # WS3 D13: reset per-call; each branch below sets it to the touched
+        # WS3: reset per-call; each branch below sets it to the touched
         # cache row id (or leaves None when no row is hit/created).
         self._last_cache_row_id = None
 
@@ -88,7 +88,7 @@ class EntityResolver:
             reference, local_context
         )
 
-        # Phase H D53 step 2: short-circuit when the normalizer's Stage C
+        # Short-circuit when the normalizer's Stage C
         # produced a Q-id. The KB.resolve_entity path would re-run
         # wbsearchentities and the type filter — wasteful given the
         # normalizer has already done that work.
@@ -138,7 +138,7 @@ class EntityResolver:
                 (_NOW(), cached["id"]),
             )
             self._db.commit()
-            # Phase H Cluster 1 step 1: negative cache. Empty
+            # Negative cache. Empty
             # resolved_kb_identifier means a prior call resolved this
             # (normalized_reference, context) to no KB candidates; surface
             # the same answer without re-querying KB. The schema's
@@ -176,8 +176,8 @@ class EntityResolver:
             self._last_cache_row_id = self._db.execute(
                 "SELECT last_insert_rowid()").fetchone()[0]
         else:
-            # Negative cache write. The Cluster 1 diagnostic surfaced
-            # that abstain-then-no-match cases re-queried KB on every
+            # Negative cache write. Without this,
+            # abstain-then-no-match cases re-queried KB on every
             # walker iteration (the cache only wrote on candidates>0),
             # so a single walk fired one KB call per surface-form
             # occurrence — eight per case for the "President" surface
@@ -204,7 +204,7 @@ class EntityResolver:
         return candidates
 
     # ------------------------------------------------------------------
-    # D47 normalization helper
+    # Normalization helper
     # ------------------------------------------------------------------
 
     def _normalize_if_applicable(
@@ -247,7 +247,7 @@ class EntityResolver:
             # failure; the resolver keeps moving with the surface form.
             return reference, None
 
-        # Phase 10.5 Step 6 Batch 7+: leading-"the" retry. The extractor
+        # Leading-"the" retry. The extractor
         # often emits references like "the Nobel Prize in Physics", "the
         # Institute for Advanced Study" — Wikipedia's redirect system
         # doesn't always redirect the article-prefixed form to the

@@ -40,7 +40,7 @@ class ContradictionTracer:
         if retraction_propagator is not None:
             self._propagator = retraction_propagator
         else:
-            # D6: a self-constructed propagator must replay persisted
+            # A self-constructed propagator must replay persisted
             # verdict_recorded events, else trace_contradiction is blind to
             # verdicts recorded by earlier processes. A propagator passed in is
             # the caller's responsibility (build_pipeline replays the one it

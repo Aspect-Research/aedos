@@ -14,7 +14,7 @@ from .kb_protocol import KBEntityID, KBProtocol, LocalContext, Statement
 
 _NOW = lambda: datetime.now(timezone.utc).isoformat()
 
-# Phase 10.5 Step 6 Batch 11 (Tier A1): canonical Q-ids for the seven
+# Canonical Q-ids for the seven
 # continents + the principal supercontinent groupings the medium-bar
 # test set uses. Used by _disjoint_continent to confidently flag KB-
 # grounded "X is in [wrong continent]" claims as CONTRADICTED rather
@@ -32,7 +32,7 @@ CONTINENT_QIDS: frozenset[str] = frozenset([
     "Q46", "Q48", "Q15", "Q49", "Q18", "Q55643", "Q51", "Q3960",
 ])
 
-# Phase 10.5 Step 6 Batch 11 (Tier A1) + B2 fix: KB properties whose
+# KB properties whose
 # semantics are GEOGRAPHIC location-containment, for which the
 # location-disjoint check is sound. Non-geographic relational
 # predicates (employed_by P108, member_of P463, child_of P40, etc.)
@@ -52,14 +52,14 @@ _LOCATION_KB_PROPERTIES: frozenset[str] = frozenset([
 # (e.g. located_in = [country, city, settlement, …]) historically omit. A
 # claim like "Paris is in Europe" needs to resolve "Europe" to the continent
 # (Q46, instance-of continent Q5107); without continent in the accepted-type
-# set the resolver's D33 type filter rejects Q46 and lands on a non-continent
+# set the resolver's type filter rejects Q46 and lands on a non-continent
 # homonym, so the containment subsumption (France ⊂ Europe via P30) can never
 # match. `_object_resolution_types` widens the object's type filter with these
 # only for geographic-location predicates (kb_property in
 # _LOCATION_KB_PROPERTIES). Continents are a closed 7-member set, so admitting
 # them cannot over-broaden resolution. (Region Q82794 is deliberately NOT
 # included — it is open-ended and the cases that would need it also need the
-# trimmed P361 subsumption path; see Run-7 follow-up notes.)
+# trimmed P361 subsumption path.)
 _GEO_CONTAINER_TYPES: frozenset[str] = frozenset([
     "Q5107",  # continent
 ])
@@ -283,7 +283,7 @@ class KBVerifier:
         binding equivalent of the pre-v0.16 single-property verify body —
         resolve → lookup → _compare_positive — keyed on the binding's
         kb_property / slot_to_qualifier / entity-types / single_valued."""
-        # Step 2: map the claim's slots onto KB statement positions (D19). An
+        # Step 2: map the claim's slots onto KB statement positions. An
         # inverse predicate keys its statement on the claim's *object*, so the
         # lookup entity and the expected value are swapped vs a standard one.
         targets = _lookup_targets(claim, binding)
@@ -306,9 +306,9 @@ class KBVerifier:
 
         # Step 3: resolve the KB lookup entity — the entity the statement is
         # keyed on (it becomes the KB statement subject).
-        # Phase G D33: pass entity types for the Aedos slot being resolved;
+        # Pass entity types for the Aedos slot being resolved;
         # the wikidata adapter post-filters candidates by P31 ∩ types.
-        # Phase H D47: thread the source text + immediate-claim context to
+        # Thread the source text + immediate-claim context to
         # the resolver so the Wikipedia normalizer's Stage 2 can use it.
         lookup_ctx = LocalContext(
             predicate=claim.predicate,
@@ -324,7 +324,7 @@ class KBVerifier:
         lookup_subject_id = self._resolver.select(
             self._resolver.resolve(lookup_ref, lookup_ctx), lookup_ctx
         )
-        # v0.16 WS3 D13: capture the entity_resolution_cache row id the
+        # v0.16 WS3: capture the entity_resolution_cache row id the
         # lookup-subject resolution touched, BEFORE the value-entity resolve
         # below overwrites the resolver's request-scoped state. This is the
         # retractable dependency the KB verdict rests on — a wrong subject
@@ -345,13 +345,13 @@ class KBVerifier:
             )
 
         # Step 4: resolve the expected-value entity — compared against the
-        # looked-up statement values (M4's object resolution, now applied to
+        # looked-up statement values (object resolution applied to
         # whichever Aedos slot is the KB statement value). Falls back to the raw
         # string for literal comparison.
         expected_value = expected_ref
         value_resolved = False
         if meta.object_type == "entity":
-            # (geo fix) For a geographic-location predicate, widen the object's
+            # For a geographic-location predicate, widen the object's
             # accepted-type filter to admit continents — the per-predicate type
             # lists omit them, which otherwise blocks "X is in Europe" from
             # resolving "Europe" to the continent (see _GEO_CONTAINER_TYPES).
@@ -381,7 +381,7 @@ class KBVerifier:
         # Step 5: look up KB statements for (lookup entity, kb_property).
         statements = self._kb.lookup_statements(lookup_subject_id, binding.kb_property)
         if not statements:
-            # Phase 10.5 Step 6 Tier A3: no-statements subsumption fallback.
+            # No-statements subsumption fallback.
             # Some entity classes don't carry the specific kb_property the
             # predicate maps to — rivers don't have P131 (located_in admin
             # entity); they're related to geography via P17 (country),
@@ -425,9 +425,9 @@ class KBVerifier:
             # statement on this binding's property. Example: "The Vatican is in
             # Africa" — the Vatican carries no P131 statement (only P30=Europe),
             # so the in-statements disjoint check (_compare_positive, gated on a
-            # scope_mismatch statement) never fires. This restores the v0.15
-            # "X in [wrong continent]" fast contradiction that the multi-property
-            # binding rewrite left only on the in-statements arm, and avoids the
+            # scope_mismatch statement) never fires. This keeps the
+            # "X in [wrong continent]" fast contradiction available even when the
+            # multi-property binding leaves it only on the in-statements arm, and avoids the
             # open-ended KB-neighbor fan-out (budget_wall_clock abstain) the walk
             # otherwise falls into. Gated identically to the in-statements arm
             # (location property, entity object, both Q-ids, standard direction)
@@ -512,7 +512,7 @@ class KBVerifier:
                     },
                 )
 
-        # Step 7: apply claim polarity (C1). A negated claim asserts the triple
+        # Step 7: apply claim polarity. A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
         final_verdict = _apply_polarity(pos_verdict, claim.polarity)
 
@@ -527,9 +527,9 @@ class KBVerifier:
             "lookup_inverted": lookup_inverted,
             "resolution_cache_row_id": resolution_cache_row_id,
         }
-        # When the verdict is an abstention (NO_MATCH), record *why* — Phase 10.5
+        # When the verdict is an abstention (NO_MATCH), record *why* —
         # debugging needs to tell a resolution failure apart from a genuine
-        # absence of evidence (N1).
+        # absence of evidence.
         if abstention_reason is not None:
             trace["abstention_reason"] = abstention_reason
 
@@ -628,7 +628,7 @@ class KBVerifier:
 
         value_unresolved = meta.object_type == "entity" and not value_resolved
 
-        # Phase 10.5 Step 5 root-cause: try subsumption upgrade on any
+        # Try subsumption upgrade on any
         # scope-compatible mismatch — functional or not. A KB statement value
         # that is a specialization of the claimed value (e.g. Honolulu when
         # the claim says "United States"; Île-de-France when the claim says
@@ -661,7 +661,7 @@ class KBVerifier:
                 return KBVerdictType.NO_MATCH, None, "value_type_object_type_mismatch"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
-        # Phase 10.5 Step 6 Batch 11 (Tier A1): conservative DISJOINT
+        # Conservative DISJOINT
         # verdict for non-functional LOCATION predicates only. The
         # check uses the part_of subsumption alternation (P131/P361/
         # P30/P206/P17) which is geographic in nature; firing on
@@ -854,7 +854,7 @@ def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:
     return pos_verdict
 
 
-# Phase 10.5 Step 6 generalization (S3): which KB statement value-types may
+# Which KB statement value-types may
 # soundly drive a CONTRADICTED verdict for each predicate object_type. A
 # predicate the oracle mis-mapped to a wrong-datatype property (e.g. an
 # authorship predicate routed to P585 point-in-time instead of P50 author)

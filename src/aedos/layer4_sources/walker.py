@@ -17,7 +17,7 @@ from ..layer4_sources.kb_protocol import KBProtocol, LocalContext
 from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
 
 
-# Phase H D5: per-relation KB neighbor properties. Mirrors
+# Per-relation KB neighbor properties. Mirrors
 # `_SUBSUMPTION_PROPERTIES` in `kb_wikidata.py` for is_a/part_of, plus
 # P17 (country) on part_of for country-level grounding (e.g. Williams
 # College P17 → United States; useful for "X is in the United States"
@@ -36,7 +36,7 @@ _D5_NEIGHBOR_PROPS_BY_RELATION: dict[str, tuple[str, ...]] = {
 class VerificationContext:
     current_time: str
     asserting_party: str
-    # Phase H D47: the full input text the extractor was originally called
+    # The full input text the extractor was originally called
     # with, threaded request-scoped so the resolver / normalizer can use it
     # for Stage 2 disambiguation context. Optional — callers that don't
     # have a meaningful source text (direct-resolver corpus runners,
@@ -51,7 +51,7 @@ class WalkerBudget:
     # v0.16 WS2 §5: per-walk fanout bound on discovery candidates. The depth==0
     # cap on KB-neighbor enumeration is removed to enable bidirectional/forward
     # search, but un-capped blind incoming enumeration fans out
-    # multiplicatively across depth (the D51 18-min / OOM blowup). The
+    # multiplicatively across depth (the 18-min / OOM blowup). The
     # wall-clock budget is only sampled at depth boundaries, so a single
     # depth's frontier can explode before the next check; this bound is sampled
     # WITHIN the frontier loop (every node's discovery) so the walker abstains
@@ -119,7 +119,7 @@ _VAGUE_CLASS_PREFIXES = ("a ", "an ", "some ", "any ")
 _VAGUE_CLASS_RELCLAUSE = (" that ", " which ", " where ", " whose ", " who ")
 
 
-# Phase 10.5 Step 6 Tier A2: helpers for the kb_quantitative path.
+# Helpers for the kb_quantitative path.
 import re as _re_quant
 
 _QUANT_NUMBER_RE = _re_quant.compile(
@@ -303,9 +303,9 @@ class Walker:
         )
         self._default_wall_clock_seconds = walker_wall_clock_seconds
         self._default_max_llm_calls = walker_max_llm_calls
-        # Phase H D5: the KB adapter is threaded explicitly so the walker
-        # can call `enumerate_neighbors` directly. None disables the D5
-        # fallback (back-compat for test paths that construct the walker
+        # The KB adapter is threaded explicitly so the walker
+        # can call `enumerate_neighbors` directly. None disables the
+        # KB-neighbor fallback (back-compat for test paths that construct the walker
         # without a KB).
         self._kb = kb
         # v0.16 WS3 §3D: the bounded nogood cache for _nogood_vetoes. When None
@@ -338,8 +338,8 @@ class Walker:
         """
         self._excluded_tier_u_row_ids: set[int] = excluded_tier_u_row_ids or set()
         if budget is None:
-            # Build a budget from the Walker's config-driven defaults
-            # (F3 §5.1). Each field falls back to the dataclass default
+            # Build a budget from the Walker's config-driven defaults.
+            # Each field falls back to the dataclass default
             # if not explicitly configured.
             kwargs: dict[str, Any] = {}
             if self._default_wall_clock_seconds is not None:
@@ -365,7 +365,7 @@ class Walker:
         # BEFORE any Tier U / KB / Python / LLM lookup. The self_referential /
         # predicate_eq_object reasons are the §3.2-soundness-critical ones: their
         # malformed triples would, if looked up, risk a false contradiction (the
-        # v0.15 reason the extractor dropped them). subject_absent_from_source
+        # reason the extractor dropped them). subject_absent_from_source
         # and not_checkworthy are also returned here (nothing to ground). This
         # is the pre-lookup guard — placed at walk entry, before the frontier
         # loop and before any _direct_lookup. Base no_grounding_found (NOT
@@ -381,7 +381,7 @@ class Walker:
                 budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
             )
 
-        # Phase H Cluster 2 step 3 (Q-UserAuth): for predicates routed
+        # For predicates routed
         # `user_authoritative`, external grounding is structurally
         # unreachable — no KB property maps to `prefers` / `believes` /
         # similar, and Python cannot compute first-person facts. Every
@@ -469,7 +469,7 @@ class Walker:
                 # discovery crosses the budget. This is the cost bound that
                 # replaces the removed depth==0 cap — without it, blind
                 # incoming enumeration fans out multiplicatively (OOM in the
-                # D51 worst case). Breaking mid-frontier stops accumulation
+                # worst case). Breaking mid-frontier stops accumulation
                 # before the next node enumerates.
                 if total_expansions > budget.max_frontier_expansions:
                     fanout_exceeded = True
@@ -564,10 +564,10 @@ class Walker:
         """
         llm_delta = 0
 
-        # Phase H Cluster 3 step 7 fixup (2026-05-26): check belief-revision
-        # paths against PRIORS first, before Stage 1. Pre-fixup this code
-        # excluded the walk's own promoted row from Stage 1 — but that
-        # broke R3 cases (`der_multihop_001` "Asa lives in Williamstown")
+        # Check belief-revision
+        # paths against PRIORS first, before Stage 1. Excluding
+        # the walk's own promoted row from Stage 1
+        # breaks cases (e.g. "Asa lives in Williamstown")
         # where the promoted row IS the legitimate grounding and the
         # walker should match it to return verified_given_assertion.
         #
@@ -577,8 +577,8 @@ class Walker:
         # belief-revision fires and returns `contradicted`. If no
         # conflict, fall through to normal Stage 1 (no exclusion) so the
         # walker can match its own promotion as the in-vocabulary
-        # grounding source. Q-Lookup α and external grounding follow as
-        # before.
+        # grounding source. The literal lookup and external grounding
+        # follow as before.
         excluded = getattr(self, "_excluded_tier_u_row_ids", None) or None
 
         # Polarity-conflict belief revision (architecture 8.1): a
@@ -614,7 +614,7 @@ class Walker:
             )
             return "contradicted", "tier_u", 0
 
-        # Object-conflict belief revision (D16): a functional
+        # Object-conflict belief revision: a functional
         # (single_valued) predicate admits at most one object value per
         # subject. lookup_object_conflict already filters to DIFFERENT
         # objects so it can't return the walk's own promotion — no
@@ -626,7 +626,7 @@ class Walker:
             if (
                 oc_result.found
                 and self._predicate_is_functional(node.predicate)
-                # Phase 10.5 Step 6 sub-cause F follow-on: skip the
+                # Skip the
                 # object-conflict contradicted return when the claim's
                 # object is a vague descriptive phrase (indefinite-
                 # article noun-phrase like "a town in the US", "a state
@@ -635,7 +635,7 @@ class Walker:
                 # town in the United States" — so the conflict is a
                 # subsumption candidate, not a contradiction. The walker
                 # cannot resolve free-text class references to KB Q-IDs
-                # cheaply at this site (no class-instance oracle in v0.15),
+                # cheaply at this site (no class-instance oracle),
                 # so the §3.2 soundness invariant calls for abstaining
                 # rather than emitting a §3.2-violating false contradiction.
                 and not _is_vague_class_object(node.object)
@@ -668,8 +668,8 @@ class Walker:
 
         # Stage 1 literal Tier U lookup. Now that belief-revision paths
         # against priors have already been checked, the walker is free to
-        # match its own promotion here — this is the Q-UserAuth /
-        # Q-Lookup α grounding path for R3 cases.
+        # match its own promotion here — the grounding path where a
+        # promoted assertion is the legitimate grounding source.
         tier_u_result = self._tier_u.lookup(
             node,
             current_time=context.current_time,
@@ -692,10 +692,10 @@ class Walker:
                     "premise_status": row_status,
                 },
             ))
-            # WS3 §3B Edit 4: record the Stage-1 verified premise in the
+            # WS3 §3B: record the Stage-1 verified premise in the
             # provenance term so it is retractable. assertion=False here; the
-            # Q-Lookup-α fallthrough below records an assertion literal when no
-            # external grounding upgrades the asserted_unverified row.
+            # external-grounding fallthrough below records an assertion literal
+            # when no external grounding upgrades the asserted_unverified row.
             self._record_premise(
                 trace, source="tier_u", table="tier_u",
                 row_id=row_id, status=row_status, assertion=False,
@@ -711,11 +711,12 @@ class Walker:
             # asserted_unverified path.
             route = self._predicate_routing(node.predicate)
             if route == "user_authoritative":
-                # Q-UserAuth: chain flag was already set at walk start;
-                # do not attempt KB/Python (structurally unreachable).
+                # For user_authoritative predicates the chain flag was
+                # already set at walk start; do not attempt KB/Python
+                # (structurally unreachable).
                 return "verified", "tier_u", 0
 
-            # Q-Lookup α: try external grounding for an upgrade
+            # Try external grounding for an upgrade
             # opportunity. KB first, Python second (matches §6.5 order
             # for non-Tier-U lookups). On success, upgrade the row and
             # return plain verified — the chain flag is NOT set
@@ -746,8 +747,8 @@ class Walker:
             # but does NOT ground a present-tense claim → skip
             pass
 
-        # (Belief-revision paths moved BEFORE Stage 1 — see the
-        # Cluster 3 step 7 fixup block at the top of this method.
+        # (Belief-revision paths are checked BEFORE Stage 1 — see the
+        # belief-revision block at the top of this method.
         # Reaching here means there is no current Tier U premise of
         # either polarity / no functional-predicate object_conflict.)
 
@@ -780,7 +781,7 @@ class Walker:
         identity, per the operator's audit-detail confirmation in
         step 1.
         """
-        # Phase 10.5 Step 6 Batch 8+: skip KB verification when the
+        # Skip KB verification when the
         # claim's subject is a known user persona stipulated in Tier U
         # (via a "user identity X" row). Otherwise the entity resolver
         # may resolve the persona name (e.g. "Asa") to an unrelated
@@ -794,7 +795,7 @@ class Walker:
         if self._is_persona_subject(node):
             return None, "", 0, {}
 
-        # Phase 10.5 Step 6 Tier A2: kb_quantitative comparison path.
+        # kb_quantitative comparison path.
         # When the predicate's routing_hint is "kb_quantitative", the
         # claim asserts a numeric comparison against a KB-derivable
         # quantity (e.g. "France has more than 60 million people" →
@@ -870,7 +871,7 @@ class Walker:
             )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
-                # WS3 D13: the resolver's entity_resolution_cache row the KB
+                # WS3: the resolver's entity_resolution_cache row the KB
                 # statement is keyed on — the retractable dependency of this
                 # KB verdict (None for mock/transient resolvers).
                 cache_row_id = kb_result.trace.get("resolution_cache_row_id")
@@ -880,8 +881,8 @@ class Walker:
                     target=TraceNode("kb_statement", {"entity": kb_result.subject_kb_id}),
                     metadata={
                         "source": "kb", "verdict": "verified",
-                        # R1: surface the D19 lookup direction on the result-level
-                        # trace so Phase 10.5 debugging can see inverted lookups.
+                        # Surface the lookup direction on the result-level
+                        # trace so debugging can see inverted lookups.
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
                         "entity_resolution_cache_row_id": cache_row_id,
                     },
@@ -940,14 +941,12 @@ class Walker:
                 }
                 return "contradicted", "kb", 0, grounding
 
-        # Python verifier (F-042: gated on routing_hint=="python" per architecture
-        # §6.5 step 3: "Python verification if the route is Python." Before this
-        # gate, the walker invoked the Python verifier unconditionally — and for
+        # Python verifier: gated on routing_hint=="python" per architecture
+        # §6.5 step 3: "Python verification if the route is Python." Without this
+        # gate, the walker invokes the Python verifier unconditionally — and for
         # subjective / preference / opinion claims the live LLM-driven verifier
-        # cheerfully wrote `return False`, producing `contradicted` instead of
-        # `no_grounding_found`. That was a §3.2 soundness violation; see
-        # docs/v0.16_planning.md D40 for the structural-test follow-up and D41
-        # for the mock-fixture-discipline finding the bug surfaced.
+        # cheerfully writes `return False`, producing `contradicted` instead of
+        # `no_grounding_found`. That is a §3.2 soundness violation.
         if (
             self._python_verifier is not None
             and self._predicate_routing(node.predicate) == "python"
@@ -1015,7 +1014,7 @@ class Walker:
             return None
 
         # Resolve the subject to a KB Q-id via the kb_verifier's
-        # resolver (which wires up the Wikipedia normalizer for D47
+        # resolver (which wires up the Wikipedia normalizer for
         # robustness). Fail closed if the resolver is unwired.
         if self._kb_verifier is None or not hasattr(self._kb_verifier, "_resolver"):
             return None
@@ -1121,7 +1120,7 @@ class Walker:
         we do NOT max dates (a max would fabricate an interval the KB does not
         assert)."""
         # Resolve the subject via the SAME resolver pattern _verify_kb_quantitative
-        # uses (the kb_verifier's resolver wires the D47 Wikipedia normalizer).
+        # uses (the kb_verifier's resolver wires the Wikipedia normalizer).
         if self._kb_verifier is None or not hasattr(self._kb_verifier, "_resolver"):
             return None
         if self._kb is None:
@@ -1416,7 +1415,7 @@ class Walker:
             return None
 
         # Capture the retractable resolution-cache row id the subject resolution
-        # touched (WS3 D13) — the dependency a correction would retract.
+        # touched (WS3) — the dependency a correction would retract.
         _last_row_id = getattr(self._kb_verifier._resolver, "last_cache_row_id", None)
         cache_row_id = _last_row_id() if callable(_last_row_id) else None
 
@@ -1689,7 +1688,7 @@ class Walker:
             expanded.extend(sub_produced)
 
             # v0.16 WS2 §5: the depth==0 cap on KB-neighbor enumeration is
-            # REMOVED. The D51 18-min blowup was a multiplicative-fanout
+            # REMOVED. The 18-min blowup was a multiplicative-fanout
             # problem; it is now bounded structurally rather than by a depth
             # cap: (a) _verify_chain admits only CONFIRMED edges to the
             # frontier (collapsing the un-verified-substitution fanout the cap
@@ -2073,7 +2072,7 @@ class Walker:
                 continue
 
             # Resolve the slot's surface form to a KB Q-id. Reuses the
-            # substrate's EntityResolver — same caching, same D47 normalization,
+            # substrate's EntityResolver — same caching, same normalization,
             # same per-purpose LLM routing as KBVerifier.
             try:
                 lc = LocalContext(

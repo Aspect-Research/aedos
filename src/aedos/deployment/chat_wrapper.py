@@ -333,11 +333,11 @@ class ChatWrapper:
         # accessed via getattr(kb, "fetch_label", None) so mock/stub adapters
         # without fetch_label keep working. None for legacy/test constructions.
         self._kb = kb
-        # Phase H Cluster 2 step 2: `tier_u` is the promotion target for
+        # `tier_u` is the promotion target for
         # user-asserted claims. Optional for back-compat with tests that
         # construct ChatWrapper without it (those skip the user-message
-        # extraction step; behavior matches pre-Cluster-2). The
-        # build_pipeline shape passes it explicitly.
+        # extraction step; behavior matches a wrapper built without Tier U).
+        # The build_pipeline shape passes it explicitly.
         self._tier_u = tier_u
         self._config = config or {}
         self._verification_store: dict[str, VerificationResult] = {}
@@ -347,13 +347,13 @@ class ChatWrapper:
         asserting_party = ctx_dict.get("asserting_party_id", "user")
         current_time = datetime.now(timezone.utc).isoformat()
 
-        # Phase H Cluster 2 step 2 (Q-ChatWrapperSource): extract claims
+        # Extract claims
         # from the user_message and promote them into Tier U BEFORE the
         # draft is generated. This is how "user-asserted claims
         # accumulate as premises" lands in the deployed pipeline — the
         # draft-extraction-and-walk loop later in this method then sees
         # the user's assertions as Tier U premises and can chain off them
-        # (the chain produces a `*_given_assertion` verdict per step 3).
+        # (the chain produces a `*_given_assertion` verdict).
         #
         # Bounded extra cost: one additional extraction call per turn.
         # The user-message extraction reads from `user_message` (not
@@ -363,7 +363,7 @@ class ChatWrapper:
         #
         # Skip the promotion path when `tier_u` was not wired (legacy
         # constructor shape) — the wrapper degrades cleanly to the
-        # pre-Cluster-2 behavior.
+        # behavior of a wrapper built without Tier U.
         if self._tier_u is not None and self._extractor is not None and user_message:
             from ..layer4_sources.promotion import promote_assertions
             user_ctx = ExtractionContext(
@@ -385,7 +385,7 @@ class ChatWrapper:
                 # rows) are not surfaced to this turn's intervention — the
                 # user spoke, we recorded what they said. The audit-log
                 # entries (cross_source_contradiction) are the trail.
-                # Phase 10.5 / a future deployment surface may consume them.
+                # A future deployment surface may consume them.
 
         # 1. Generate draft
         system = self._config.get("system_prompt", "You are a helpful assistant.")
@@ -420,7 +420,7 @@ class ChatWrapper:
             # not_checkworthy claim from the user-facing notes and the tallies.
 
         # 3. Verify each claim
-        # Phase H D47: thread the draft (the text the extractor saw) as
+        # Thread the draft (the text the extractor saw) as
         # source_text so the Wikipedia normalizer's Stage 2 has context
         # for disambiguating bare ambiguous references.
         verification_context = VerificationContext(

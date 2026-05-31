@@ -26,7 +26,7 @@ class TraceEdge:
 # source=='tier_u' (asserted_unverified | externally_verified | ...), else
 # None. `assertion` is True iff this literal makes the verdict
 # assertion-conditional (an asserted_unverified Tier U premise, or the
-# Q-UserAuth pre-seed).
+# user-authoritative pre-seed).
 @dataclass(frozen=True)
 class ProvenanceLiteral:
     source: str
@@ -98,9 +98,9 @@ class JustificationTrace:
     # flattened (table,row_id) list is persisted (via verdict_recorded).
     provenance: ProvenanceTerm = field(default_factory=ProvenanceTerm)
 
-    # Phase H Cluster 2: True (monotonically) when any premise on the
+    # True (monotonically) when any premise on the
     # derivation chain is assertion-conditional (an asserted_unverified Tier U
-    # row, or the Q-UserAuth pre-seed). The aggregator reads this and converts
+    # row, or the user-authoritative pre-seed). The aggregator reads this and converts
     # a base verdict to its `*_given_assertion` variant. Individual edges carry
     # `metadata['premise_status']` for fine-grained audit; this is the
     # aggregated signal used at verdict-designation time.

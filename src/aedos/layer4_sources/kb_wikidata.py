@@ -71,14 +71,14 @@ _ENTITY_ID_PATTERN = re.compile(r"^Q\d+$")
 _PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
 
 # Default qualifier set requested in every _live_lookup SPARQL query.
-# Per F2 design §5: P580 (start time) and P582 (end time) are required for
+# P580 (start time) and P582 (end time) are required for
 # universal scope checking; P642 (of) appears in the most-common seed
 # (holds_role / P39). Other qualifiers referenced by less-common predicates'
-# slot_to_qualifier maps are not collected here — v0.16 D32 captures the
+# slot_to_qualifier maps are not collected here — v0.16 captures the
 # dynamic-discovery follow-up.
 _DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
 
-# Phase G D33 (2026-05-23): when the wbsearchentities post-filter eliminates
+# When the wbsearchentities post-filter eliminates
 # all candidates AND expected_entity_types is non-empty, fall back to a SPARQL
 # label-OR-altLabel search constrained by P31. Live validation surfaced that
 # canonical entities (Q76 for "Obama", Q49112 for "Williams College") aren't
@@ -125,7 +125,7 @@ def _build_label_type_search_query(
 
 
 # Subsumption relation-type → SPARQL property-path alternation.
-# Per architecture §9.1 and F2 design §6:
+# Per architecture §9.1:
 #   is_a    → P31 (instance of), P279 (subclass of)
 #   part_of → P131 (located in admin entity), P361 (part of),
 #             P30  (continent — for country/region → continent chains),
@@ -133,20 +133,20 @@ def _build_label_type_search_query(
 #             P17  (country — for city → country fallback when P131 chain
 #                   doesn't reach the country directly).
 #
-# Phase 10.5 Step 6 sub-cause B fix: P30 lets the walker verify
+# P30 lets the walker verify
 # "France ⊂ Europe" directly (France P30 Europe) and chains through
 # P131 → P30 to verify city-to-continent ("Paris ⊂ Europe" via
-# Paris P131 Île-de-France → ... → France P30 Europe). Pre-fix,
+# Paris P131 Île-de-France → ... → France P30 Europe). Without P30,
 # part_of stopped at P131/P361 which deepest-runs out at the country
 # level; many country→continent statements in Wikidata are only
 # expressed via P30, so the chain truncated and the walker abstained
 # on multi-hop geographic claims.
 _SUBSUMPTION_PROPERTIES = {
     "is_a": ("P31", "P279"),
-    # Phase 10.5 Step 6 Run 6 follow-up: trimmed alternation to
-    # (P131, P30, P17). The fuller set initially used in Tier A1/A3
+    # Trimmed alternation to
+    # (P131, P30, P17). An earlier, fuller set
     # included P361 (part of) and P206 (located in body of water),
-    # both of which surfaced false-subsumption paths during Run 6:
+    # both of which surfaced false-subsumption paths:
     #
     #   subsumption(Warsaw, Germany, "part_of") → a_subsumed_by_b
     #     via Warsaw P206 Vistula → Vistula P17 Germany (the river's
@@ -178,19 +178,18 @@ _SUBSUMPTION_PROPERTIES = {
     "part_of": ("P131", "P30", "P17"),
 }
 
-# Phase H D5: default property set for KB neighbor enumeration. The
+# Default property set for KB neighbor enumeration. The
 # geographic/taxonomic core covers the dominant derivation_corpus
 # multi-hop shapes (X lives_in Y / part_of Z; X is_a Y / kind-properties).
 # Other properties (P50 author, P108 employer, P39 position) are deferred
-# to v0.16 driven by Phase 10.5 data per `docs/phase_H/d5_design.md`
-# Decision 1.
+# to v0.16.
 _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
 
 
-# Phase H D51: reverse enumeration's LIMIT. Unbounded properties like
+# Reverse enumeration's LIMIT. Unbounded properties like
 # P17=Q30 (country=USA) have millions of subjects; the walker only needs
 # a sample of candidate children for its substitution. 20 is the
-# conservative default after the first D51 diagnostic showed the walker
+# conservative default after a diagnostic showed the walker
 # fanning out catastrophically at LIMIT=100 (per-case wall-clock blew
 # past 18 min on der_multihop_002 before the run was killed): with
 # LIMIT=100 a single reverse call returns 100 candidate children, the
@@ -198,7 +197,7 @@ _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
 # substituted claim fires more KB calls + more enumeration. 20 keeps
 # fanout per call to ~20× rather than 100×, while still surfacing common
 # children. Paired with the walker.py depth==0 cap on KB enumeration
-# fallback (D51 step 3 cleanup) to bound aggregate walker cost.
+# fallback to bound aggregate walker cost.
 _DEFAULT_NEIGHBOR_REVERSE_LIMIT = 20
 
 
@@ -301,7 +300,7 @@ def _parse_neighbors_bindings(
 # ("part of") cleanly expresses CURRENT region containment between these types
 # (US state ⊂ region, country ⊂ supranational region), but is also used for
 # organizational membership, historical/former containment, and water-body
-# adjacency — the leaky paths the Run-6 trim removed wholesale. Restoring P361
+# adjacency — the leaky paths the part_of alternation trim removed wholesale. Restoring P361
 # only between two of these region types reopens region containment without
 # the Marie-Curie-class false-verify. Exact P31 (not P31/P279*) is deliberate:
 # it cannot admit a settlement via a subclass chain (a city is Q515, never a
@@ -756,9 +755,9 @@ class WikidataAdapter:
         # mock paths run exactly as before (no consult, no record).
         self._exception_cache = None
 
-        # Rate limiters live as instance attributes (per F2 design Q3:
-        # owning the state here keeps future lock-protection a small
-        # change rather than a refactor of where the state lives).
+        # Rate limiters live as instance attributes: owning the state
+        # here keeps future lock-protection a small change rather than a
+        # refactor of where the state lives.
         override_ms_raw = os.getenv("AEDOS_KB_REQUEST_DELAY_MS")
         override_ms = int(override_ms_raw) if override_ms_raw else None
         search_rate = self._cfg_value("wikidata_search_rate_per_second", _DEFAULT_SEARCH_RATE)
@@ -1222,7 +1221,7 @@ class WikidataAdapter:
         )
 
     # ------------------------------------------------------------------
-    # Live stubs (populated in Phase 10.5 live run)
+    # Live stubs
     # ------------------------------------------------------------------
 
     def _live_resolve(
@@ -1312,7 +1311,7 @@ class WikidataAdapter:
             last_error = None
             break
 
-        # Phase G D33: post-filter the candidate pool by P31 ∩ expected types.
+        # Post-filter the candidate pool by P31 ∩ expected types.
         pre_filter_count = len(candidates)
         filter_eliminated_count = 0
         filter_no_op_reason: Optional[str] = None
@@ -1349,7 +1348,7 @@ class WikidataAdapter:
                 candidates = kept
                 filter_ran_cleanly = True
 
-        # Phase G D33 (2026-05-23, surfaced during live validation): the
+        # Surfaced during live validation: the
         # wbsearchentities top-N candidate pool sometimes does not contain the
         # canonical entity even after raising pool size — short ambiguous
         # references like "Obama" or "Williams College" return mostly
@@ -1369,7 +1368,7 @@ class WikidataAdapter:
                 last_error = fb_error
             candidates = fb_candidates
 
-        # (S1b) Demonym → country fallback. When the slot is type-constrained
+        # Demonym → country fallback. When the slot is type-constrained
         # to a country (Q6256) and neither wbsearchentities nor the SPARQL
         # label/altLabel fallback resolved the reference, try a Wikidata P1549
         # (demonym) reverse lookup: the reference may be a demonym ("German",
@@ -1397,7 +1396,7 @@ class WikidataAdapter:
                 "duration_ms": round(duration_ms, 2),
                 "retry_count": retries,
                 "error": last_error,
-                # Phase G D33 audit fields.
+                # Type-filter audit fields.
                 "pre_filter_count": pre_filter_count,
                 "filter_eliminated_count": filter_eliminated_count,
                 "expected_entity_types": expected_types,
