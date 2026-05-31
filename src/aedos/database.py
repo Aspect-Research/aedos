@@ -1,4 +1,4 @@
-"""SQLite schema creation and connection management for Aedos v0.15."""
+"""SQLite schema creation and connection management for Aedos."""
 
 from __future__ import annotations
 
@@ -169,9 +169,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log(occurred_at);
 
 
 def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
-    """Create the v0.15 schema on `conn`. Idempotent.
+    """Create the schema on `conn`. Idempotent.
 
-    Phase H Cluster 3 (2026-05-26): when `load_seeds=True` and the
+    When `load_seeds=True` and the
     `predicate_translation` table is empty, auto-loads
     `seeds/predicate_translation.json` and emits a `seeds_loaded`
     audit event. The empty-table gate preserves operator
@@ -184,9 +184,9 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     behavior). `open_memory_db()` defaults to `load_seeds=False`
     (test-fixture convention; tests build their own substrate).
     The corpus runner explicitly opts in to seeded mode for its
-    in-vocabulary measurement; the cold-start mode (the v0.15
-    default measurement) leaves load_seeds=False so every predicate
-    consultation hits the LLM oracle.
+    in-vocabulary measurement; the cold-start mode leaves
+    load_seeds=False so every predicate consultation hits the LLM
+    oracle.
     """
     conn.executescript(_SCHEMA_SQL)
     # Migration guard (N6): a database created before single_valued was added

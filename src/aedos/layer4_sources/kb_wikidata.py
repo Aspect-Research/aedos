@@ -25,12 +25,12 @@ from .kb_protocol import (
 
 @dataclass
 class WBSearchCandidate:
-    """Phase H D53: a raw wbsearchentities result row.
+    """A raw wbsearchentities result row.
 
     Distinct from `ResolutionCandidate` (which is the KBProtocol-shaped
     score-wrapped form `KB.resolve_entity` returns). `WBSearchCandidate`
     preserves the API's full per-result payload — label, description,
-    aliases, match metadata — so the D53 normalizer's Stage C can drive
+    aliases, match metadata — so the normalizer's Stage C can drive
     the LLM with rich disambiguation context.
 
     `rank` is 1-based position in the API response (the API already
@@ -98,7 +98,7 @@ def _build_label_type_search_query(
       - rdfs:label catches the canonical English label.
       - skos:altLabel catches the "also known as" aliases (where Q76's "Obama"
         and Q49112's "Williams College" actually live).
-      - P31 type constraint enforces the D33 filter even at this fallback.
+      - P31 type constraint enforces the type filter even at this fallback.
     """
     if limit <= 0 or limit > 100:
         # Keep the LIMIT bounded — runaway SPARQL on a broad altLabel match
@@ -211,10 +211,10 @@ def _build_neighbors_query(
     neighbors along all `properties` in one round-trip.
 
     `direction`:
-      - "outgoing" (Phase H D5; default): `wd:E ?prop ?value` — yields
+      - "outgoing" (default): `wd:E ?prop ?value` — yields
         E's parents (entities E points to). No LIMIT (outgoing edges
         are bounded by the predicate's schema; a few hits per property).
-      - "incoming" (Phase H D51): `?value ?prop wd:E` — yields E's
+      - "incoming": `?value ?prop wd:E` — yields E's
         children (entities pointing to E). LIMIT'd to bound the query
         cost on unbounded properties (P17=Q30 has millions of subjects).
 
@@ -341,10 +341,10 @@ def _build_transitive_ask_query(
       - `use_part_of_bridge=True`: the safe alternation (P131/P30/P17) augmented
         with a single TYPE-GUARDED P361 bridge — a P361 edge participates only
         between two geographic-region-typed nodes (_GEO_REGION_TYPES). This
-        reopens region containment the Run-6 trim closed (Massachusetts ⊂ New
-        England) without reopening the leaky city/historical P361 paths
-        (Warsaw ⊄ Germany). The bridge logic is preserved byte-identical to the
-        v0.15 subsumption ASK; do not edit without re-pinning Warsaw⊄Germany.
+        admits region containment (Massachusetts ⊂ New England) without
+        admitting the leaky city/historical P361 paths
+        (Warsaw ⊄ Germany). The bridge logic is preserved exactly;
+        do not edit without re-pinning Warsaw⊄Germany.
 
     Defense-in-depth: validates source/target via `_ENTITY_ID_PATTERN` and
     every property via `_PROPERTY_ID_PATTERN` at the SPARQL boundary."""
@@ -388,7 +388,7 @@ def _build_subsumption_ask_query(
 
     v0.16 WS2 §1: delegates to `_build_transitive_ask_query` (which holds the
     path-construction + the type-guarded P361 bridge); output is byte-identical
-    to the v0.15 query for both the is_a and part_of cases."""
+    for both the is_a and part_of cases."""
     props = _SUBSUMPTION_PROPERTIES.get(relation_type)
     if props is None:
         raise ValueError(
@@ -585,8 +585,7 @@ def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
 
 def _subsumption_verdict(a_to_b: bool, b_to_a: bool) -> str:
     """Map two directional ASK results to the SubsumptionResult verdict
-    string. Architecture §6.2 enumerates the four verdicts; F2 design
-    §6 specifies the truth table."""
+    string. Architecture §6.2 enumerates the four verdicts."""
     if a_to_b and b_to_a:
         return "equivalent"
     if a_to_b:
@@ -684,7 +683,7 @@ def _extract_entity_id(uri: str) -> str:
 
 
 def _extract_p31(entity_data: dict) -> list[str]:
-    """Phase G D33: extract P31 (instance-of) Q-ids from a wbgetentities
+    """Extract P31 (instance-of) Q-ids from a wbgetentities
     entity payload. Returns an empty list when the entity has no P31
     claims or the claim shape is unexpected (defensive — Wikidata's
     schema is stable in practice but downstream callers should not crash
@@ -884,12 +883,12 @@ class WikidataAdapter:
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None
     ) -> list[WBSearchCandidate]:
-        """Phase H D53: raw wbsearchentities query.
+        """Raw wbsearchentities query.
 
         Returns ranked Wikidata entity candidates with full metadata
         (label, description, aliases, match info). Unlike
-        `resolve_entity`, this method does NOT apply the D33 type
-        filter — Stage C of the D53 normalizer flow runs the filter
+        `resolve_entity`, this method does NOT apply the type
+        filter — Stage C of the normalizer flow runs the filter
         downstream with knowledge of the claim's expected types.
 
         Fails open on error: returns `[]` and records an audit event
@@ -999,7 +998,7 @@ class WikidataAdapter:
         properties: list[KBPropertyID],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5/D51: enumerate `entity`'s direct KB neighbors along
+        """Enumerate `entity`'s direct KB neighbors along
         the given `properties`, in the given `direction`. Returns a dict
         keyed by property; each value is the list of neighbor entity Q-ids
         related to `entity` by that property in `direction`. Fails open
@@ -1010,7 +1009,7 @@ class WikidataAdapter:
         other methods' input types — the live and fixture paths normalize
         it to a tuple before SPARQL construction.
 
-        `direction` is "outgoing" (D5; default) or "incoming" (D51); see
+        `direction` is "outgoing" (default) or "incoming"; see
         `KBProtocol.enumerate_neighbors` for the semantic distinction.
         """
         props_tuple = tuple(properties) if properties else _DEFAULT_NEIGHBOR_PROPERTIES
@@ -1094,7 +1093,7 @@ class WikidataAdapter:
         properties: tuple[KBPropertyID, ...],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5/D51: fixture-backed enumeration. Reads
+        """Fixture-backed enumeration. Reads
         `tests/fixtures/wikidata/neighbors_<entity>.json` for the
         outgoing direction, `neighbors_<entity>_reverse.json` for
         incoming. Both mirror the SPARQL response format
@@ -1230,7 +1229,7 @@ class WikidataAdapter:
         """Resolve a natural-language reference to ranked Wikidata candidates
         via the `wbsearchentities` API.
 
-        Honors the F2 design contract (§4):
+        Contract:
           - Returns search-ranked candidates with scores 1/(rank+1) so
             consumer behavior is identical to fixture mode.
           - Caches at the HTTP layer via the injected CachingHTTPClient
@@ -1411,7 +1410,7 @@ class WikidataAdapter:
     def _sparql_label_type_fallback(
         self, reference: str, expected_types: list[KBEntityID]
     ) -> tuple[list[ResolutionCandidate], Optional[str]]:
-        """Phase G D33: SPARQL fallback when the wbsearchentities post-filter
+        """SPARQL fallback when the wbsearchentities post-filter
         empties. Looks up items by rdfs:label OR skos:altLabel match in English,
         constrained by P31 ∈ expected_types. Returns (candidates, error).
 
@@ -1553,7 +1552,7 @@ class WikidataAdapter:
     def _fetch_p31_for_candidates(
         self, candidate_ids: list[KBEntityID]
     ) -> tuple[dict[str, list[str]], Optional[str]]:
-        """Phase G D33: batch-fetch P31 (instance-of) Q-ids for each candidate.
+        """Batch-fetch P31 (instance-of) Q-ids for each candidate.
 
         Calls ``wbgetentities`` with ``props=claims``, splitting into batches
         of at most ``Config.wikidata_type_filter_p31_batch_size`` (default 50,
@@ -1634,14 +1633,14 @@ class WikidataAdapter:
     ) -> list[Statement]:
         """Look up statements for (entity, predicate) via SPARQL against WDQS.
 
-        Honors the F2 design contract (§5):
+        Contract:
           - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
             (default `https://query.wikidata.org/sparql`).
           - Returns `Statement` objects with rank, qualifiers (default set
-            P580/P582/P642 per F2 §5), and provenance.
+            P580/P582/P642), and provenance.
           - Direction-neutral: looks up whatever entity/predicate it is
             given. `KBVerifier` is responsible for swapping the lookup
-            direction for inverse predicates (D19, fixup-3 resolution).
+            direction for inverse predicates.
           - Polarity-neutral: returns positive statements only; polarity
             handling lives in `KBVerifier._apply_polarity`.
           - HTTP-layer caching with statement TTL
@@ -1735,7 +1734,7 @@ class WikidataAdapter:
     ) -> SubsumptionResult:
         """Resolve subsumption between two Wikidata entities via SPARQL.
 
-        Honors the F2 design contract (§6):
+        Contract:
           - Two ASK queries (one per direction) for path-existence;
             ASK short-circuits on first match, so this is fast even on
             broad-fanout properties.
@@ -1980,12 +1979,11 @@ class WikidataAdapter:
         properties: tuple[KBPropertyID, ...],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]:
-        """Phase H D5 + D51: live SPARQL enumeration of `entity`'s direct
+        """Live SPARQL enumeration of `entity`'s direct
         neighbors along `properties`, in the given `direction`. One
         round-trip, returns the parsed dict.
 
-        Honors the D5/D51 design contracts (`docs/phase_H/d5_design.md`
-        + `docs/v0.16_planning.md` D51 entry):
+        Contract:
           - SPARQL endpoint = `Config.wikidata_sparql_endpoint`
             (default `https://query.wikidata.org/sparql`).
           - HTTP cache + 24h TTL via `Config.http_cache_statement_ttl_seconds`
@@ -1999,7 +1997,7 @@ class WikidataAdapter:
             honestly).
           - One audit-log event per call (`event_type="kb_live_neighbors"`,
             event_data carries `direction`).
-          - Reverse direction (D51): LIMIT bounds the query
+          - Reverse direction: LIMIT bounds the query
             (`Config.wikidata_neighbor_reverse_limit`, default 100) so
             unbounded properties like P17=Q30 don't blow up.
         """

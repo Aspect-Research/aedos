@@ -54,7 +54,7 @@ _VERDICT_TO_BASE_COUNT: dict[str, str] = {
 def base_verdict_of(verdict: str) -> str:
     """Collapse a dual-designation verdict to its base verdict; pass base
     verdicts through unchanged. Used by intervention selection and any
-    caller that needs the v0.15-shaped verdict (verified / contradicted /
+    caller that needs the base-shaped verdict (verified / contradicted /
     no_grounding_found) without the assertion-source qualifier.
     """
     return _BASE_OF_DUAL.get(verdict, verdict)
@@ -67,8 +67,8 @@ def is_given_assertion(verdict: str) -> bool:
 
 @dataclass(frozen=True)
 class ClaimVerdict:
-    """Per-claim verdict shape consumed by the per-claim intervention layer
-    (Phase 10.5 Session 2 Item 1). Carries the claim and its verdict plus
+    """Per-claim verdict shape consumed by the per-claim intervention layer.
+    Carries the claim and its verdict plus
     the intervention-relevant metadata the chat-wrapper needs to compose
     a per-claim annotation. The aggregator builds one of these per claim
     during `aggregate` and exposes the list as `VerificationResult.claim_verdicts`.

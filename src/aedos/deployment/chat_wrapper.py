@@ -21,13 +21,8 @@ from ..llm.client import ChatMessage
 class InterventionType(str, Enum):
     """Top-level intervention shape for the chat-wrapper response.
 
-    Phase 10.5 Session 2 Item 1 redesign: the previous 4-value enum
-    (PASS_THROUGH / ABSTAIN / CORRECT / DECLINE) rolled multiple
-    claim-level verdicts into a single response-level type, silently
-    dropping per-claim information when a draft had mixed problems
-    (one contradicted AND one abstained → CORRECT only, abstain
-    invisible). The new 3-value enum separates the *shape* of the
-    response (pass-through, per-claim intervention, refuse) from the
+    The 3-value enum separates the *shape* of the response
+    (pass-through, per-claim intervention, refuse) from the
     *per-claim actions* (carried in `InterventionPlan.per_claim_actions`).
     """
     PASS_THROUGH = "pass_through"
@@ -146,9 +141,7 @@ def select_interventions(
 ) -> InterventionPlan:
     """Deterministic per-claim intervention selection.
 
-    Phase 10.5 Session 2 Item 1 (per-claim intervention) replaces the
-    previous count-based `select_intervention` with a per-claim
-    structure. The policy:
+    The policy:
 
     - Empty claim list → PASS_THROUGH (nothing to verify, nothing to
       intervene on; a draft with no extracted claims goes to the user
@@ -161,10 +154,7 @@ def select_interventions(
       is the genuinely-dominated case: the draft contains nothing the
       system can vouch for, and per-claim annotations would amount to
       a long list of problems against zero verified content. The
-      refusal is the honest response. (The previous policy escalated
-      to DECLINE at the >50% problematic threshold including the
-      single-problematic-claim case, which dropped useful per-claim
-      annotations on the floor.)
+      refusal is the honest response.
 
     Conditional verdicts (`*_given_assertion`, WS5): the base verdict still
     drives the COUNT buckets (via `base_verdict_of`), but the
@@ -241,7 +231,7 @@ def select_interventions(
 def build_response(draft: str, plan: InterventionPlan) -> str:
     """Compose the user-facing response from the draft + intervention plan.
 
-    Format A (Phase 10.5 Session 2 Item 1c): pass-through returns the
+    Pass-through returns the
     draft unchanged; decline returns a generic refusal; intervene
     returns the draft followed by an "Aedos verification notes:"
     section listing each per-claim annotation as a bullet."""

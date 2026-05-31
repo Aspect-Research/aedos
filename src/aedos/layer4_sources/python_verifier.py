@@ -1,4 +1,4 @@
-"""Python verifier for Aedos v0.15.
+"""Python verifier for Aedos.
 
 Layer 4 source for the `python` route (architecture §6.3). Generates
 Python verification code via the LLM and executes it in the sandbox
@@ -6,15 +6,15 @@ defined in `aedos.utils.sandbox`. See that module's docstring for the
 threat model and the explicit list of what the sandbox blocks and does
 not block.
 
-**Security boundary in writing.** v0.15's sandbox is designed against
+**Security boundary in writing.** The sandbox is designed against
 LLM-generated wrong code (the common case), not against an active
 attacker crafting input to escape the sandbox. Production deployments
-handling adversarial input must upgrade per
-`docs/phase_F/f3_design.md` §4 (Options B or C).
+handling adversarial input must upgrade to a stronger sandbox (see
+`aedos.utils.sandbox` for the upgrade path).
 
 The walker gates invocation of this verifier on the predicate's
-`routing_hint == "python"` (architecture §6.5 step 3, F-042 fix).
-The D40 structural test
+`routing_hint == "python"` (architecture §6.5 step 3).
+The structural test
 (`tests/unit/test_layer4_routing_invariants.py`) enforces the gate as
 a CI invariant.
 """

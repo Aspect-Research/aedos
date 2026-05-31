@@ -168,8 +168,8 @@ def _apply_polarity_str(verdict: str, polarity: int) -> str:
 
 
 def _is_vague_class_object(object_value: str) -> bool:
-    """Phase 10.5 Step 6 sub-cause F follow-on: True if the object is a
-    descriptive class reference rather than a specific entity name.
+    """True if the object is a descriptive class reference rather than a
+    specific entity name.
 
     Triggers on:
       - Indefinite-article prefix: 'a town in the United States',
@@ -222,7 +222,7 @@ def _claim_from_parts(
 
 
 def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -> str:
-    """Phase H Cluster 2 step 3: convert a base verdict to its
+    """Convert a base verdict to its
     `_given_assertion` dual designation when the chain composition
     includes an asserted-unverified premise (or when the walk was
     pre-flagged for a `user_authoritative` claim).
@@ -288,7 +288,7 @@ class Walker:
              directly.
           3. Architecture defaults (`_DEFAULT_MAX_DEPTH` etc.).
 
-        Per F3 §5.1: the kwarg path is the new wiring; the dict path
+        The kwarg path is the new wiring; the dict path
         is preserved so existing tests don't churn.
         """
         self._tier_u = tier_u
@@ -322,16 +322,16 @@ class Walker:
     ) -> WalkResult:
         """Verify `claim` against the three typed sources of belief.
 
-        Phase H Cluster 3 step 7 (2026-05-26): `excluded_tier_u_row_ids`
+        `excluded_tier_u_row_ids`
         lets the caller suppress specific Tier U rows from the lookup —
         used by the promote-then-walk corpus runner / chat-wrapper to
         prevent the walker from matching the claim's own freshly-promoted
         asserted_unverified row at Stage 1. With the row filtered out,
         the polarity-conflict and object-conflict belief-revision paths
         in `_direct_lookup` become reachable for cases like
-        `der_revision_003` ("Asa is not a student") where the corpus
+        "Asa is not a student" where the corpus
         relies on the walker finding the prior of opposite polarity.
-        Empty / None means no filtering (pre-step-7 behavior; idempotent
+        Empty / None means no filtering (idempotent
         promotions don't get filtered because the row pre-dates this
         walk's promotion attempt — those cases the walker should still
         match).
@@ -540,15 +540,15 @@ class Walker:
     ) -> tuple[Optional[str], str, int]:
         """Returns (verdict_or_None, source, llm_calls_used).
 
-        Phase H Cluster 2 step 3: status-aware Tier U handling.
+        Status-aware Tier U handling.
 
         Tier U match flow:
           - `externally_verified` row → plain verified, no chain flag.
           - `asserted_unverified` row:
-            * `user_authoritative` route (Q-UserAuth): short-circuit
+            * `user_authoritative` route: short-circuit
               → verified; chain flag was already set at walk start so
               the final verdict becomes `verified_given_assertion`.
-            * any other route (Q-Lookup α): try KB/Python for external
+            * any other route: try KB/Python for external
               grounding. If KB or Python verifies the same claim, call
               `tier_u.mark_externally_verified` to upgrade the row and
               return plain verified WITHOUT setting the chain flag
@@ -773,13 +773,10 @@ class Walker:
         external grounding of `node`. Returns
         `(verdict_or_None, source, llm_delta, grounding_chain_dict)`.
 
-        Phase H Cluster 2 step 3: factored out of `_direct_lookup` so
-        the Q-Lookup-α upgrade path can share the same logic as the
-        standalone-fallthrough path. The grounding_chain dict is the
+        The grounding_chain dict is the
         structured detail consumed by `mark_externally_verified`'s
         audit event — KB statement coordinates or Python execution
-        identity, per the operator's audit-detail confirmation in
-        step 1.
+        identity.
         """
         # Skip KB verification when the
         # claim's subject is a known user persona stipulated in Tier U
@@ -974,7 +971,7 @@ class Walker:
         return None, "", 0, {}
 
     def _verify_kb_quantitative(self, claim: Claim, context: VerificationContext, trace) -> Optional[tuple[str, dict]]:
-        """Phase 10.5 Step 6 Tier A2: verify a kb_quantitative claim by
+        """Verify a kb_quantitative claim by
         querying KB for the subject's value of the predicate's
         kb_property and comparing against the claim's object as a
         numeric threshold.
@@ -1507,7 +1504,7 @@ class Walker:
         return verdict, grounding
 
     def _is_persona_subject(self, claim: Claim) -> bool:
-        """Phase 10.5 Step 6 Batch 8+: True when the claim's subject is
+        """True when the claim's subject is
         a known user persona stipulated in Tier U via a `user identity X`
         row. Used by `_direct_lookup` to skip KB verification — the
         entity resolver would otherwise resolve the persona name to an
@@ -1575,7 +1572,7 @@ class Walker:
     ) -> tuple[list[Claim], int]:
         """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
 
-        Replaces `_expand_via_substrate`. Composes the (now un-gated)
+        Composes the (now un-gated)
         subsumption-neighbor expansion with the new premise-forward frontier,
         proposing candidate substitution claims WITHOUT the distribution gate
         foreclosing relations. Each candidate is admitted to the returned
@@ -1585,7 +1582,7 @@ class Walker:
         The walker does not emit a predicate-equivalence expansion edge: an
         equivalent predicate shares the same `kb_property`, so its KB lookup is
         identical to the original's, and `TierU.lookup` stage 3 already
-        broadens by the same `predicate_translation` oracle (D7).
+        broadens by the same `predicate_translation` oracle.
 
         Discovery sources (no gate; distribution demoted to RANKER per §3):
           1. Subsumption-neighbor expansion. For each relation_type, consult
@@ -2020,7 +2017,7 @@ class Walker:
         distribution_verdict,
         trace: JustificationTrace,
     ) -> list[Claim]:
-        """Phase H D5 + D51: enumerate KB neighbors of `node`'s slot entities
+        """Enumerate KB neighbors of `node`'s slot entities
         and emit expanded claims with the slot substituted by each neighbor.
 
         Fires as the DISCOVERY enumerator when `find_neighbors` produced no
@@ -2030,7 +2027,7 @@ class Walker:
         incoming) are now enumerated regardless of the distribution verdict;
         `preferred` only ORDERS the calls (preferred direction first). Like the
         substrate-neighbor candidates, KB-enumerated neighbors are routed
-        through `_verify_chain` (SS3 symmetry): the single enumeration hop is
+        through `_verify_chain`: the single enumeration hop is
         structural evidence the neighbor EXISTS, but NOT that the substitution
         is ENTAILED — an is_a `neither` predicate or an unentailed downward hop
         must be rejected by the same gate. The neighbor is a Q-id, so the gate's
@@ -2039,11 +2036,11 @@ class Walker:
         bounds the cost the removed depth cap once guarded. The trace records
         each direction (`"parent"` / `"child"`) and the KB property used.
 
-        Direction mapping (D5 + D51):
+        Direction mapping:
           - `"parent"`: `enumerate_neighbors(direction="outgoing")` — yields E's
             parents (entities E points to via the relation's property set).
           - `"child"`: `enumerate_neighbors(direction="incoming")` — yields E's
-            children (entities pointing to E). D51 (2026-05-24).
+            children (entities pointing to E).
 
         Fail-open: any failure in resolution, KB call, or parsing returns no
         expansion for the affected slot; never raises.

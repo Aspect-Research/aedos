@@ -1,8 +1,8 @@
-"""Deployment configuration for Aedos v0.15.
+"""Deployment configuration for Aedos.
 
-Field validation lands on `__post_init__` (per F3 Q2 — catch
-deployment-init typos early rather than after a 30-minute calibration
-run). The validation is honest about its scope: it checks
+Field validation lands on `__post_init__` to catch deployment-init
+typos early rather than after a 30-minute calibration run. The
+validation is honest about its scope: it checks
 *well-defined* invariants (positive numbers, URL-shaped endpoints,
 non-empty strings) but cannot check whether a value is *appropriate*
 for a particular deployment (e.g., whether a rate-limit of 5/s is the
@@ -104,7 +104,7 @@ class Config:
     seed_file: Optional[str] = None
 
     def __post_init__(self) -> None:
-        """Validate field values (F3 §5.4-§5.5).
+        """Validate field values.
 
         Checks invariants Aedos can verify: positive numbers, URL-shaped
         endpoints, non-empty strings, sane LRU sizes. Does NOT check
