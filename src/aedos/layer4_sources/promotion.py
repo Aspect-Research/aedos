@@ -26,7 +26,7 @@ verify a claim the KB has already refuted.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from ..layer1_extraction.extractor import Claim

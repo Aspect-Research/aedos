@@ -5,7 +5,7 @@ from typing import Optional
 
 from ..layer1_extraction.extractor import Claim
 from ..layer3_substrate.predicate_translation import PredicateMetadata, PredicateTranslation, PredicateTranslationError
-from .validator import ValidationResult, Validator
+from .validator import Validator
 
 
 @dataclass

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from ..llm.client import LLMClient
 from .decomposition import decompose_event
 from .normalization import normalize_predicate
-from .temporal import BEFORE_PRESENT, TemporalScope, extract_temporal_scope
+from .temporal import extract_temporal_scope
 from .triage import AbstentionReason, TriageDecision, triage
 
 _FIRST_PERSON = re.compile(
