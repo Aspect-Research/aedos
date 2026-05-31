@@ -240,6 +240,95 @@ class TestVerbShapePromptRules:
         assert c.valid_until == "2024"
 
 
+class TestRule25IntervalEndpointPromptRules:
+    """v0.16 WS6 T1: the prompt carries Rule 25 (interval endpoints emit a
+    SEPARATE date-in-object *_started/_ended claim) and Rules 12/13/14 are
+    amended to cross-reference it. These pins prevent a future prompt edit
+    from silently dropping the endpoint-emission instruction."""
+
+    def test_prompt_carries_rule_25_interval_endpoints(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "25. INTERVAL ENDPOINTS" in _SYSTEM_PROMPT
+        # The endpoint predicate naming convention.
+        assert "_started" in _SYSTEM_PROMPT
+        assert "_ended" in _SYSTEM_PROMPT
+        assert "employment_started" in _SYSTEM_PROMPT
+        assert "employment_ended" in _SYSTEM_PROMPT
+
+    def test_rule_25_carries_do_not_non_trigger(self):
+        # D45 discipline: Rule 25 must carry explicit non-triggering conditions.
+        # The load-bearing one: a bare relation with no date emits NO endpoint
+        # claim, and the endpoint claim's date is its object (not duplicated
+        # into valid_from/valid_until).
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "DO NOT apply Rule 25 when" in _SYSTEM_PROMPT
+        assert "No date/year is present" in _SYSTEM_PROMPT
+
+    def test_rules_12_13_14_cross_reference_rule_25(self):
+        # The three interval-bearing rules each instruct the LLM to ALSO emit
+        # the Rule 25 endpoint claim.
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert _SYSTEM_PROMPT.count("per Rule 25") >= 3
+
+
+class TestRule25EndpointClaimPipeline:
+    """v0.16 WS6 T1: a two-claim LLM output (employed_by + employment_started)
+    round-trips through _build_claim with BOTH claims fully shaped (non-empty
+    subject/predicate/object) and abstention_reason None — so the endpoint
+    claim survives the WS4 verify-every-claim drops and reaches the walker. No
+    live API: the MockTransport returns the rule-prescribed two-claim shape."""
+
+    def test_two_claim_output_both_shaped_and_survive(self):
+        base = _raw_claim(
+            subject="Asa", predicate="employed_by", object="Google",
+            valid_from="2020", source_text="Asa joined Google in 2020",
+        )
+        endpoint = _raw_claim(
+            subject="Asa", predicate="employment_started", object="2020",
+            source_text="Asa joined Google in 2020",
+        )
+        extractor, _ = _make_extractor([base, endpoint])
+        claims = extractor.extract("Asa joined Google in 2020", _default_context())
+        assert len(claims) == 2
+        by_pred = {c.predicate: c for c in claims}
+        assert set(by_pred) == {"employed_by", "employment_started"}
+
+        # The base relation keeps its scope.
+        rel = by_pred["employed_by"]
+        assert rel.object == "Google"
+        assert rel.valid_from == "2020"
+        assert rel.abstention_reason is None
+
+        # The endpoint claim is fully shaped: the year is the OBJECT (Rule 23
+        # date-in-object pattern), subject/predicate/object all non-empty, and
+        # it carries NO abstention_reason — so the walker routes it, not a drop.
+        ep = by_pred["employment_started"]
+        assert ep.subject == "Asa"
+        assert ep.predicate == "employment_started"
+        assert ep.object == "2020"
+        assert ep.abstention_reason is None
+        # Rule 25: the endpoint claim does not repeat the scope on itself.
+        assert ep.valid_from is None
+        assert ep.valid_until is None
+
+    def test_employment_ended_endpoint_claim_round_trips(self):
+        base = _raw_claim(
+            subject="Asa", predicate="employed_by", object="Microsoft",
+            valid_until="2019", source_text="Asa left Microsoft in 2019",
+        )
+        endpoint = _raw_claim(
+            subject="Asa", predicate="employment_ended", object="2019",
+            source_text="Asa left Microsoft in 2019",
+        )
+        extractor, _ = _make_extractor([base, endpoint])
+        claims = extractor.extract("Asa left Microsoft in 2019", _default_context())
+        by_pred = {c.predicate: c for c in claims}
+        assert "employment_ended" in by_pred
+        ep = by_pred["employment_ended"]
+        assert ep.object == "2019"
+        assert ep.abstention_reason is None
+
+
 class TestExtractorRoundtrip:
     def test_basic_extraction_returns_claim(self):
         raw = _raw_claim()

@@ -104,6 +104,53 @@ class TestStatementLookup:
 
 
 # ---------------------------------------------------------------------------
+# TestIntervalQualifierRoundTrip  (v0.16 WS6 T1: the interval resolver reads
+# P580 (start time) / P582 (end time) qualifiers off a base-relation
+# statement. This pins that a P108 (employer) fixture carrying P580/P582
+# round-trips them into stmt.qualifiers — converted to YYYY-MM-DD — via the
+# same _parse_statement_bindings the live path uses. The fixture path is the
+# resolver's qualifier-read coverage; no live SPARQL needed.)
+# ---------------------------------------------------------------------------
+
+class TestIntervalQualifierRoundTrip:
+    def test_p108_q937_returns_two_statements(self, adapter):
+        # Einstein P108: IAS (Q11942, preferred) + ETH Zurich (Q11920, normal).
+        stmts = adapter.lookup_statements("Q937", "P108")
+        assert len(stmts) == 2
+
+    def test_p108_preferred_statement_carries_both_qualifiers(self, adapter):
+        stmts = adapter.lookup_statements("Q937", "P108")
+        ias = next(s for s in stmts if s.value == "Q11942")
+        assert ias.rank == "preferred"
+        assert "P580" in ias.qualifiers
+        assert "P582" in ias.qualifiers
+
+    def test_p108_p580_qualifier_normalized_to_iso_date(self, adapter):
+        # The fixture stores '+1933-10-01T00:00:00Z'; the adapter truncates time
+        # values to YYYY-MM-DD (day precision is the finest the parser keeps).
+        stmts = adapter.lookup_statements("Q937", "P108")
+        ias = next(s for s in stmts if s.value == "Q11942")
+        assert ias.qualifiers["P580"] == "1933-10-01"
+        assert ias.qualifiers["P582"] == "1955-04-18"
+
+    def test_p108_open_end_statement_has_no_p582(self, adapter):
+        # ETH Zurich has a start (P580) but NO end (P582) — an OPEN interval the
+        # resolver treats as ongoing. The qualifier is simply absent.
+        stmts = adapter.lookup_statements("Q937", "P108")
+        eth = next(s for s in stmts if s.value == "Q11920")
+        assert eth.qualifiers.get("P580") == "1912-01-01"
+        assert "P582" not in eth.qualifiers
+
+    def test_p463_q937_membership_qualifiers_round_trip(self, adapter):
+        # The single P463 (member of) fixture carries a closed interval.
+        stmts = adapter.lookup_statements("Q937", "P463")
+        assert len(stmts) >= 1
+        s = stmts[0]
+        assert "P580" in s.qualifiers
+        assert "P582" in s.qualifiers
+
+
+# ---------------------------------------------------------------------------
 # TestSubsumption
 # ---------------------------------------------------------------------------
 

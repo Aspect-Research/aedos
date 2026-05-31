@@ -213,6 +213,9 @@ object='Google', valid_from='2020'.
 valid_from='2018'.
     - 'Asa started at Apple in 2015' / 'Asa started working at Apple in \
 2015' → predicate='employed_by', valid_from='2015'.
+    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: \
+'Asa joined Google in 2020' → employed_by(Asa, Google, valid_from='2020') \
+PLUS employment_started(Asa, '2020') with the bare year in the OBJECT slot.
     DO NOT apply Rule 12 when:
     - The object is a non-employment group (a club, party, gym, team, \
 meeting): use predicate='member_of' instead. 'Asa joined the chess club' \
@@ -229,6 +232,9 @@ object='Google', valid_until='2024'.
 object='Microsoft', valid_until='2019'.
     - 'Asa resigned from Apple in 2022' / 'Asa departed Apple in 2022' → \
 predicate='employed_by', object='Apple', valid_until='2022'.
+    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: \
+'Asa left Google in 2024' → employed_by(Asa, Google, valid_until='2024') \
+PLUS employment_ended(Asa, '2024') with the bare year in the OBJECT slot.
     DO NOT apply Rule 13 when:
     - 'Left' refers to physical departure ('Asa left the room', 'Asa left \
 Paris'): emit the literal claim, not an employment termination.
@@ -246,6 +252,11 @@ predicate='status', object='ended', valid_until='2024'.
 object='ended', valid_until='2019'.
     - 'The program began in 2015' → predicate='status', object='ongoing', \
 valid_from='2015'.
+    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: a "began/\
+started/launched" date → status_started(subject, YEAR); an "ended/concluded/\
+completed" date → status_ended(subject, YEAR), with the bare year in the \
+OBJECT slot. (When the subject is an ORG, prefer the Rule 23 founded_in_year \
+/ dissolved_in_year date predicates over status_started/status_ended.)
     A STATE-BEARING subject is one that exists over a time interval and has \
 a current state. The defining clue is that the subject is referenced with \
 "the" + a noun denoting an ongoing thing (project, program, partnership, \
@@ -457,6 +468,38 @@ predicate='members_less_than', object='500'.
     Apply only to DIMENSIONLESS counts (people, members, seats, …). A \
 measurement carrying physical units (metres, kilograms, km²) is NOT in \
 scope — emit the literal claim instead.
+
+25. INTERVAL ENDPOINTS — when a relation's START or END is given as a \
+date/year, emit the relation claim (as Rules 12/13/14 direct, keeping its \
+valid_from / valid_until scope) AND a SEPARATE date-in-object claim naming \
+the endpoint: '<relation>_started' / '<relation>_ended' with the bare \
+year/date in the OBJECT slot. This mirrors Rule 23's date-in-object \
+treatment — the endpoint claim is independently verifiable against the \
+start-time / end-time qualifier the KB records on the relation's statement.
+    The endpoint predicates are: employment_started / employment_ended (for \
+employed_by, Rules 12/13), membership_started / membership_ended (for \
+member_of), role_started / role_ended (for holds_role), status_started / \
+status_ended (for status, Rule 14).
+    - 'Asa joined Google in 2020' → TWO claims: \
+employed_by(Asa, Google, valid_from='2020') + employment_started(Asa, '2020').
+    - 'Asa left Google in 2024' → \
+employed_by(Asa, Google, valid_until='2024') + employment_ended(Asa, '2024').
+    - 'Asa became a senator in 2011' → \
+holds_role(Asa, senator, valid_from='2011') + role_started(Asa, '2011').
+    - 'The partnership ended in 2019' → \
+status(The partnership, ended, valid_until='2019') + \
+status_ended(The partnership, '2019').
+    DO NOT apply Rule 25 when:
+    - No date/year is present. A bare 'Asa joined Google' → ONLY \
+employed_by(Asa, Google); emit NO employment_started endpoint claim (there \
+is no date to assert).
+    - Do NOT duplicate the date into BOTH the object slot AND a valid_from / \
+valid_until on the ENDPOINT claim. The endpoint claim's date is its OBJECT \
+(like Rule 23); leave the endpoint claim's valid_from / valid_until empty. \
+The base relation claim keeps the scope; the endpoint claim does not repeat it.
+    - The subject is an ORG with an inception/dissolution date — prefer the \
+Rule 23 founded_in_year / dissolved_in_year date predicates (the date is the \
+fact about the org itself), not status_started / status_ended.
 """
 
 
