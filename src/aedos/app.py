@@ -154,9 +154,15 @@ async def chat(request: ChatRequest) -> JSONResponse:
             for a in response.intervention_plan.per_claim_actions
         ],
         "verification_id": response.verification_id,
-        # WS5 observability (additive): a per-claim inspectable view —
-        # verdict, conditional flag, contradicting value, provenance, and a
-        # human-readable trace. Existing keys are unchanged.
+        # WS5 observability (additive), LIGHTWEIGHT for the PUBLIC body
+        # (round-1 follow-up): per-claim verdict / base verdict / conditional
+        # flag / abstention reason / contradicting value / human-readable
+        # trace. It deliberately OMITS the raw `provenance` term and the full
+        # `trace` JSON — both embed internal substrate row ids
+        # (tier_u_row_id / entity_resolution_cache_row_id / subsumption_row_id)
+        # that are not part of the public contract. A caller needing the full
+        # audit detail dereferences `verification_id` against
+        # GET /verification/{id}, which returns the verbose surface.
         "observability": claim_observability(response.verification_result),
     })
 
@@ -173,7 +179,10 @@ async def get_verification(verification_id: str) -> JSONResponse:
         "verification_id": verification_id,
         "per_claim_verdicts": vr.per_claim_verdicts,
         "aggregate_metadata": vr.aggregate_metadata,
-        # WS5 observability (additive): the deeper per-claim inspection
-        # surface — full trace + provenance + corrected value per claim.
-        "claims": claim_observability(vr),
+        # WS5 observability (additive), VERBOSE for the rich AUDIT endpoint
+        # (round-1 follow-up): the deeper per-claim inspection surface — full
+        # trace + provenance (incl. the (table,row_id) retraction footprint) +
+        # corrected value per claim. Internal row ids are intentionally kept
+        # here; this is the operator's audit view, not the public /chat body.
+        "claims": claim_observability(vr, verbose=True),
     })

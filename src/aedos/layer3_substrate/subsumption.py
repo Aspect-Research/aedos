@@ -92,10 +92,13 @@ class SubsumptionOracle:
         self._llm = llm_client
         self._kb = kb_protocol
         self._consistency = consistency_checker
-        # v0.16 WS3 §3D: bounded nogood cache passed through to the KB-mediated
-        # transitive checks (build_pipeline wires it). Defaults None — the
-        # Priority-1 KB branch then calls verify_transitive_path with no cache,
-        # exactly as before.
+        # v0.16 WS3 §3D: bounded nogood cache (build_pipeline wires it; defaults
+        # None). DORMANT-MECHANISM NOTE (round-1 follow-up): this stored
+        # `self._exception_cache` is RESERVED for the deferred symmetric-
+        # subsumption nogood routing (spec 03 §405) and is NOT YET READ here —
+        # the Priority-1 KB branch's transitive-path nogood caching is done
+        # inside the adapter's verify_transitive_path, which holds its own cache
+        # reference. Kept on the oracle for that future consumer.
         self._exception_cache = exception_cache
 
     def consult(

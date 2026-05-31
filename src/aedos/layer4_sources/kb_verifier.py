@@ -247,7 +247,17 @@ class KBVerifier:
         (WS3) for a cached "this binding does not hold for this subject". Until
         WS3 lands the cache this is a guarded no-op: an absent cache, or a cache
         without a `vetoes` predicate, never vetoes. Fails open (any error →
-        not vetoed) — a flaky cache must never suppress a sound verdict."""
+        not vetoed) — a flaky cache must never suppress a sound verdict.
+
+        DORMANT-MECHANISM NOTE (round-1 follow-up): this binding-NOGOOD gate is
+        DORMANT in v0.16. It only fires on a cached nogood of exception_kind
+        'subsumption' (SubstrateExceptionCache.vetoes queries that kind), and NO
+        production path writes one: the sole production record_nogood writer is
+        the adapter's verify_transitive_path (kb_wikidata.py), which writes the
+        default kind 'transitive_path'. The operator forbade hand-seeded guards,
+        so nothing eagerly seeds a 'subsumption' nogood for bindings. The gate
+        therefore never suppresses a sound verdict (fails open). Eager
+        NOGOOD-for-bindings writing is deferred to a future round."""
         cache = self._exception_cache
         if cache is None:
             return False

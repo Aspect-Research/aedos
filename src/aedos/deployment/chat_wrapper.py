@@ -254,19 +254,38 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
-def claim_observability(vr: VerificationResult) -> list[dict]:
-    """WS5: structured, inspectable per-claim view — verdict, base verdict,
-    the conditional flag, abstention reason, the contradicting value,
-    provenance, a JSON trace, a human-readable trace rendering, and the
-    bindings/paths tried. Surfaced additively on /chat (an `observability`
-    key) and /verification/{id} (a `claims` list) per the operator's
-    observability requirement."""
+def claim_observability(vr: VerificationResult, verbose: bool = False) -> list[dict]:
+    """WS5: structured, inspectable per-claim view.
+
+    Two surfaces, two depths (round-1 observability follow-up). The
+    `verbose` flag selects between them:
+
+    - verbose=False (LIGHTWEIGHT, for the PUBLIC POST /chat body): the
+      verdict-level fields a caller needs to render the turn — verdict,
+      base verdict, conditional flag, abstention reason, the
+      contradicting value, and a human-readable trace string — but NOT
+      the raw `provenance` term and NOT the full `trace` JSON. Both of
+      those carry internal substrate identifiers (the trace edge metadata
+      embeds tier_u_row_id / entity_resolution_cache_row_id /
+      subsumption_row_id, and the provenance literals carry table+row_id
+      pairs). Internal DB row ids are not part of the public contract; a
+      `/chat` consumer that wants the full audit detail dereferences
+      `verification_id` against GET /verification/{id}.
+    - verbose=True (FULL, for the rich AUDIT endpoint GET
+      /verification/{id}): everything, including `trace` (full
+      trace_to_json with edge metadata) and `provenance` (the AND/OR
+      term with its (table,row_id) literals) so the operator keeps the
+      complete retraction-footprint view.
+
+    `trace_human` is emitted on BOTH surfaces: it is row-id-free (see
+    trace_to_human in trace.py — provenance renders as source+status+
+    assertion-marker only), so it is safe in the public body.
+    """
     from ..layer5_result.trace import trace_to_json, trace_to_human
     out: list[dict] = []
     for cv in vr.claim_verdicts:
         trace = vr.per_claim_traces.get(cv.claim_id)
-        trace_json = trace_to_json(trace) if trace else None
-        out.append({
+        entry = {
             "claim_id": cv.claim_id,
             "subject": cv.claim.subject,
             "predicate": cv.claim.predicate,
@@ -278,10 +297,19 @@ def claim_observability(vr: VerificationResult) -> list[dict]:
             "abstention_reason": cv.abstention_reason,
             "contradicting_value": cv.contradicting_value,
             "contradicting_value_type": cv.contradicting_value_type,
-            "provenance": trace_json.get("provenance") if trace_json else None,
-            "trace": trace_json,
-            "trace_human": trace_to_human(trace, claim=cv.claim, verdict=cv.verdict) if trace else None,
-        })
+            "trace_human": (
+                trace_to_human(trace, claim=cv.claim, verdict=cv.verdict)
+                if trace else None
+            ),
+        }
+        if verbose:
+            # FULL audit surface only: the row-id-bearing trace + provenance.
+            trace_json = trace_to_json(trace) if trace else None
+            entry["provenance"] = (
+                trace_json.get("provenance") if trace_json else None
+            )
+            entry["trace"] = trace_json
+        out.append(entry)
     return out
 
 

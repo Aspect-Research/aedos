@@ -90,6 +90,16 @@ class Interval:
     end: Optional[str] = None
     start_known: bool = False
     end_known: bool = False
+    # Round-1 robustness follow-up (WS6, defense-in-depth): True iff this
+    # interval was built from a UNIQUELY-identified base statement (a single
+    # candidate, or a single preferred-ranked statement), rather than from an
+    # arbitrary collapse of ALL the subject's statements. Only a unique interval
+    # may license a *_started/_ended CONTRADICTED verdict — collapsing several
+    # statements that merely happen to AGREE on a start must never contradict an
+    # asserted endpoint (a future single_valued endpoint binding could otherwise
+    # false-contradict). Forward-defensive: all 8 endpoint seeds are
+    # single_valued=0 today, so no contradiction path is reachable yet.
+    unique: bool = False
 
 
 class BudgetExceeded(Exception):
@@ -1142,41 +1152,26 @@ class Walker:
         except Exception:
             return None
 
-        # Resolve the claim's org/object (the entity the base statement values
-        # against) so we can pick the matching statement. The org lives in the
-        # claim's OBJECT slot for a plain `<relation>_started(subject, year)`
-        # claim only carries the DATE — so the org is usually absent. When the
-        # claim carries no org we fall back to a unique-statement interval (a
-        # single base statement is unambiguous); with several we require either
-        # an org match or a preferred statement, else abstain.
-        org_qid: Optional[str] = None
-        org_ref = getattr(claim, "object_org", None)  # reserved; usually None
-        if isinstance(org_ref, str) and org_ref:
-            try:
-                org_ctx = LocalContext(
-                    predicate=claim.predicate,
-                    slot_position="object",
-                    asserting_party=claim.asserting_party,
-                    source_text=context.source_text,
-                    claim_subject=claim.subject,
-                    claim_predicate=claim.predicate,
-                    claim_object=claim.object,
-                    claim_id=claim.claim_id,
-                )
-                org_qid = resolver.select(
-                    resolver.resolve(org_ref, org_ctx), org_ctx
-                )
-            except Exception:
-                org_qid = None
-
-        # Candidate statements: those whose value matches the org (when an org
-        # resolved), else all statements.
-        if org_qid is not None:
-            candidates = [s for s in statements if str(s.value) == org_qid]
-        else:
-            candidates = list(statements)
-
-        kb_interval = self._interval_from_statements(candidates)
+        # An endpoint claim (`<relation>_started/_ended(subject, year)`) carries
+        # only the DATE in its object slot — it never carries the org/value the
+        # base statement points at (Claim has no `object_org` field). So there is
+        # nothing to narrow the candidate set by: the interval is built from the
+        # subject's full set of base statements, and _interval_from_statements
+        # itself grounds against the UNIQUE-or-agreeing-start interval (a single
+        # candidate, or a preferred-unique, or agreeing starts; conflicting
+        # starts with no preferred discriminator -> abstain). The prior
+        # org-narrowing branch read getattr(claim, 'object_org', None), which was
+        # always None, so it was dead code (round-1 robustness follow-up: removed).
+        kb_interval = self._interval_from_statements(statements)
+        # DORMANT-MECHANISM NOTE (round-1 follow-up) — status_started/status_ended
+        # (kb_property P571 inception / P576 dissolution): the KB arm here is
+        # intentionally INERT for these two. _interval_from_statements reads the
+        # P580/P582 *qualifiers* off the base statement, but for P571/P576 the
+        # date is the statement VALUE itself, not a P580/P582 qualifier, so this
+        # call yields no start/end for them. That is by design: status endpoints
+        # ground via Tier U (below) or via the founded_in_year (P571) /
+        # dissolved_in_year (P576) date-in-object predicates on the normal KB
+        # path — NOT through this qualifier-gathering arm.
 
         # ALSO gather Tier U endpoint rows for the same predicate (the
         # *_started/_ended Tier U fact participates alongside the KB qualifier).
@@ -1224,6 +1219,13 @@ class Walker:
         else:
             chosen = statements
 
+        # Round-1 robustness follow-up (WS6, defense-in-depth): the interval is
+        # UNIQUELY identified iff it rests on a single base statement OR a single
+        # preferred-ranked one. An interval built by collapsing several
+        # statements that merely AGREE on a start is NOT unique — it must not
+        # license a *_started/_ended contradiction (see _verify_interval_endpoint).
+        unique = len(statements) == 1 or len(preferred) == 1
+
         starts = {
             self._iso_or_none(s.qualifiers.get("P580"))
             for s in chosen
@@ -1260,6 +1262,7 @@ class Walker:
             end=end,
             start_known=start is not None,
             end_known=end_known,
+            unique=unique,
         )
 
     @staticmethod
@@ -1289,9 +1292,20 @@ class Walker:
         rows = getattr(result, "rows", None) or []
         if not rows:
             return None
-        date = self._iso_or_none(rows[0].get("object"))
-        if date is None:
+        # Round-1 robustness follow-up (WS6): mirror the KB conflicting-start
+        # abstention (_interval_from_statements). Instead of trusting an
+        # arbitrary rows[0], collect the DISTINCT normalized endpoint dates
+        # across ALL rows; if more than one distinct non-None date is present
+        # the Tier U facts disagree on this endpoint — abstain (None) rather
+        # than pick a row by accident. Symmetric with the KB path; removes the
+        # arbitrary-row dependence.
+        dates = {self._iso_or_none(r.get("object")) for r in rows}
+        dates.discard(None)
+        if len(dates) != 1:
+            # Zero distinct dates (all None) -> nothing to ground; more than one
+            # -> conflicting Tier U endpoints. Either way, abstain.
             return None
+        date = next(iter(dates))
         if claim.predicate.endswith("_started"):
             return Interval(start=date, start_known=True)
         if claim.predicate.endswith("_ended"):
@@ -1301,6 +1315,12 @@ class Walker:
     def _interval_holds_at(self, interval: Interval, T: str) -> str:
         """Three-valued holds-at-T table (spec §B.2). Lexical ISO compare —
         valid for zero-padded YYYY-MM-DD / YYYY strings.
+
+        DORMANT-MECHANISM NOTE (round-1 follow-up): this is a forward-looking
+        primitive (covered by unit tests) NOT yet consumed by any verdict path
+        — the holds-at-T base-relation-scope consumer is deferred. Endpoint
+        grounding today uses _verify_interval_endpoint's year-aware equality
+        compare, not this holds-at scoping. Kept inert/tested for that future.
 
         Returns 'true' | 'false' | 'unknown'.
 
@@ -1428,6 +1448,17 @@ class Walker:
         # date value-type that satisfies the value-type gate may contradict;
         # else abstain (§3.2 — multi-valued endpoints just hold other values).
         if not meta.single_valued:
+            return None
+        # Round-1 robustness follow-up (WS6, defense-in-depth): a CONTRADICTED
+        # endpoint verdict is licensed ONLY when the interval was built from a
+        # UNIQUELY-identified statement (single candidate / preferred-unique),
+        # never from an arbitrary collapse of all the subject's statements that
+        # merely happened to agree on a start. Otherwise a future single_valued
+        # endpoint binding could false-contradict against a value that is just
+        # one of several the KB holds. Abstain when the interval is non-unique.
+        # (All 8 endpoint seeds are single_valued=0 today, so this branch is
+        # unreachable now — it is forward-defensive.)
+        if not interval.unique:
             return None
         # Value-type gate: the KB endpoint must normalize to a date for a
         # `time` object_type predicate to contradict (mirrors kb_verifier's

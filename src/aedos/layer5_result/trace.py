@@ -186,11 +186,17 @@ def trace_to_human(
         lines.append("  " + " ".join(parts))
     prov = getattr(trace, "provenance", None)
     if prov is not None and prov.literals():
+        # Round-1 observability follow-up: the human string is rendered for the
+        # PUBLIC /chat body too, so it must stay free of internal substrate
+        # identifiers. Render each literal as source + status + assertion-marker
+        # only — the (table,row_id) pair is NOT human-meaningful and lives only
+        # on the verbose audit surface (trace_to_json's provenance term, via
+        # GET /verification/{id}).
         prov_parts = []
         for lit in prov.literals():
             seg = lit.source
-            if lit.table is not None and lit.row_id is not None:
-                seg += f"({lit.table}#{lit.row_id})"
+            if lit.status:
+                seg += f"[{lit.status}]"
             if lit.assertion:
                 seg += "[assertion]"
             prov_parts.append(seg)

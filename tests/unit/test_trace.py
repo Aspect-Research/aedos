@@ -201,7 +201,13 @@ class TestTraceToHuman:
         # and the provenance line marks the assertion literal.
         assert "chain includes an unverified user assertion" in text
         assert "Provenance" in text
-        assert "tier_u(tier_u#7)[assertion]" in text
+        # Round-1 observability follow-up: trace_human is now rendered on the
+        # PUBLIC /chat body, so the provenance render is ROW-ID-FREE — source +
+        # [status] + [assertion] marker only, never the (table#row_id) pair.
+        assert "tier_u[asserted_unverified][assertion]" in text
+        # The internal row id must not leak into the human string.
+        assert "tier_u#7" not in text
+        assert "#7" not in text
 
     def test_tolerates_minimal_trace(self):
         # A bare trace (no edges, empty root content, no verdict) renders
