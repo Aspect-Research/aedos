@@ -587,6 +587,183 @@ class Walker:
             ))
         )
 
+    def _record_python_premise_term(self, trace, premise_literals, *, assertion):
+        """v0.16.1 WS3b (gate 3): record the premise -> Python derivation as a
+        single AND-alternative on the provenance term. The python computation
+        and EVERY fetched premise row are conjoined (`op='and'`) — a verdict
+        derived this way holds only if the python literal AND all premise rows
+        survive, so the composed verdict's retraction footprint is the union of
+        all premise rows. The python literal carries `assertion=assertion`
+        (gate a): when any premise rests on an asserted_unverified row the whole
+        derivation is assertion-conditional, so the DERIVED
+        chain_includes_assertion fires and the walk's final verdict becomes
+        *_given_assertion. When there are no fetched premises (premise_literals
+        empty), this falls back to a plain python OR-literal — exactly the prior
+        behavior."""
+        from ..layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        python_lit = ProvenanceTerm.lit(ProvenanceLiteral(
+            source="python", assertion=assertion,
+        ))
+        if not premise_literals:
+            # No fetched premises -> the historical plain-python literal.
+            trace.provenance.add_alternative(python_lit)
+            return
+        and_children = [python_lit]
+        for lit in premise_literals:
+            and_children.append(ProvenanceTerm.lit(lit))
+        trace.provenance.add_alternative(
+            ProvenanceTerm(op="and", children=and_children)
+        )
+
+    def _gather_python_premises(
+        self, claim: Claim, context: VerificationContext
+    ) -> Optional[tuple[dict, list, bool]]:
+        """v0.16.1 WS3b: gather a BOUNDED, GROUNDED premise dict for a
+        routing_hint='python' comparison predicate, driven by the predicate's
+        `premise_properties` metadata (slot -> KB property). Returns:
+
+          * ([], [], False) when the predicate declares NO premise_properties
+            (the common case) — behave EXACTLY as today (no fetch).
+          * (premises, literals, assertion) on success: `premises` is the dict
+            threaded into PythonVerifier.verify (keyed by slot name, each
+            {'value', 'source', 'kb_property'}); `literals` are the
+            ProvenanceLiteral rows for the AND-term; `assertion` is True iff any
+            premise rests on an asserted_unverified Tier-U row.
+          * None (gate b — FAIL CLOSED) when a DECLARED premise slot could not
+            be resolved to a Q-id or its KB property had no usable value. The
+            caller abstains; the verifier is NOT invoked with a fabricated input.
+
+        WHICH property to fetch comes ONLY from `meta.premise_properties` (the
+        oracle/seed) — there is NO hardcoded predicate->property table in Python.
+        The fetch reuses the same resolver + lookup_statements path as
+        _verify_kb_quantitative / _gather_interval (KB premises are externally
+        grounded -> assertion=False). Bounded to the two entity slots the
+        metadata may name (subject / object)."""
+        from ..layer5_result.trace import ProvenanceLiteral
+
+        try:
+            meta = self._substrate.predicate_translation.consult(claim.predicate)
+        except Exception:
+            # Cannot read metadata -> behave as today (no premise fetch). A
+            # consult miss must not block the plain (premise-less) python path.
+            return ({}, [], False)
+
+        premise_map = getattr(meta, "premise_properties", None)
+        if not premise_map or not isinstance(premise_map, dict):
+            # No declared premises -> exact prior behavior (no fetch).
+            return ({}, [], False)
+
+        # The resolver path is required to fetch a premise; if it is unwired we
+        # cannot ground a DECLARED premise -> fail closed.
+        if (
+            self._kb_verifier is None
+            or not hasattr(self._kb_verifier, "_resolver")
+            or self._kb is None
+        ):
+            return None
+        resolver = self._kb_verifier._resolver
+
+        slot_values = {"subject": claim.subject, "object": claim.object}
+        premises: dict = {}
+        literals: list = []
+        assertion = False
+
+        for slot, kb_property in premise_map.items():
+            if slot not in slot_values or not kb_property:
+                # The metadata named a slot we cannot bind (e.g. a literal slot
+                # the oracle should have omitted). Skip it — only entity slots
+                # carry fetchable premises; a literal operand stays in the
+                # claim's own slot text the generated code already sees.
+                continue
+            slot_surface = slot_values[slot]
+            if not slot_surface:
+                # A declared entity slot is empty -> cannot ground -> fail closed.
+                return None
+
+            lookup_ctx = LocalContext(
+                predicate=claim.predicate,
+                slot_position=slot,
+                asserting_party=claim.asserting_party,
+                source_text=context.source_text,
+                claim_subject=claim.subject,
+                claim_predicate=claim.predicate,
+                claim_object=claim.object,
+                claim_id=claim.claim_id,
+            )
+            try:
+                resolved = resolver.select(
+                    resolver.resolve(slot_surface, lookup_ctx), lookup_ctx
+                )
+            except Exception:
+                return None
+            if resolved is None:
+                # Gate b: a declared premise slot did not resolve -> abstain.
+                return None
+
+            try:
+                statements = self._kb.lookup_statements(resolved, kb_property)
+            except Exception:
+                return None
+            value = self._premise_value_from_statements(statements)
+            if value is None:
+                # Gate b: the KB carries no usable value for the declared
+                # premise property -> abstain (no fabricated input).
+                return None
+
+            premises[slot] = {
+                "value": value,
+                "source": "kb",
+                "kb_property": kb_property,
+                "entity": resolved,
+            }
+            # KB premises are externally grounded (assertion=False). The
+            # row_id is None (live KB statement, no cached substrate row), but
+            # the literal still participates in the AND-term footprint.
+            literals.append(ProvenanceLiteral(
+                source="kb", table=None, row_id=None,
+                status=None, assertion=False,
+            ))
+
+        if not premises:
+            # premise_properties named only slots we could not bind (all
+            # literal) -> no fetch needed; behave as the plain python path.
+            return ({}, [], False)
+        return (premises, literals, assertion)
+
+    @staticmethod
+    def _premise_value_from_statements(statements: list) -> Optional[str]:
+        """Pick a single usable premise value from KB statements, or None.
+
+        Prefers a `preferred`-ranked statement; else, when all non-deprecated
+        values agree, returns that value; conflicting values with no preferred
+        discriminator -> None (fail-closed, never pick arbitrarily). Date values
+        are normalized to their 4-digit year via _normalize_date_value so the
+        generated comparison code receives a clean comparable token; non-date
+        values pass through as their string form."""
+        if not statements:
+            return None
+        preferred = None
+        seen: set[str] = set()
+        for stmt in statements:
+            if getattr(stmt, "rank", "normal") == "deprecated":
+                continue
+            raw = stmt.value
+            if raw is None:
+                continue
+            year = _normalize_date_value(str(raw))
+            token = year if year is not None else str(raw).strip()
+            if not token:
+                continue
+            if getattr(stmt, "rank", "normal") == "preferred" and preferred is None:
+                preferred = token
+            seen.add(token)
+        if preferred is not None:
+            return preferred
+        if len(seen) == 1:
+            return next(iter(seen))
+        # Zero usable values or conflicting values with no preferred -> abstain.
+        return None
+
     def _direct_lookup(
         self, node: Claim, context: VerificationContext, trace: JustificationTrace
     ) -> tuple[Optional[str], str, int]:
@@ -1014,7 +1191,33 @@ class Walker:
             self._python_verifier is not None
             and self._predicate_routing(node.predicate) == "python"
         ):
-            py_result = self._python_verifier.verify(node)
+            # v0.16.1 WS3b: premise -> Python channel. When the predicate's
+            # metadata declares `premise_properties` (slot -> KB property), the
+            # walker resolves the named entity slots and fetches those facts as
+            # PREMISES the generated code computes over (e.g. born_before needs
+            # both people's P569 birth years). `_gather_python_premises` is
+            # FAIL-CLOSED: it returns None to signal "a declared premise could
+            # not be grounded" (gate b — abstain, never fabricate). It returns
+            # a (premises, literals, assertion) triple otherwise; an empty
+            # premises dict (no premise_properties declared) reproduces today's
+            # behavior exactly. `assertion` is True iff ANY premise rests on an
+            # asserted_unverified Tier-U row (gate a — forces the chain-flag).
+            gathered = self._gather_python_premises(node, context)
+            if gathered is None:
+                # Gate b: a declared premise was unresolvable/ungrounded ->
+                # abstain on this path. Fall through (no terminal verdict here).
+                return None, "", 0, {}
+            premises, premise_literals, premise_assertion = gathered
+
+            # Back-compat: when there are NO fetched premises (the common case —
+            # the predicate declared no premise_properties), call verify(node)
+            # with the exact prior 1-arg shape so existing verifiers/mocks that
+            # do not yet accept the optional `premises` kwarg keep working. Only
+            # the genuinely premise-bearing comparison path uses the new kwarg.
+            if premises:
+                py_result = self._python_verifier.verify(node, premises=premises)
+            else:
+                py_result = self._python_verifier.verify(node)
             if py_result.verdict != "no_terminal_result":
                 trace.source_breakdown["python"] = trace.source_breakdown.get("python", 0) + 1
                 trace.edges.append(TraceEdge(
@@ -1024,13 +1227,30 @@ class Walker:
                         "code": getattr(py_result, "generated_code", ""),
                         "output": str(getattr(py_result, "output", "")),
                     }),
-                    metadata={"source": "python", "verdict": py_result.verdict},
+                    metadata={
+                        "source": "python",
+                        "verdict": py_result.verdict,
+                        # Observability: which premises fed the computation.
+                        "premise_count": len(premise_literals),
+                        "premise_includes_assertion": premise_assertion,
+                    },
                 ))
-                self._record_premise(trace, source="python", assertion=False)
+                # Gate 3 (provenance AND-term): the Python verdict rests on the
+                # CONJUNCTION of the python computation AND every fetched premise
+                # row. Record them as ONE and-alternative so the composed
+                # verdict's retraction footprint includes every premise row.
+                # Gate a: if any premise literal is assertion-conditional, the
+                # python literal carries assertion=True too, so the derived
+                # chain_includes_assertion fires and the final verdict becomes
+                # *_given_assertion (never a laundered plain verify/contradict).
+                self._record_python_premise_term(
+                    trace, premise_literals, assertion=premise_assertion
+                )
                 grounding = {
                     "source": "python",
                     "output": str(getattr(py_result, "output", "")),
                     "verdict": py_result.verdict,
+                    "premise_count": len(premise_literals),
                 }
                 return py_result.verdict, "python", 0, grounding
 

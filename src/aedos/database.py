@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     subject_entity_types TEXT,
     object_entity_types TEXT,
     bindings TEXT,
+    premise_properties TEXT,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
@@ -231,6 +232,15 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     # ALTER pattern as the entity-types columns; additive and non-destructive.
     try:
         conn.execute("ALTER TABLE predicate_translation ADD COLUMN bindings TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    # v0.16.1 WS3b: predicate_translation.premise_properties — JSON map from an
+    # Aedos slot name to the KB property whose value is a premise for a
+    # routing_hint='python' comparison predicate (the premise -> Python channel).
+    # NULL preserves prior behavior (no premise fetch). Additive/non-destructive,
+    # same idempotent ALTER pattern.
+    try:
+        conn.execute("ALTER TABLE predicate_translation ADD COLUMN premise_properties TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
 

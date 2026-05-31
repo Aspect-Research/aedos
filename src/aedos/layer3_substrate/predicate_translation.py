@@ -70,6 +70,25 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
                 "type": ["object", "null"],
                 "description": "JSON mapping Aedos slot names to KB qualifier P-numbers.",
             },
+            "premise_properties": {
+                "type": ["object", "null"],
+                "description": (
+                    "v0.16.1 (premise -> Python channel): for a routing_hint='python' "
+                    "COMPARISON predicate that must compute over a FETCHED fact about "
+                    "an entity slot (not the literal slot text), a JSON mapping of the "
+                    "Aedos slot name to the KB property whose value is the premise. "
+                    "Example: 'born_before(X, Y)' compares X's and Y's birth dates, so "
+                    "premise_properties={\"subject\": \"P569\", \"object\": \"P569\"}; "
+                    "'founded_before(X, 1800)' fetches only the subject's inception, so "
+                    "premise_properties={\"subject\": \"P571\"} (the object is a literal "
+                    "year, no fetch). The walker resolves each named slot to a Q-id, "
+                    "fetches that property's value, and passes it to the generated "
+                    "verify() as a premise. Set ONLY for python comparison predicates "
+                    "that genuinely need a fetched fact; null/omit otherwise (the "
+                    "default — the Python tier then sees only the claim's three slots, "
+                    "exactly as before)."
+                ),
+            },
             "single_valued": {
                 "type": "integer",
                 "enum": [0, 1],
@@ -148,6 +167,19 @@ routing_hint — pick the SINGLE most-applicable verification source:
                 is_anagram_of, lies_in_range
       signal: the verdict is a mathematical or logical computation, not a
               fact-lookup.
+      premise_properties (python comparison predicates only): when the
+              computation is over a FETCHED FACT about an entity slot rather
+              than the slot's literal text — "X born before Y" compares the two
+              people's birth dates; "X founded before 1800" compares the org's
+              inception year to a literal — set premise_properties to a JSON map
+              from the entity slot name to the KB property whose value is the
+              premise. born_before / older_than → {"subject":"P569",
+              "object":"P569"} (both birth dates, P569); founded_before /
+              inception_precedes → {"subject":"P571"} when the object is a
+              literal year (no fetch for a literal slot). Leave it null for pure
+              arithmetic/string predicates whose operands are already the literal
+              slots ("10 squared is 100", "len('aedos') is 5") — those need no
+              fetch.
 
   kb_resolvable — maps to a structured Wikidata property and refers to a
     publicly-known fact about a real-world entity.
@@ -353,6 +385,16 @@ class PredicateMetadata:
     # oracle's cold-start generation.
     subject_entity_types: Optional[list[str]] = None
     object_entity_types: Optional[list[str]] = None
+    # v0.16.1 WS3b (premise -> Python channel): for a routing_hint='python'
+    # COMPARISON predicate that computes over a FETCHED fact, a JSON map from an
+    # Aedos slot name ('subject' / 'object') to the KB property whose value is
+    # the premise (e.g. {"subject": "P569", "object": "P569"} for born_before).
+    # The walker resolves each named slot to a Q-id, fetches that property, and
+    # threads the value into the generated verify(...) as a premise. None (the
+    # default) means NO premise fetch — the Python tier sees only the claim's
+    # three slots, exactly as before. Knowledge of WHICH property to fetch lives
+    # HERE (oracle/seed), never in a Python predicate->property table.
+    premise_properties: Optional[dict] = None
     # v0.16 WS1: the authoritative multi-property binding list. Evidence
     # arbitrates across these at verify time. The scalar fields above are
     # RETAINED as real dataclass fields (every existing meta.kb_property
@@ -605,13 +647,14 @@ class PredicateTranslation:
 
         # INSERT OR REPLACE handles the case where a retracted row exists for the same
         # (predicate, namespace) key — SQLite deletes the old row and inserts the new one.
+        premise_properties_raw = raw.get("premise_properties") or None
         self._db.execute(
             """INSERT OR REPLACE INTO predicate_translation
                (aedos_predicate, object_type, user_subject_required, distinct_slots,
                 routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                 single_valued, subject_entity_types, object_entity_types,
-                reason, created_at, bindings)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                reason, created_at, bindings, premise_properties)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 aedos_predicate,
                 raw["object_type"],
@@ -627,6 +670,7 @@ class PredicateTranslation:
                 raw["reason"],
                 now,
                 bindings_json,
+                json.dumps(premise_properties_raw) if premise_properties_raw else None,
             ),
         )
         self._db.commit()
@@ -666,6 +710,7 @@ class PredicateTranslation:
             single_valued=bool(single_valued),
             subject_entity_types=subject_types_raw if subject_types_raw else None,
             object_entity_types=object_types_raw if object_types_raw else None,
+            premise_properties=premise_properties_raw,
             bindings=bindings,
         )
 
@@ -900,6 +945,12 @@ class PredicateTranslation:
             object_types = _parse_json(row["object_entity_types"])
         except (IndexError, KeyError):
             object_types = None
+        # v0.16.1 WS3b: premise_properties is a later column addition — absent
+        # from older DBs (IndexError/KeyError) or NULL on rows without premises.
+        try:
+            premise_properties = _parse_json(row["premise_properties"])
+        except (IndexError, KeyError):
+            premise_properties = None
 
         # v0.16 WS1: the bindings JSON column is an M1 addition and may be
         # absent from older DBs (IndexError/KeyError) or NULL on legacy rows.
@@ -948,5 +999,6 @@ class PredicateTranslation:
             single_valued=bool(row["single_valued"]),
             subject_entity_types=subject_types,
             object_entity_types=object_types,
+            premise_properties=premise_properties,
             bindings=bindings,
         )

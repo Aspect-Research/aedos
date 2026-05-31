@@ -260,18 +260,20 @@ class TestSeedAliasDeletions:
             f"{sorted(missing)}"
         )
 
-    def test_seed_count_is_71_after_deletions_t1_and_ws2_additions(self, seeds):
+    def test_seed_count_is_73_after_deletions_t1_ws2_and_ws3b_additions(self, seeds):
         # 83 pre-v0.16 rows minus 21 deleted aliases = 62, plus the 8 v0.16 WS6
         # T1 interval-endpoint rows (employment/membership/role/status
         # _started/_ended) = 70, plus the 1 v0.16.1 WS2 `instance_of` copula row
         # (the predicate the extractor actually emits; carries the P106
-        # occupation candidate binding) = 71. A hard count guards against an
+        # occupation candidate binding) = 71, plus the 2 v0.16.1 WS3b
+        # premise->Python comparison rows (born_before, founded_before; each
+        # carries `premise_properties`) = 73. A hard count guards against an
         # accidental re-add of an alias, a silent drop of a canonical row, or a
         # dropped endpoint row.
-        assert len(seeds) == 71, (
-            f"expected 71 seed rows (62 after the 21 alias deletions + 8 T1 "
-            f"interval-endpoint rows + 1 WS2 instance_of copula row), got "
-            f"{len(seeds)}"
+        assert len(seeds) == 73, (
+            f"expected 73 seed rows (62 after the 21 alias deletions + 8 T1 "
+            f"interval-endpoint rows + 1 WS2 instance_of copula row + 2 WS3b "
+            f"premise->Python rows), got {len(seeds)}"
         )
 
     def test_every_kb_resolvable_row_synthesizes_a_binding(self, seeds):
@@ -431,7 +433,7 @@ class TestSeedT1IntervalEndpoints:
         db_file = tmp_path / "t1.db"
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
-        assert n == 71
+        assert n == 73  # +2 v0.16.1 WS3b premise->Python rows (born_before, founded_before)
         conn.row_factory = __import__("sqlite3").Row
         rows = conn.execute(
             "SELECT aedos_predicate, object_type, routing_hint, kb_property "
@@ -480,7 +482,7 @@ class TestSeedDateToTimeReconciliation:
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
         conn.close()
-        assert n == 71
+        assert n == 73  # +2 v0.16.1 WS3b premise->Python rows
 
 
 # ---------------------------------------------------------------------------
