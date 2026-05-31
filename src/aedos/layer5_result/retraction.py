@@ -30,7 +30,7 @@ class RetractionPropagator:
     The index is in-memory, populated within a process by record_verdict_trace()
     during aggregation. replay() rehydrates it from persisted `verdict_recorded`
     audit events at process startup, so retraction propagation survives process
-    restarts (D6 — architecture 7.3, over-time soundness).
+    restarts (architecture 7.3, over-time soundness).
 
     v0.16 WS3 §3E: propagate_retraction is now CONSUMED — its return is
     load-bearing, and it marks dependent *_given_assertion verdicts STALE
@@ -55,7 +55,7 @@ class RetractionPropagator:
 
     def replay(self) -> int:
         """Rehydrate the trace index from persisted `verdict_recorded` audit
-        events (D6 — over-time soundness across process restarts).
+        events (over-time soundness across process restarts).
 
         The aggregator logs one `verdict_recorded` event per verdict, carrying
         its `source_rows`. A fresh process starts with an empty in-memory index;

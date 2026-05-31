@@ -1,4 +1,4 @@
-"""Audit log writes and queries for Aedos v0.15."""
+"""Audit log writes and queries for Aedos."""
 
 from __future__ import annotations
 

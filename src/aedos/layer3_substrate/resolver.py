@@ -30,7 +30,7 @@ class EntityResolver:
         llm_client=None,
         wikipedia_normalizer=None,
     ) -> None:
-        """`wikipedia_normalizer` is the Phase H D47 normalizer. When
+        """`wikipedia_normalizer` is the Wikipedia normalizer. When
         provided, `resolve` invokes it on the reference before the cache
         lookup / KB call — bare ambiguous references are normalized to
         canonical Wikipedia article titles (when Wikipedia's redirect
@@ -49,7 +49,7 @@ class EntityResolver:
         self._last_cache_row_id: Optional[int] = None
 
     def last_cache_row_id(self) -> Optional[int]:
-        """WS3 D13: the entity_resolution_cache row id touched by the most
+        """WS3: the entity_resolution_cache row id touched by the most
         recent resolve() on this resolver. None when the last resolve did not
         hit/create a cache row (mock paths, normalizer Stage-C INSERT OR
         IGNORE that collided). Request-scoped; the KBVerifier reads it
@@ -59,18 +59,18 @@ class EntityResolver:
     def resolve(self, reference: str, local_context: LocalContext) -> list[ResolutionCandidate]:
         """Cache-first resolution. On miss, delegates to KB and writes cache.
 
-        Phase H D47: before the cache lookup, normalize the reference via
+        Before the cache lookup, normalize the reference via
         the Wikipedia normalizer when one is wired. The cache and KB
         lookups then key on the normalized form, so cross-utterance
         references that resolve to the same canonical entity dedupe
         through one cache row.
 
-        Phase H D53: the normalizer's Stage C may produce a `selected_qid`
+        The normalizer's Stage C may produce a `selected_qid`
         directly. When present, the resolver short-circuits with that
         Q-id (single ResolutionCandidate at score 1.0) and skips the
         KB.resolve_entity call. When absent, the existing label-based
-        fallback runs (KB.resolve_entity wraps wbsearchentities + D33
-        + SPARQL fallback as today).
+        fallback runs (KB.resolve_entity wraps wbsearchentities + type
+        filter + SPARQL fallback as today).
 
         Skipped when:
           - no normalizer is wired (None);
@@ -213,7 +213,7 @@ class EntityResolver:
         """Run the Wikipedia normalizer and return (normalized_form,
         selected_qid). `normalized_form` is the surface form when
         normalization is skipped or fails. `selected_qid` is a Wikidata
-        Q-id when the normalizer's Stage C produced one (D53), or None
+        Q-id when the normalizer's Stage C produced one, or None
         when it abstained, errored, or wasn't asked.
         """
         if self._normalizer is None or not reference:

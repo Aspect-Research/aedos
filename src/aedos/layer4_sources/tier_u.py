@@ -87,17 +87,17 @@ class TierU:
         self._propagator = retraction_propagator
 
     def _normalize_slot(self, value: str, claim: Claim, slot: str) -> str:
-        """Phase H D47: return the canonical Wikipedia form for a claim
+        """Return the canonical Wikipedia form for a claim
         slot. No-op when no normalizer is wired or the value is empty;
         also skipped for the asserting party itself (first-person
         canonicalization output) and synthetic event ids.
 
-        Phase H Cluster 3 step 8 (2026-05-26): always strip a leading
+        Always strip a leading
         definite/indefinite article from the value before normalization.
         "The project" and "project" refer to the same state-bearing
         subject; the corpus author's seed may use one form and the
         extractor's output may use another. Without article stripping
-        the literal Stage 1 lookup misses (der_revision_005 ceiling).
+        the literal Stage 1 lookup misses.
         The article strip happens BEFORE the Wikipedia normalizer
         consultation, so the normalizer sees the de-articled form. For
         proper-noun subjects (`The United States`, `The Beatles`) the
@@ -140,7 +140,7 @@ class TierU:
 
         Idempotent on matching content. A prior row is *closed* (its
         `valid_until` set to now) only when the new claim genuinely contradicts
-        it (D16) — one of:
+        it — one of:
 
           (a) same object, opposite polarity — a direct negation; closes the
               prior regardless of the predicate's cardinality;
@@ -153,10 +153,10 @@ class TierU:
         A different object at a different polarity (the contrastive-correction
         shape "X, not Y") is likewise compatible: the prior stays open.
 
-        Phase H Cluster 2 step 1: `status` is the new row's provenance flag
+        `status` is the new row's provenance flag
         — `asserted_unverified` (default; entered via the promotion path)
         or `externally_verified` (pre-seeded as established fact). The
-        §"KB wins" cross-source rule fires when a (D16) closure target
+        §"KB wins" cross-source rule fires when a closure target
         is `externally_verified`: the prior stays open, the new row is
         written with status `contradicted_by_externally_verified`, and
         `was_cross_source_contradicted` is set on the WriteResult so the
@@ -406,13 +406,13 @@ class TierU:
     ) -> LookupResult:
         """Three-stage lookup against Tier U rows.
 
-        Phase H Cluster 3 step 7 (2026-05-26): `exclude_row_ids` lets the
+        `exclude_row_ids` lets the
         caller filter out specific rows from the lookup — used by the
         walker to skip the row written by the current walk's own promotion,
         so the polarity-conflict / object-conflict belief-revision paths
         become reachable even when promote-then-walk would otherwise let
         the walker match its own freshly-written assertion at Stage 1.
-        Empty / None means no filtering (pre-step-7 behavior).
+        Empty / None means no filtering.
         """
         if current_time is None:
             current_time = _NOW()
@@ -452,15 +452,15 @@ class TierU:
 
         For a functional (single_valued) predicate such a row contradicts a
         positive claim — the asserting party already stipulated a different
-        value for the slot. This is the object-conflict half of belief revision
-        (D16); the caller (the walker) consults `single_valued` and decides.
+        value for the slot. This is the object-conflict half of belief revision;
+        the caller (the walker) consults `single_valued` and decides.
         Multi-valued predicates do not conflict on an object difference.
 
         Only positive (polarity=1) rows are returned: a negative Tier U row
         `¬(S P O′)` about a different object O′ does not bear on a claim about
         O. Literal match only — no entity/predicate broadening.
 
-        Phase H D47: subject + object are normalized to canonical Wikipedia
+        Subject + object are normalized to canonical Wikipedia
         form (when the normalizer is wired) before keying. A prior row
         asserting "Asa lives_in Boston" and a current claim "Asa lives_in
         Massachusetts" — wait, those are different canonicals; conflict
@@ -518,7 +518,7 @@ class TierU:
         `externally_verified`.
 
         Called by the walker when a successful KB / Python grounding for
-        a claim also matches an asserted_unverified Tier U row (Q-Upgrade).
+        a claim also matches an asserted_unverified Tier U row.
         The upgrade is idempotent: a row already at `externally_verified`
         is left unchanged and the call returns False. Rows at
         `contradicted_by_externally_verified` are NOT upgraded — that
@@ -528,7 +528,7 @@ class TierU:
         separate KB hit on the same row is incoherent and should not
         cancel the contradiction).
 
-        Audit-event detail (for v0.16 retraction propagation per D14).
+        Audit-event detail (for retraction propagation).
         The `tier_u_status_upgraded` event captures everything needed to
         reconstruct the upgrade decision without forensic walk-replay:
 
@@ -540,8 +540,8 @@ class TierU:
                                    that triggered the upgrade. Default
                                    is `'verified'` (the upgrade only
                                    fires when external grounding
-                                   succeeded — see Q-Upgrade). Captured
-                                   explicitly so v0.16 can confirm the
+                                   succeeded). Captured
+                                   explicitly to confirm the
                                    upgrade was contingent on a
                                    verified outcome.
           - `grounding_chain`    — caller-supplied structured dict
@@ -559,14 +559,14 @@ class TierU:
                                      mix:  {"source": "derivation",
                                             "chain": [<edges>]}
                                    The walker populates this in step 3.
-                                   v0.15 does NOT implement
+                                   This method does NOT implement
                                    reverse-upgrade propagation (a
                                    retracted KB row that triggered an
                                    upgrade does not auto-downgrade the
                                    tier_u row); the chain is captured
-                                   now so v0.16 D14 can implement that
-                                   propagation without archaeological
-                                   reconstruction.
+                                   now so that propagation can be
+                                   implemented later without
+                                   archaeological reconstruction.
           - `occurred_at`        — timestamp; auto-captured by
                                    `audit_log` schema (architecture
                                    §5.2's `occurred_at` column)
@@ -658,7 +658,7 @@ class TierU:
         return [dict(r) for r in rows]
 
     def _stage2(self, claim: Claim, current_time: str) -> LookupResult:
-        """Entity-resolution broadening — stub; not implemented until Phase 4."""
+        """Entity-resolution broadening — stub; not implemented."""
         return LookupResult(found=False)
 
     def _stage3(self, claim: Claim, current_time: str) -> LookupResult:
@@ -692,11 +692,11 @@ class TierU:
     ) -> list[dict]:
         """Return non-retracted, currently-valid rows matching all given fields.
 
-        Phase H Cluster 2 step 1: `contradicted_by_externally_verified`
+        `contradicted_by_externally_verified`
         rows are excluded — they record what the user said but cannot
         ground a verdict (the KB-wins decision is preserved).
 
-        Phase H Cluster 3 step 7 (2026-05-26): `exclude_row_ids` filters
+        `exclude_row_ids` filters
         specific row ids out — used by the walker to skip the current
         walk's own promoted row.
         """

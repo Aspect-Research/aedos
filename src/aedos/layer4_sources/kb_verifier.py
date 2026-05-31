@@ -106,12 +106,12 @@ class KBVerifier:
     ) -> KBVerdict:
         """Full KB verification: translate → map slots → resolve → lookup → compare.
 
-        Honors claim polarity (C1): a negated claim inverts the KB's positive-
+        Honors claim polarity: a negated claim inverts the KB's positive-
         content verdict. Resolves the value entity, not just the lookup
-        subject (M4), and only treats a value mismatch as a contradiction for
-        functional (single_valued) predicates (M4).
+        subject, and only treats a value mismatch as a contradiction for
+        functional (single_valued) predicates.
 
-        Honors the slot_to_qualifier lookup direction (D19). For a standard
+        Honors the slot_to_qualifier lookup direction. For a standard
         predicate the KB statement is keyed on the claim's subject; for an
         inverse predicate (capital_of on P36, mother_of on P25 — whose seed maps
         the Aedos subject to ``statement_value``) the statement is keyed on the
@@ -121,7 +121,7 @@ class KBVerifier:
         for the KB *statement* positions — ``entity`` is the statement subject,
         ``value_entity`` / ``value_resolved`` describe the statement value, and
         the abstention reasons are ``lookup_subject_unresolved`` /
-        ``value_unresolved`` (R2).
+        ``value_unresolved``.
         """
         if current_time is None:
             current_time = _NOW()
@@ -687,9 +687,8 @@ class KBVerifier:
         return KBVerdictType.NO_MATCH, None, reason
 
     def _location_disjoint(self, kb_value: str, expected_value: str) -> bool:
-        """Phase 10.5 Step 6 Batch 11 (Tier A1): True when KB confirms
-        the KB statement value is geographically disjoint from the
-        claim's expected value.
+        """True when KB confirms the KB statement value is geographically
+        disjoint from the claim's expected value.
 
         Two paths, both requiring positive KB evidence (a continent
         ancestor confirmed by subsumption):
@@ -752,7 +751,7 @@ class KBVerifier:
         return False
 
     def _subsumption_upgrades(self, kb_value: str, expected_value: str) -> bool:
-        """Phase 10.5 Step 5 root-cause helper: query the KB for whether the
+        """Query the KB for whether the
         KB statement value (specific) is subsumed by the claim's expected
         value (general). Tries `part_of` (geographic / location containment,
         Wikidata P131/P361) and `is_a` (taxonomic, Wikidata P31/P279). The
@@ -777,7 +776,7 @@ class KBVerifier:
 
 
 def _lookup_targets(claim: Claim, binding) -> Optional[tuple[str, str, bool]]:
-    """Map a claim's slots onto KB statement positions via slot_to_qualifier (D19).
+    """Map a claim's slots onto KB statement positions via slot_to_qualifier.
 
     v0.16 WS1: ``binding`` is a ``PredicateBinding`` (the per-binding
     slot_to_qualifier). It exposes the same ``slot_to_qualifier`` attribute the
@@ -801,14 +800,13 @@ def _lookup_targets(claim: Claim, binding) -> Optional[tuple[str, str, bool]]:
     is the expected value.
 
     A null/absent ``slot_to_qualifier`` is treated as the standard mapping — the
-    pre-D19 default, preserved so every non-inverse predicate behaves exactly as
+    default, preserved so every non-inverse predicate behaves exactly as
     before and inline-generated rows without an explicit map keep working.
 
     Returns ``None`` for a ``slot_to_qualifier`` the verifier cannot interpret
     (a qualifier-keyed or contradictory subject/object map). ``verify`` turns
     that into a ``NO_KB_PATH`` abstention with a trace note — it never guesses a
-    direction and never crashes. The v0.15 seed pack has no such map (verified
-    in ``docs/v0.15_build_log/fixup3_scope.md``); this branch guards only against
+    direction and never crashes. This branch guards only against
     malformed inline-generated rows.
     """
     slot_map = binding.slot_to_qualifier
@@ -824,7 +822,7 @@ def _lookup_targets(claim: Claim, binding) -> Optional[tuple[str, str, bool]]:
 
 
 def _types_for_slot(binding, slot: str) -> list[str]:
-    """Phase G D33: pick the entity-types list that corresponds to the Aedos
+    """Pick the entity-types list that corresponds to the Aedos
     slot being resolved. Returns an empty list when no types are configured
     for that slot (the adapter then skips its post-filter).
 
@@ -838,7 +836,7 @@ def _types_for_slot(binding, slot: str) -> list[str]:
 
 
 def _apply_polarity(pos_verdict: KBVerdictType, polarity: int) -> KBVerdictType:
-    """Apply claim polarity to a positive-content verdict (C1).
+    """Apply claim polarity to a positive-content verdict.
 
     For an asserted claim (polarity 1) the verdict is unchanged. For a negated
     claim (polarity 0) a KB-verified positive triple makes the negation
@@ -891,8 +889,9 @@ _BARE_YEAR_RE = re.compile(r"^[+-]?\d{4}$")
 
 
 def _normalize_date_value(value: str) -> Optional[str]:
-    """Phase 10.5 Step 6 sub-cause C / Pattern C fix: extract the year
-    from a date-shaped value. Returns the 4-digit year string for inputs
+    """Extract the year from a date-shaped value.
+
+    Returns the 4-digit year string for inputs
     like '1998', '1998-09-04', '+1998-09-04T00:00:00Z', etc., or None for
     non-date inputs. Used by `_value_matches` to compare year-level
     claims (e.g. 'Google founded in 1994') against KB's precise dates
@@ -914,7 +913,7 @@ def _normalize_date_value(value: str) -> Optional[str]:
 
 def _value_matches(kb_value, claim_object: str) -> bool:
     """Loose equality: Q-number match, case-insensitive string match, or
-    date-year match. Phase 10.5 Step 6: year-aware date comparison —
+    date-year match. Year-aware date comparison —
     when both values normalize to a 4-digit year, compare years rather
     than literal strings ('1998' vs '1998-09-04T00:00:00Z' should match
     when the claim only specifies the year)."""

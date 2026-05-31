@@ -1,4 +1,4 @@
-"""FastAPI server for Aedos v0.15."""
+"""FastAPI server for Aedos."""
 
 from __future__ import annotations
 

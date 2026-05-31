@@ -1,4 +1,4 @@
-"""Shared production-pipeline construction for Aedos v0.15.
+"""Shared production-pipeline construction for Aedos.
 
 `build_pipeline` assembles the full verification pipeline — substrate oracles,
 sources, the derivation walker, the aggregator — with the correctness
@@ -67,11 +67,9 @@ def build_default_kb(db, llm_client: LLMClient, config: Config) -> WikidataAdapt
     calibration harness (`tests/calibration/test_corpus_runner.py`) for its
     own pipeline construction.
 
-    Extracted in the Phase F2 follow-up (F-039) — the calibration harness
-    was originally constructing `WikidataAdapter()` with no arguments,
-    bypassing the F2 wiring fix and hitting the live-methods' wiring-gap
-    `RuntimeError` under `RUN_LIVE_KB=1`. Centralizing the construction
-    here prevents *new* call sites from reintroducing the same defect.
+    Centralizing the construction here prevents *new* call sites from
+    constructing `WikidataAdapter()` with no arguments and reintroducing
+    the live-methods' wiring-gap `RuntimeError` under `RUN_LIVE_KB=1`.
     """
     lru_cache = LRUHTTPCache(
         max_size=config.http_cache_lru_size,
@@ -96,18 +94,17 @@ def build_pipeline(
     kb=None,
     config: Optional[Config] = None,
 ) -> Pipeline:
-    """Assemble the full Aedos v0.15 verification pipeline against `db`.
+    """Assemble the full Aedos verification pipeline against `db`.
 
     `llm_client`, `kb`, and `config` may be injected — mocks for harness
     validation, live instances otherwise. When `config` is None, builds a
     `Config.from_env()` instance.
 
-    Wiring (F2): when `kb is None`, this constructor builds a
+    Wiring: when `kb is None`, this constructor builds a
     `CachingHTTPClient` (User-Agent + LRU cache + TTL from `config`) and
     constructs `WikidataAdapter` with the full dependency set. That makes
     the deployed pipeline reach the live Wikidata API with the configured
-    HTTP cache, rate limits, and identity — closing the F-004 wiring gap
-    surfaced by the F1 audit.
+    HTTP cache, rate limits, and identity.
 
     The correctness mechanisms are wired exactly as architecture 5.4 /
     7.3 require: the consistency checker runs on every oracle row write

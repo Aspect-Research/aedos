@@ -428,8 +428,8 @@ class PredicateTranslation:
     def _borrow_seed_slot_to_qualifier(
         self, kb_namespace: str, kb_property: str
     ) -> Optional[dict]:
-        """Phase 10.5 Step 6 sub-cause C: return any active well-formed
-        slot_to_qualifier mapping for (kb_namespace, kb_property). Used
+        """Return any active well-formed slot_to_qualifier mapping for
+        (kb_namespace, kb_property). Used
         to backfill an oracle-generated row whose sq is missing — the
         oracle named the right KB property but didn't (or couldn't)
         spell the slot mapping, and another predicate's seed already has
@@ -657,7 +657,7 @@ class PredicateTranslation:
         oracle_subject_types: Optional[list],
         oracle_object_types: Optional[list],
     ) -> list[PredicateBinding]:
-        """v0.16 WS1 binding discovery (Decision 1.d).
+        """v0.16 WS1 binding discovery.
 
         Builds the RANKED candidate-binding list for a freshly-generated row:
 

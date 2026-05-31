@@ -1,13 +1,13 @@
-"""Phase H Cluster 2 step 2 — assertion promotion.
+"""Assertion promotion.
 
 The promotion step sits between Layer 1 extraction and Layer 4
 verification. For every extracted user claim, it writes a Tier U row
 with `status='asserted_unverified'`, so subsequent walker calls can
 chain off that claim as a premise. The resulting `*_given_assertion`
-verdict family (built in step 3) preserves §3.2 soundness by making
+verdict family preserves §3.2 soundness by making
 the grounding source explicit.
 
-Q-MultiClaim: `promote_assertions` is batch — it writes all rows
+`promote_assertions` is batch — it writes all rows
 before returning, so the walker sees every extracted claim as a
 candidate premise when verifying any one of them. Per-claim
 ordering would otherwise make verdicts depend on the
@@ -19,7 +19,7 @@ prior is `externally_verified` returns
 `was_cross_source_contradicted=True` on the `WriteResult`. The
 promotion step turns that into a `contradicted` verdict (NOT
 `contradicted_given_assertion` — the contradiction is externally
-grounded). Step 3's walker logic / aggregator threads this
+grounded). The walker logic / aggregator threads this
 pre-verdict through so the rest of the pipeline never tries to
 verify a claim the KB has already refuted.
 """

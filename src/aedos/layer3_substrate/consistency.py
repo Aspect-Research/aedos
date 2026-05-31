@@ -63,8 +63,7 @@ class ConsistencyChecker:
         config: Optional[dict] = None,
         circuit_breaker_threshold: Optional[int] = None,
     ) -> None:
-        """Circuit-breaker threshold resolves in priority order
-        (F3 §5.2):
+        """Circuit-breaker threshold resolves in priority order:
 
           1. Explicit `circuit_breaker_threshold` kwarg — used by
              `build_pipeline` to thread `Config.circuit_breaker_threshold`.

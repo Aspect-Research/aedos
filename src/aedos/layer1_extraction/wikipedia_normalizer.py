@@ -1,8 +1,7 @@
-"""Phase H D47 / D53 — Wikipedia + Wikidata entity normalizer.
+"""Wikipedia + Wikidata entity normalizer.
 
 Resolves bare ambiguous entity references to canonical Wikidata Q-ids
-before the substrate sees them. Three-stage design (D53 hybrid; D47
-was the two-stage Wikipedia-only ancestor):
+before the substrate sees them. Three-stage design:
 
   Stage A — deterministic Wikipedia-redirect resolution via the MediaWiki
             `action=query&redirects=1&prop=pageprops` API. Four outcomes:
@@ -21,13 +20,12 @@ was the two-stage Wikipedia-only ancestor):
             for programmatic entity disambiguation.
 
             Stage B's role: convert a string into a ranked set of Wikidata
-            entity candidates. The empirical investigation in
-            `docs/phase_H/d53_design.md` established that bare-surface
+            entity candidates. Bare-surface
             wbsearchentities buries canonical entities (Obama → Q76 isn't
             in the top 20), but the Stage A-canonicalized form returns
             them cleanly (Barack Obama → Q76 at rank 1).
 
-  Stage C — Type filter (D33) + heuristic shortcut + LLM-mediated
+  Stage C — Type filter + heuristic shortcut + LLM-mediated
             selection over the Stage B candidates. The LLM picks the
             Q-id that best matches the source_text + structured claim,
             or abstains when context doesn't disambiguate. Single-
@@ -39,12 +37,11 @@ was the two-stage Wikipedia-only ancestor):
 
 The normalizer is wired into `EntityResolver.resolve`. The resolver
 prefers `selected_qid` when available, falling back to label-based KB
-resolution otherwise (per the operator's Q1 decision in the D53 design
-review).
+resolution otherwise.
 
 Audit log: every normalization produces an `entity_normalization` event
-with all three stages' details. Verbose by design — Phase 10.5 post-hoc
-analysis consumes these events.
+with all three stages' details. Verbose by design — post-hoc analysis
+consumes these events.
 
 Patterns deliberately mirror `kb_wikidata.py`:
   - HTTP layer via `CachingHTTPClient` (User-Agent + LRU + TTL from Config)
@@ -177,7 +174,7 @@ OUTCOME_SKIPPED_KB_IDENTIFIER = "skipped_kb_identifier"
 
 @dataclass
 class NormalizationResult:
-    """Result of normalizing a single entity reference (Phase H D53).
+    """Result of normalizing a single entity reference.
 
     Three-stage architecture:
 
@@ -313,12 +310,12 @@ class WikipediaNormalizer:
         Returns ranked Q-id candidates with label / description /
         aliases.
 
-        Stage C: D33 type filter + heuristic shortcut + LLM selection.
+        Stage C: type filter + heuristic shortcut + LLM selection.
         Single-candidate-after-filter shortcut skips the LLM; otherwise
         Haiku picks a Q-id given source_text + claim context, or
         abstains.
 
-        Phase H Cluster 1 step 1: Q-id surface forms short-circuit
+        Q-id surface forms short-circuit
         without an HTTP call (they're already canonical KB identifiers).
         Repeat calls with identical context are served from
         `_normalize_memo` — each of Stage A's HTTP fetch, Stage B's
@@ -676,7 +673,7 @@ class WikipediaNormalizer:
         source_text: Optional[str] = None,
         expected_entity_types: Optional[list[str]] = None,
     ) -> NormalizationResult:
-        """Phase H D53: orchestrate Stage A (Wikipedia redirect) → Stage B
+        """Orchestrate Stage A (Wikipedia redirect) → Stage B
         (wbsearchentities) → Stage C (type filter + heuristic + LLM).
 
         Stage A's outcome decides the Stage B query:
@@ -892,7 +889,7 @@ class WikipediaNormalizer:
         source_text: Optional[str],
         expected_entity_types: list[str],
     ) -> dict:
-        """Run Stage C: D33 type filter + heuristic shortcut + LLM
+        """Run Stage C: type filter + heuristic shortcut + LLM
         selection over the Stage B candidates.
 
         Returns a dict with:

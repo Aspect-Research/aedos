@@ -1,11 +1,11 @@
-"""Seed-pack loader for Aedos v0.15.
+"""Seed-pack loader for Aedos.
 
 The seed pack at `seeds/predicate_translation.json` carries hand-curated
 predicate metadata (routing_hint, kb_property, slot_to_qualifier,
 cardinality, entity-type filters, rationale) that production deployments
-expect to consult when the extractor produces a known predicate. Phase H
-Cluster 3 introduces auto-loading at DB-open time so the in-vocabulary
-verification path uses these seeded rows instead of cold-start LLM
+expect to consult when the extractor produces a known predicate.
+Auto-loading at DB-open time lets the in-vocabulary
+verification path use these seeded rows instead of cold-start LLM
 consultations.
 
 This module exposes:
@@ -18,8 +18,8 @@ This module exposes:
 
 Idempotency: re-running against an already-seeded DB replaces each row
 matching (aedos_predicate, kb_namespace) with the fresh JSON value. The
-caller controls *whether* to load (Phase H Cluster 3:
-`create_schema(load_seeds=True)` loads only when the table is empty, so
+caller controls *whether* to load
+(`create_schema(load_seeds=True)` loads only when the table is empty, so
 operator modifications and retractions persist across re-opens).
 """
 

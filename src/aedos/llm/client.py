@@ -1,12 +1,6 @@
-"""LLM client for Aedos v0.15.
+"""LLM client for Aedos.
 
-Lifted from v0.14 src/llm_client.py with these changes:
-- Cost tracking replaced with a lightweight call counter (used by walker budget).
-- Model defaults updated for v0.15.
-- Added `complete` as an alias for `chat`.
-- Removed dependency on src.cost.
-
-Phase E1 — per-purpose, per-provider routing. `DEFAULT_MODEL_BY_PURPOSE` is a
+Per-purpose, per-provider routing. `DEFAULT_MODEL_BY_PURPOSE` is a
 dict of dicts: each purpose carries a `model`, a `base_url` (None → the native
 Anthropic SDK; a URL → the OpenAI-compatible SDK pointed at that endpoint —
 OpenAI itself, or OpenRouter, or any OpenAI-API-compatible host), and an
@@ -111,7 +105,7 @@ def _config_for_model(model: str) -> dict:
 
 def _purpose_override(purpose: Optional[str]) -> Optional[dict]:
     """A whole-run routing override from the `AEDOS_OVERRIDE_MODEL_BY_PURPOSE`
-    env var (JSON: purpose → config). The Phase E comparison harness uses this
+    env var (JSON: purpose → config). The comparison harness uses this
     to drive every internal purpose with one candidate model. A `"*"` key
     applies to every purpose except `chat` (the chat slot is never overridden).
     An entry may be a full `{model, base_url, api_key_env_var}` config or a bare
@@ -184,7 +178,7 @@ def _first_text(response: Any) -> str:
 
 def _attach_raw_response(exc: BaseException, resp: Any) -> None:
     """Attach the raw SDK response (best-effort serialized) to an exception
-    raised while parsing it. The Phase E diagnostic transcript wrapper reads
+    raised while parsing it. The diagnostic transcript wrapper reads
     `_raw_response` so the response shape is captured for failed calls."""
     if resp is None or hasattr(exc, "_raw_response"):
         return
