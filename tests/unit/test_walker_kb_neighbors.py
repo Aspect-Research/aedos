@@ -1,11 +1,31 @@
-"""Phase H D5: tests for Walker._expand_via_kb_neighbors.
+"""Phase H D5 + v0.16 WS2: tests for the walker's KB-neighbor discovery.
 
 Constructed walker scenarios — mocked Substrate + mocked KB adapter —
-exercise the D5 fallback behavior: it fires when subsumption substrate
-is empty, it doesn't fire when substrate has neighbors, it doesn't fire
-when the distribution gate is closed, it doesn't fire when the
-walker's `kb` parameter is None, and the emitted trace edges have the
+exercise the KB-neighbor enumeration that fires (as the DISCOVERY
+enumerator) when the substrate's subsumption oracle has no neighbors
+(cheapest-path-first), is skipped when substrate has neighbors, is
+skipped when the walker has no `kb`, and emits trace edges of the
 expected shape.
+
+v0.16 WS2 §3/§5 rewrite (gate -> ranker, depth==0 cap removed):
+  - `predicate_distribution` is demoted from a GATE to a RANKER.
+    A `neither` verdict no longer forecloses the relation; discovery
+    is LIBERAL — KB enumeration MAY fire for `neither`. Soundness moved
+    entirely to `_verify_chain`: a discovered substitution survives to a
+    verdict only if the taxonomy/transitive edge is confirmed in a source
+    (and, for intensional is_a, only if the kind-entailment verdict is
+    non-`neither`). So a `neither` predicate still ends at
+    `no_grounding_found` — but via verify-time rejection / no grounding
+    premise, not via a discovery-time skip.
+  - The depth==0 cap on KB enumeration is removed; both directions
+    (parent via outgoing, child via incoming) now enumerate regardless of
+    the distribution verdict — `preferred` only ORDERS the calls. Cost is
+    bounded by the per-walk fanout budget (see test_walker_ws2_budget.py),
+    not the depth cap.
+
+The MagicMock KB gains a `verify_transitive_path` return (KBProtocol grew
+the method in WS2 §1); the substrate-`find_neighbors` admission path routes
+through it inside `_verify_chain`.
 """
 
 from __future__ import annotations
@@ -20,6 +40,7 @@ from aedos.layer3_substrate import Substrate
 from aedos.layer4_sources.kb_protocol import (
     ResolutionCandidate,
     SubsumptionResult,
+    TransitivePathResult,
 )
 from aedos.layer4_sources.kb_verifier import KBVerdictType, KBVerdict
 from aedos.layer4_sources.tier_u import LookupResult
@@ -81,17 +102,29 @@ def _make_substrate(
     *,
     distribution_verdict: str = "distributes_down",
     sub_neighbors: list = (),
+    sub_neighbors_by_relation: dict | None = None,
+    consult_verdict: str = "unrelated",
     resolved_qid: str | None = "Q49112",
 ):
     """Build a mocked Substrate that:
       - returns `distribution_verdict` from predicate_distribution.consult
-      - returns `sub_neighbors` from subsumption.find_neighbors
+      - returns `sub_neighbors` from subsumption.find_neighbors (or, when
+        `sub_neighbors_by_relation` is given, keys neighbors per relation_type)
+      - returns `consult_verdict` from subsumption.consult (the WS2 §6
+        verify-time authority _verify_chain falls back to when the KB
+        transitive path can't confirm)
       - resolves any reference to `resolved_qid` (or empty if None)
     """
     pd = MagicMock()
     pd.consult.return_value = _distribution_verdict(distribution_verdict)
     sub = MagicMock()
-    sub.find_neighbors.return_value = list(sub_neighbors)
+    if sub_neighbors_by_relation is not None:
+        def _find(entity_ref, relation_type):
+            return list(sub_neighbors_by_relation.get(relation_type, ()))
+        sub.find_neighbors.side_effect = _find
+    else:
+        sub.find_neighbors.return_value = list(sub_neighbors)
+    sub.consult.return_value = SubsumptionResult(verdict=consult_verdict)
     resolver = MagicMock()
     if resolved_qid is None:
         resolver.resolve.return_value = []
@@ -111,11 +144,19 @@ def _make_substrate(
 def _make_kb(
     neighbors_by_prop: dict | None = None,
     incoming_by_prop: dict | None = None,
+    *,
+    path_holds: bool = True,
 ):
     """A mock KB adapter exposing `enumerate_neighbors`. `neighbors_by_prop`
     is what the outgoing direction returns; `incoming_by_prop` is the
     incoming (D51 reverse). Either defaults to empty per requested
-    property."""
+    property.
+
+    v0.16 WS2 §1: the KB also exposes `verify_transitive_path` (KBProtocol
+    grew the method) — `_verify_chain` consults it for the SLOT-SUBSTITUTION
+    case when both endpoints resolve to Q-ids. `path_holds` controls whether
+    the transitive-path ASK is reported as holding (default True).
+    """
     kb = MagicMock()
 
     def fake(entity, properties, direction="outgoing"):
@@ -128,6 +169,7 @@ def _make_kb(
         return {p: list(neighbors_by_prop.get(p, [])) for p in properties}
 
     kb.enumerate_neighbors.side_effect = fake
+    kb.verify_transitive_path.return_value = TransitivePathResult(holds=path_holds)
     return kb
 
 
@@ -147,9 +189,11 @@ def _make_walker(substrate, kb):
 
 class TestD5Fallback:
     def test_fires_when_substrate_empty_and_distribution_down(self):
-        """The headline case: subsumption oracle has nothing, distribution
-        gate is open in the 'parent' direction → D5 enumerates KB
-        neighbors and emits expansions."""
+        """The headline case: subsumption oracle has nothing, so the KB-neighbor
+        enumerator fires (cheapest-path-first fallback) and emits expansions.
+        v0.16 WS2: with the gate demoted to a ranker, `distributes_down`
+        deprioritizes nothing here — it ORDERS the parent direction first; the
+        parent (outgoing) enumeration still produces the P131 edge under test."""
         substrate = _make_substrate(
             distribution_verdict="distributes_down",
             sub_neighbors=[],
@@ -212,9 +256,18 @@ class TestD5Fallback:
         # KB enumerate_neighbors should not have been called.
         kb.enumerate_neighbors.assert_not_called()
 
-    def test_does_not_fire_when_distribution_gate_closed(self):
-        """When predicate_distribution returns 'neither' (gate closed),
-        no expansion happens at all — D5 doesn't get a chance to fire."""
+    def test_neither_distribution_is_explored_but_does_not_ground(self):
+        """v0.16 WS2 §3 (gate -> ranker): when predicate_distribution returns
+        `neither`, the relation is no longer foreclosed. Discovery is LIBERAL,
+        so KB enumeration MAY fire for `neither` (the old gate would have
+        skipped it). But soundness moved to verify time: the discovered
+        substitutions never ground (no Tier U premise, KB verifier NO_MATCH),
+        so the walk still ends at `no_grounding_found`. The OUTCOME matches the
+        old gate; the reason is now grounding-failure, not a discovery skip.
+
+        This is the behavioral inversion of the old
+        `test_does_not_fire_when_distribution_gate_closed`: we assert the
+        sound verdict, not that enumeration was suppressed."""
         substrate = _make_substrate(
             distribution_verdict="neither",
             sub_neighbors=[],
@@ -222,14 +275,52 @@ class TestD5Fallback:
         kb = _make_kb({"P131": ["Q771397"]})
         walker = _make_walker(substrate, kb)
 
-        walker.walk(_claim(), _ctx())
+        result = walker.walk(_claim(), _ctx())
 
-        kb.enumerate_neighbors.assert_not_called()
+        # The relation is explored (the gate is gone); the walker still
+        # abstains because nothing the substitution reaches grounds the claim.
+        assert result.verdict == "no_grounding_found"
+
+    def test_neither_distribution_admits_no_subsumption_substitution(self):
+        """v0.16 WS2 §3.2 soundness: with a substrate `is_a` neighbor present
+        and a `neither` distribution verdict, `_verify_chain` REJECTS the
+        substitution — the kind-entailment authority (distribution=neither)
+        says the predicate does not transfer across is_a, even if the
+        structural edge holds. No `subsumption_traversal` edge survives, and
+        the verdict is `no_grounding_found`. This is the verify-time analog of
+        the old closed-gate behavior, proven at the substrate-neighbor path."""
+        sub_neighbor = MagicMock()
+        sub_neighbor.direction = "parent"
+        sub_neighbor.entity.identifier = "dog"
+        sub_neighbor.row_id = 7
+        substrate = _make_substrate(
+            distribution_verdict="neither",
+            # Only an is_a neighbor exists, so the is_a kind-entailment gate is
+            # the sole admission path under test (no part_of edge to confound).
+            sub_neighbors_by_relation={"is_a": [sub_neighbor], "part_of": []},
+        )
+        # KB transitive path WOULD report the edge as holding, but the is_a
+        # kind-entailment gate forecloses it before any structural check.
+        kb = _make_kb(path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(predicate="prefers", object_val="dog"), _ctx())
+
+        assert result.verdict == "no_grounding_found"
+        assert "subsumption_traversal" not in [
+            e.edge_type for e in result.trace.edges
+        ]
 
     def test_fires_reverse_for_distributes_up_after_d51(self):
-        """Phase H D51 (2026-05-24): `distributes_up` → directions={'child'}.
-        D5's outgoing-only used to skip; D51 adds reverse enumeration so
-        the walker fires with `direction="incoming"` instead."""
+        """Phase H D51 (2026-05-24): `distributes_up` prefers the 'child'
+        direction. D5's outgoing-only used to skip; D51 added reverse
+        enumeration so the walker also fires with `direction="incoming"`.
+        v0.16 WS2 §3/§5: both directions now enumerate regardless of the
+        verdict (the depth cap and direction gate are gone) — `distributes_up`
+        merely ORDERS the incoming/child direction first. This test asserts the
+        incoming enumeration fires and records `direction='child'`, which holds
+        under the ranker semantics (incoming is among the now-unconditional
+        directions)."""
         substrate = _make_substrate(
             distribution_verdict="distributes_up",
             sub_neighbors=[],
