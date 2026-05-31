@@ -99,6 +99,84 @@ class TestClaimVerdictsField:
         assert vr.claim_verdicts == []
 
 
+class TestClaimVerdictContradictingValue:
+    """WS5 (part b): the aggregator populates ClaimVerdict.contradicting_value /
+    contradicting_value_type by scanning the trace for a CONTRADICTED
+    premise_lookup edge carrying the value the source holds. Only done for
+    contradicted-family verdicts; None otherwise."""
+
+    def _contradicted_walk_result(self, verdict, value, value_type):
+        from aedos.layer5_result.trace import TraceEdge
+        root = TraceNode("claim")
+        trace = JustificationTrace(root=root)
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=root,
+            target=TraceNode("kb_statement", {"entity": "Q76"}),
+            metadata={
+                "source": "kb",
+                "verdict": "contradicted",
+                "contradicting_value": value,
+                "contradicting_value_type": value_type,
+                "kb_property": "P19",
+            },
+        ))
+        return WalkResult(
+            verdict=verdict,
+            trace=trace,
+            budget_consumption=BudgetConsumption(wall_clock_ms=10.0, llm_calls=1),
+        )
+
+    def test_aggregate_populates_contradicting_value(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        wr = self._contradicted_walk_result("contradicted", "Q18094", "entity")
+        vr = agg.aggregate([c], [wr])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value == "Q18094"
+        assert cv.contradicting_value_type == "entity"
+
+    def test_aggregate_populates_for_contradicted_given_assertion(self):
+        # base_verdict_of collapses the dual to contradicted, so the scan runs.
+        agg = Aggregator()
+        c = _claim("c1")
+        wr = self._contradicted_walk_result(
+            "contradicted_given_assertion", "Paris", "literal")
+        vr = agg.aggregate([c], [wr])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value == "Paris"
+        assert cv.contradicting_value_type == "literal"
+
+    def test_quantity_value_stringified(self):
+        # _extract_contradicting_value coerces the value to str (a numeric
+        # kb_value flows through as a string for the chat-wrapper).
+        agg = Aggregator()
+        c = _claim("c1")
+        wr = self._contradicted_walk_result("contradicted", 67000000, "quantity")
+        vr = agg.aggregate([c], [wr])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value == "67000000"
+        assert cv.contradicting_value_type == "quantity"
+
+    def test_verified_verdict_has_no_contradicting_value(self):
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("verified")])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value is None
+        assert cv.contradicting_value_type is None
+
+    def test_contradicted_without_value_edge_is_none(self):
+        # A CONTRADICTED verdict whose trace carries no distinct value
+        # (polarity-conflict / subsumption-fallback) → None, never invented.
+        agg = Aggregator()
+        c = _claim("c1")
+        vr = agg.aggregate([c], [_walk_result("contradicted")])
+        cv = vr.claim_verdicts[0]
+        assert cv.contradicting_value is None
+        assert cv.contradicting_value_type is None
+
+
 # ---------------------------------------------------------------------------
 # TestAggregator
 # ---------------------------------------------------------------------------
@@ -280,52 +358,68 @@ class TestVerdictSetStructuralConsistency:
             meta = vr.aggregate_metadata
             assert meta["verified"] + meta["contradicted"] + meta["abstained"] == 1
 
-    def test_intervention_collapses_dual_to_base(self):
-        # Phase 10.5 Session 2 Item 1 (per-claim intervention): the
-        # invariant is preserved across the API redesign — for any
-        # verdict mix, replacing each verdict with its base-counterpart
-        # must produce the same InterventionPlan. The dual designation
-        # is transparent to intervention selection.
+    def test_intervention_no_longer_collapses_dual_to_base(self):
+        # WS5 (part d): INVERTED from the v0.15 collapse invariant. The
+        # `*_given_assertion` qualifier is NO LONGER transparent to
+        # intervention selection — a conditional verdict now produces a
+        # DIFFERENT (conditional) plan than its base verdict. `base_verdict_of`
+        # still drives the aggregate COUNT buckets (tested elsewhere), but it
+        # no longer governs the user-surface intervention.
         from aedos.deployment.chat_wrapper import (
-            InterventionType, select_interventions,
+            ClaimActionType, InterventionType, select_interventions,
         )
-        from aedos.layer5_result.aggregator import ALL_VERDICTS, base_verdict_of
         agg = Aggregator()
 
-        # Exhaustive 1-of-6 single-claim check: every dual matches its base.
-        for v in ALL_VERDICTS:
-            c = _claim("c1")
-            dual_vr = agg.aggregate([c], [_walk_result(v)])
-            base_vr = agg.aggregate([c], [_walk_result(base_verdict_of(v))])
-            dual_plan = select_interventions(dual_vr.claim_verdicts)
-            base_plan = select_interventions(base_vr.claim_verdicts)
-            assert dual_plan.overall == base_plan.overall, (
-                f"intervention overall diverged for verdict {v!r} vs its "
-                f"base {base_verdict_of(v)!r}"
-            )
-            assert len(dual_plan.per_claim_actions) == len(base_plan.per_claim_actions), (
-                f"per-claim action count diverged for verdict {v!r}"
-            )
+        # verified_given_assertion DIVERGES from verified: base verified is a
+        # silent PASS_THROUGH; the dual surfaces a CONFIRM_CONDITIONAL note.
+        c = _claim("c1")
+        dual_vr = agg.aggregate([c], [_walk_result("verified_given_assertion")])
+        base_vr = agg.aggregate([c], [_walk_result("verified")])
+        dual_plan = select_interventions(dual_vr.claim_verdicts)
+        base_plan = select_interventions(base_vr.claim_verdicts)
+        assert base_plan.overall == InterventionType.PASS_THROUGH
+        assert dual_plan.overall == InterventionType.INTERVENE
+        assert dual_plan.overall != base_plan.overall
+        assert len(dual_plan.per_claim_actions) == 1
+        assert (
+            dual_plan.per_claim_actions[0].action_type
+            == ClaimActionType.CONFIRM_CONDITIONAL
+        )
 
-        # Multi-claim mixed batch: 3 verified_given_assertion + 1
-        # contradicted_given_assertion. Under the per-claim plan this is
-        # INTERVENE with one CORRECT action (three verified + one
-        # problematic). Same shape applies for the base equivalent.
-        claims = [_claim(f"c{i}") for i in range(4)]
-        dual_results = [_walk_result(v) for v in (
-            "verified_given_assertion", "verified_given_assertion",
-            "verified_given_assertion", "contradicted_given_assertion",
-        )]
-        base_results = [_walk_result(v) for v in (
-            "verified", "verified", "verified", "contradicted",
-        )]
-        dual_vr = agg.aggregate(claims, dual_results)
-        base_vr = agg.aggregate(claims, base_results)
+        # contradicted_given_assertion keeps CORRECT (same action_type as its
+        # base) but the annotation diverges — it carries the conditional suffix.
+        c = _claim("c1")
+        dual_vr = agg.aggregate([c], [_walk_result("contradicted_given_assertion")])
+        base_vr = agg.aggregate([c], [_walk_result("contradicted")])
         dual_plan = select_interventions(dual_vr.claim_verdicts)
         base_plan = select_interventions(base_vr.claim_verdicts)
         assert dual_plan.overall == base_plan.overall == InterventionType.INTERVENE
-        assert len(dual_plan.per_claim_actions) == len(base_plan.per_claim_actions) == 1
-        assert dual_plan.per_claim_actions[0].action_type.value == "correct"
+        assert (
+            dual_plan.per_claim_actions[0].action_type
+            == base_plan.per_claim_actions[0].action_type
+            == ClaimActionType.CORRECT
+        )
+        assert (
+            dual_plan.per_claim_actions[0].annotation
+            != base_plan.per_claim_actions[0].annotation
+        )
+        assert "rests on your own prior assertion" in dual_plan.per_claim_actions[0].annotation
+
+        # abstained_given_assertion keeps ABSTAIN but with the conditional suffix.
+        c = _claim("c1")
+        dual_vr = agg.aggregate([c], [_walk_result("abstained_given_assertion")])
+        base_vr = agg.aggregate([c], [_walk_result("no_grounding_found")])
+        dual_plan = select_interventions(dual_vr.claim_verdicts)
+        base_plan = select_interventions(base_vr.claim_verdicts)
+        assert (
+            dual_plan.per_claim_actions[0].action_type
+            == base_plan.per_claim_actions[0].action_type
+            == ClaimActionType.ABSTAIN
+        )
+        assert (
+            dual_plan.per_claim_actions[0].annotation
+            != base_plan.per_claim_actions[0].annotation
+        )
 
     def test_trace_serialization_round_trip_carries_assertion_flag(self):
         # JustificationTrace.chain_includes_assertion (now DERIVED from the

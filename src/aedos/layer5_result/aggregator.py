@@ -79,10 +79,13 @@ class ClaimVerdict:
 
     `contradicting_value` (WS5) is the KB/Tier-U value the source holds
     that contradicts a CONTRADICTED claim, extracted from the trace's
-    contradiction edge; `contradicting_value_type` carries its kind
-    (e.g. 'quantity' | 'literal' | a Wikidata Q-id). Both are populated
-    by the aggregator in a later phase; in this foundation phase they are
-    additive defaulted fields so the shape is stable."""
+    contradicted premise_lookup edge (`metadata['contradicting_value']`)
+    by `_extract_contradicting_value`. None when the verdict is not
+    contradicted, or when the contradicted path carried no distinct value
+    (e.g. polarity-conflict, or a subsumption-fallback contradiction).
+    `contradicting_value_type` is the Statement value_type
+    (entity|literal|date|quantity) so the chat-wrapper knows whether to
+    reverse-label a Q-id."""
     claim_id: str
     claim: Claim
     verdict: str
@@ -121,6 +124,28 @@ _TRACE_ROW_ID_KEYS = {
     # picks it up once present.
     "entity_resolution_cache_row_id": "entity_resolution_cache",
 }
+
+
+def _extract_contradicting_value(
+    trace: JustificationTrace,
+) -> tuple[Optional[str], Optional[str]]:
+    """WS5: pull the contradicting value (and its value_type) from the
+    contradicted premise_lookup edge a CONTRADICTED verdict rests on.
+    Returns (value_as_str, value_type) or (None, None). Scans edges for a
+    premise_lookup whose metadata verdict == 'contradicted' carrying a
+    non-None 'contradicting_value'. First such edge wins (a CONTRADICTED
+    walk short-circuits at the first contradiction, so there is at most one
+    in practice). Returns (None, None) when no distinct value was captured
+    (polarity-conflict, or a subsumption-fallback contradiction)."""
+    for edge in trace.edges:
+        md = edge.metadata
+        if md.get("verdict") != "contradicted":
+            continue
+        cv = md.get("contradicting_value")
+        if cv is None:
+            continue
+        return (str(cv), md.get("contradicting_value_type"))
+    return (None, None)
 
 
 def _extract_source_rows(trace: JustificationTrace) -> list[tuple[str, int]]:
@@ -186,11 +211,19 @@ class Aggregator:
             cid = claim.claim_id
             per_claim_verdicts[cid] = result.verdict
             per_claim_traces[cid] = result.trace
+            # WS5(b): for contradicted-family verdicts only, scan the trace for
+            # the contradicting value the source holds (cheap guard — skip the
+            # scan entirely for verified/abstained).
+            cv_value, cv_value_type = (None, None)
+            if base_verdict_of(result.verdict) == "contradicted":
+                cv_value, cv_value_type = _extract_contradicting_value(result.trace)
             claim_verdicts.append(ClaimVerdict(
                 claim_id=cid,
                 claim=claim,
                 verdict=result.verdict,
                 abstention_reason=result.abstention_reason,
+                contradicting_value=cv_value,
+                contradicting_value_type=cv_value_type,
             ))
 
             base_count_bucket = _VERDICT_TO_BASE_COUNT.get(result.verdict)

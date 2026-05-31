@@ -600,6 +600,11 @@ class Walker:
                         "tier_u_row_id": oc_row.get("id"),
                         "belief_revision": "object_conflict",
                         "premise_status": oc_status,
+                        # WS5(a.3): a functional-predicate object conflict has a
+                        # distinct contradicting value — the conflicting Tier U
+                        # row's object ("the source indicates {object} instead").
+                        "contradicting_value": oc_row.get("object"),
+                        "contradicting_value_type": "literal",
                     },
                 ))
                 self._record_premise(
@@ -744,14 +749,44 @@ class Walker:
         # P1082 (population) > 60000000). The walker queries KB, parses
         # the claim's object as a threshold, and compares.
         if self._predicate_routing(node.predicate) == "kb_quantitative":
-            verdict = self._verify_kb_quantitative(node, context, trace)
-            if verdict is not None:
+            quant = self._verify_kb_quantitative(node, context, trace)
+            if quant is not None:
+                verdict, detail = quant
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
                 self._record_premise(trace, source="kb", assertion=False)
-                return verdict, "kb_quantitative", 0, {
+                # WS5(a.2): the kb_quantitative path previously appended no
+                # trace edge — add one carrying the comparison detail
+                # (kb_value/threshold/comparator) so the walk is observable,
+                # and on contradiction the KB value IS the contradicting value
+                # ("the source indicates 67000000").
+                edge_md = {
+                    "source": "kb_quantitative",
+                    "verdict": verdict,
+                    "predicate": node.predicate,
+                    "kb_value": detail.get("kb_value"),
+                    "threshold": detail.get("threshold"),
+                    "comparator": detail.get("comparator"),
+                    "kb_property": detail.get("kb_property"),
+                }
+                if verdict == "contradicted":
+                    edge_md["contradicting_value"] = detail.get("kb_value")
+                    edge_md["contradicting_value_type"] = "quantity"
+                trace.edges.append(TraceEdge(
+                    edge_type="premise_lookup",
+                    source=trace.root,
+                    target=TraceNode("kb_statement", {"entity": node.subject}),
+                    metadata=edge_md,
+                ))
+                grounding = {
                     "source": "kb_quantitative",
                     "predicate": node.predicate,
+                    "kb_value": detail.get("kb_value"),
+                    "threshold": detail.get("threshold"),
                 }
+                if verdict == "contradicted":
+                    grounding["contradicting_value"] = detail.get("kb_value")
+                    grounding["contradicting_value_type"] = "quantity"
+                return verdict, "kb_quantitative", 0, grounding
 
         # KB verification
         if self._kb_verifier is not None:
@@ -791,6 +826,17 @@ class Walker:
                 return "verified", "kb", 0, grounding
             elif kb_result.verdict == KBVerdictType.CONTRADICTED:
                 cache_row_id = kb_result.trace.get("resolution_cache_row_id")
+                # WS5(a): the contradicting KB value is the matched
+                # statement's value (the verifier also surfaces it on
+                # kb_result.trace['contradicting_value']). On the no-statements
+                # subsumption-fallback CONTRADICTED path matched_statement is
+                # None, so guard for None — that path carries no distinct
+                # "instead" value and falls back to the generic correction.
+                matched = kb_result.matched_statement
+                cv_raw = getattr(matched, "value", None) if matched is not None else None
+                cv_type = getattr(matched, "value_type", None) if matched is not None else None
+                if cv_raw is None:
+                    cv_raw = kb_result.trace.get("contradicting_value")
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
                     source=trace.root,
@@ -799,6 +845,12 @@ class Walker:
                         "source": "kb", "verdict": "contradicted",
                         "lookup_inverted": kb_result.trace.get("lookup_inverted"),
                         "entity_resolution_cache_row_id": cache_row_id,
+                        # WS5(a): carry the contradicting KB value so the
+                        # aggregator can populate ClaimVerdict.contradicting_value
+                        # and the chat-wrapper can emit "the source indicates X".
+                        "contradicting_value": cv_raw,
+                        "contradicting_value_type": cv_type,
+                        "kb_property": kb_result.trace.get("kb_property"),
                     },
                 ))
                 self._record_premise(
@@ -810,6 +862,8 @@ class Walker:
                     "entity": kb_result.subject_kb_id,
                     "kb_property": kb_result.trace.get("kb_property"),
                     "verdict": "contradicted",
+                    "contradicting_value": cv_raw,
+                    "contradicting_value_type": cv_type,
                 }
                 return "contradicted", "kb", 0, grounding
 
@@ -847,7 +901,7 @@ class Walker:
 
         return None, "", 0, {}
 
-    def _verify_kb_quantitative(self, claim: Claim, context: VerificationContext, trace) -> Optional[str]:
+    def _verify_kb_quantitative(self, claim: Claim, context: VerificationContext, trace) -> Optional[tuple[str, dict]]:
         """Phase 10.5 Step 6 Tier A2: verify a kb_quantitative claim by
         querying KB for the subject's value of the predicate's
         kb_property and comparing against the claim's object as a
@@ -949,7 +1003,16 @@ class Walker:
         else:  # lt
             verified = kb_value < threshold
         verdict = "verified" if verified else "contradicted"
-        return _apply_polarity_str(verdict, claim.polarity)
+        # WS5(a.2): return the comparison detail alongside the verdict so the
+        # caller can append an observability edge and, on contradiction,
+        # surface kb_value as the contradicting value.
+        detail = {
+            "kb_value": kb_value,
+            "threshold": threshold,
+            "comparator": comparator,
+            "kb_property": meta.kb_property,
+        }
+        return _apply_polarity_str(verdict, claim.polarity), detail
 
     def _is_persona_subject(self, claim: Claim) -> bool:
         """Phase 10.5 Step 6 Batch 8+: True when the claim's subject is
