@@ -75,6 +75,28 @@ path right before sign-off**. Each carries a code comment labelling it dormant.
 
 ---
 
+---
+
+## Review Round 2 — patch correctness & follow-ups (FIXED in PATCH-C `<patch-c>`)
+
+A second review round audited the two patch commits for correctness, *over-tightening*
+(a gate that now abstains on a claim that should soundly verify), a fresh §3.2 sweep, and
+completeness. Three of four dimensions came back **clean** — the fresh soundness sweep
+confirmed both patches *tighten only*: no terminal verdict path was loosened and no new
+false-verify/contradict was introduced. Three confirmed follow-ups, all over-tightening /
+test-gap (none a soundness hole):
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| `r2pa-01` — definite KB transitive-negative discarded a *sound substrate row*, not just the LLM fabrication | MED (over-tightened) | PATCH-A's "KB-negative ⇒ `return False`" blocked the LLM Priority-3 fabrication (correct) but also discarded the Priority-2 substrate row (operator-seeded / discovered subsumption — e.g. a seeded *Williamstown part_of Massachusetts* where Wikidata's part_of closure is incomplete), contradicting the operator's trust order (**substrate seeded/discovered > KB > LLM**). Fixed precisely: `SubsumptionOracle.consult` gained `allow_llm: bool = True`; on a definite KB negative `_verify_chain` now falls through to the substrate consult with `allow_llm=False`, so a real substrate row still confirms the step but a cold LLM positive is never admitted over a KB negative. KB-positive still short-circuits; KB-unavailable still does the full consult. |
+| `r2c-1` — `_tier_u_endpoint` intervals not marked `unique`, so the contradiction gate over-abstained on Tier-U-only endpoints | LOW (over-tightened) | `_tier_u_endpoint` now sets `unique=True` (the single-distinct-date invariant guarantees it), and `_gather_interval` propagates `unique` from a pure Tier-U interval (KB stays authoritative when present). Forward-defensive only — all 8 endpoint seeds are `single_valued=0` today, so the contradiction branch is unreachable now. |
+| `r2c-2` — no test proved the leak-guard LRU exemption | LOW (test-gap) | Added `test_leak_guard_row_exempt_from_eviction`: an oldest-timestamp `leak_guard` row survives eviction and is excluded from the cap count. |
+
+The round-1 fix `ws2-verifychain-kbnegative-fallthrough` row above is **superseded** by `r2pa-01`:
+the short-circuit is now LLM-excluded-consult rather than an outright `return False`.
+
+---
+
 ## What was NOT changed (and why)
 
 - The geo hardcode cluster (`CONTINENT_QIDS`, `_location_disjoint`, `_GEO_REGION_TYPES`) and

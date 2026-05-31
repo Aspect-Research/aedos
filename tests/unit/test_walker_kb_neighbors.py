@@ -519,22 +519,34 @@ class TestKBEnumCandidateGated:
 
 
 class TestVerifyChainKBNegativeAuthoritative:
-    """PATCH-A fix (2) / §3.2 never-false-verify: a DEFINITE KB transitive
-    NON-HOLD (TransitivePathResult.holds=False, error=None) is an AUTHORITATIVE
-    negative — _verify_chain returns False WITHOUT falling through to the
-    substrate/LLM consult (which could fabricate a Priority-3 positive over the
-    KB negative). Only an UNAVAILABLE answer (None / fail-open error) may fall
-    through. A holding path still returns True."""
+    """PATCH-C r2pa-01 / §3.2 never-false-verify, REFINED. A DEFINITE KB
+    transitive NON-HOLD (TransitivePathResult.holds=False, error=None) is an
+    authoritative negative against a *cold LLM positive*, but it must NOT
+    discard a sound Priority-2 substrate row (operator-seeded / discovered —
+    trust ordering: substrate > KB > LLM). So on a definite KB negative
+    _verify_chain now FALLS THROUGH to the substrate consult in LLM-EXCLUDED
+    mode (`allow_llm=False`):
 
-    def test_definite_kb_negative_does_not_consult_substrate(self):
-        # All KB transitive-path ASKs report a DEFINITE non-hold (holds=False,
-        # error=None). Every _verify_chain candidate must be rejected at the KB
-        # layer; the substrate subsumption consult must NOT be reached.
+      * a substrate row that confirms the step STILL admits it (a seeded
+        `Williamstown part_of Massachusetts` survives Wikidata's incomplete
+        part_of closure);
+      * with NO substrate row the LLM Priority-3 is suppressed, so a cold LLM
+        guess can never fabricate a positive over the KB negative — the step
+        is rejected (§3.2).
+
+    A holding KB path still returns True without any consult. A KB-UNAVAILABLE
+    answer (None / fail-open error) still does the FULL consult (LLM included)."""
+
+    def test_definite_kb_negative_admits_when_substrate_row_confirms(self):
+        # Definite KB non-hold (holds=False, error=None) + a substrate row that
+        # CONFIRMS the step (consult_verdict="a_subsumed_by_b"). Under the
+        # round-2 fix this is exactly the scenario that SHOULD verify: the KB
+        # negative excludes only the LLM tier; the sound substrate row (trust:
+        # substrate > KB) still admits the substitution.
         substrate = _make_substrate(
             distribution_verdict="distributes_down",  # passes the is_a gate
             sub_neighbors=[],
-            # If the consult WERE reached it would (wrongly) admit the edge:
-            consult_verdict="a_subsumed_by_b",
+            consult_verdict="a_subsumed_by_b",  # a real substrate row confirms
         )
         kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
                        "P31": ["Q5"], "P279": []},
@@ -543,18 +555,92 @@ class TestVerifyChainKBNegativeAuthoritative:
 
         result = walker.walk(_claim(), _ctx())
 
-        # The authoritative KB negative forecloses every substitution.
+        # The substrate row admits the KB-enum substitution despite the KB
+        # transitive-negative.
+        kb_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+        ]
+        assert kb_edges, (
+            "a definite KB transitive-negative must NOT discard a confirming "
+            "substrate row; expected a surviving KB-enum substitution"
+        )
+        # The fix's heart: the consult IS reached, but in LLM-EXCLUDED mode so
+        # only a sound substrate/KB row (never a cold LLM positive) can confirm.
+        assert substrate.subsumption.consult.called, (
+            "a definite KB negative must fall through to the substrate consult"
+        )
+        for call in substrate.subsumption.consult.call_args_list:
+            assert call.kwargs.get("allow_llm") is False, (
+                "the consult on a KB negative must exclude the LLM tier "
+                f"(allow_llm=False); got {call.kwargs}"
+            )
+
+    def test_definite_kb_negative_rejects_when_only_llm_would_confirm(self):
+        # Definite KB non-hold AND no confirming substrate row
+        # (consult_verdict="unrelated" — the row tier yields nothing, and the
+        # LLM tier is suppressed by allow_llm=False). A cold LLM positive is
+        # NEVER admitted over the KB negative (§3.2). Every substitution is
+        # rejected → no grounding.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+            consult_verdict="unrelated",  # no substrate row admits; LLM excluded
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
+                       "P31": ["Q5"], "P279": []},
+                      path_holds=False)  # DEFINITE negative, no error
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
         assert result.verdict == "no_grounding_found"
         kb_edges = [
             e for e in result.trace.edges
             if e.edge_type == "kb_neighbor_enumeration"
         ]
         assert kb_edges == [], (
-            "a definite KB transitive-negative must reject every KB-enum "
-            f"substitution; got {[e.metadata for e in kb_edges]}"
+            "with no confirming substrate row and the LLM tier suppressed, a "
+            f"definite KB negative must reject every substitution; got "
+            f"{[e.metadata for e in kb_edges]}"
         )
-        # The fix's heart: no fall-through to the substrate/LLM consult.
-        substrate.subsumption.consult.assert_not_called()
+        # The consult IS reached (substrate tier may confirm) but the LLM tier
+        # is excluded — proving a cold LLM positive cannot be admitted.
+        assert substrate.subsumption.consult.called
+        for call in substrate.subsumption.consult.call_args_list:
+            assert call.kwargs.get("allow_llm") is False
+
+    def test_kb_unavailable_does_full_consult_including_llm(self):
+        # Positive control for the UNAVAILABLE branch: when the KB transitive
+        # ASK fails open (error set → tp treated as no authoritative answer),
+        # allow_llm stays True and the consult runs the FULL KB->substrate->LLM
+        # resolution. Here the substrate row confirms (consult_verdict admits)
+        # and the consult is invoked WITHOUT allow_llm=False.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+            consult_verdict="a_subsumed_by_b",
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
+                       "P31": ["Q5"], "P279": []})
+        # Fail-open: the transitive-path ASK reports an ERROR, not a verdict —
+        # an UNAVAILABLE answer, so _verify_chain keeps allow_llm=True.
+        kb.verify_transitive_path.return_value = TransitivePathResult(
+            holds=False, error="simulated SPARQL timeout"
+        )
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        assert substrate.subsumption.consult.called, (
+            "a KB-unavailable answer must fall through to the consult"
+        )
+        # Full consult: the LLM tier is NOT excluded (default True / not False).
+        for call in substrate.subsumption.consult.call_args_list:
+            assert call.kwargs.get("allow_llm", True) is not False, (
+                "a KB-UNAVAILABLE consult must keep the LLM tier available "
+                f"(allow_llm must not be False); got {call.kwargs}"
+            )
 
     def test_holding_kb_path_still_admits(self):
         # Positive control: a holding KB transitive path (holds=True) confirms

@@ -102,9 +102,24 @@ class SubsumptionOracle:
         self._exception_cache = exception_cache
 
     def consult(
-        self, entity_a: EntityRef, entity_b: EntityRef, relation_type: str
+        self,
+        entity_a: EntityRef,
+        entity_b: EntityRef,
+        relation_type: str,
+        allow_llm: bool = True,
     ) -> SubsumptionVerdict:
-        """Three-priority resolution: KB-mediated → substrate row → LLM generation."""
+        """Three-priority resolution: KB-mediated → substrate row → LLM generation.
+
+        `allow_llm` (default True preserves every existing caller): when False,
+        resolution STOPS after the substrate-row tier and the LLM Priority-3 is
+        never invoked. The caller uses this to consult sound evidence (a KB
+        Q-id traversal or an operator-seeded / discovered substrate row) WITHOUT
+        admitting a cold LLM guess — e.g. when a definite KB transitive-negative
+        already forbids fabricating a positive (§3.2 never-false-verify), yet a
+        real substrate row (trust ordering: substrate > KB > LLM) may still
+        confirm. With no substrate row the verdict is UNRELATED (no grounding),
+        not an LLM-generated answer.
+        """
         # Priority 1: KB-mediated (both entities are Wikidata Q-numbers)
         if (
             self._kb is not None
@@ -130,7 +145,15 @@ class SubsumptionOracle:
                 row_id=row["id"],
             )
 
-        # Priority 3: LLM generation
+        # Priority 3: LLM generation — suppressed when allow_llm is False (a
+        # KB-negative consult). Return UNRELATED (no grounding) instead of
+        # fabricating a positive over an authoritative KB negative.
+        if not allow_llm:
+            return SubsumptionVerdict(
+                verdict=SubsumptionVerdictType.UNRELATED,
+                source="substrate",
+                reason="llm tier suppressed (kb-negative consult); no substrate row",
+            )
         return self._generate_and_store(entity_a, entity_b, relation_type)
 
     def retract(self, row_id: int, reason: str) -> None:
