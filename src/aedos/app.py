@@ -129,7 +129,12 @@ async def chat(request: ChatRequest) -> JSONResponse:
             # claims as `asserted_unverified` premises before draft
             # generation.
             tier_u=pipeline.tier_u,
+            # WS5: thread the KB adapter so corrections can reverse-label
+            # contradicting entity Q-ids via its fetch_label.
+            kb=pipeline.kb,
         )
+
+    from aedos.deployment.chat_wrapper import claim_observability
 
     ctx = {"asserting_party_id": request.asserting_party_id or "user"}
     response = _chat_wrapper.respond(request.message, conversation_context=ctx)
@@ -149,6 +154,10 @@ async def chat(request: ChatRequest) -> JSONResponse:
             for a in response.intervention_plan.per_claim_actions
         ],
         "verification_id": response.verification_id,
+        # WS5 observability (additive): a per-claim inspectable view —
+        # verdict, conditional flag, contradicting value, provenance, and a
+        # human-readable trace. Existing keys are unchanged.
+        "observability": claim_observability(response.verification_result),
     })
 
 
@@ -159,8 +168,12 @@ async def get_verification(verification_id: str) -> JSONResponse:
     vr = _chat_wrapper.get_verification(verification_id)
     if vr is None:
         raise HTTPException(status_code=404, detail="verification not found")
+    from aedos.deployment.chat_wrapper import claim_observability
     return JSONResponse({
         "verification_id": verification_id,
         "per_claim_verdicts": vr.per_claim_verdicts,
         "aggregate_metadata": vr.aggregate_metadata,
+        # WS5 observability (additive): the deeper per-claim inspection
+        # surface — full trace + provenance + corrected value per claim.
+        "claims": claim_observability(vr),
     })

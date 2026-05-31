@@ -1,0 +1,4194 @@
+{
+  "timestamp": "2026-05-24T05:43:33.789613+00:00",
+  "total_cases": 50,
+  "passed": 17,
+  "accuracy": 0.34,
+  "verdict_distribution": {
+    "no_grounding_found": 44,
+    "verified": 4,
+    "null": 2
+  },
+  "total_kb_live_neighbors_events": 60,
+  "cases_where_kb_was_called": 7,
+  "cases_with_d5_edge_in_trace": 7,
+  "total_kb_neighbor_edges": 151,
+  "audit_events_with_neighbors_returned": 60,
+  "per_property_calls_returning_neighbors": {
+    "P31": 45,
+    "P279": 43
+  },
+  "per_property_total_neighbors_returned": {
+    "P31": 65,
+    "P279": 86
+  },
+  "per_case": [
+    {
+      "case_id": "der_multihop_001",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_002",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_003",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_004",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_005",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_006",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "budget_wall_clock",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q55983715"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q154954"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q164509"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q215627"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q15978631"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q1144560"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q6174489"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q7336288"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q55983715",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q55983715"
+          },
+          "target_content": {
+            "subject": "Q19478619"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q55983715",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q55983715"
+          },
+          "target_content": {
+            "subject": "Q21871294"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q1144560"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q6174489"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q7336288"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q154954",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q154954"
+          },
+          "target_content": {
+            "subject": "Q2135465"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q154954",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q154954"
+          },
+          "target_content": {
+            "subject": "Q10541491"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q154954",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q154954"
+          },
+          "target_content": {
+            "subject": "Q3778211"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q154954",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q154954"
+          },
+          "target_content": {
+            "subject": "Q106559804"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q1144560"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q6174489"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q7336288"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q164509",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q164509"
+          },
+          "target_content": {
+            "subject": "Q729"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q164509",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q164509"
+          },
+          "target_content": {
+            "subject": "Q72638"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q1144560"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q6174489"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q7336288"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q215627",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q215627"
+          },
+          "target_content": {
+            "subject": "Q795052"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q215627",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q215627"
+          },
+          "target_content": {
+            "subject": "Q3778211"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q215627",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q215627"
+          },
+          "target_content": {
+            "subject": "Q24229398"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q1144560"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q6174489"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q7336288"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q15978631",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q15978631"
+          },
+          "target_content": {
+            "subject": "Q16521"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q15978631",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q15978631"
+          },
+          "target_content": {
+            "subject": "Q171283"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q1144560"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q6174489"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q58702",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "mortal"
+          },
+          "target_content": {
+            "object": "Q7336288"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q55983715"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q154954"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q164509"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q215627"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q15978631"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q1144560",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q1144560"
+          },
+          "target_content": {
+            "object": "Q24034552"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q1144560",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q1144560"
+          },
+          "target_content": {
+            "object": "Q2091629"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q1144560",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q1144560"
+          },
+          "target_content": {
+            "object": "Q3481047"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q55983715"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q154954"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q164509"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q215627"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q15978631"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q6174489",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q6174489"
+          },
+          "target_content": {
+            "object": "Q18208034"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P31",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q55983715"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q154954"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q164509"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q215627"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q5",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Humans"
+          },
+          "target_content": {
+            "subject": "Q15978631"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q7336288",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q7336288"
+          },
+          "target_content": {
+            "object": "Q5449740"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q7336288",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q7336288"
+          },
+          "target_content": {
+            "object": "Q17004438"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "both",
+            "kb_property": "P279",
+            "subject_qid": "Q7336288",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q7336288"
+          },
+          "target_content": {
+            "object": "Q122295832"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 18,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_007",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_008",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_009",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_010",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_011",
+      "category": "multi_hop_distribution",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_multihop_012",
+      "category": "multi_hop_distribution",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_001",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_002",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_003",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_004",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "budget_wall_clock",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q3472263",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q3409032"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q28533405",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a student"
+          },
+          "target_content": {
+            "object": "Q3305213"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3409032",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q3409032"
+          },
+          "target_content": {
+            "subject": "Q202444"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3409032",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q3409032"
+          },
+          "target_content": {
+            "subject": "Q136439588"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q28533405",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a student"
+          },
+          "target_content": {
+            "object": "Q3305213"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q113145171"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q28417815"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q56085456"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q3305213",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3305213"
+          },
+          "target_content": {
+            "object": "Q116474095"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3305213",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3305213"
+          },
+          "target_content": {
+            "object": "Q838948"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3305213",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3305213"
+          },
+          "target_content": {
+            "object": "Q110304307"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 6,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_005",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_006",
+      "category": "cross_source",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "python",
+            "verdict": "verified"
+          },
+          "source_content": {
+            "subject": "4",
+            "predicate": "less_than",
+            "object": "7",
+            "polarity": 1
+          },
+          "target_content": {
+            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if predicate == 'less_than':\n        return float(subject) < float(obj)\n    return False",
+            "output": "TRUE"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_007",
+      "category": "cross_source",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "python",
+            "verdict": "verified"
+          },
+          "source_content": {
+            "subject": "Asa's birth year",
+            "predicate": "plus_30_equals",
+            "object": "2003",
+            "polarity": 1
+          },
+          "target_content": {
+            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    if subject == \"Asa's birth year\" and predicate == 'plus_30_equals':\n        # Asa was born in 1973\n        birth_year = 1973\n        return (birth_year + 30) == int(obj)\n    return False",
+            "output": "TRUE"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_008",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_009",
+      "category": "cross_source",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_cross_010",
+      "category": "cross_source",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q513",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Mount Everest"
+          },
+          "target_content": {
+            "subject": "Q8502"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q8502",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q8502"
+          },
+          "target_content": {
+            "subject": "Q618123"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q8502",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q8502"
+          },
+          "target_content": {
+            "subject": "Q12046615"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q8502",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q8502"
+          },
+          "target_content": {
+            "subject": "Q35145263"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q8502",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q8502"
+          },
+          "target_content": {
+            "subject": "Q106589819"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q618123",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q618123"
+          },
+          "target_content": {
+            "subject": "Q27096213"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q12046615",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q12046615"
+          },
+          "target_content": {
+            "subject": "Q19478619"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q12046615",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q12046615"
+          },
+          "target_content": {
+            "subject": "Q24017414"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q12046615",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q12046615"
+          },
+          "target_content": {
+            "subject": "Q96251598"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35145263",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35145263"
+          },
+          "target_content": {
+            "subject": "Q618123"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35145263",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35145263"
+          },
+          "target_content": {
+            "subject": "Q16686022"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35145263",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35145263"
+          },
+          "target_content": {
+            "subject": "Q27096220"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35145263",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35145263"
+          },
+          "target_content": {
+            "subject": "Q115385384"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q106589819",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q106589819"
+          },
+          "target_content": {
+            "subject": "Q106589826"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q106589819",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q106589819"
+          },
+          "target_content": {
+            "subject": "Q271669"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q106589819",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q106589819"
+          },
+          "target_content": {
+            "subject": "Q618123"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q106589819",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q106589819"
+          },
+          "target_content": {
+            "subject": "Q2221906"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q27096213",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q27096213"
+          },
+          "target_content": {
+            "subject": "Q26713767"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q27096213",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q27096213"
+          },
+          "target_content": {
+            "subject": "Q123349660"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q19478619",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q19478619"
+          },
+          "target_content": {
+            "subject": "Q151885"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q19478619",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q19478619"
+          },
+          "target_content": {
+            "subject": "Q19868531"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q19478619",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q19478619"
+          },
+          "target_content": {
+            "subject": "Q23958852"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q19478619",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q19478619"
+          },
+          "target_content": {
+            "subject": "Q16889133"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q24017414",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q24017414"
+          },
+          "target_content": {
+            "subject": "Q24017465"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q24017414",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q24017414"
+          },
+          "target_content": {
+            "subject": "Q19478619"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q24017414",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q24017414"
+          },
+          "target_content": {
+            "subject": "Q23959932"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q96251598",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q96251598"
+          },
+          "target_content": {
+            "subject": "Q19478619"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q96251598",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q96251598"
+          },
+          "target_content": {
+            "subject": "Q21146257"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q16686022",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q16686022"
+          },
+          "target_content": {
+            "subject": "Q223557"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q16686022",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q16686022"
+          },
+          "target_content": {
+            "subject": "Q1970309"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q27096220",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q27096220"
+          },
+          "target_content": {
+            "subject": "Q27096213"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q115385384",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q115385384"
+          },
+          "target_content": {
+            "subject": "Q13196193"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q106589826",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q106589826"
+          },
+          "target_content": {
+            "subject": "Q25894868"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q271669",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q271669"
+          },
+          "target_content": {
+            "subject": "Q12046615"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q271669",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q271669"
+          },
+          "target_content": {
+            "subject": "Q618123"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q271669",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q271669"
+          },
+          "target_content": {
+            "subject": "Q2221906"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q2221906",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q2221906"
+          },
+          "target_content": {
+            "subject": "Q96253971"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q2221906",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q2221906"
+          },
+          "target_content": {
+            "subject": "Q137015716"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q2221906",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q2221906"
+          },
+          "target_content": {
+            "subject": "Q27096213"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 16,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_001",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_002",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_003",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_004",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_005",
+      "category": "entity_disambiguation",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "budget_wall_clock",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1223",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Washington"
+          },
+          "target_content": {
+            "subject": "Q35657"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q500131",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a state"
+          },
+          "target_content": {
+            "object": "Q3918"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q500131",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a state"
+          },
+          "target_content": {
+            "object": "Q23002039"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q500131",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a state"
+          },
+          "target_content": {
+            "object": "Q96888669"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q28872924"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q135236673"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q107390"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q155076"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q192611"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q852446"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q10864048"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q35657",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q35657"
+          },
+          "target_content": {
+            "subject": "Q106458883"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q500131",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a state"
+          },
+          "target_content": {
+            "object": "Q3918"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q500131",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a state"
+          },
+          "target_content": {
+            "object": "Q23002039"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q500131",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a state"
+          },
+          "target_content": {
+            "object": "Q96888669"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1223",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Washington"
+          },
+          "target_content": {
+            "subject": "Q35657"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q3918",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3918"
+          },
+          "target_content": {
+            "object": "Q112872396"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3918",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3918"
+          },
+          "target_content": {
+            "object": "Q38723"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3918",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3918"
+          },
+          "target_content": {
+            "object": "Q4671277"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3918",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3918"
+          },
+          "target_content": {
+            "object": "Q123349660"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1223",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Washington"
+          },
+          "target_content": {
+            "subject": "Q35657"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q23002039",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q23002039"
+          },
+          "target_content": {
+            "object": "Q7257916"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q23002039",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q23002039"
+          },
+          "target_content": {
+            "object": "Q23002037"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1223",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Washington"
+          },
+          "target_content": {
+            "subject": "Q35657"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q96888669",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q96888669"
+          },
+          "target_content": {
+            "object": "Q2085381"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 10,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_006",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_007",
+      "category": "entity_disambiguation",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "python",
+            "verdict": "verified"
+          },
+          "source_content": {
+            "subject": "Mercury",
+            "predicate": "closer_to_the_sun_than",
+            "object": "Earth",
+            "polarity": 1
+          },
+          "target_content": {
+            "code": "def verify(subject: str, predicate: str, obj: str) -> bool:\n    # Define the order of planets from the sun\n    planet_order = [\n        'Mercury', 'Venus', 'Earth', 'Mars',\n        'Jupiter', 'Saturn', 'Uranus', 'Neptune'\n    ]\n    \n    # Find the indices of the subject and object in the planet order\n    try:\n        subject_index = planet_order.index(subject)\n        obj_index = planet_order.index(obj)\n    except ValueError:\n        # If either subject or object is not in the list, return False\n        return False\n    \n    # Check if the subject is closer to the sun than the object\n    if predicate == 'closer_to_the_sun_than':\n        return subject_index < obj_index\n    elif predicate == 'farther_from_the_sun_than':\n        return subject_index > obj_index\n    else:\n        # If the predicate is not recognized, return False\n        return False",
+            "output": "TRUE"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_disambiguation_008",
+      "category": "entity_disambiguation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_001",
+      "category": "predicate_translation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_002",
+      "category": "predicate_translation",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_003",
+      "category": "predicate_translation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_004",
+      "category": "predicate_translation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_005",
+      "category": "predicate_translation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_006",
+      "category": "predicate_translation",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_007",
+      "category": "predicate_translation",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_predicate_translation_008",
+      "category": "predicate_translation",
+      "passed": true,
+      "verdict": "verified",
+      "abstention_reason": null,
+      "edges": [
+        {
+          "edge_type": "premise_lookup",
+          "metadata": {
+            "source": "kb",
+            "verdict": "verified",
+            "lookup_inverted": false
+          },
+          "source_content": {
+            "subject": "Microsoft",
+            "predicate": "co_founded_by",
+            "object": "Bill Gates",
+            "polarity": 1
+          },
+          "target_content": {
+            "entity": "Q2283"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_revision_001",
+      "category": "belief_revision",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_revision_002",
+      "category": "belief_revision",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_revision_003",
+      "category": "belief_revision",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_revision_004",
+      "category": "belief_revision",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "budget_wall_clock",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q3472263",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q3409032"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q28533405",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a student"
+          },
+          "target_content": {
+            "object": "Q3305213"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3409032",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q3409032"
+          },
+          "target_content": {
+            "subject": "Q202444"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3409032",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Q3409032"
+          },
+          "target_content": {
+            "subject": "Q136439588"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q28533405",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "a student"
+          },
+          "target_content": {
+            "object": "Q3305213"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q113145171"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q28417815"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q18216",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "Asa"
+          },
+          "target_content": {
+            "subject": "Q56085456"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q3305213",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3305213"
+          },
+          "target_content": {
+            "object": "Q116474095"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3305213",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3305213"
+          },
+          "target_content": {
+            "object": "Q838948"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P279",
+            "subject_qid": "Q3305213",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "Q3305213"
+          },
+          "target_content": {
+            "object": "Q110304307"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 6,
+      "error": null
+    },
+    {
+      "case_id": "der_revision_005",
+      "category": "belief_revision",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "budget_wall_clock",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q123482344",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "The project"
+          },
+          "target_content": {
+            "subject": "Q7725634"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q123482344",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "the project"
+          },
+          "target_content": {
+            "object": "Q7725634"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
+      "error": null
+    },
+    {
+      "case_id": "der_revision_006",
+      "category": "belief_revision",
+      "passed": false,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_abstain_001",
+      "category": "abstention",
+      "passed": true,
+      "verdict": null,
+      "abstention_reason": null,
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_abstain_002",
+      "category": "abstention",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "budget_wall_clock",
+      "edges": [
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q6906732",
+            "polarity": 1
+          },
+          "source_content": {
+            "subject": "the meaning of life"
+          },
+          "target_content": {
+            "subject": "Q7889"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1879675",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "42"
+          },
+          "target_content": {
+            "object": "Q978"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1879675",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "42"
+          },
+          "target_content": {
+            "object": "Q223675"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1879675",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "42"
+          },
+          "target_content": {
+            "object": "Q1920566"
+          }
+        },
+        {
+          "edge_type": "kb_neighbor_enumeration",
+          "metadata": {
+            "relation_type": "is_a",
+            "direction": "parent",
+            "distribution": "distributes_down",
+            "kb_property": "P31",
+            "subject_qid": "Q1879675",
+            "polarity": 1
+          },
+          "source_content": {
+            "object": "42"
+          },
+          "target_content": {
+            "object": "Q1935136"
+          }
+        }
+      ],
+      "kb_live_neighbors_calls_this_case": 2,
+      "error": null
+    },
+    {
+      "case_id": "der_abstain_003",
+      "category": "abstention",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_abstain_004",
+      "category": "abstention",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_abstain_005",
+      "category": "abstention",
+      "passed": true,
+      "verdict": null,
+      "abstention_reason": null,
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    },
+    {
+      "case_id": "der_abstain_006",
+      "category": "abstention",
+      "passed": true,
+      "verdict": "no_grounding_found",
+      "abstention_reason": "depth_exhausted",
+      "edges": [],
+      "kb_live_neighbors_calls_this_case": 0,
+      "error": null
+    }
+  ],
+  "audit_log_kb_live_neighbors": [
+    {
+      "event_subject": "Q1879675",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 4,
+          "P279": 0
+        },
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q6906732",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 593.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q123482344",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q123482344",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3305213",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 203.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q18216",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q28533405",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 94.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3409032",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 2
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q28533405",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 203.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3472263",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q96888669",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 1
+        },
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1223",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q23002039",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 2
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1223",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3918",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 3
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1223",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q500131",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 3,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q35657",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 8,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 6
+        },
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q500131",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 3,
+          "P279": 0
+        },
+        "duration_ms": 422.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1223",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 469.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q2221906",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q271669",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 516.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q106589826",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 1
+        },
+        "duration_ms": 454.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q115385384",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 1
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q27096220",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 1
+        },
+        "duration_ms": 468.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q16686022",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 2
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q96251598",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 1
+        },
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q24017414",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q19478619",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 3,
+          "P279": 1
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q27096213",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 2
+        },
+        "duration_ms": 454.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q106589819",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 3
+        },
+        "duration_ms": 469.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q35145263",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 4
+        },
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q12046615",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 421.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q618123",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 1
+        },
+        "duration_ms": 594.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q8502",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 2
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q513",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3305213",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 438.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q18216",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q28533405",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3409032",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 2
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q28533405",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 516.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q3472263",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 0
+        },
+        "duration_ms": 516.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q7336288",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 3
+        },
+        "duration_ms": 531.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q5",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 5,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 4
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q6174489",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 1,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 1
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q5",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 5,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 4
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q1144560",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 2
+        },
+        "duration_ms": 485.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q5",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 5,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 4
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q58702",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q15978631",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 1
+        },
+        "duration_ms": 453.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q58702",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q215627",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 3
+        },
+        "duration_ms": 656.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q58702",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q164509",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 0,
+          "P279": 2
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q58702",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q154954",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 4,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 2
+        },
+        "duration_ms": 437.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q58702",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 0.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q55983715",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 2,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 1
+        },
+        "duration_ms": 500.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q58702",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 3,
+        "per_property_counts": {
+          "P31": 2,
+          "P279": 1
+        },
+        "duration_ms": 1016.0,
+        "retry_count": 0,
+        "error": null
+      }
+    },
+    {
+      "event_subject": "Q5",
+      "event_data": {
+        "properties_requested": [
+          "P31",
+          "P279"
+        ],
+        "total_neighbors_returned": 5,
+        "per_property_counts": {
+          "P31": 1,
+          "P279": 4
+        },
+        "duration_ms": 813.0,
+        "retry_count": 0,
+        "error": null
+      }
+    }
+  ]
+}

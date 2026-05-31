@@ -11,6 +11,7 @@ from aedos.layer5_result.trace import (
     ProvenanceTerm,
     TraceEdge,
     TraceNode,
+    trace_to_human,
     trace_to_json,
 )
 
@@ -135,3 +136,77 @@ class TestTraceToJson:
         assert prov["children"][0]["op"] == "lit"
         assert prov["children"][0]["literal"]["row_id"] == 7
         assert prov["children"][0]["literal"]["assertion"] is True
+
+
+# ---------------------------------------------------------------------------
+# trace_to_human — WS5 observability renderer
+# ---------------------------------------------------------------------------
+
+class TestTraceToHuman:
+    def _trace(self):
+        root = TraceNode("claim", {
+            "subject": "Obama", "predicate": "birthplace",
+            "object": "Chicago", "polarity": 1,
+        })
+        t = JustificationTrace(root=root)
+        t.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=root,
+            target=TraceNode("kb_statement", {"entity": "Q76"}),
+            metadata={
+                "source": "kb",
+                "verdict": "contradicted",
+                "kb_property": "P19",
+                "contradicting_value": "Q18094",
+                "contradicting_value_type": "entity",
+            },
+        ))
+        t.source_breakdown = {"kb": 1}
+        return t
+
+    def test_renders_claim_and_verdict(self):
+        text = trace_to_human(self._trace(), verdict="contradicted")
+        assert "Claim: Obama birthplace Chicago (polarity=1)" in text
+        assert "Verdict: contradicted" in text
+
+    def test_renders_edge_with_source_and_metadata(self):
+        text = trace_to_human(self._trace(), verdict="contradicted")
+        # The edge line lists the source, the verdict, the kb property, and
+        # the contradicting source value.
+        assert "premise_lookup via kb" in text
+        assert "verdict=contradicted" in text
+        assert "property=P19" in text
+        assert "source_value=Q18094" in text
+
+    def test_renders_source_breakdown(self):
+        text = trace_to_human(self._trace())
+        assert "Sources:" in text
+        assert "kb" in text
+
+    def test_deterministic_same_input_same_output(self):
+        # Pure/deterministic: identical traces render byte-identical text.
+        a = trace_to_human(self._trace(), verdict="contradicted")
+        b = trace_to_human(self._trace(), verdict="contradicted")
+        assert a == b
+
+    def test_renders_provenance_with_assertion_marker(self):
+        root = TraceNode("claim", {"subject": "Asa", "predicate": "lives_in",
+                                   "object": "Paris", "polarity": 1})
+        t = JustificationTrace(root=root)
+        t.provenance.add_alternative(ProvenanceTerm.lit(
+            ProvenanceLiteral(source="tier_u", table="tier_u", row_id=7,
+                              status="asserted_unverified", assertion=True)))
+        text = trace_to_human(t, verdict="verified_given_assertion")
+        # chain_includes_assertion is derived True → the conditional note,
+        # and the provenance line marks the assertion literal.
+        assert "chain includes an unverified user assertion" in text
+        assert "Provenance" in text
+        assert "tier_u(tier_u#7)[assertion]" in text
+
+    def test_tolerates_minimal_trace(self):
+        # A bare trace (no edges, empty root content, no verdict) renders
+        # without raising — the renderer must tolerate partial traces.
+        t = JustificationTrace(root=TraceNode("claim"))
+        text = trace_to_human(t)
+        assert text.startswith("Claim:")
+        assert isinstance(text, str)

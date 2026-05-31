@@ -13,6 +13,7 @@ from ..layer5_result.aggregator import (
     ClaimVerdict,
     VerificationResult,
     base_verdict_of,
+    is_given_assertion,
 )
 from ..llm.client import ChatMessage
 
@@ -36,9 +37,16 @@ class InterventionType(str, Enum):
 
 class ClaimActionType(str, Enum):
     """Per-claim action shape. Each problematic claim gets one action of
-    one of these types when the overall intervention is INTERVENE."""
+    one of these types when the overall intervention is INTERVENE.
+
+    `CONFIRM_CONDITIONAL` (WS5) surfaces a `*_given_assertion` verified
+    claim: the claim is verified only because it rests on the user's own
+    (unverified) assertion, not on an independent source. It is made
+    VISIBLE per the observability requirement but is NOT treated as a
+    problem (it never escalates to DECLINE)."""
     CORRECT = "correct"
     ABSTAIN = "abstain"
+    CONFIRM_CONDITIONAL = "confirm_conditional"
 
 
 @dataclass(frozen=True)
@@ -75,14 +83,49 @@ class ChatResponse:
         return self.intervention_plan.overall.value
 
 
-def _format_correction(cv: ClaimVerdict) -> str:
-    """Generic correction annotation for a contradicted claim. v0.15 surfaces
-    the claim's S/P/O without the contradicting grounding value; v0.16
-    enrichment plumbs the contradicting value out of the trace edges
-    (deferred per the Session 2 design)."""
+def _format_correction(cv: ClaimVerdict, label_fetcher=None) -> str:
+    """Correction annotation for a contradicted claim. When the trace
+    carried a contradicting value (`cv.contradicting_value`), emit
+    '... the source indicates {value} instead.' Entity Q-ids are
+    reverse-labeled via `label_fetcher` (when
+    `cv.contradicting_value_type == 'entity'`); dates/quantities/literals
+    pass through. Falls back to the generic form when no value was
+    captured (§3.2-safe: only emit 'instead X' when a distinct value was
+    genuinely captured). Reverse-label failure degrades to the raw Q-id —
+    never crashes."""
+    polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
+    base = (
+        f"Aedos found a contradicting source for: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}"
+    )
+    value = cv.contradicting_value
+    if value:
+        display = value
+        if (
+            cv.contradicting_value_type == "entity"
+            and isinstance(value, str)
+            and value.startswith("Q")
+            and label_fetcher is not None
+        ):
+            try:
+                label = label_fetcher(value)
+            except Exception:
+                label = None
+            if label:
+                display = label
+        return f"{base}; the source indicates {display} instead."
+    return f"{base}."
+
+
+def _format_conditional(cv: ClaimVerdict) -> str:
+    """WS5: annotation for a `verified_given_assertion` claim — verified
+    only because it rests on the user's own (unverified) assertion, with
+    no independent source confirming it. Makes the conditional nature
+    VISIBLE without treating it as a problem."""
     polarity_marker = "" if cv.claim.polarity == 1 else " (negated)"
     return (
-        f"Aedos found a contradicting source for: "
+        f"Aedos verified, contingent on your assertion that it holds "
+        f"(no independent source confirms it): "
         f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
     )
 
@@ -98,7 +141,9 @@ def _format_abstention(cv: ClaimVerdict) -> str:
     )
 
 
-def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan:
+def select_interventions(
+    claim_verdicts: list[ClaimVerdict], label_fetcher=None
+) -> InterventionPlan:
     """Deterministic per-claim intervention selection.
 
     Phase 10.5 Session 2 Item 1 (per-claim intervention) replaces the
@@ -121,10 +166,21 @@ def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan
       single-problematic-claim case, which dropped useful per-claim
       annotations on the floor.)
 
-    Dual-designation verdicts (`*_given_assertion`) collapse to their
-    base verdict via `base_verdict_of` before the policy fires; the
-    `_given_assertion` qualifier is observability metadata, not a
-    user-facing distinction.
+    Conditional verdicts (`*_given_assertion`, WS5): the base verdict still
+    drives the COUNT buckets (via `base_verdict_of`), but the
+    `_given_assertion` qualifier is NO LONGER erased at the user surface.
+    A `verified_given_assertion` claim emits a `CONFIRM_CONDITIONAL` action
+    (visible, but never problematic); `contradicted_given_assertion` /
+    `abstained_given_assertion` get CORRECT / ABSTAIN with a suffix noting
+    the contradiction/abstention rests on the user's own assertion.
+
+    DECLINE policy: only CORRECT / ABSTAIN actions count as 'problematic'.
+    A draft of only conditional confirmations surfaces via INTERVENE notes
+    (visibility) and is never refused — a conditionally-verified claim is a
+    (conditional) verification, not a problem.
+
+    `label_fetcher` (optional) reverse-labels entity Q-ids in correction
+    text; threaded down to `_format_correction`.
     """
     if not claim_verdicts:
         return InterventionPlan(InterventionType.PASS_THROUGH)
@@ -133,25 +189,44 @@ def select_interventions(claim_verdicts: list[ClaimVerdict]) -> InterventionPlan
     verified_count = 0
     for cv in claim_verdicts:
         base = base_verdict_of(cv.verdict)
+        conditional = is_given_assertion(cv.verdict)
         if base == "verified":
             verified_count += 1
+            if conditional:
+                # WS5: surface the conditional verification (observability) —
+                # not independently grounded, but not a problem either.
+                actions.append(ClaimAction(
+                    claim_id=cv.claim_id,
+                    action_type=ClaimActionType.CONFIRM_CONDITIONAL,
+                    annotation=_format_conditional(cv),
+                ))
             continue
         if base == "contradicted":
             actions.append(ClaimAction(
                 claim_id=cv.claim_id,
                 action_type=ClaimActionType.CORRECT,
-                annotation=_format_correction(cv),
+                annotation=_format_correction(cv, label_fetcher=label_fetcher)
+                + (" (this contradiction rests on your own prior assertion)" if conditional else ""),
             ))
         else:  # no_grounding_found (and its dual abstained_given_assertion)
             actions.append(ClaimAction(
                 claim_id=cv.claim_id,
                 action_type=ClaimActionType.ABSTAIN,
-                annotation=_format_abstention(cv),
+                annotation=_format_abstention(cv)
+                + (" (your assertion alone is not independent grounding)" if conditional else ""),
             ))
 
     if not actions:
         return InterventionPlan(InterventionType.PASS_THROUGH)
-    if verified_count == 0 and len(actions) >= 2:
+    problematic = [
+        a for a in actions
+        if a.action_type in (ClaimActionType.CORRECT, ClaimActionType.ABSTAIN)
+    ]
+    if not problematic:
+        # Only conditional confirmations — surface them via INTERVENE notes
+        # (visibility), never DECLINE on a draft we conditionally verified.
+        return InterventionPlan(InterventionType.INTERVENE, tuple(actions))
+    if verified_count == 0 and len(problematic) >= 2:
         return InterventionPlan(InterventionType.DECLINE)
     return InterventionPlan(InterventionType.INTERVENE, tuple(actions))
 
@@ -172,6 +247,37 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
+def claim_observability(vr: VerificationResult) -> list[dict]:
+    """WS5: structured, inspectable per-claim view — verdict, base verdict,
+    the conditional flag, abstention reason, the contradicting value,
+    provenance, a JSON trace, a human-readable trace rendering, and the
+    bindings/paths tried. Surfaced additively on /chat (an `observability`
+    key) and /verification/{id} (a `claims` list) per the operator's
+    observability requirement."""
+    from ..layer5_result.trace import trace_to_json, trace_to_human
+    out: list[dict] = []
+    for cv in vr.claim_verdicts:
+        trace = vr.per_claim_traces.get(cv.claim_id)
+        trace_json = trace_to_json(trace) if trace else None
+        out.append({
+            "claim_id": cv.claim_id,
+            "subject": cv.claim.subject,
+            "predicate": cv.claim.predicate,
+            "object": cv.claim.object,
+            "polarity": cv.claim.polarity,
+            "verdict": cv.verdict,
+            "base_verdict": base_verdict_of(cv.verdict),
+            "conditional": is_given_assertion(cv.verdict),
+            "abstention_reason": cv.abstention_reason,
+            "contradicting_value": cv.contradicting_value,
+            "contradicting_value_type": cv.contradicting_value_type,
+            "provenance": trace_json.get("provenance") if trace_json else None,
+            "trace": trace_json,
+            "trace_human": trace_to_human(trace, claim=cv.claim, verdict=cv.verdict) if trace else None,
+        })
+    return out
+
+
 class ChatWrapper:
     def __init__(
         self,
@@ -181,11 +287,17 @@ class ChatWrapper:
         llm_client,
         tier_u=None,
         config: Optional[dict] = None,
+        kb=None,
     ) -> None:
         self._extractor = extractor
         self._walker = walker
         self._aggregator = aggregator
         self._llm = llm_client
+        # WS5: the KB adapter (WikidataAdapter), used only to reverse-label
+        # contradicting entity Q-ids when composing corrections. Optional and
+        # accessed via getattr(kb, "fetch_label", None) so mock/stub adapters
+        # without fetch_label keep working. None for legacy/test constructions.
+        self._kb = kb
         # Phase H Cluster 2 step 2: `tier_u` is the promotion target for
         # user-asserted claims. Optional for back-compat with tests that
         # construct ChatWrapper without it (those skip the user-message
@@ -284,8 +396,12 @@ class ChatWrapper:
             text_input={"message": user_message, "draft": draft},
         )
 
-        # 5. Intervention selection (per-claim plan)
-        plan = select_interventions(vr.claim_verdicts)
+        # 5. Intervention selection (per-claim plan). WS5: thread the KB
+        # adapter's fetch_label so corrections can reverse-label entity Q-ids
+        # ("the source indicates {label} instead"). getattr-guarded: a kb
+        # without fetch_label (or no kb) yields None → raw value / generic form.
+        label_fetcher = getattr(self._kb, "fetch_label", None)
+        plan = select_interventions(vr.claim_verdicts, label_fetcher=label_fetcher)
 
         # 6. Build response (Format A: draft + per-claim notes)
         final = build_response(draft, plan)

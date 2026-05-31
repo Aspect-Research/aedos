@@ -140,3 +140,61 @@ def trace_to_json(trace: JustificationTrace) -> dict:
         "chain_includes_assertion": trace.chain_includes_assertion,
         "provenance": _prov(trace.provenance),
     }
+
+
+def trace_to_human(
+    trace: JustificationTrace, *, claim: Any = None, verdict: Any = None
+) -> str:
+    """WS5 observability: render a justification trace as inspectable
+    plain text. Lists the claim, the final verdict, each edge with its
+    source + key metadata (verdict, contradicting_value, kb_property,
+    premise_status, bindings/paths tried, discovery_source), the
+    provenance term (WS3), and the source_breakdown. Pure/deterministic;
+    no I/O. Tolerates partial traces (hand-built test traces, missing
+    optional keys)."""
+    lines: list[str] = []
+    root = trace.root.content if trace.root else {}
+    subj = root.get("subject")
+    pred = root.get("predicate")
+    obj = root.get("object")
+    lines.append(f"Claim: {subj} {pred} {obj} (polarity={root.get('polarity')})")
+    if verdict is not None:
+        lines.append(f"Verdict: {verdict}")
+    if getattr(trace, "chain_includes_assertion", False):
+        lines.append("Note: chain includes an unverified user assertion (conditional).")
+    for i, e in enumerate(trace.edges, 1):
+        md = e.metadata
+        parts = [f"[{i}] {e.edge_type} via {md.get('source', '?')}"]
+        if md.get("verdict"):
+            parts.append(f"verdict={md['verdict']}")
+        if md.get("kb_property"):
+            parts.append(f"property={md['kb_property']}")
+        if md.get("contradicting_value") is not None:
+            parts.append(f"source_value={md['contradicting_value']}")
+        if md.get("premise_status"):
+            parts.append(f"premise={md['premise_status']}")
+        if md.get("belief_revision"):
+            parts.append(f"belief_revision={md['belief_revision']}")
+        if md.get("relation_type"):
+            parts.append(f"{md['relation_type']}/{md.get('direction', '')}")
+        if md.get("discovery_source"):
+            parts.append(f"discovery_source={md['discovery_source']}")
+        if md.get("bindings_tried"):
+            parts.append(f"bindings_tried={md['bindings_tried']}")
+        if md.get("paths_tried"):
+            parts.append(f"paths_tried={md['paths_tried']}")
+        lines.append("  " + " ".join(parts))
+    prov = getattr(trace, "provenance", None)
+    if prov is not None and prov.literals():
+        prov_parts = []
+        for lit in prov.literals():
+            seg = lit.source
+            if lit.table is not None and lit.row_id is not None:
+                seg += f"({lit.table}#{lit.row_id})"
+            if lit.assertion:
+                seg += "[assertion]"
+            prov_parts.append(seg)
+        lines.append(f"Provenance ({prov.op}): " + ", ".join(prov_parts))
+    if trace.source_breakdown:
+        lines.append(f"Sources: {trace.source_breakdown}")
+    return "\n".join(lines)
