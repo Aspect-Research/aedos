@@ -18,7 +18,33 @@ from aedos.layer4_sources.kb_protocol import (
     LocalContext, ResolutionCandidate, Statement, SubsumptionResult
 )
 from aedos.layer4_sources.kb_verifier import KBVerdict, KBVerdictType, KBVerifier
+# v0.16.1 WS5a: the geo predicate cluster was relocated from CORE (kb_verifier)
+# into the WikidataAdapter behind the kb_protocol seam. The mock KBs below mix
+# in the relocated geo accessors so the verifier's location-disjoint /
+# continent-widening paths exercise the SAME code, byte-for-byte.
+from aedos.layer4_sources.kb_wikidata import (
+    _CONTINENT_QIDS,
+    _GEO_CONTAINER_TYPES,
+    _LOCATION_KB_PROPERTIES,
+    _geographic_disjoint,
+)
 from aedos.llm.client import LLMClient
+
+
+class _GeoMixin:
+    """v0.16.1 WS5a: gives a mock KB the relocated geographic protocol surface
+    (`is_location_property` / `geo_container_types` / `geographic_disjoint`) by
+    delegating to the adapter's relocated logic, driven by the mock's own
+    `subsumption`. Keeps the verifier's geo paths byte-identical under mocks."""
+
+    def is_location_property(self, kb_property):
+        return kb_property in _LOCATION_KB_PROPERTIES
+
+    def geo_container_types(self):
+        return _GEO_CONTAINER_TYPES
+
+    def geographic_disjoint(self, value_qid, expected_qid):
+        return _geographic_disjoint(self.subsumption, value_qid, expected_qid)
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +87,7 @@ _DEFAULT_RESOLUTIONS = {
 }
 
 
-class MockKB:
+class MockKB(_GeoMixin):
     """KB whose resolve_entity maps known references to Q-numbers."""
 
     def __init__(self, statements: list[Statement], resolutions: dict | None = None):
@@ -627,7 +653,7 @@ class _StubPT:
         return self._meta
 
 
-class _MultiPropKB:
+class _MultiPropKB(_GeoMixin):
     """KB whose lookup_statements is keyed BY PROPERTY, so different bindings
     ground against different statement sets. subsumption is configurable for
     the value-type gate (copula) tests."""
@@ -897,22 +923,21 @@ class TestKBVerifierCopulaValueTypeFix:
 # a DIFFERENT continent. The VERIFIED subsumption-upgrade arm runs FIRST, so a
 # true "X in [right continent]" verifies and never reaches this arm.
 #
-# These tests import the genuine CONTINENT_QIDS / _LOCATION_KB_PROPERTIES and
-# use real continent Q-ids (Q46 Europe, Q15 Africa) plus the real location
-# property P131, driving the _location_disjoint path (a) directly: the subject
-# is `a_subsumed_by_b` one continent under "part_of" and `unrelated` to the
-# claimed (different) continent.
+# v0.16.1 WS5a: these tests use the genuine continent Q-ids / location P-ids,
+# now relocated into the WikidataAdapter (kb_wikidata._CONTINENT_QIDS /
+# _LOCATION_KB_PROPERTIES, imported at module top), plus the real location
+# property P131, driving the relocated geographic_disjoint path (a) directly:
+# the subject is `a_subsumed_by_b` one continent under "part_of" and `unrelated`
+# to the claimed (different) continent.
 # ===========================================================================
-
-from aedos.layer4_sources.kb_verifier import CONTINENT_QIDS, _LOCATION_KB_PROPERTIES
 
 
 class TestKBVerifierNoStatementsDisjointArm:
     # Sanity: the genuine constants the new arm is gated on hold the Q-ids the
     # tests rely on, so a constant rename can't make these pass vacuously.
     def test_constants_are_genuine(self):
-        assert "Q46" in CONTINENT_QIDS  # Europe
-        assert "Q15" in CONTINENT_QIDS  # Africa
+        assert "Q46" in _CONTINENT_QIDS  # Europe
+        assert "Q15" in _CONTINENT_QIDS  # Africa
         assert "P131" in _LOCATION_KB_PROPERTIES
 
     def test_no_statements_disjoint_contradicts(self):

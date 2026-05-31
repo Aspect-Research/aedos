@@ -152,3 +152,37 @@ class KBProtocol(Protocol):
     # `fetch_label(qid)` returns the entity's English label, or None on any
     # error / non-Q-id / missing label. NEVER raises.
     def fetch_label(self, qid: KBEntityID) -> Optional[str]: ...
+
+    # v0.16.1 WS5a: the geographic predicate cluster, relocated from CORE
+    # (kb_verifier) behind the seam. The closed seven-continent set, the
+    # geographic location-property identifiers (P131/P17/P30/P361/P206/P276),
+    # and the geographic-container entity types (Q5107 continent) are genuine
+    # Wikidata facts and live INSIDE the adapter — CORE consumes only these
+    # opaque yes/no + set accessors. All three are OPTIONAL on the protocol —
+    # CORE calls them via `getattr` so stub/mock adapters that predate WS5a keep
+    # satisfying KBProtocol — and all FAIL CLOSED by contract (an absent method
+    # or an error => no disjoint / not a location property / empty container set
+    # => abstain, never a false-contradiction). §3.2 soundness-over-completeness.
+
+    # `is_location_property(kb_property)` — True when the KB property's
+    # semantics are GEOGRAPHIC location-containment, for which the
+    # geographic-disjoint contradiction is sound. Non-geographic relational
+    # predicates (employed_by, member_of, child_of, ...) return False — two
+    # distinct entities can both satisfy a multi-valued relational predicate
+    # without contradicting each other.
+    def is_location_property(self, kb_property: KBPropertyID) -> bool: ...
+
+    # `geo_container_types()` — the geographic-container entity types (Q5107
+    # continent) the per-predicate object-type lists historically omit. CORE
+    # widens a location predicate's object-type filter with these so "X is in
+    # Europe" resolves "Europe" to the continent rather than a homonym.
+    def geo_container_types(self) -> "frozenset[KBEntityID]": ...
+
+    # `geographic_disjoint(value_qid, expected_qid)` — True when the KB confirms
+    # `value_qid` is geographically DISJOINT from `expected_qid` (different
+    # continents, or distinct same-continent sub-regions with mutual
+    # non-containment). Requires POSITIVE KB subsumption evidence; fails closed
+    # on any uncertainty. The CONTRADICTED-producer for "X is in [wrong place]".
+    def geographic_disjoint(
+        self, value_qid: KBEntityID, expected_qid: KBEntityID
+    ) -> bool: ...

@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from aedos.layer4_sources.kb_protocol import LocalContext
-from aedos.layer4_sources.kb_wikidata import FixtureNotFoundError, WikidataAdapter
+from aedos.layer4_sources.kb_protocol import LocalContext, SubsumptionResult
+from aedos.layer4_sources.kb_wikidata import (
+    _CONTINENT_QIDS,
+    _GEO_CONTAINER_TYPES,
+    _LOCATION_KB_PROPERTIES,
+    FixtureNotFoundError,
+    WikidataAdapter,
+)
 
 
 @pytest.fixture
@@ -175,3 +181,112 @@ class TestSubsumption:
         result = adapter.subsumption("Q95", "Q4830453", "subclass")
         for q in result.traversal_chain:
             assert q.startswith("Q")
+
+
+# ---------------------------------------------------------------------------
+# TestGeographicCluster (v0.16.1 WS5a)
+#
+# Focused unit tests of the geographic predicate cluster relocated from CORE
+# (kb_verifier) into the adapter behind the kb_protocol seam. These exercise the
+# adapter's own `geographic_disjoint` / `is_location_property` /
+# `geo_container_types` methods directly — mirroring the former in-CORE
+# `_location_disjoint` tests — driving the real `_geographic_disjoint` free
+# function and the real `_CONTINENT_QIDS` closed set. The subsumption stub
+# scripts exactly the verdicts the live/fixture path would return for the pinned
+# geo cases, so the disjoint logic is exercised byte-for-byte without a network
+# call. §3.2: positive KB evidence required; fail-closed on uncertainty.
+# ---------------------------------------------------------------------------
+
+
+class _StubSubsumptionAdapter(WikidataAdapter):
+    """WikidataAdapter whose `subsumption` returns a scripted verdict from a
+    `(a, b, relation_type) -> verdict` map (default 'unrelated'), so the real
+    `geographic_disjoint` method runs against deterministic subsumption."""
+
+    def __init__(self, verdict_map):
+        super().__init__()
+        self._verdict_map = verdict_map
+
+    def subsumption(self, entity_a, entity_b, relation_type):
+        verdict = self._verdict_map.get((entity_a, entity_b, relation_type), "unrelated")
+        return SubsumptionResult(verdict=verdict)
+
+
+class TestGeographicCluster:
+    def test_is_location_property(self):
+        adapter = WikidataAdapter()
+        # The relocated closed set: P131/P17/P30/P361/P206/P276 are geographic;
+        # a relational predicate (P108 employer) is not.
+        assert adapter.is_location_property("P131") is True
+        assert adapter.is_location_property("P30") is True
+        assert adapter.is_location_property("P361") is True
+        assert adapter.is_location_property("P108") is False
+        assert adapter.is_location_property("not-a-pid") is False
+        # Matches the module-level constant exactly.
+        for pid in _LOCATION_KB_PROPERTIES:
+            assert adapter.is_location_property(pid) is True
+
+    def test_geo_container_types_is_continent_set(self):
+        adapter = WikidataAdapter()
+        assert adapter.geo_container_types() == _GEO_CONTAINER_TYPES
+        assert "Q5107" in adapter.geo_container_types()  # continent
+
+    def test_geographic_disjoint_continent_path_true(self):
+        # Path (a): Vatican (Q237) in Africa (Q15). Africa is itself a continent
+        # (in _CONTINENT_QIDS); the value is a_subsumed_by_b a DIFFERENT
+        # continent (Europe Q46) and unrelated to Africa. => disjoint True.
+        # The "Vatican is in Africa" CONTRADICTED pin.
+        assert "Q15" in _CONTINENT_QIDS  # Africa
+        assert "Q46" in _CONTINENT_QIDS  # Europe
+        adapter = _StubSubsumptionAdapter({
+            ("Q237", "Q46", "part_of"): "a_subsumed_by_b",  # Vatican ⊂ Europe
+            # unrelated to Africa (default)
+        })
+        assert adapter.geographic_disjoint("Q237", "Q15") is True
+
+    def test_geographic_disjoint_shared_continent_subregion_true(self):
+        # Path (b): Rome's region Lazio (Q1282) vs Germany (Q183). Germany is NOT
+        # a continent, so path (a) does not apply. Both Lazio and Germany are
+        # a_subsumed_by_b the SAME continent (Europe Q46), and Lazio is
+        # `unrelated` to Germany in BOTH part_of directions => disjoint True.
+        # The "Rome is in Germany" CONTRADICTED shape.
+        adapter = _StubSubsumptionAdapter({
+            ("Q1282", "Q46", "part_of"): "a_subsumed_by_b",  # Lazio ⊂ Europe
+            ("Q183", "Q46", "part_of"): "a_subsumed_by_b",   # Germany ⊂ Europe
+            # Lazio<->Germany unrelated in both directions (default)
+        })
+        assert adapter.geographic_disjoint("Q1282", "Q183") is True
+
+    def test_geographic_disjoint_subregion_of_expected_false(self):
+        # Île-de-France (Q13917) vs Europe (Q46). Europe is a continent, so path
+        # (a) applies — but the value is subsumed by Europe ITSELF (the expected
+        # continent), and is unrelated to every OTHER continent. No
+        # different-continent ancestor exists => disjoint False (NOT disjoint;
+        # this is the true "Paris/France is in Europe" shape that must VERIFY,
+        # never contradict).
+        adapter = _StubSubsumptionAdapter({
+            ("Q13917", "Q46", "part_of"): "a_subsumed_by_b",  # Île-de-France ⊂ Europe
+        })
+        assert adapter.geographic_disjoint("Q13917", "Q46") is False
+
+    def test_geographic_disjoint_unrelated_to_all_false(self):
+        # Fail-closed: a value unrelated to every continent (no positive
+        # subsumption evidence) cannot be confirmed disjoint => False (abstain),
+        # never a fabricated contradiction.
+        adapter = _StubSubsumptionAdapter({})  # all 'unrelated'
+        assert adapter.geographic_disjoint("Q9999", "Q15") is False
+
+    def test_geographic_disjoint_same_value_false(self):
+        # Identical value and expected => not disjoint (the value is the place).
+        adapter = _StubSubsumptionAdapter({})
+        assert adapter.geographic_disjoint("Q46", "Q46") is False
+
+    def test_geographic_disjoint_subsumption_error_fails_closed(self):
+        # §3.2: if subsumption raises, the disjoint check swallows it and cannot
+        # confirm disjointness => False (abstain), never contradict.
+        class _RaisingAdapter(WikidataAdapter):
+            def subsumption(self, a, b, relation_type):
+                raise RuntimeError("kb down")
+
+        adapter = _RaisingAdapter()
+        assert adapter.geographic_disjoint("Q237", "Q15") is False
