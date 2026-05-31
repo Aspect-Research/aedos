@@ -86,17 +86,18 @@ class KBVerifier:
         kb_protocol: KBProtocol,
         entity_resolver: EntityResolver,
         predicate_translation: PredicateTranslation,
-        exception_cache=None,
     ) -> None:
         self._kb = kb_protocol
         self._resolver = entity_resolver
         self._pt = predicate_translation
-        # v0.16 WS1: the bounded NOGOOD cache (substrate_exceptions). It is
-        # OPTIONAL — the SubstrateExceptionCache itself is WS3, so the consult
-        # below is a guarded no-op until that lands. When present and exposing
-        # a `vetoes(predicate, property_path, subject_qid)` predicate, the
-        # binding loop skips a binding the nogood vetoes.
-        self._exception_cache = exception_cache
+        # v0.16.1 WS4: the per-binding NOGOOD veto was REMOVED. A veto that
+        # *suppresses* a sound contradiction is the dangerous §3.2 direction, it
+        # had no production writer (the only record_nogood writer is the
+        # adapter's verify_transitive_path, which writes the 'transitive_path'
+        # kind the live walker consults — not a per-binding 'subsumption' veto),
+        # and the operator forbids hand-seeded guards. The SubstrateExceptionCache
+        # stays wired to its LIVE consumers (the walker's _nogood_vetoes and the
+        # adapter's verify_transitive_path); the KB verifier no longer holds it.
 
     def verify(
         self,
@@ -160,20 +161,6 @@ class KBVerifier:
             if not binding.kb_property:
                 continue
             had_kb_path = True
-
-            # v0.16 WS1: NOGOOD gate. Consult the optional exception cache for
-            # a cached "binding does not hold here" before this binding can
-            # drive a verdict. Guarded no-op until WS3 lands the cache.
-            if self._binding_vetoed(claim, binding):
-                bindings_tried.append(
-                    {
-                        "property": binding.kb_property,
-                        "source": binding.source,
-                        "verdict": KBVerdictType.NO_MATCH.value,
-                        "abstention_reason": "nogood_veto",
-                    }
-                )
-                continue
 
             outcome = self._verify_binding(
                 claim, meta, binding, current_time, source_text
@@ -241,35 +228,6 @@ class KBVerifier:
             verdict=KBVerdictType.NO_MATCH,
             trace={"reason": "no_binding_grounded", "bindings_tried": bindings_tried},
         )
-
-    def _binding_vetoed(self, claim: Claim, binding) -> bool:
-        """v0.16 WS1 NOGOOD gate. Consult the optional SubstrateExceptionCache
-        (WS3) for a cached "this binding does not hold for this subject". Until
-        WS3 lands the cache this is a guarded no-op: an absent cache, or a cache
-        without a `vetoes` predicate, never vetoes. Fails open (any error →
-        not vetoed) — a flaky cache must never suppress a sound verdict.
-
-        DORMANT-MECHANISM NOTE (round-1 follow-up): this binding-NOGOOD gate is
-        DORMANT in v0.16. It only fires on a cached nogood of exception_kind
-        'subsumption' (SubstrateExceptionCache.vetoes queries that kind), and NO
-        production path writes one: the sole production record_nogood writer is
-        the adapter's verify_transitive_path (kb_wikidata.py), which writes the
-        default kind 'transitive_path'. The operator forbade hand-seeded guards,
-        so nothing eagerly seeds a 'subsumption' nogood for bindings. The gate
-        therefore never suppresses a sound verdict (fails open). Eager
-        NOGOOD-for-bindings writing is deferred to a future round."""
-        cache = self._exception_cache
-        if cache is None:
-            return False
-        vetoes = getattr(cache, "vetoes", None)
-        if vetoes is None:
-            return False
-        try:
-            return bool(
-                vetoes(claim.predicate, binding.kb_property, claim.subject)
-            )
-        except Exception:
-            return False
 
     def _verify_binding(
         self,

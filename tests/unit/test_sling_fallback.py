@@ -42,6 +42,20 @@ class _NoEnumerateKB:
     """A KB adapter without enumerate_neighbors — SLING must fall open."""
 
 
+class _OntologyKB(_StubKB):
+    """A _StubKB that also exposes fetch_property_ontology, so the SLING binding
+    can pull the discovered candidate property's value-type for its fail-closed
+    positive gate (v0.16.1 WS4)."""
+
+    def __init__(self, neighbors_by_entity=None, value_types_by_property=None):
+        super().__init__(neighbors_by_entity)
+        self._value_types = value_types_by_property or {}
+
+    def fetch_property_ontology(self, kb_property):
+        vts = self._value_types.get(kb_property)
+        return {"value_type_qids": list(vts)} if vts else {}
+
+
 def _oracle_raw(**kw) -> dict:
     base = {
         "kb_property": "P39",
@@ -82,6 +96,9 @@ class TestProposeBindings:
         assert b.single_valued is False
         # Low rank so any grounding ontology/oracle binding outranks it.
         assert b.rank < 0.5
+        # v0.16.1 WS4: SLING bindings are FAIL-CLOSED value-type-gated on the
+        # positive path, so a noisy co-occurrence cannot false-verify.
+        assert b.value_type_gated is True
 
     def test_primary_property_excluded_from_candidates(self):
         # The oracle's own primary property must not be proposed as the SLING
@@ -102,6 +119,29 @@ class TestProposeBindings:
         b = sling.propose_bindings("works_as", raw)[0]
         assert b.kb_namespace == "wikidata"
         assert b.slot_to_qualifier == {"subject": "statement_subject"}
+
+    def test_object_entity_types_from_candidate_ontology_value_type(self):
+        # v0.16.1 WS4: the SLING binding's value-type gate uses the DISCOVERED
+        # candidate property's own ontology value-type, fetched via the KB.
+        kb = _OntologyKB(
+            neighbors_by_entity={"Q42": {"P106": ["Qa"]}},
+            value_types_by_property={"P106": ["Q12737077"]},  # occupation
+        )
+        sling = _make_sling(kb)
+        b = sling.propose_bindings("works_as", _oracle_raw(sample_subject_qids=["Q42"]))[0]
+        assert b.kb_property == "P106"
+        assert b.value_type_gated is True
+        assert b.object_entity_types == ["Q12737077"]
+
+    def test_value_type_falls_back_to_oracle_object_types(self):
+        # No ontology value-type for the candidate property → fall back to the
+        # oracle's object_entity_types (still fail-closed gated).
+        kb = _StubKB({"Q42": {"P106": ["Qa"]}})  # no fetch_property_ontology
+        sling = _make_sling(kb)
+        raw = _oracle_raw(sample_subject_qids=["Q42"], object_entity_types=["Q5"])
+        b = sling.propose_bindings("works_as", raw)[0]
+        assert b.value_type_gated is True
+        assert b.object_entity_types == ["Q5"]
 
 
 # ---------------------------------------------------------------------------

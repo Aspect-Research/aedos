@@ -260,18 +260,21 @@ class TestSeedAliasDeletions:
             f"{sorted(missing)}"
         )
 
-    def test_seed_count_is_73_after_deletions_t1_ws2_and_ws3b_additions(self, seeds):
-        # 83 pre-v0.16 rows minus 21 deleted aliases = 62, plus the 8 v0.16 WS6
-        # T1 interval-endpoint rows (employment/membership/role/status
-        # _started/_ended) = 70, plus the 1 v0.16.1 WS2 `instance_of` copula row
-        # (the predicate the extractor actually emits; carries the P106
-        # occupation candidate binding) = 71, plus the 2 v0.16.1 WS3b
-        # premise->Python comparison rows (born_before, founded_before; each
-        # carries `premise_properties`) = 73. A hard count guards against an
+    def test_seed_count_is_71_after_deletions_t1_ws2_and_ws3b_additions(self, seeds):
+        # 83 pre-v0.16 rows minus 21 deleted aliases = 62, plus the 6 v0.16 WS6
+        # T1 interval-endpoint rows (employment/membership/role _started/_ended)
+        # = 68, plus the 1 v0.16.1 WS2 `instance_of` copula row (the predicate
+        # the extractor actually emits; carries the P106 occupation candidate
+        # binding) = 69, plus the 2 v0.16.1 WS3b premise->Python comparison rows
+        # (born_before, founded_before; each carries `premise_properties`) = 71.
+        # v0.16.1 WS4 dropped the 2 dead status_started/status_ended rows (P571/
+        # P576): they can never fire — the kb_interval arm reads P580/P582
+        # qualifiers, not statement values, and org subjects already route to
+        # founded_in_year/dissolved_in_year. A hard count guards against an
         # accidental re-add of an alias, a silent drop of a canonical row, or a
         # dropped endpoint row.
-        assert len(seeds) == 73, (
-            f"expected 73 seed rows (62 after the 21 alias deletions + 8 T1 "
+        assert len(seeds) == 71, (
+            f"expected 71 seed rows (62 after the 21 alias deletions + 6 T1 "
             f"interval-endpoint rows + 1 WS2 instance_of copula row + 2 WS3b "
             f"premise->Python rows), got {len(seeds)}"
         )
@@ -310,17 +313,21 @@ class TestSeedAliasDeletions:
 # v0.16 WS6 T1 — interval-endpoint seed rows + date→time reconciliation
 # ---------------------------------------------------------------------------
 
-# The 8 new *_started/_ended date-in-object endpoint predicates. Each grounds
+# The 6 *_started/_ended date-in-object endpoint predicates. Each grounds
 # against the P580 (start time) / P582 (end time) qualifier on the base
 # relation's KB statement; object_type='time', routing_hint='kb_interval',
 # slot_to_qualifier maps subject→statement_subject, org→statement_value,
 # object→qualifier:P580|P582.
+#
+# v0.16.1 WS4 dropped the dead status_started/status_ended rows (P571 inception /
+# P576 dissolution): the kb_interval arm reads P580/P582 *qualifiers* off a base
+# statement, but for P571/P576 the date is the statement VALUE itself, so the
+# qualifier-gathering arm yields nothing — those rows could never fire. Org
+# subjects already route to founded_in_year (P571) / dissolved_in_year (P576).
 _T1_ENDPOINT_BASE_PROPERTY = {
     "employment_started": "P108", "employment_ended": "P108",
     "membership_started": "P463", "membership_ended": "P463",
     "role_started": "P39", "role_ended": "P39",
-    # status_* maps to the org inception/dissolution statement properties.
-    "status_started": "P571", "status_ended": "P576",
 }
 
 # The 6 existing date predicates reconciled from object_type 'date' → 'time' in
@@ -426,14 +433,14 @@ class TestSeedT1IntervalEndpoints:
     def test_endpoint_rows_load_without_tripping_loader(self, tmp_path):
         # The reconciled date→time object_type and the new kb_interval routing
         # hint must both pass the seed loader's _validate_entry (the only
-        # load-time enum gate). A full load lands all 8 endpoint rows.
+        # load-time enum gate). A full load lands all 6 endpoint rows.
         from aedos.database import open_db
         from aedos.seed_loader import load_seeds_into_connection
 
         db_file = tmp_path / "t1.db"
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
-        assert n == 73  # +2 v0.16.1 WS3b premise->Python rows (born_before, founded_before)
+        assert n == 71  # WS4 dropped 2 dead status_* rows; WS3b added born_before/founded_before
         conn.row_factory = __import__("sqlite3").Row
         rows = conn.execute(
             "SELECT aedos_predicate, object_type, routing_hint, kb_property "
@@ -482,7 +489,7 @@ class TestSeedDateToTimeReconciliation:
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
         conn.close()
-        assert n == 73  # +2 v0.16.1 WS3b premise->Python rows
+        assert n == 71  # WS4 dropped 2 dead status_* rows; WS3b added 2 premise->Python rows
 
 
 # ---------------------------------------------------------------------------

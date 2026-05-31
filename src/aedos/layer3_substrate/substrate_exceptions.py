@@ -78,29 +78,13 @@ class SubstrateExceptionCache:
         self._db.commit()
         return True
 
-    def vetoes(self, predicate: str, property_path: str, subject_qid: str) -> bool:
-        """v0.16 WS1 binding-loop gate. The KBVerifier consults this to skip a
-        binding whose `(predicate, property, subject)` is a cached nogood. Maps
-        onto the same row as a `subsumption`-kind exception keyed on the binding
-        property as the relation and the subject as the source (target is the
-        binding property — an opaque key for the per-binding veto). Path-
-        agnostic match (any target) when the subject alone is enough."""
-        row = self._db.execute(
-            """SELECT id FROM substrate_exceptions
-               WHERE exception_kind='subsumption' AND relation_type=?
-               AND property_path=? AND source_identifier=?
-               AND retracted_at IS NULL ORDER BY id LIMIT 1""",
-            (predicate, property_path, subject_qid),
-        ).fetchone()
-        if row is None:
-            return False
-        self._db.execute(
-            "UPDATE substrate_exceptions SET used_count=used_count+1, "
-            "last_consulted_at=? WHERE id=?",
-            (_NOW(), row["id"]),
-        )
-        self._db.commit()
-        return True
+    # v0.16.1 WS4: the per-binding `vetoes(predicate, property_path, subject_qid)`
+    # reader was REMOVED. It read a `subsumption`-kind nogood that NO production
+    # path ever wrote (the only record_nogood writer is the adapter's
+    # verify_transitive_path, which writes the 'transitive_path' kind consulted by
+    # the live `is_nogood` path), and a veto that suppresses a sound contradiction
+    # is the dangerous §3.2 direction. The transitive_path nogood cache below
+    # stays live (record_nogood/is_nogood drive the walker + adapter).
 
     # ------------------------------------------------------------------
     # Write paths

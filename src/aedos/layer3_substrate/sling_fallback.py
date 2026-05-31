@@ -15,16 +15,19 @@ FAIL-OPEN: any KB/LLM error, a missing primary property, or no co-occurring
 signal returns `[]`. Soundness over coverage — a SLING miss simply leaves the
 oracle's primary binding in place (current behavior). Nothing here raises.
 
-DORMANT-MECHANISM NOTE (round-1 follow-up): SLING is DEFERRED-INERT in v0.16.
-`propose_bindings` returns `[]` on every production call today because
-`_sample_entities` needs `sample_subject_qids` / `example_qids` in the oracle's
-raw output, and the predicate-metadata oracle's tool schema
-(PREDICATE_METADATA_TOOL) emits NEITHER field — so there is never anything to
-sample, and the co-occurrence enumeration is never reached. Activation is a
-FUTURE OPERATOR DECISION: it requires adding the sample-qids field to the tool
-schema plus a prompt instruction to populate it. The mechanism is fully wired
-and fail-open (it proposes nothing rather than guessing), so it is safe to leave
-dormant — no un-reviewed verdict path is reachable through it.
+ACTIVATED (v0.16.1 WS4, gated). The predicate-metadata oracle now emits optional
+`sample_subject_qids` for long-tail edges the property ontology can't constrain
+(tool schema + prompt), and `PredicateTranslation` consults this fallback when
+the `enable_sling` config flag is on. Soundness gates that make activation safe:
+
+  * single_valued=False — a SLING binding can NEVER drive CONTRADICTED.
+  * rank LAST (lowest) — any ontology/oracle binding that grounds outranks it.
+  * value_type_gated=True — the POSITIVE path is FAIL-CLOSED: it may VERIFY only
+    when the resolved object is PROVABLY a member of the discovered candidate
+    property's own ontology value-type (fetched here). With no usable value-type
+    the gate cannot confirm, so a noisy co-occurrence simply abstains — it can
+    never false-verify on an unconfirmed object type (kb_verifier
+    `_object_confirms_value_type`).
 """
 
 from __future__ import annotations
@@ -112,15 +115,25 @@ class SlingFallback:
             return []
 
         candidate_prop, _count = cooccurring.most_common(_TOP_PROPERTY_LIMIT)[0]
+        # v0.16.1 WS4 soundness gate: the SLING binding is value_type_gated, so
+        # its POSITIVE path may verify only when the resolved object is provably a
+        # member of the DISCOVERED candidate property's own ontology value-type.
+        # Fetch that value-type here (fail-open to the oracle's object types, then
+        # to None). With no confirmable value-type the fail-closed positive gate
+        # simply abstains — a noisy co-occurrence can never false-verify.
+        object_types = self._candidate_value_types(candidate_prop, kb_namespace)
+        if not object_types:
+            object_types = oracle_raw.get("object_entity_types")
         binding = PredicateBinding(
             kb_namespace=kb_namespace,
             kb_property=candidate_prop,
             slot_to_qualifier=oracle_raw.get("slot_to_qualifier"),
             single_valued=False,  # SLING never licenses a contradiction
             subject_entity_types=oracle_raw.get("subject_entity_types"),
-            object_entity_types=oracle_raw.get("object_entity_types"),
+            object_entity_types=object_types,
             source="sling",
             rank=_SLING_RANK,
+            value_type_gated=True,  # FAIL-CLOSED positive gate (verify-only)
         )
         self._cache_edge(predicate, kb_namespace, primary_prop, candidate_prop)
         self._log(
@@ -142,6 +155,29 @@ class SlingFallback:
         sample = oracle_raw.get("sample_subject_qids") or oracle_raw.get("example_qids")
         if isinstance(sample, list):
             return [q for q in sample if isinstance(q, str) and q.startswith("Q")]
+        return []
+
+    def _candidate_value_types(
+        self, candidate_prop: str, kb_namespace: str
+    ) -> list[str]:
+        """Return the discovered candidate property's ontology VALUE-type Q-ids
+        (P2302 value-type constraint), used as the fail-closed positive
+        value-type gate for the SLING binding. FAIL-OPEN: any missing method,
+        KB error, or absent constraint returns [] (the caller then falls back to
+        the oracle's object types, then None — a gate with no confirmable type
+        simply abstains). Never raises."""
+        fetch = getattr(self._kb, "fetch_property_ontology", None)
+        if fetch is None:
+            return []
+        try:
+            ontology = fetch(candidate_prop)
+        except Exception:
+            return []
+        if not isinstance(ontology, dict):
+            return []
+        value_types = ontology.get("value_type_qids")
+        if isinstance(value_types, list):
+            return [q for q in value_types if isinstance(q, str) and q]
         return []
 
     def _cache_edge(

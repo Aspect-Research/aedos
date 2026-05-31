@@ -561,6 +561,24 @@ class TestToolSchema:
         assert "subject_entity_types" in props
         assert "object_entity_types" in props
 
+    def test_sample_subject_qids_in_tool_schema(self):
+        # v0.16.1 WS4 (SLING activation): the oracle's tool schema must accept
+        # the optional sample_subject_qids array so distant supervision can be
+        # fed Q-ids for long-tail edges.
+        props = PREDICATE_METADATA_TOOL["input_schema"]["properties"]
+        assert "sample_subject_qids" in props
+        # Optional (array-or-null), never required.
+        assert props["sample_subject_qids"]["type"] == ["array", "null"]
+        assert "sample_subject_qids" not in PREDICATE_METADATA_TOOL["input_schema"]["required"]
+
+    def test_prompt_guides_sample_subject_qids_emission(self):
+        # v0.16.1 WS4: the prompt must instruct the LLM to emit sample_subject_qids
+        # ONLY for long-tail edges, so it doesn't routinely guess them.
+        from aedos.layer3_substrate.predicate_translation import (
+            _GENERATION_SYSTEM_PROMPT,
+        )
+        assert "sample_subject_qids" in _GENERATION_SYSTEM_PROMPT
+
     def test_prompt_guides_entity_type_emission(self):
         # Phase G D33: the system prompt must instruct the LLM on when to
         # emit entity types (and when to leave them null). Regression guard
@@ -671,7 +689,7 @@ class _StubSling:
         return list(self._bindings)
 
 
-def _make_discovery_oracle(response, property_relations=None, sling=None):
+def _make_discovery_oracle(response, property_relations=None, sling=None, enable_sling=True):
     db = open_memory_db()
     transport = MockTransport(response=response)
     client = LLMClient(_transport=transport)
@@ -680,6 +698,7 @@ def _make_discovery_oracle(response, property_relations=None, sling=None):
         llm_client=client,
         property_relations=property_relations,
         sling=sling,
+        enable_sling=enable_sling,
     )
     return oracle, db, transport
 
@@ -914,4 +933,20 @@ class TestBindingDiscoverySlingFallback:
         )
         meta = oracle.consult("holds_role")
         assert sling.calls == 1
+        assert [b.kb_property for b in meta.bindings] == ["P39"]
+
+    def test_enable_sling_false_suppresses_consultation(self):
+        # v0.16.1 WS4 config gate: with enable_sling=False, SLING is NEVER
+        # consulted even though the ontology is empty and a sling collaborator is
+        # wired — turning the flag off only loses a verify-only candidate.
+        pr = _StubPropertyRelations({})  # ontology empty → would normally fire SLING
+        sling = _StubSling([
+            PredicateBinding(kb_namespace="wikidata", kb_property="P800", source="sling")
+        ])
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=pr, sling=sling,
+            enable_sling=False,
+        )
+        meta = oracle.consult("holds_role")
+        assert sling.calls == 0
         assert [b.kb_property for b in meta.bindings] == ["P39"]

@@ -45,6 +45,20 @@ class Config:
     # Substrate consistency check
     circuit_breaker_threshold: int = 3
 
+    # v0.16.1 WS4: SLING distant-supervision binding discovery. When True
+    # (default), the predicate-metadata oracle is asked to emit a few example
+    # subject Q-ids for long-tail edges the property ontology can't constrain,
+    # and the SlingFallback consumes them to propose a co-occurrence candidate
+    # binding. SLING bindings are verify-only (single_valued=False, never
+    # CONTRADICTED), rank LAST, and are value-type-gated on the positive path
+    # (fail-closed), so the flag is purely a coverage knob — turning it off can
+    # only lose a verify, never change a sound verdict. AEDOS_ENABLE_SLING in
+    # ('0','false','no','off', case-insensitive) disables it.
+    enable_sling: bool = field(
+        default_factory=lambda: os.getenv("AEDOS_ENABLE_SLING", "1").strip().lower()
+        not in ("0", "false", "no", "off")
+    )
+
     # Wikidata
     wikidata_sparql_endpoint: str = "https://query.wikidata.org/sparql"
     wikidata_search_endpoint: str = "https://www.wikidata.org/w/api.php"

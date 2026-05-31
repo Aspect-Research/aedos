@@ -1444,15 +1444,16 @@ class Walker:
         # org-narrowing branch read getattr(claim, 'object_org', None), which was
         # always None, so it was dead code (round-1 robustness follow-up: removed).
         kb_interval = self._interval_from_statements(statements)
-        # DORMANT-MECHANISM NOTE (round-1 follow-up) — status_started/status_ended
-        # (kb_property P571 inception / P576 dissolution): the KB arm here is
-        # intentionally INERT for these two. _interval_from_statements reads the
-        # P580/P582 *qualifiers* off the base statement, but for P571/P576 the
-        # date is the statement VALUE itself, not a P580/P582 qualifier, so this
-        # call yields no start/end for them. That is by design: status endpoints
-        # ground via Tier U (below) or via the founded_in_year (P571) /
-        # dissolved_in_year (P576) date-in-object predicates on the normal KB
-        # path — NOT through this qualifier-gathering arm.
+        # DATA-MODEL NOTE — a kb_interval predicate that maps to a STATEMENT-VALUED
+        # date property (P571 inception / P576 dissolution) gets NO start/end from
+        # this arm: _interval_from_statements reads the P580/P582 *qualifiers* off
+        # the base statement, but for P571/P576 the date is the statement VALUE
+        # itself, not a P580/P582 qualifier. v0.16.1 WS4 dropped the dead
+        # status_started/status_ended seed rows that exercised exactly this dead
+        # arm; the canonical groundings are Tier U (below) or the founded_in_year
+        # (P571) / dissolved_in_year (P576) date-in-object predicates on the normal
+        # KB path. A runtime-generated row that ever routes a statement-valued date
+        # property here still yields nothing — fail-closed by construction.
 
         # ALSO gather Tier U endpoint rows for the same predicate (the
         # *_started/_ended Tier U fact participates alongside the KB qualifier).
@@ -1460,9 +1461,9 @@ class Walker:
 
         # Merge: KB is authoritative; Tier U fills an endpoint the KB left open.
         # A conflict (both known, different values) is NOT silently reconciled —
-        # _interval_holds_at / _verify_interval_endpoint compare against the KB
-        # value, and the Tier U value only fills a gap. (Keeping the merge
-        # additive avoids fabricating an interval neither source asserts.)
+        # _verify_interval_endpoint compares against the KB value, and the Tier U
+        # value only fills a gap. (Keeping the merge additive avoids fabricating
+        # an interval neither source asserts.)
         merged = kb_interval or Interval()
         if tier_u_interval is not None:
             if not merged.start_known and tier_u_interval.start_known:
@@ -1606,48 +1607,17 @@ class Walker:
             return Interval(end=date, end_known=True, unique=True)
         return None
 
-    def _interval_holds_at(self, interval: Interval, T: str) -> str:
-        """Three-valued holds-at-T table (spec §B.2). Lexical ISO compare —
-        valid for zero-padded YYYY-MM-DD / YYYY strings.
-
-        DORMANT-MECHANISM NOTE (round-1 follow-up): this is a forward-looking
-        primitive (covered by unit tests) NOT yet consumed by any verdict path
-        — the holds-at-T base-relation-scope consumer is deferred. Endpoint
-        grounding today uses _verify_interval_endpoint's year-aware equality
-        compare, not this holds-at scoping. Kept inert/tested for that future.
-
-        Returns 'true' | 'false' | 'unknown'.
-
-          start_known and start > T                         -> false (not begun)
-          end_known and end < T                             -> false (already ended)
-          start_known and end_known and start<=T<=end       -> true
-          start_known, end UNKNOWN (open=ongoing), start<=T -> true
-          start UNKNOWN, end_known, T<=end                  -> unknown
-          both unknown                                      -> unknown
-        """
-        if not T:
-            return "unknown"
-        if interval.start_known and interval.start is not None and interval.start > T:
-            return "false"
-        if interval.end_known and interval.end is not None and interval.end < T:
-            return "false"
-        if (
-            interval.start_known
-            and interval.end_known
-            and interval.start is not None
-            and interval.end is not None
-            and interval.start <= T <= interval.end
-        ):
-            return "true"
-        if (
-            interval.start_known
-            and not interval.end_known
-            and interval.start is not None
-            and interval.start <= T
-        ):
-            return "true"
-        # start unknown (end_known or not) → cannot place T within the interval.
-        return "unknown"
+    # v0.16.1 WS4: the three-valued holds-at-T primitive (_interval_holds_at,
+    # spec §B.2) was REMOVED. It had NO verdict-path consumer — its only intended
+    # caller is the deferred event-relative resolver (item 7 Stage 2): "did X hold
+    # relation R at time T". Wiring it to any present-day base-relation check would
+    # risk a false-contradict (returning 'false' for an interval that has ended,
+    # when a tenseless/historical claim makes no T assertion), turning current
+    # verifies into abstains or worse. Per the operator directive (default-to-
+    # remove when wiring carries false-contradict risk), the inert primitive and
+    # its unit tests were dropped; endpoint grounding stays on
+    # _verify_interval_endpoint's year-aware equality compare below. It returns
+    # with Stage 2 when a sound holds-at-T consumer actually exists.
 
     def _verify_interval_endpoint(
         self, claim: Claim, context: VerificationContext, trace

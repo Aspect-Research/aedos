@@ -164,17 +164,6 @@ class TestSubstrateExceptionCache:
         ).fetchone()[0]
         assert total_live == N + 1
 
-    def test_vetoes_binding_path(self, tmp_path):
-        db = _db(tmp_path)
-        cache = SubstrateExceptionCache(db)
-        assert cache.vetoes("born_in", "P19", "Q7186") is False
-        cache.record_nogood(
-            relation_type="born_in", source_identifier="Q7186",
-            target_identifier="P19", property_path="P19", reason="ask_false",
-            exception_kind="subsumption",
-        )
-        assert cache.vetoes("born_in", "P19", "Q7186") is True
-
 
 class TestProvenanceTerm:
     def test_includes_assertion_derivation(self):
