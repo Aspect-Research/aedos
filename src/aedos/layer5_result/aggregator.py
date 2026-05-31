@@ -77,16 +77,18 @@ class ClaimVerdict:
     the verdict is one of the abstention shapes (`no_grounding_found` or
     `abstained_given_assertion`); None otherwise.
 
-    `contradicting_value` is deferred to v0.16 — extracting the contradicting
-    grounding value from the trace edges requires per-edge interpretation
-    logic that is out of scope for the v0.15 per-claim intervention
-    plumbing. The chat-wrapper composes a generic correction annotation
-    that references the claim's subject/predicate/object; richer
-    annotations land in v0.16 when the contradicting value is plumbed."""
+    `contradicting_value` (WS5) is the KB/Tier-U value the source holds
+    that contradicts a CONTRADICTED claim, extracted from the trace's
+    contradiction edge; `contradicting_value_type` carries its kind
+    (e.g. 'quantity' | 'literal' | a Wikidata Q-id). Both are populated
+    by the aggregator in a later phase; in this foundation phase they are
+    additive defaulted fields so the shape is stable."""
     claim_id: str
     claim: Claim
     verdict: str
     abstention_reason: Optional[str] = None
+    contradicting_value: Optional[str] = None
+    contradicting_value_type: Optional[str] = None
 
 
 @dataclass
@@ -112,6 +114,12 @@ _TRACE_ROW_ID_KEYS = {
     "tier_u_row_id": "tier_u",
     "predicate_translation_row_id": "predicate_translation",
     "subsumption_row_id": "subsumption",
+    # v0.16 WS3 D13: KB premise edges stamp the resolver's cache row id so
+    # KB-grounded verdicts become retractable when a cached entity
+    # resolution is retracted. The walker stamps the id in a later phase;
+    # the key is registered here (additive) so the dependency footprint
+    # picks it up once present.
+    "entity_resolution_cache_row_id": "entity_resolution_cache",
 }
 
 

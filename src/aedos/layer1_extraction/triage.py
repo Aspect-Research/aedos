@@ -10,6 +10,23 @@ class TriageDecision(Enum):
     INERT_PROSE = "inert_prose"
 
 
+class AbstentionReason(str, Enum):
+    """Why a claim could not be (or should not be) externally grounded.
+
+    The five extraction-layer reasons (set in extractor._build_claim) plus
+    the quiet not_checkworthy designation are the v0.16 additions; the
+    walker-layer reasons (budget_*, depth_exhausted) and KB-layer reasons
+    pre-date v0.16 and remain bare strings written by their own modules.
+    Subclassing str keeps existing `"budget" in reason` / `== "..."`
+    comparisons working unchanged.
+    """
+    SELF_REFERENTIAL = "self_referential"
+    PREDICATE_EQ_OBJECT = "predicate_eq_object"
+    CONTENT_LESS_EVENT = "content_less_event"
+    SUBJECT_ABSENT_FROM_SOURCE = "subject_absent_from_source"
+    NOT_CHECKWORTHY = "not_checkworthy"
+
+
 _ALWAYS_VERIFY: frozenset[str] = frozenset([
     "born_in", "died_in", "has_nationality", "graduated_from", "employed_by",
     "located_in", "part_of", "instance_of", "founded_by", "holds_role",

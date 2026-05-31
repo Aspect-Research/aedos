@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -247,6 +247,21 @@ guess — a missing filter is cheaper than a wrong one.
 
 
 @dataclass
+class PredicateBinding:
+    """One candidate (predicate -> KB property) binding. The substrate holds a
+    RANKED LIST of these per predicate; evidence arbitrates at verify time
+    (v0.16 Decision 1). A legacy scalar row synthesizes exactly one binding."""
+    kb_namespace: Optional[str]
+    kb_property: Optional[str]
+    slot_to_qualifier: Optional[dict] = None
+    single_valued: bool = False
+    subject_entity_types: Optional[list[str]] = None
+    object_entity_types: Optional[list[str]] = None
+    source: str = "legacy_scalar"   # legacy_scalar | oracle | ontology_p2302 | sling
+    rank: float = 1.0               # discovery-time prior; verify-time evidence reorders
+
+
+@dataclass
 class PredicateMetadata:
     id: int
     aedos_predicate: str
@@ -271,6 +286,41 @@ class PredicateMetadata:
     # oracle's cold-start generation.
     subject_entity_types: Optional[list[str]] = None
     object_entity_types: Optional[list[str]] = None
+    # v0.16 WS1: the authoritative multi-property binding list. Evidence
+    # arbitrates across these at verify time. The scalar fields above are
+    # RETAINED as real dataclass fields (every existing meta.kb_property
+    # reader keeps working unchanged); __post_init__ keeps scalars and
+    # bindings[0] mirrored: when `bindings` is empty it synthesizes ONE
+    # binding from the scalar fields (source='legacy_scalar'); when
+    # `bindings` is provided it sets the scalars to mirror bindings[0].
+    bindings: list["PredicateBinding"] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.bindings:
+            # Read-synthesis: legacy / scalar-only construction. Build exactly
+            # one binding mirroring the scalar fields so meta.bindings is
+            # always a non-empty authoritative list when a property exists.
+            self.bindings = [
+                PredicateBinding(
+                    kb_namespace=self.kb_namespace,
+                    kb_property=self.kb_property,
+                    slot_to_qualifier=self.slot_to_qualifier,
+                    single_valued=self.single_valued,
+                    subject_entity_types=self.subject_entity_types,
+                    object_entity_types=self.object_entity_types,
+                    source="legacy_scalar",
+                )
+            ]
+        else:
+            # Bindings-native construction: mirror bindings[0] back onto the
+            # scalar fields so the ~18 existing scalar readers stay correct.
+            primary = self.bindings[0]
+            self.kb_namespace = primary.kb_namespace
+            self.kb_property = primary.kb_property
+            self.slot_to_qualifier = primary.slot_to_qualifier
+            self.single_valued = primary.single_valued
+            self.subject_entity_types = primary.subject_entity_types
+            self.object_entity_types = primary.object_entity_types
 
 
 class PredicateTranslationError(Exception):
@@ -528,6 +578,33 @@ class PredicateTranslation:
         except (IndexError, KeyError):
             object_types = None
 
+        # v0.16 WS1: the bindings JSON column is an M1 addition and may be
+        # absent from older DBs (IndexError/KeyError) or NULL on legacy rows.
+        # When present and non-empty, deserialize each element into a
+        # PredicateBinding; else leave bindings empty so PredicateMetadata
+        # __post_init__ read-synthesizes one binding from the scalar columns.
+        bindings: list[PredicateBinding] = []
+        try:
+            bindings_raw = _parse_json(row["bindings"])
+        except (IndexError, KeyError):
+            bindings_raw = None
+        if bindings_raw:
+            for b in bindings_raw:
+                if not isinstance(b, dict):
+                    continue
+                bindings.append(
+                    PredicateBinding(
+                        kb_namespace=b.get("kb_namespace"),
+                        kb_property=b.get("kb_property"),
+                        slot_to_qualifier=b.get("slot_to_qualifier"),
+                        single_valued=bool(b.get("single_valued", False)),
+                        subject_entity_types=b.get("subject_entity_types"),
+                        object_entity_types=b.get("object_entity_types"),
+                        source=b.get("source", "legacy_scalar"),
+                        rank=b.get("rank", 1.0),
+                    )
+                )
+
         return PredicateMetadata(
             id=row["id"],
             aedos_predicate=row["aedos_predicate"],
@@ -547,4 +624,5 @@ class PredicateTranslation:
             single_valued=bool(row["single_valued"]),
             subject_entity_types=subject_types,
             object_entity_types=object_types,
+            bindings=bindings,
         )

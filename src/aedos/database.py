@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     single_valued INTEGER NOT NULL DEFAULT 0,
     subject_entity_types TEXT,
     object_entity_types TEXT,
+    bindings TEXT,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
@@ -121,6 +122,45 @@ CREATE TABLE IF NOT EXISTS entity_resolution_cache (
     UNIQUE(reference, local_context_signature)
 );
 
+CREATE TABLE IF NOT EXISTS property_relations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_namespace TEXT NOT NULL,
+    kb_property TEXT NOT NULL,        -- the property the relations are ABOUT
+    relation_type TEXT NOT NULL,      -- subject_type_constraint(P2302/Q21503250) |
+                                      -- value_type_constraint(P2302/Q21510865) |
+                                      -- inverse(P1696) | subproperty(P1647) |
+                                      -- related(P1659) | single_value(P2302/Q19474404)
+    related_value TEXT,               -- a Q-id (type/inverse) or P-id (subproperty/related)
+    source TEXT NOT NULL,             -- 'wikidata_p2302' | 'wikidata_p1647' | ...
+    created_at TEXT NOT NULL,
+    last_consulted_at TEXT,
+    used_count INTEGER DEFAULT 0,
+    retracted_at TEXT,
+    retraction_reason TEXT,
+    UNIQUE(kb_namespace, kb_property, relation_type, related_value)
+);
+
+CREATE TABLE IF NOT EXISTS substrate_exceptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exception_kind TEXT NOT NULL,          -- 'subsumption' | 'transitive_path'
+    relation_type TEXT NOT NULL,           -- e.g. 'part_of', 'is_a'
+    property_path TEXT NOT NULL,           -- canonical "P131|P30|P17" alternation
+    source_identifier TEXT NOT NULL,       -- subject / subtree root Q-id
+    target_identifier TEXT NOT NULL,       -- object Q-id
+    reason TEXT NOT NULL,                  -- 'ask_false' | 'operator_marked' | 'leak_guard'
+    created_at TEXT NOT NULL,
+    last_consulted_at TEXT,
+    used_count INTEGER DEFAULT 0,
+    retracted_at TEXT,
+    retraction_reason TEXT,
+    UNIQUE(exception_kind, relation_type, property_path, source_identifier, target_identifier)
+);
+
+CREATE INDEX IF NOT EXISTS idx_property_relations_prop
+    ON property_relations(kb_namespace, kb_property);
+CREATE INDEX IF NOT EXISTS idx_substrate_exceptions_lookup
+    ON substrate_exceptions(exception_kind, relation_type, source_identifier, target_identifier);
+
 CREATE INDEX IF NOT EXISTS idx_tier_u_party_pred ON tier_u(asserting_party, predicate);
 CREATE INDEX IF NOT EXISTS idx_predicate_translation_pred ON predicate_translation(aedos_predicate);
 CREATE INDEX IF NOT EXISTS idx_audit_log_type ON audit_log(event_type);
@@ -183,6 +223,16 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
             conn.execute(f"ALTER TABLE tier_u ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+    # v0.16 M1 (2026-05-30): predicate_translation.bindings — JSON list of
+    # the multi-property PredicateBinding ranked set discovered from
+    # Wikidata's ontology. Legacy scalar columns are retained; rows with
+    # bindings IS NULL read-synthesize one binding from the scalar columns
+    # (_row_to_metadata / PredicateMetadata.__post_init__). Same idempotent
+    # ALTER pattern as the D33 columns; additive and non-destructive.
+    try:
+        conn.execute("ALTER TABLE predicate_translation ADD COLUMN bindings TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
     if load_seeds:
         _maybe_load_seeds(conn)
@@ -294,4 +344,6 @@ TABLE_NAMES = [
     "audit_log",
     "consistency_circuit_breaker",
     "entity_resolution_cache",
+    "property_relations",
+    "substrate_exceptions",
 ]

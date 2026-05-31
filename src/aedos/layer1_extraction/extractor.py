@@ -483,6 +483,10 @@ class Claim:
     valid_until: Optional[str] = None
     valid_during_ref: Optional[str] = None
     reified_event_id: Optional[str] = None
+    # v0.16 WS4: instead of silently dropping a malformed/non-checkworthy
+    # claim, the extractor stamps the reason here (an AbstentionReason value)
+    # and the walker short-circuits pre-lookup. None means a normal claim.
+    abstention_reason: Optional[str] = None
 
 
 class Extractor:
