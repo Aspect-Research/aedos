@@ -1098,6 +1098,131 @@ class TestKBVerifierNoStatementsDisjointArm:
 
 
 # ===========================================================================
+# SNVP-1 (soundness gate) — NO-STATEMENTS SUBSUMPTION-UPGRADE IS LOCATION-ONLY
+#
+# Regression pin for the SNVP-1 fix: the no-statements subsumption-UPGRADE
+# (VERIFIED) arm is gated on `_is_location_property(binding.kb_property)`,
+# symmetric with the DISJOINT arm. Before the fix the arm was
+# predicate-AGNOSTIC: ANY binding whose subject was `a_subsumed_by_b` the
+# claim object (under part_of / is_a) false-VERIFIED, even for a non-location
+# predicate. Shape it closes: "Amazon works_as river" off "Amazon is_a river"
+# — works_as routes to P106 (NOT a location property), the subject is
+# subsumed by the object, and with NO P106 statement the old arm would
+# promote to VERIFIED. The fix makes a non-location property fall through to
+# NO_MATCH (abstain) — §3.2 soundness-over-completeness.
+#
+# Both binding shapes the fix closes are pinned: a value_type_gated candidate
+# binding (the WS2 P106 occupation shape) AND a non-gated legacy_scalar
+# binding. The value_type / value_type_gated fields are inert in the
+# no-statements arm (the positive value-type gate only runs once statements
+# exist), so the location gate is the ONLY thing that blocks the false-verify
+# in either shape. The geo case ("Cairo located_in Africa", a LOCATION
+# predicate) is re-asserted to still VERIFY — the fix preserves it.
+# ===========================================================================
+
+
+class TestKBVerifierNoStatementsSubsumptionLocationGate:
+    def test_constant_nonlocation_property_genuine(self):
+        # Guard against a constant rename making the pins pass vacuously: the
+        # property the false-verify shape uses (P106 occupation) is genuinely
+        # NOT a location-containment property, while the geo property (P131) is.
+        assert "P106" not in _LOCATION_KB_PROPERTIES
+        assert "P131" in _LOCATION_KB_PROPERTIES
+
+    def test_nonlocation_value_type_gated_binding_subsumed_does_not_verify(self):
+        # "Amazon works_as river": works_as → P106 (NOT a location property),
+        # single_valued=False, NO statement on the property. The mock KB reports
+        # subsumption(subject Q3783, object Q4022, part_of) = a_subsumed_by_b —
+        # the subject IS subsumed by the object — so _subsumption_upgrades would
+        # return True. But the object (a river class) is NOT a location/
+        # containment class, and P106 is not in _LOCATION_KB_PROPERTIES, so the
+        # location gate blocks the no-statements VERIFIED arm ⇒ NO_MATCH/abstain,
+        # NOT VERIFIED. Pinned for a VALUE_TYPE_GATED candidate binding (the WS2
+        # P106 occupation shape); the value-type fields are inert here because
+        # the positive value-type gate only runs once statements exist.
+        kb = _MultiPropKB(
+            statements_by_property={"P106": []},  # no statement on this property
+            resolutions={"Amazon": "Q3783", "river": "Q4022"},
+            subsumptions={
+                ("Q3783", "Q4022", "part_of"): "a_subsumed_by_b",  # subject ⊂ object
+                ("Q3783", "Q4022", "is_a"): "a_subsumed_by_b",     # and taxonomically
+            },
+        )
+        meta = _make_meta("works_as", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P106",
+                single_valued=False,
+                value_type_gated=True,
+                object_entity_types=["Q28640"],  # profession (the gate's value-type)
+                source="ontology_p2302",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Amazon", predicate="works_as", object_val="river")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        # The false-verify arm was NOT taken.
+        assert result.trace.get("no_statements_subsumption_fallback") is None
+        assert result.trace.get("abstention_reason") == "no_statements"
+
+    def test_nonlocation_legacy_scalar_binding_subsumed_does_not_verify(self):
+        # Same false-verify shape, but a NON-gated legacy_scalar binding (no
+        # value_type_gated flag, no value-type constraint). The fix closes this
+        # path too: P106 is not a location property, so the no-statements
+        # subsumption-UPGRADE arm is skipped despite the a_subsumed_by_b
+        # subsumption ⇒ NO_MATCH/abstain, NOT VERIFIED.
+        kb = _MultiPropKB(
+            statements_by_property={"P106": []},
+            resolutions={"Amazon": "Q3783", "river": "Q4022"},
+            subsumptions={
+                ("Q3783", "Q4022", "part_of"): "a_subsumed_by_b",
+                ("Q3783", "Q4022", "is_a"): "a_subsumed_by_b",
+            },
+        )
+        meta = _make_meta("works_as", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P106",
+                single_valued=False,
+                value_type_gated=False,
+                object_entity_types=None,
+                source="legacy_scalar",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Amazon", predicate="works_as", object_val="river")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("no_statements_subsumption_fallback") is None
+        assert result.trace.get("abstention_reason") == "no_statements"
+
+    def test_location_predicate_no_statements_subsumption_still_verifies(self):
+        # The fix PRESERVES the geo case: "Cairo located_in Africa" — P131 IS a
+        # location property, NO P131 statement, but Cairo ⊂ Africa via part_of ⇒
+        # the no-statements subsumption-UPGRADE arm fires and VERIFIES. This is
+        # the same pin as TestKBVerifierNoStatementsDisjointArm's ordering proof,
+        # re-asserted here as the positive counterpart to the two abstain pins
+        # above (same KB shape, location property instead of P106).
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},
+            resolutions={"Cairo": "Q85", "Africa": "Q15"},
+            subsumptions={
+                ("Q85", "Q15", "part_of"): "a_subsumed_by_b",  # Cairo ⊂ Africa
+            },
+        )
+        meta = _make_meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Cairo", predicate="located_in", object_val="Africa")
+        )
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("no_statements_subsumption_fallback") is True
+
+
+# ===========================================================================
 # v0.16.1 WS1 — APPROXIMATE-DATE FALSE-CONTRADICT FIX (end-to-end)
 #
 # The confirmed §3.2 defect: a functional ('time' + single_valued) date

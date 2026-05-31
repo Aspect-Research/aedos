@@ -263,14 +263,21 @@ class TestOfflineRegression:
             # gating the positive P106 match (fail-closed otherwise).
             subsumptions={(guitarist_qid, occupation_class, "is_a"): "a_subsumed_by_b"},
         )
+        # This pin guards the WS2 DISCOVERY side: the synthesized value_type_
+        # gated P106 candidate binding producing a VERIFIED through the POSITIVE
+        # grounding path. It is NOT a test of the gate's BLOCKING behavior — that
+        # (a wrong-value-type object failing to confirm => abstain) is pinned in
+        # test_kb_verifier.py (TestKBVerifierCopulaValueTypeFix / the WS2 positive
+        # gate). Here the gate is satisfied (the `subsumptions` entry proves the
+        # object IS an occupation/profession class), so it licenses the verify.
         # The P106 candidate is synthesized exactly as production does it
         # (predicate_translation.py WS2): source="candidate", value_type_gated=True.
-        # value_type_gated is LOAD-BEARING here: it routes the positive match
+        # value_type_gated is LOAD-BEARING because it routes the positive match
         # through the FAIL-CLOSED `_object_confirms_value_type` gate, so the
-        # `subsumptions` occupation evidence is what licenses VERIFIED. Without
-        # value_type_gated the binding would verify on a plain value match and
-        # the WS2 type-gate would never be exercised (a vacuous pin); reverting
-        # the WS2 positive gate then flips this to abstain.
+        # occupation evidence above is what licenses VERIFIED. Without
+        # value_type_gated the binding would verify on a plain value match and the
+        # WS2 grounding path would never be exercised (a vacuous pin); reverting
+        # the WS2 positive gate flips this to abstain (the discovery is lost).
         meta = _meta("instance_of", [
             PredicateBinding(kb_namespace="wikidata", kb_property="P31", source="oracle"),
             PredicateBinding(
@@ -280,6 +287,43 @@ class TestOfflineRegression:
         ])
         verdict = _verdict(meta, kb, _claim("Robby Krieger", "instance_of", "guitarist"))
         assert verdict == "verified"
+
+    def test_copula_nonoccupation_object_not_verified_via_p106(self):
+        # WS2 fail-closed gate, end-to-end negative dual of the case above. The
+        # copula object does NOT subsume into the occupation/profession class, so
+        # the value_type_gated P106 candidate binding must NOT verify even when a
+        # P106 statement VALUE happens to match the resolved object. Shape:
+        # "Amazon is a river" routed [P31, P106]; the P106 statement value equals
+        # the resolved object (river Q4022), so `_compare_positive` would return
+        # VERIFIED — but the object is NOT a confirmed occupation class (no
+        # subsumption entry => `unrelated`), so the FAIL-CLOSED
+        # `_object_confirms_value_type` gate blocks the positive grounding and the
+        # binding abstains. P31 (Q5 human, multi-valued) does not match the river
+        # object either => overall NOT verified, NOT contradicted (abstain). This
+        # is the false-verify the WS2 positive gate closes; reverting the gate
+        # flips this to a (false) verified.
+        river_qid = "Q4022"
+        occupation_class = "Q28640"  # profession (P106 value type)
+        kb = _MockKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],          # human (no match)
+                "P106": [Statement(value=river_qid, value_type="entity")],     # matches object value
+            },
+            resolutions={"Amazon": "Q3783", "river": river_qid},
+            # No (river_qid, occupation_class, "is_a") entry => `unrelated` =>
+            # the object is NOT a confirmed occupation class => gate fails closed.
+            subsumptions={},
+        )
+        meta = _meta("instance_of", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P31", source="oracle"),
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P106", source="candidate",
+                object_entity_types=[occupation_class], value_type_gated=True,
+            ),
+        ])
+        verdict = _verdict(meta, kb, _claim("Amazon", "instance_of", "river"))
+        assert verdict != "verified"
+        assert verdict != "contradicted"
 
     def test_pinned_cases_clear_both_hard_soundness_gates(self):
         # End-to-end: feed the pinned verdicts (each produced by a real walk
