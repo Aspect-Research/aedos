@@ -4,9 +4,10 @@ import json
 import os
 import re
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -61,6 +62,15 @@ _DEFAULT_SEARCH_RATE = 50.0
 _DEFAULT_ENTITY_TTL_SECONDS = 3600
 _DEFAULT_STATEMENT_TTL_SECONDS = 86400
 _RETRY_BACKOFF_SECONDS = 1.0
+
+# v0.16.1 WS9 (item 8 lever A): process-scoped positive-result memo for
+# verify_transitive_path. Bounded by an LRU cap AND a TTL so a Wikidata edit
+# cannot pin a stale answer for the whole process lifetime. The cap is sized
+# for a Medium-Bar run's distinct (relation, source, target) fan-out; the TTL
+# is short enough that a same-day edit is re-asked within the run. Behavior-
+# NEUTRAL: the memo only ever returns what a fresh definite ASK would.
+_TRANSITIVE_MEMO_MAX_ENTRIES = 4096
+_TRANSITIVE_MEMO_TTL_SECONDS = 3600.0
 
 # Wikidata identifier patterns. Used to validate inputs to SPARQL query
 # construction — defense-in-depth against injection via Q/P-id parameters.
@@ -874,6 +884,8 @@ class WikidataAdapter:
         db=None,
         config=None,
         fixture_dir: Optional[Path] = None,
+        *,
+        clock: Optional[Callable[[], float]] = None,
     ) -> None:
         self._http = http_cache
         self._llm = llm_client
@@ -881,6 +893,22 @@ class WikidataAdapter:
         self._config = config
         self._fixture_dir = fixture_dir or _FIXTURE_DIR
         self._live = os.environ.get("RUN_LIVE_KB") == "1"
+
+        # v0.16.1 WS9 (item 8 lever A): process-scoped positive-result memo for
+        # verify_transitive_path — the positive twin of the negative nogood
+        # cache (`self._exception_cache`). Keyed by
+        # (cache_relation, source, target) -> (TransitivePathResult, expires_at).
+        # Stores ONLY DEFINITE answers (result.error is None); error/fail-open/
+        # timeout results are NEVER memoized so a transient failure cannot pin a
+        # wrong answer. Bounded by an LRU cap (OrderedDict move-to-end) AND a TTL
+        # (monotonic clock) so a Wikidata edit cannot pin a stale positive for the
+        # process lifetime. `clock` is injectable for deterministic TTL tests;
+        # defaults to time.monotonic. Behavior-NEUTRAL: a hit returns exactly what
+        # a fresh definite ASK would (same holds, error=None) without the network.
+        self._transitive_memo: "OrderedDict[tuple[str, str, str], tuple[TransitivePathResult, float]]" = (
+            OrderedDict()
+        )
+        self._transitive_memo_clock = clock or time.monotonic
         # v0.16 WS3 §3D: bounded nogood cache (SubstrateExceptionCache). When
         # build_pipeline wires it, verify_transitive_path consults it BEFORE the
         # SPARQL ASK (return holds=False on a cached nogood — the leak guard) and
@@ -974,6 +1002,16 @@ class WikidataAdapter:
             cache_relation = kb_property or ""
         path = "|".join(p for p in props if p) if props else ""
 
+        # v0.16.1 WS9 (item 8 lever A): positive-result memo consult — at the
+        # TOP, before the rate-limited ASK. A live (non-expired) DEFINITE entry
+        # returns a result equivalent to a fresh definite ASK (same holds,
+        # error=None) without any network call. The memo holds only definite
+        # answers, so a hit can never replay a stale error/fail-open verdict.
+        if cache_relation:
+            memo_hit = self._transitive_memo_get(cache_relation, source, target)
+            if memo_hit is not None:
+                return memo_hit
+
         # Nogood consult FIRST — a cached "does NOT hold" closes the leak even
         # if the alternation was later widened, without re-hitting the network.
         if cache is not None and cache_relation:
@@ -1012,7 +1050,78 @@ class WikidataAdapter:
                 )
             except Exception:
                 pass  # fail-open
+
+        # v0.16.1 WS9 (item 8 lever A): memoize ONLY a DEFINITE answer
+        # (result.error is None). An error/fail-open/timeout result is NEVER
+        # cached — it must re-hit the network so a transient failure cannot pin a
+        # wrong answer.
+        #
+        # Negative-result interaction with the nogood cache: when a nogood cache
+        # is wired, IT owns definite negatives (it is consulted above and a
+        # negative was just recorded) AND it honors operator retraction
+        # (`retract`) — so a definite holds=False is left to the nogood cache and
+        # NOT duplicated here, or the memo would serve a retracted negative for
+        # the rest of the TTL window. We therefore memoize a definite holds=False
+        # only when no nogood cache governs it (no retraction path exists; the
+        # TTL still bounds staleness). holds=True is always memoized (the nogood
+        # cache never records positives — this memo is its positive twin).
+        if cache_relation and getattr(result, "error", None) is None:
+            memoizable = result.holds or cache is None
+            if memoizable:
+                self._transitive_memo_put(cache_relation, source, target, result)
         return result
+
+    # ------------------------------------------------------------------
+    # v0.16.1 WS9 (item 8 lever A): positive-result memo for
+    # verify_transitive_path. Process-scoped per-adapter-instance; composes
+    # with the HTTP cache and the negative nogood cache (its positive twin).
+    # ------------------------------------------------------------------
+    def _transitive_memo_get(
+        self, cache_relation: str, source: KBEntityID, target: KBEntityID
+    ) -> Optional[TransitivePathResult]:
+        """Return a fresh definite result for a live (non-expired) memo entry,
+        else None. On a hit, returns a NEW TransitivePathResult with error=None
+        — identical to what a fresh definite ASK would yield — so callers can
+        never observe (or mutate) the stored object, and an expired or absent
+        entry simply falls through to the live ASK. An expired entry is dropped
+        on access (lazy TTL eviction)."""
+        key = (cache_relation, source, target)
+        entry = self._transitive_memo.get(key)
+        if entry is None:
+            return None
+        cached, expires_at = entry
+        if self._transitive_memo_clock() >= expires_at:
+            # Stale: drop so a Wikidata edit cannot pin it past the TTL.
+            del self._transitive_memo[key]
+            return None
+        self._transitive_memo.move_to_end(key)  # LRU touch
+        return TransitivePathResult(
+            holds=cached.holds,
+            establishing_property=cached.establishing_property,
+            error=None,
+        )
+
+    def _transitive_memo_put(
+        self,
+        cache_relation: str,
+        source: KBEntityID,
+        target: KBEntityID,
+        result: TransitivePathResult,
+    ) -> None:
+        """Store a DEFINITE result under a fresh TTL. Caller guarantees
+        result.error is None. Bounds the map: refresh-and-LRU-touch on an
+        existing key, then evict the oldest entries past the cap."""
+        key = (cache_relation, source, target)
+        expires_at = self._transitive_memo_clock() + _TRANSITIVE_MEMO_TTL_SECONDS
+        stored = TransitivePathResult(
+            holds=result.holds,
+            establishing_property=result.establishing_property,
+            error=None,
+        )
+        self._transitive_memo[key] = (stored, expires_at)
+        self._transitive_memo.move_to_end(key)
+        while len(self._transitive_memo) > _TRANSITIVE_MEMO_MAX_ENTRIES:
+            self._transitive_memo.popitem(last=False)  # evict oldest (LRU)
 
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None

@@ -632,3 +632,281 @@ class TestVerifyTransitivePathNogoodCache:
         assert res.holds is False
         count = db.execute("SELECT COUNT(*) FROM substrate_exceptions").fetchone()[0]
         assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# v0.16.1 WS9 (item 8 lever A): verify_transitive_path positive-result memo.
+# Process-scoped per-adapter; keyed by (cache_relation, source, target); stores
+# ONLY definite (error-None) answers; bounded by an LRU cap AND a TTL on an
+# injectable monotonic clock. Behavior-NEUTRAL: a hit returns exactly what a
+# fresh definite ASK would (same holds, error=None), without the network — it
+# changes ZERO verdicts. These tests drive the dispatch boundary
+# (`_fixture_transitive_path`) with a call-counting spy so the memo's hit/miss,
+# error-exclusion, TTL, and LRU behavior are isolated from any real fixture.
+# ---------------------------------------------------------------------------
+
+
+class _FakeClock:
+    """A controllable monotonic clock for deterministic TTL tests."""
+
+    def __init__(self, t: float = 1000.0) -> None:
+        self.t = t
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, dt: float) -> None:
+        self.t += dt
+
+
+def _spy_dispatch(adapter, result_factory):
+    """Replace the adapter's fixture-path dispatch with a call-counting spy
+    that returns `result_factory()` each call. Returns the call-count dict so a
+    test can assert how many times the (would-be-network) ASK actually ran."""
+    calls = {"n": 0}
+
+    def _spy(*a, **k):
+        calls["n"] += 1
+        return result_factory()
+    adapter._fixture_transitive_path = _spy  # type: ignore[method-assign]
+    return calls
+
+
+class TestVerifyTransitivePathPositiveMemo:
+    def test_definite_positive_is_memoized_no_second_ask(self):
+        """A definite holds=True result is memoized; a repeat call for the same
+        (relation, source, target) returns from the memo WITHOUT a second ASK."""
+        adapter = WikidataAdapter()  # no cache, fixture path
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=True))
+        r1 = adapter.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")
+        r2 = adapter.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")
+        assert r1.holds is True and r2.holds is True
+        assert r2.error is None
+        assert calls["n"] == 1  # the second answer came from the memo
+
+    def test_definite_negative_is_memoized_when_no_nogood_cache(self):
+        """With no nogood cache wired (no retraction path), a definite holds=False
+        is also memoized — the TTL bounds staleness. A repeat call hits the memo."""
+        adapter = WikidataAdapter()
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=False))
+        r1 = adapter.verify_transitive_path("Q1", "Q2", "P171")
+        r2 = adapter.verify_transitive_path("Q1", "Q2", "P171")
+        assert r1.holds is False and r2.holds is False
+        assert calls["n"] == 1
+
+    def test_error_result_is_never_memoized(self):
+        """3.2 paramount: a fail-open/error result (error non-None) must NEVER be
+        memoized — every call must re-hit the network so a transient failure can't
+        pin a wrong answer."""
+        adapter = WikidataAdapter()
+        calls = _spy_dispatch(
+            adapter,
+            lambda: TransitivePathResult(holds=False, error="TimeoutException: boom"),
+        )
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        assert calls["n"] == 3  # no memoization of an error/fail-open result
+        assert len(adapter._transitive_memo) == 0
+
+    def test_error_then_definite_recovers_and_memoizes(self):
+        """A transient error does not pin the answer: once the ASK returns a
+        definite result, that is memoized (the next call hits the memo). Proves
+        the error-exclusion lets the correct answer take over."""
+        adapter = WikidataAdapter()
+        seq = [
+            TransitivePathResult(holds=False, error="net"),  # transient failure
+            TransitivePathResult(holds=True),                # recovered, definite
+        ]
+        calls = {"n": 0}
+
+        def _spy(*a, **k):
+            calls["n"] += 1
+            return seq[min(calls["n"] - 1, len(seq) - 1)]
+        adapter._fixture_transitive_path = _spy  # type: ignore[method-assign]
+
+        r1 = adapter.verify_transitive_path("Q5", "Q6", "P171")
+        assert r1.error == "net" and r1.holds is False  # surfaced live, not cached
+        r2 = adapter.verify_transitive_path("Q5", "Q6", "P171")  # re-ASK → definite
+        r3 = adapter.verify_transitive_path("Q5", "Q6", "P171")  # memo hit
+        assert r2.holds is True and r3.holds is True
+        assert calls["n"] == 2  # third answer came from the memo
+
+    def test_memo_hit_returns_fresh_definite_result_object(self):
+        """A hit returns a NEW TransitivePathResult with error=None — equivalent
+        to a fresh definite ASK — not the stored object, so a caller can never
+        mutate the cache and never observes a stale error field."""
+        adapter = WikidataAdapter()
+        _spy_dispatch(
+            adapter,
+            lambda: TransitivePathResult(holds=True, establishing_property="P31"),
+        )
+        r1 = adapter.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")
+        r2 = adapter.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")
+        assert r2 is not r1
+        assert r2.holds is True
+        assert r2.error is None
+        assert r2.establishing_property == "P31"
+
+    def test_distinct_keys_do_not_collide(self):
+        """The key is (relation, source, target): different sources, targets, or
+        relation types are independent entries (no cross-talk)."""
+        adapter = WikidataAdapter()
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=True))
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        adapter.verify_transitive_path("Q1", "Q3", "P171")  # different target
+        adapter.verify_transitive_path("Q9", "Q2", "P171")  # different source
+        # different relation_type alternation for the same pair:
+        adapter.verify_transitive_path("Q1", "Q2", "P31", relation_type="is_a")
+        assert calls["n"] == 4  # four distinct keys, four ASKs
+        # ...and each is independently a memo hit on repeat (no new ASK):
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        assert calls["n"] == 4
+
+    def test_ttl_expiry_drops_entry_and_re_asks(self):
+        """A memo entry past its TTL is dropped on access and the ASK re-runs —
+        a Wikidata edit cannot pin a stale answer for the process lifetime."""
+        from aedos.layer4_sources.kb_wikidata import _TRANSITIVE_MEMO_TTL_SECONDS
+        clock = _FakeClock()
+        adapter = WikidataAdapter(clock=clock)
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=True))
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        assert calls["n"] == 1
+        # within TTL: memo hit, no new ASK
+        clock.advance(_TRANSITIVE_MEMO_TTL_SECONDS - 1.0)
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        assert calls["n"] == 1
+        # past TTL: entry dropped, ASK re-runs
+        clock.advance(2.0)
+        adapter.verify_transitive_path("Q1", "Q2", "P171")
+        assert calls["n"] == 2
+
+    def test_lru_cap_evicts_oldest(self):
+        """The memo is bounded by an LRU cap: once over capacity the oldest
+        (least-recently-used) entry is evicted; re-asking it re-runs the ASK."""
+        import aedos.layer4_sources.kb_wikidata as mod
+        adapter = WikidataAdapter()
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=True))
+        with patch.object(mod, "_TRANSITIVE_MEMO_MAX_ENTRIES", 2):
+            adapter.verify_transitive_path("Q1", "Q2", "P171")  # key A
+            adapter.verify_transitive_path("Q3", "Q4", "P171")  # key B
+            assert calls["n"] == 2 and len(adapter._transitive_memo) == 2
+            # key C exceeds the cap -> evict the LRU entry (A)
+            adapter.verify_transitive_path("Q5", "Q6", "P171")  # key C
+            assert calls["n"] == 3 and len(adapter._transitive_memo) == 2
+            # B and C are still cached: repeats are memo hits, no new ASK
+            adapter.verify_transitive_path("Q3", "Q4", "P171")  # B hit
+            adapter.verify_transitive_path("Q5", "Q6", "P171")  # C hit
+            assert calls["n"] == 3
+            # A was evicted: re-asking it runs a fresh ASK
+            adapter.verify_transitive_path("Q1", "Q2", "P171")  # A re-ASK
+            assert calls["n"] == 4
+
+    def test_definite_negative_not_memoized_when_nogood_cache_wired(self):
+        """Negative-result ownership: when a nogood cache IS wired, the nogood
+        cache (which honors operator retraction) owns definite negatives — the
+        positive memo does NOT also store holds=False, so a retracted negative
+        is never served stale from the memo. The memo stays empty for negatives."""
+        adapter, db = _make_adapter()
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=False))
+        adapter.verify_transitive_path("Q270", "Q183", "P131", relation_type="part_of")
+        assert len(adapter._transitive_memo) == 0  # negative left to the nogood cache
+        # The nogood cache short-circuits the repeat (its own mechanism), so this
+        # is behavior-neutral; the memo simply abstains from negatives here.
+
+    def test_positive_memoized_even_with_nogood_cache_wired(self):
+        """A definite holds=True is always memoized (the nogood cache never holds
+        positives); the second call is a memo hit with no new ASK."""
+        adapter, db = _make_adapter()
+        cache = SubstrateExceptionCache(db)
+        adapter._exception_cache = cache
+        calls = _spy_dispatch(adapter, lambda: TransitivePathResult(holds=True))
+        adapter.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")
+        adapter.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")
+        assert calls["n"] == 1
+        assert len(adapter._transitive_memo) == 1
+
+    # --- (e) BEHAVIOR-NEUTRALITY: a warm memo changes no verdict ---
+    #
+    # The tests above drive a call-counting spy to isolate the memo's hit/miss
+    # mechanics. These complementary tests run the REAL fixture dispatch (no
+    # spy, no mock) and assert the public `verify_transitive_path` returns a
+    # TransitivePathResult EQUIVALENT IN EVERY FIELD with vs without a warm
+    # memo — for a representative is_a transitive case AND the part_of bridge.
+    # That is the §3.2 guarantee made concrete: the memo returns exactly what a
+    # fresh definite ASK would and cannot change a verdict.
+
+    @staticmethod
+    def _fields(r: TransitivePathResult) -> tuple:
+        return (r.holds, r.establishing_property, r.error)
+
+    def test_warm_memo_hit_equivalent_to_cold_is_a_path(self):
+        """Representative is_a transitive case through the real fixture path
+        (Q95 ⊂ Q43229 via the recorded chain → holds=True, error=None). A cold
+        adapter and the second (warm-memo) call on the same adapter return
+        field-identical results."""
+        cold = WikidataAdapter()  # fresh adapter, empty memo → fixture ASK
+        cold_result = cold.verify_transitive_path(
+            "Q95", "Q43229", "P31", relation_type="is_a"
+        )
+        warm = WikidataAdapter()
+        warm.verify_transitive_path("Q95", "Q43229", "P31", relation_type="is_a")  # populate
+        warm_result = warm.verify_transitive_path(
+            "Q95", "Q43229", "P31", relation_type="is_a"
+        )  # memo hit
+        # The cold (no-memo) and warm (memo-hit) results are field-identical:
+        # same holds, same establishing_property, same (None) error.
+        assert self._fields(cold_result) == self._fields(warm_result)
+        assert cold_result.holds is True
+        assert cold_result.error is None
+        # And the warm hit truly skipped the dispatch (memo populated, 1 entry).
+        assert len(warm._transitive_memo) == 1
+
+    def test_warm_memo_hit_equivalent_to_cold_part_of_bridge(self):
+        """The part_of bridge (type-guarded P361, the Warsaw⊄Germany leak guard)
+        returns the SAME holds with vs without a warm memo. Driven by a
+        deterministic ASK-shaped fixture-style result through `_live_transitive_path`
+        so the bridge alternation actually runs, with the memo consulted at the
+        public seam. Cold and warm calls are field-identical and the verdict is
+        unchanged."""
+        # Use the live ASK path with a mocked positive boolean so the part_of
+        # bridge query is genuinely constructed and executed on the cold call;
+        # the warm call must reproduce the identical verdict from the memo.
+        def _run(adapter, *, warm: bool):
+            cm, _ = _make_httpx_cm(_make_response(b'{"boolean": true}'))
+            with patch("aedos.utils.http_cache.httpx.Client", return_value=cm):
+                with patch.object(adapter, "_live", True):
+                    if warm:
+                        adapter.verify_transitive_path(
+                            "Q270", "Q36", "P131", relation_type="part_of"
+                        )  # populate memo
+                    return adapter.verify_transitive_path(
+                        "Q270", "Q36", "P131", relation_type="part_of"
+                    )
+
+        cold_adapter, _ = _make_adapter()
+        warm_adapter, _ = _make_adapter()
+        cold_result = _run(cold_adapter, warm=False)
+        warm_result = _run(warm_adapter, warm=True)
+        assert cold_result.holds is True
+        assert cold_result.error is None
+        assert self._fields(cold_result) == self._fields(warm_result)
+
+    def test_warm_memo_hit_equivalent_to_cold_negative_path(self):
+        """A definite negative (missing fixture → holds=False, error=None) is
+        equivalent cold vs warm too (no nogood cache wired, so the negative is
+        memoized and the TTL bounds staleness). The abstain verdict is unchanged."""
+        cold = WikidataAdapter()
+        cold_result = cold.verify_transitive_path(
+            "Q49166", "Q183", "P131", relation_type="part_of"
+        )
+        warm = WikidataAdapter()
+        warm.verify_transitive_path("Q49166", "Q183", "P131", relation_type="part_of")
+        warm_result = warm.verify_transitive_path(
+            "Q49166", "Q183", "P131", relation_type="part_of"
+        )
+        assert self._fields(cold_result) == self._fields(warm_result)
+        assert cold_result.holds is False
+        assert cold_result.error is None
