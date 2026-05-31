@@ -488,6 +488,32 @@ class TierU:
         rows = [dict(r) for r in rows]
         return LookupResult(found=bool(rows), rows=rows, stage=1)
 
+    def has_identity(self, asserting_party: str, subject: str) -> bool:
+        """True when `subject` is a stipulated user identity/persona for
+        `asserting_party` — a row of the shape
+        `(asserting_party, subject='user', predicate='identity', object=subject,
+        polarity=1)` that is not retracted.
+
+        Used by the walker to route a persona-subject claim to
+        `user_authoritative`: a persona name (e.g. "Asa") is the asking user,
+        not a KB entity, so the entity resolver must never see it (it would
+        otherwise resolve "Asa" → an unrelated Wikidata entity such as
+        "Asa, King of Judah" and emit a §3.2 false verified/contradicted on
+        facts about that wrong entity). Scoped to `asserting_party` so
+        different parties can stipulate different personas. Parameterized
+        query — no caller reaches `_db`.
+        """
+        if not subject:
+            return False
+        row = self._db.execute(
+            """SELECT 1 FROM tier_u
+               WHERE asserting_party=? AND subject='user'
+                 AND predicate='identity' AND object=?
+                 AND polarity=1 AND retracted_at IS NULL""",
+            (asserting_party, subject),
+        ).fetchone()
+        return row is not None
+
     def retract(self, row_id: int, reason: str) -> None:
         """Retract a Tier U row."""
         now = _NOW()

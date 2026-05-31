@@ -1,4 +1,9 @@
-"""Integration test: claim → router (kb_resolvable) → KB verifier → verdict.
+"""Integration test: kb_resolvable predicate → KB verifier → verdict.
+
+v0.16.1 WS5b: the standalone Layer-2 Router/Validator were deleted; routing is
+predicate-driven off the oracle's `routing_hint`. This suite asserts the
+kb_resolvable routing_hint on the oracle metadata and exercises the KB verifier
+verdicts directly.
 
 Fix-up note (M4): claims carry natural-language objects resolved through the
 entity resolver; CONTRADICTED requires a functional (single_valued) predicate.
@@ -11,8 +16,6 @@ import pytest
 from aedos.database import open_memory_db
 from aedos.layer1_extraction.extractor import Claim
 from aedos.layer1_extraction.triage import TriageDecision
-from aedos.layer2_routing.router import Router
-from aedos.layer2_routing.validator import Validator
 from aedos.layer3_substrate.predicate_translation import PredicateTranslation
 from aedos.layer3_substrate.resolver import EntityResolver
 from aedos.layer4_sources.kb_protocol import LocalContext, ResolutionCandidate, Statement, SubsumptionResult
@@ -73,12 +76,10 @@ def _make_system(statements, kb_property="P39", single_valued=0):
     db = open_memory_db()
     client = LLMClient(_transport=MockTransport(kb_property, single_valued))
     pt = PredicateTranslation(db=db, llm_client=client)
-    validator = Validator()
-    router = Router(predicate_translation=pt, validator=validator)
     kb = MockKB(statements)
     resolver = EntityResolver(kb_protocol=kb, db=db)
     verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
-    return router, verifier
+    return pt, verifier
 
 
 def _claim(subject="Obama", predicate="holds_role",
@@ -100,10 +101,9 @@ def _claim(subject="Obama", predicate="holds_role",
 # ---------------------------------------------------------------------------
 
 class TestKBPathRoundtrip:
-    def test_claim_routes_kb_resolvable(self):
-        router, _ = _make_system([Statement(value="Q11696", value_type="entity")])
-        decision = router.route(_claim())
-        assert decision.route == "kb_resolvable"
+    def test_predicate_routes_kb_resolvable(self):
+        pt, _ = _make_system([Statement(value="Q11696", value_type="entity")])
+        assert pt.consult("holds_role").routing_hint == "kb_resolvable"
 
     def test_kb_resolvable_claim_verified(self):
         _, verifier = _make_system([Statement(value="Q11696", value_type="entity")])

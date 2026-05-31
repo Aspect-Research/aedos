@@ -80,9 +80,18 @@ def _blowup_substrate():
     sub.find_neighbors.return_value = []
     resolver = MagicMock()
     resolver.resolve.return_value = [ResolutionCandidate(kb_identifier="Q1", score=1.0)]
+    # Realistic predicate metadata for the walker's oracle reads
+    # (routing_hint / user_subject_required). A bare MagicMock would expose a
+    # truthy `user_subject_required`, spuriously tripping the walker's
+    # user_subject_required anomaly guard before KB enumeration runs.
+    pt = MagicMock()
+    pt_meta = MagicMock()
+    pt_meta.routing_hint = "kb_resolvable"
+    pt_meta.user_subject_required = False
+    pt.consult.return_value = pt_meta
     return Substrate(
         resolver=resolver,
-        predicate_translation=MagicMock(),
+        predicate_translation=pt,
         subsumption=sub,
         predicate_distribution=pd,
     )

@@ -433,8 +433,63 @@ class Walker:
                 budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
             )
 
+        # Per-walk routing flag. When set, external (KB / Python) grounding is
+        # structurally unreachable for this walk's claims — the claim is the
+        # user's own (user_authoritative predicate, or a stipulated
+        # user-persona subject), so it grounds only in Tier U and every verdict
+        # is conditional on the user's assertion. See _try_external_grounding.
+        self._user_authoritative_walk = False
+
+        # v0.16.1 WS5b: a persona-subject claim is the asking user, not a KB
+        # entity. When the claim's subject is a stipulated user identity for
+        # this asserting_party (tier_u.has_identity), route the claim
+        # user_authoritative exactly as a user_authoritative-predicate claim:
+        # set the chain flag (verdict family becomes *_given_assertion) AND make
+        # external grounding structurally unreachable, so the entity resolver
+        # never sees the persona name (it would otherwise misresolve "Asa" →
+        # "Asa, King of Judah" and emit a §3.2 false verified/contradicted on a
+        # negation like "Asa is not in France"). This replaces the deleted
+        # _is_persona_subject KB-skip guard with a route at walk entry.
+        # Defensive: a mock TierU in a unit test may not implement
+        # has_identity; treat a missing method / failure as "not a persona"
+        # (the conservative direction — at worst a missing route, never a
+        # false verdict).
+        _has_identity = getattr(self._tier_u, "has_identity", None)
+        try:
+            persona_subject = bool(
+                _has_identity(context.asserting_party, claim.subject)
+            ) if _has_identity is not None else False
+        except Exception:
+            persona_subject = False
+
+        route = self._predicate_routing(claim.predicate)
+
+        # user_subject_required anomaly guard (v0.16.1 WS5b, relocated from the
+        # deleted Layer-2 Validator). A predicate flagged user_subject_required
+        # (e.g. `prefers`, `believes`) asserted about a subject that is NEITHER
+        # the asserting party itself NOR a stipulated user persona is
+        # malformed — a first-person predicate attributed to a third party.
+        # FAIL-CLOSED: short-circuit to a base no_grounding_found / anomaly
+        # abstain BEFORE any Tier U / KB / Python lookup, so it can only ever
+        # become an abstain, never a verdict (it must not reach the entity
+        # resolver to misresolve + false-contradict).
+        if (
+            self._predicate_user_subject_required(claim.predicate)
+            and claim.subject != context.asserting_party
+            and not persona_subject
+        ):
+            trace.walk_metadata["short_circuit"] = "user_subject_required"
+            trace.polarity_trace = []
+            return WalkResult(
+                verdict="no_grounding_found",
+                trace=trace,
+                abstention_reason="user_subject_required",
+                budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
+            )
+
         # For predicates routed
-        # `user_authoritative`, external grounding is structurally
+        # `user_authoritative` (or a persona-subject claim), external grounding
+        # is structurally
         # unreachable — no KB property maps to `prefers` / `believes` /
         # similar, and Python cannot compute first-person facts. Every
         # verdict on such a claim is therefore conditional on user
@@ -443,7 +498,8 @@ class Walker:
         # abstained), even when no Tier U premise is present (the
         # abstained_given_assertion case). See design doc §"User_authoritative
         # verdict semantics".
-        if self._predicate_routing(claim.predicate) == "user_authoritative":
+        if route == "user_authoritative" or persona_subject:
+            self._user_authoritative_walk = True
             self._record_premise(trace, source="tier_u", assertion=True)
 
         frontier: list[Claim] = [claim]
@@ -1021,18 +1077,19 @@ class Walker:
         audit event — KB statement coordinates or Python execution
         identity.
         """
-        # Skip KB verification when the
-        # claim's subject is a known user persona stipulated in Tier U
-        # (via a "user identity X" row). Otherwise the entity resolver
-        # may resolve the persona name (e.g. "Asa") to an unrelated
-        # Wikidata entity (Asa, King of Judah; or a different person
-        # named Asa entirely), and the kb_verifier's polarity-aware
-        # branch will emit verified/contradicted on facts about that
-        # wrong entity. For negation claims ("Asa is not in France")
-        # this produces a §3.2 false-contradiction when the misresolved
-        # entity happens to be in France. The persona's true
-        # verification is in Tier U; KB is the wrong source.
-        if self._is_persona_subject(node):
+        # External (KB / Python) grounding is structurally unreachable for a
+        # user_authoritative walk — set at walk entry when the predicate routes
+        # user_authoritative OR the claim's subject is a stipulated user
+        # persona (tier_u.has_identity). For a persona subject this is the
+        # critical §3.2 guard: otherwise the entity resolver may resolve the
+        # persona name (e.g. "Asa") to an unrelated Wikidata entity (Asa, King
+        # of Judah; or a different person named Asa), and the kb_verifier's
+        # polarity-aware branch would emit verified/contradicted on facts about
+        # that wrong entity — a false-contradiction on a negation like "Asa is
+        # not in France". The persona's true verification is in Tier U; KB is
+        # the wrong source. (Replaces the deleted _is_persona_subject KB-skip
+        # guard with the walk-entry user_authoritative route.)
+        if getattr(self, "_user_authoritative_walk", False):
             return None, "", 0, {}
 
         # kb_quantitative comparison path.
@@ -1759,40 +1816,6 @@ class Walker:
             grounding["contradicting_value_type"] = "time"
         return verdict, grounding
 
-    def _is_persona_subject(self, claim: Claim) -> bool:
-        """True when the claim's subject is
-        a known user persona stipulated in Tier U via a `user identity X`
-        row. Used by `_direct_lookup` to skip KB verification — the
-        entity resolver would otherwise resolve the persona name to an
-        unrelated Wikidata entity (e.g. "Asa" → Asa, King of Judah) and
-        the kb_verifier's polarity-aware branch would emit
-        verified/contradicted on facts about that wrong entity.
-
-        Specifically catches: rows of the shape
-        `(asserting_party, 'user', 'identity', X, polarity=1)` where X
-        matches the claim's subject. The asserting_party check is the
-        claim's asserting_party so the persona is scoped to who's
-        asking — different parties can stipulate different personas.
-        """
-        if not claim.subject:
-            return False
-        # Defensive: a mock TierU might not expose this attribute.
-        try:
-            db = self._tier_u._db  # type: ignore[attr-defined]
-        except AttributeError:
-            return False
-        try:
-            row = db.execute(
-                """SELECT 1 FROM tier_u
-                   WHERE asserting_party=? AND subject='user'
-                     AND predicate='identity' AND object=?
-                     AND polarity=1 AND retracted_at IS NULL""",
-                (claim.asserting_party, claim.subject),
-            ).fetchone()
-        except Exception:
-            return False
-        return row is not None
-
     def _predicate_routing(self, predicate: str) -> Optional[str]:
         """Routing hint for `predicate` per the predicate translation oracle.
         Returns None when the consult fails — the walker treats an unknown
@@ -1805,6 +1828,20 @@ class Walker:
             return meta.routing_hint
         except Exception:
             return None
+
+    def _predicate_user_subject_required(self, predicate: str) -> bool:
+        """Whether `predicate` requires the claim subject to be the asserting
+        user (a first-person predicate such as `prefers` / `believes`) per the
+        predicate translation oracle. Relocated from the deleted Layer-2
+        Validator. Returns False on a consult failure — fail-OPEN on the GUARD
+        itself so an oracle miss never *blocks* a checkworthy claim; the guard
+        only ever turns a confirmed first-person-about-a-third-party claim into
+        an abstain (it cannot manufacture a verdict)."""
+        try:
+            meta = self._substrate.predicate_translation.consult(predicate)
+            return bool(meta.user_subject_required)
+        except Exception:
+            return False
 
     def _predicate_is_functional(self, predicate: str) -> bool:
         """Whether `predicate` is functional (single_valued) per predicate
