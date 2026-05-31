@@ -14,6 +14,17 @@ soundness contract, never CONTRADICTED.
 FAIL-OPEN: any KB/LLM error, a missing primary property, or no co-occurring
 signal returns `[]`. Soundness over coverage — a SLING miss simply leaves the
 oracle's primary binding in place (current behavior). Nothing here raises.
+
+DORMANT-MECHANISM NOTE (round-1 follow-up): SLING is DEFERRED-INERT in v0.16.
+`propose_bindings` returns `[]` on every production call today because
+`_sample_entities` needs `sample_subject_qids` / `example_qids` in the oracle's
+raw output, and the predicate-metadata oracle's tool schema
+(PREDICATE_METADATA_TOOL) emits NEITHER field — so there is never anything to
+sample, and the co-occurrence enumeration is never reached. Activation is a
+FUTURE OPERATOR DECISION: it requires adding the sample-qids field to the tool
+schema plus a prompt instruction to populate it. The mechanism is fully wired
+and fail-open (it proposes nothing rather than guessing), so it is safe to leave
+dormant — no un-reviewed verdict path is reachable through it.
 """
 
 from __future__ import annotations

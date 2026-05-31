@@ -349,6 +349,52 @@ class TestTierUEndpoint:
         iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
         assert iv is None
 
+    def test_agreeing_rows_yield_the_shared_date(self):
+        # Round-1 robustness follow-up (WS6): multiple Tier U rows that AGREE on
+        # the endpoint date collapse to that single distinct date — not an
+        # arbitrary rows[0] pick, but a deterministic one-distinct-date result.
+        tu = _StubTierU(rows=[{"object": "2020"}, {"object": "2020"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is not None
+        assert iv.start == "2020"
+        assert iv.start_known is True
+
+    def test_conflicting_rows_abstain(self):
+        # Two Tier U rows DISAGREE on the endpoint date → more than one distinct
+        # non-None date → abstain (None), mirroring the KB conflicting-start
+        # abstention. We must NOT pick a row by accident (§3.2 soundness).
+        tu = _StubTierU(rows=[{"object": "2020"}, {"object": "2021"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is None
+
+    def test_conflicting_rows_abstain_on_ended_too(self):
+        # The conflicting-date abstention is endpoint-agnostic: an _ended claim
+        # with disagreeing Tier U end dates also abstains.
+        tu = _StubTierU(rows=[{"object": "2023"}, {"object": "2024"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_ended"), _ctx())
+        assert iv is None
+
+    def test_all_none_dates_abstain(self):
+        # Rows present but every endpoint date is None (empty/sentinel) → zero
+        # distinct dates → nothing to ground → abstain (None).
+        tu = _StubTierU(rows=[{"object": None}, {"object": ""}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is None
+
+    def test_one_real_date_among_nones_grounds(self):
+        # A single distinct non-None date alongside None rows still grounds —
+        # the Nones are discarded, leaving exactly one distinct date.
+        tu = _StubTierU(rows=[{"object": None}, {"object": "2020"}], found=True)
+        w = _make_walker(tier_u=tu)
+        iv = w._tier_u_endpoint(_claim(predicate="employment_started"), _ctx())
+        assert iv is not None
+        assert iv.start == "2020"
+        assert iv.start_known is True
+
 
 # ---------------------------------------------------------------------------
 # _verify_interval_endpoint — verified / contradicted / abstain
@@ -468,6 +514,159 @@ class TestVerifyIntervalEndpoint:
             _claim(predicate="employment_ended", object_val="2000"), _ctx(), _trace()
         )
         assert out is None
+
+
+# ---------------------------------------------------------------------------
+# Non-unique-interval contradiction guard (WS6 round-1, forward-defensive) +
+# dead object_org-branch-removal regression coverage
+# ---------------------------------------------------------------------------
+
+class TestNonUniqueContradictionGuard:
+    """Round-1 robustness follow-up (WS6, defense-in-depth): a *_started/_ended
+    CONTRADICTED verdict is licensed ONLY when the interval was built from a
+    UNIQUELY-identified statement (a single candidate, or a single
+    preferred-ranked one). An interval built by COLLAPSING several statements
+    that merely AGREE on a start is NOT unique and must never contradict an
+    asserted endpoint — otherwise a future single_valued endpoint binding could
+    false-contradict against a value that is just one of several the KB holds.
+
+    All 8 endpoint seeds are single_valued=0 today, so this branch is
+    unreachable in production; the guard is forward-defensive. We exercise it by
+    pinning single_valued=True on a stub meta.
+    """
+
+    @staticmethod
+    def _agreeing_nonunique_statements():
+        # Two NORMAL-rank statements that AGREE on the start (no preferred
+        # discriminator) → _interval_from_statements collapses them into an
+        # interval with unique=False.
+        return [
+            Statement(value="Q11942", value_type="entity", rank="normal",
+                      qualifiers={"P580": "1933-10-01"}),
+            Statement(value="Q11920", value_type="entity", rank="normal",
+                      qualifiers={"P580": "1933-10-01"}),
+        ]
+
+    def test_collapsed_interval_is_not_unique(self):
+        w = _make_walker()
+        iv = w._interval_from_statements(self._agreeing_nonunique_statements())
+        assert iv is not None
+        assert iv.start == "1933-10-01"
+        # Collapsed from two agreeing normal statements → NOT unique.
+        assert iv.unique is False
+
+    def test_single_statement_interval_is_unique(self):
+        w = _make_walker()
+        iv = w._interval_from_statements([
+            Statement(value="Q11942", value_type="entity", rank="normal",
+                      qualifiers={"P580": "1933-10-01"}),
+        ])
+        assert iv is not None
+        assert iv.unique is True
+
+    def test_preferred_unique_interval_is_unique(self):
+        # A single preferred-ranked statement among normals is uniquely
+        # identified even though more than one statement is present.
+        w = _make_walker()
+        iv = w._interval_from_statements(_ias_statements())
+        assert iv is not None
+        assert iv.unique is True
+
+    def test_nonunique_mismatch_does_not_contradict(self):
+        # single_valued=True, the collapsed (non-unique) interval start is
+        # 1933 but the claim asserts 1999 → the guard forces ABSTAIN (None),
+        # NOT a contradiction.
+        w = _interval_walker(
+            single_valued=True,
+            statements=self._agreeing_nonunique_statements(),
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1999"),
+            _ctx(), _trace(),
+        )
+        assert out is None
+
+    def test_unique_mismatch_still_contradicts(self):
+        # Control: the SAME single_valued mismatch against a UNIQUE
+        # (single-statement) interval DOES contradict — proving the abstention
+        # above is the non-unique guard firing, not some unrelated abstention.
+        w = _interval_walker(
+            single_valued=True,
+            statements=[
+                Statement(value="Q11942", value_type="entity", rank="normal",
+                          qualifiers={"P580": "1933-10-01"}),
+            ],
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1999"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, grounding = out
+        assert verdict == "contradicted"
+        assert grounding["contradicting_value"] == "1933-10-01"
+
+    def test_nonunique_match_still_verifies(self):
+        # A non-unique interval is only barred from CONTRADICTING — a MATCH is
+        # still a verification (the guard sits in the contradiction branch only).
+        w = _interval_walker(
+            single_valued=True,
+            statements=self._agreeing_nonunique_statements(),
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1933"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, _ = out
+        assert verdict == "verified"
+
+
+class TestObjectOrgBranchRemoval:
+    """Round-1 robustness follow-up: the dead `getattr(claim, 'object_org', None)`
+    candidate-narrowing branch in _gather_interval was removed (Claim has no
+    `object_org` field, so it was always None / dead). These tests pin that the
+    removal did NOT change the verified / abstain behavior on the existing
+    fixtures — _gather_interval still builds the interval straight from the
+    subject's base statements via _interval_from_statements.
+    """
+
+    def test_claim_has_no_object_org_attribute(self):
+        # The premise of the removal: Claim never carried `object_org`.
+        c = _claim(predicate="employment_started")
+        assert getattr(c, "object_org", None) is None
+
+    def test_verified_behavior_unchanged(self):
+        # The canonical IAS fixture still verifies a matching P580 endpoint.
+        w = _interval_walker()
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1933"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, grounding = out
+        assert verdict == "verified"
+        assert grounding["endpoint_value"] == "1933-10-01"
+
+    def test_abstain_behavior_unchanged(self):
+        # A multi-valued (single_valued=False) mismatch still abstains, exactly
+        # as before — no object_org narrowing ever altered this path.
+        w = _interval_walker(single_valued=False)
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1999"),
+            _ctx(), _trace(),
+        )
+        assert out is None
+
+    def test_gather_interval_builds_from_full_statement_set(self):
+        # _gather_interval grounds against the subject's full base-statement set
+        # (preferred-or-agreeing), with no object-side narrowing.
+        w = _interval_walker()
+        iv = w._gather_interval(
+            _claim(predicate="employment_started"), "P108", _ctx()
+        )
+        assert iv is not None
+        assert iv.start == "1933-10-01"  # IAS preferred statement
 
 
 # ---------------------------------------------------------------------------

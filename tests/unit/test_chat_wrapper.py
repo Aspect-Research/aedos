@@ -621,3 +621,103 @@ class TestChatWrapperIntegration:
         # intervention_type stays as a backwards-compat property over
         # the overall shape.
         assert response.intervention_type == response.intervention_plan.overall.value
+
+
+# ---------------------------------------------------------------------------
+# claim_observability — public (lightweight) vs. audit (verbose) split
+# ---------------------------------------------------------------------------
+
+class TestClaimObservabilitySplit:
+    """Round-1 observability follow-up: claim_observability has two depths.
+    The default (public POST /chat) is LIGHTWEIGHT — verdict-level fields only,
+    NO `trace` JSON and NO raw `provenance` term (both embed internal substrate
+    row ids). verbose=True (the audit GET /verification/{id}) adds both.
+    """
+
+    def _vr_with_assertion_trace(self) -> VerificationResult:
+        # A single claim whose trace carries a provenance literal bearing an
+        # internal (table,row_id) pair — the row id the verbose surface keeps
+        # and the lightweight surface must drop.
+        from aedos.layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+
+        c = _claim("c1", subject="Asa", predicate="lives_in", obj="Paris")
+        cv = ClaimVerdict(
+            claim_id="c1", claim=c, verdict="verified_given_assertion",
+            contradicting_value=None,
+        )
+        trace = JustificationTrace(root=TraceNode("claim", {
+            "subject": "Asa", "predicate": "lives_in",
+            "object": "Paris", "polarity": 1,
+        }))
+        trace.provenance.add_alternative(ProvenanceTerm.lit(ProvenanceLiteral(
+            source="tier_u", table="tier_u", row_id=7,
+            status="asserted_unverified", assertion=True,
+        )))
+        return VerificationResult(
+            claims_extracted=[c],
+            per_claim_verdicts={"c1": cv.verdict},
+            per_claim_traces={"c1": trace},
+            aggregate_metadata={"claim_count": 1},
+            audit_log_entries=[],
+            text_input={},
+            claim_verdicts=[cv],
+        )
+
+    def test_lightweight_omits_trace_and_provenance(self):
+        from aedos.deployment.chat_wrapper import claim_observability
+
+        out = claim_observability(self._vr_with_assertion_trace())
+        assert len(out) == 1
+        entry = out[0]
+        # The verdict-level fields a /chat caller needs are present.
+        for key in (
+            "claim_id", "subject", "predicate", "object", "polarity",
+            "verdict", "base_verdict", "conditional", "abstention_reason",
+            "contradicting_value", "contradicting_value_type", "trace_human",
+        ):
+            assert key in entry
+        # The heavy / row-id-bearing keys are ABSENT from the lightweight view.
+        assert "trace" not in entry
+        assert "provenance" not in entry
+        # trace_human is emitted on BOTH surfaces and is row-id-free.
+        assert entry["trace_human"]
+        assert "#7" not in entry["trace_human"]
+
+    def test_verbose_adds_trace_and_provenance(self):
+        from aedos.deployment.chat_wrapper import claim_observability
+
+        out = claim_observability(self._vr_with_assertion_trace(), verbose=True)
+        assert len(out) == 1
+        entry = out[0]
+        assert "trace" in entry
+        assert "provenance" in entry
+        assert entry["trace"] is not None
+        assert entry["provenance"] is not None
+
+    def test_verbose_is_a_strict_superset_of_lightweight(self):
+        # The split is purely additive: verbose carries every lightweight key
+        # plus exactly {trace, provenance}.
+        from aedos.deployment.chat_wrapper import claim_observability
+
+        vr = self._vr_with_assertion_trace()
+        light = set(claim_observability(vr)[0])
+        full = set(claim_observability(vr, verbose=True)[0])
+        assert light < full
+        assert full - light == {"trace", "provenance"}
+
+    def test_verbose_provenance_carries_internal_row_id(self):
+        # The whole point of the split: the row id (the retraction footprint)
+        # is present on the AUDIT surface and absent from the public one.
+        from aedos.deployment.chat_wrapper import claim_observability
+
+        vr = self._vr_with_assertion_trace()
+        full_entry = claim_observability(vr, verbose=True)[0]
+        # The provenance literal's (table,row_id) survives serialization.
+        lits = full_entry["provenance"]["children"][0]["literal"]
+        assert lits["table"] == "tier_u"
+        assert lits["row_id"] == 7
+        # ...and no row-id-bearing key survives into the lightweight entry.
+        import json as _json
+        light_serialized = _json.dumps(claim_observability(vr)[0])
+        assert "row_id" not in light_serialized
+        assert "tier_u#7" not in light_serialized

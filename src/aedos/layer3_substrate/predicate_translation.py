@@ -784,6 +784,14 @@ class PredicateTranslation:
 
         # SLING fallback: only when the ontology couldn't constrain a candidate
         # (long-tail edges). Lowest rank; never licenses a contradiction.
+        #
+        # DORMANT-MECHANISM NOTE (round-1 follow-up): SLING is DEFERRED-INERT in
+        # v0.16 — this call always yields []. propose_bindings needs sample
+        # subject Q-ids (sample_subject_qids / example_qids) in `raw`, which the
+        # predicate-metadata oracle's tool schema (PREDICATE_METADATA_TOOL) does
+        # not emit, so it samples nothing and proposes nothing. Activation
+        # (adding the schema field + a prompt to populate it) is a future
+        # operator decision; it fails open and changes no verdict today.
         if any_ontology_empty and self._sling is not None:
             proposed = self._sling.propose_bindings(aedos_predicate, raw)
             if isinstance(proposed, list):
