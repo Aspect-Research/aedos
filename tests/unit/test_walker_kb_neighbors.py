@@ -452,3 +452,129 @@ class TestD5Fallback:
         # We see calls for both is_a and part_of relation types.
         assert ["P31", "P279"] in called_properties
         assert ["P131", "P361", "P17"] in called_properties
+
+
+# ---------------------------------------------------------------------------
+# PATCH-A soundness pins for the KB-neighbor enumeration arm.
+# ---------------------------------------------------------------------------
+
+class TestKBEnumCandidateGated:
+    """PATCH-A fix (1) / SS3 symmetry: every KB-ENUMERATED candidate is routed
+    through the SAME _verify_chain entailment gate the substrate find_neighbors
+    arm uses. The single enumeration hop proves the neighbor EXISTS, not that the
+    SUBSTITUTION is entailed: an is_a `neither` predicate (kind-entailment says
+    the predicate does not transfer across is_a) must REJECT the candidate — it
+    must not appear as a surviving kb_neighbor_enumeration edge. An entailed one
+    (non-`neither` verdict + holding KB path) still passes."""
+
+    def _is_a_edges(self, result):
+        return [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+            and e.metadata.get("relation_type") == "is_a"
+        ]
+
+    def test_unentailed_is_a_candidate_rejected(self):
+        # `neither` distribution = the is_a kind-entailment authority forecloses
+        # the substitution. Only is_a neighbors are enumerated (P31), so the is_a
+        # _verify_chain gate is the sole admission path; the candidate is REJECTED
+        # and no is_a kb_neighbor_enumeration edge survives. (The KB path WOULD
+        # report holding, proving rejection is the gate, not a missing edge.)
+        substrate = _make_substrate(
+            distribution_verdict="neither",
+            sub_neighbors=[],
+        )
+        kb = _make_kb({"P31": ["Q12345"], "P279": [], "P131": [], "P361": [], "P17": []},
+                      path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(predicate="prefers"), _ctx())
+
+        assert result.verdict == "no_grounding_found"
+        assert self._is_a_edges(result) == [], (
+            "an is_a `neither` KB-enum candidate must be rejected by the gate; "
+            f"got {[e.metadata for e in self._is_a_edges(result)]}"
+        )
+
+    def test_entailed_is_a_candidate_admitted(self):
+        # Same shape, but a non-`neither` verdict (distributes_down) passes the
+        # is_a kind-entailment gate and the KB transitive path HOLDS — the
+        # candidate is admitted and the is_a kb_neighbor_enumeration edge survives.
+        # This is the positive control proving the gate is selective, not a
+        # blanket suppression of the is_a arm.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+        )
+        kb = _make_kb({"P31": ["Q12345"], "P279": [], "P131": [], "P361": [], "P17": []},
+                      path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(predicate="prefers"), _ctx())
+
+        assert self._is_a_edges(result), (
+            "an entailed (non-`neither` + holding-path) is_a KB-enum candidate "
+            "must be admitted; got no surviving is_a edge"
+        )
+
+
+class TestVerifyChainKBNegativeAuthoritative:
+    """PATCH-A fix (2) / §3.2 never-false-verify: a DEFINITE KB transitive
+    NON-HOLD (TransitivePathResult.holds=False, error=None) is an AUTHORITATIVE
+    negative — _verify_chain returns False WITHOUT falling through to the
+    substrate/LLM consult (which could fabricate a Priority-3 positive over the
+    KB negative). Only an UNAVAILABLE answer (None / fail-open error) may fall
+    through. A holding path still returns True."""
+
+    def test_definite_kb_negative_does_not_consult_substrate(self):
+        # All KB transitive-path ASKs report a DEFINITE non-hold (holds=False,
+        # error=None). Every _verify_chain candidate must be rejected at the KB
+        # layer; the substrate subsumption consult must NOT be reached.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",  # passes the is_a gate
+            sub_neighbors=[],
+            # If the consult WERE reached it would (wrongly) admit the edge:
+            consult_verdict="a_subsumed_by_b",
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": [],
+                       "P31": ["Q5"], "P279": []},
+                      path_holds=False)  # DEFINITE negative, no error
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        # The authoritative KB negative forecloses every substitution.
+        assert result.verdict == "no_grounding_found"
+        kb_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+        ]
+        assert kb_edges == [], (
+            "a definite KB transitive-negative must reject every KB-enum "
+            f"substitution; got {[e.metadata for e in kb_edges]}"
+        )
+        # The fix's heart: no fall-through to the substrate/LLM consult.
+        substrate.subsumption.consult.assert_not_called()
+
+    def test_holding_kb_path_still_admits(self):
+        # Positive control: a holding KB transitive path (holds=True) confirms
+        # the edge — _verify_chain returns True and the candidate is admitted,
+        # again WITHOUT needing the substrate consult.
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down",
+            sub_neighbors=[],
+            consult_verdict="unrelated",
+        )
+        kb = _make_kb({"P131": ["Q771397"], "P361": [], "P17": []},
+                      path_holds=True)
+        walker = _make_walker(substrate, kb)
+
+        result = walker.walk(_claim(), _ctx())
+
+        part_of_edges = [
+            e for e in result.trace.edges
+            if e.edge_type == "kb_neighbor_enumeration"
+            and e.metadata.get("relation_type") == "part_of"
+        ]
+        assert part_of_edges, "a holding KB path must admit the candidate"
+        substrate.subsumption.consult.assert_not_called()

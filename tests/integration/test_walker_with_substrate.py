@@ -286,6 +286,38 @@ class TestWalkerSubsumptionDerivation:
         edge_types = [e.edge_type for e in result.trace.edges]
         assert "subsumption_traversal" in edge_types
 
+    def test_subsumption_traversal_dep_in_provenance_source_rows(self):
+        # PATCH-A fix (5) / WS3 single-source-of-truth: a subsumption_traversal
+        # edge now records the subsumption row in the provenance TERM (via
+        # _record_premise), not only in edge metadata. _extract_source_rows
+        # short-circuits on provenance.source_rows(), so a dep that lives ONLY in
+        # edge metadata would be DROPPED from the retraction footprint. Assert the
+        # subsumption row appears in both the term's source_rows() and the
+        # aggregator footprint, and that the row_id matches the trace edge.
+        from aedos.layer5_result.aggregator import _extract_source_rows
+        walker, tier_u, db = _make_full_system()
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_subsumption(db, "Williamstown", "Massachusetts", "part_of")
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "verified"
+
+        # The traversal edge stamps the row id in metadata (observability).
+        sub_edges = [
+            e for e in result.trace.edges if e.edge_type == "subsumption_traversal"
+        ]
+        assert sub_edges
+        edge_row_id = sub_edges[0].metadata["subsumption_row_id"]
+
+        # The SAME dep must live in the provenance term's source_rows() — the
+        # single source of truth for the retraction dependency footprint.
+        prov_rows = result.trace.provenance.source_rows()
+        assert ("subsumption", edge_row_id) in prov_rows
+
+        # And the aggregator footprint (which prefers the term) surfaces it.
+        assert ("subsumption", edge_row_id) in _extract_source_rows(result.trace)
+
     def test_distribution_neither_rejected_at_verify_time(self):
         # der_multihop_009: `prefers` does NOT distribute over is_a. Even with a
         # subsumption row golden_retriever is_a dog (the structural edge HOLDS),
@@ -333,11 +365,16 @@ class TestWalkerPremiseForward:
     def test_premise_forward_meets_goal(self):
         # Tier U: lives_in(Asa, Williamstown). Goal: lives_in(Asa, Massachusetts).
         # Williamstown part_of Massachusetts (KB transitive path holds). No
-        # subsumption/distribution rows are seeded — premise-forward is the
-        # only path that can ground this.
+        # subsumption rows are seeded — premise-forward is the only path that can
+        # ground this. PATCH-A fix (3): premise-forward over a part_of edge is
+        # SOUND only if the predicate distributes UP, so the distribution row is
+        # seeded (lives_in genuinely distributes up over part_of); without it the
+        # shared MockTransport returns `neither` and the substitution is foreclosed
+        # (see test_premise_forward_abstains_when_distribution_neither).
         kb = MockKB(transitive_paths={("Q771397", "Q771")})  # Williamstown ⊂ MA
         walker, tier_u, db = _make_full_system(kb=kb, wire_kb=True)
         tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
         goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
         result = walker.walk(goal, _ctx())
         assert result.verdict == "verified"
@@ -345,13 +382,47 @@ class TestWalkerPremiseForward:
         assert "premise_forward" in edge_types
 
     def test_premise_forward_abstains_when_path_does_not_hold(self):
-        # Same shape, but the KB transitive path does NOT hold (Williamstown is
-        # NOT part_of Germany). Premise-forward must not ground it — abstain,
-        # never false-verify (§3.2).
+        # Same shape (distribution row seeded so the distribution gate admits),
+        # but the KB transitive path does NOT hold (Williamstown is NOT part_of
+        # Germany). Premise-forward must not ground it — abstain, never
+        # false-verify (§3.2).
         kb = MockKB(transitive_paths=set())  # no path holds
         walker, tier_u, db = _make_full_system(kb=kb, wire_kb=True)
         tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_distribution(db, "lives_in", "part_of", "distributes_up")
         goal = _claim(subject="Asa", predicate="lives_in", object_val="Germany")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert "premise_forward" not in [e.edge_type for e in result.trace.edges]
+
+    def test_premise_forward_abstains_when_distribution_neither(self):
+        # PATCH-A fix (3) / §3.2 never-false-verify: the substitution
+        # P(S,O') ⊢ P(S,O) over `O' part_of O` is valid ONLY IF the predicate
+        # distributes UP over part_of. With the transitive path HOLDING
+        # (Williamstown ⊂ MA) but the distribution verdict `neither`, the
+        # premise-forward substitution must be FORECLOSED — a non-distributing
+        # place predicate must not ride a part_of edge to a (false) grounding.
+        # The structurally-identical distributes_up case grounds (see
+        # test_premise_forward_meets_goal); only the distribution verdict differs.
+        kb = MockKB(transitive_paths={("Q771397", "Q771")})  # path HOLDS
+        walker, tier_u, db = _make_full_system(kb=kb, wire_kb=True)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        _seed_distribution(db, "lives_in", "part_of", "neither")
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert "premise_forward" not in [e.edge_type for e in result.trace.edges]
+
+    def test_premise_forward_abstains_when_distribution_absent(self):
+        # PATCH-A fix (3) fail-closed: with NO distribution row seeded the shared
+        # MockTransport answers `neither`, and an absent/uncertain verdict abstains
+        # exactly like an explicit `neither`. Asserting the absent case pins the
+        # fail-closed default (never-false-verify) independently of the seeded
+        # `neither` row above.
+        kb = MockKB(transitive_paths={("Q771397", "Q771")})  # path HOLDS
+        walker, tier_u, db = _make_full_system(kb=kb, wire_kb=True)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
         result = walker.walk(goal, _ctx())
         assert result.verdict == "no_grounding_found"
         assert "premise_forward" not in [e.edge_type for e in result.trace.edges]

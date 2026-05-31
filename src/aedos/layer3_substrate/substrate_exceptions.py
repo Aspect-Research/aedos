@@ -156,9 +156,16 @@ class SubstrateExceptionCache:
 
     def _evict_if_over_cap(self) -> None:
         """Plain LRU eviction: hard-delete the surplus oldest-consulted rows.
-        Re-derivation on a later miss re-runs the ASK, which is safe."""
+        Re-derivation on a later miss re-runs the ASK, which is safe.
+
+        Reserved guard rows (reason IN ('leak_guard','operator_marked')) are
+        NEVER eviction candidates — contract §0.11 #2. Excluded from BOTH the
+        cap COUNT and the eviction subquery so a guard row neither counts toward
+        the cap nor can be deleted. Harmless today (no such rows exist yet),
+        defensive for when leak-guard / operator-marked nogoods land."""
         count = self._db.execute(
-            "SELECT COUNT(*) FROM substrate_exceptions WHERE retracted_at IS NULL"
+            "SELECT COUNT(*) FROM substrate_exceptions WHERE retracted_at IS NULL "
+            "AND reason NOT IN ('leak_guard','operator_marked')"
         ).fetchone()[0]
         if count <= self._max_rows:
             return
@@ -166,6 +173,7 @@ class SubstrateExceptionCache:
         self._db.execute(
             """DELETE FROM substrate_exceptions WHERE id IN (
                  SELECT id FROM substrate_exceptions WHERE retracted_at IS NULL
+                 AND reason NOT IN ('leak_guard','operator_marked')
                  ORDER BY COALESCE(last_consulted_at, created_at) ASC LIMIT ?)""",
             (surplus,),
         )
