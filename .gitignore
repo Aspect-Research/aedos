@@ -6,6 +6,8 @@
 *.db-journal
 *.db-shm
 *.db-wal
+*.db.bak*
+*.bak_run*
 
 # Python
 __pycache__/
