@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ..layer1_extraction.extractor import Claim
 from ..utils.sandbox import run_code

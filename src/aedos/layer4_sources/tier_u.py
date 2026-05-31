@@ -5,7 +5,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 from ..audit.log import log_event
 from ..layer1_extraction.extractor import Claim

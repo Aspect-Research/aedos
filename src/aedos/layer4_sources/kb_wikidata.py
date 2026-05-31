@@ -427,7 +427,6 @@ def _build_establishing_property_query(
 # constrained classes ride pq:P2308. P1647/P1696/P1659 are direct relations.
 _ONTOLOGY_CONSTRAINT_PROPERTY = "P2302"            # property constraint
 _ONTOLOGY_CONSTRAINT_TYPE_QUALIFIER = "P2308"      # class (the constrained type)
-_ONTOLOGY_CONSTRAINT_KIND_QUALIFIER = "P2306"      # which constraint this is
 _ONTOLOGY_SUBJECT_TYPE_CONSTRAINT = "Q21503250"    # subject-type constraint
 _ONTOLOGY_VALUE_TYPE_CONSTRAINT = "Q21510865"      # value-type constraint
 _ONTOLOGY_SINGLE_VALUE_CONSTRAINT = "Q19474404"    # single-value constraint

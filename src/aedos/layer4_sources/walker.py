@@ -233,7 +233,6 @@ def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -
     """
     if not trace.chain_includes_assertion:
         return base_verdict
-    from ..layer5_result.aggregator import _BASE_OF_DUAL  # noqa: F401  (sanity import)
     # Inverse of _BASE_OF_DUAL — base verdict → dual designation.
     mapping = {
         "verified": "verified_given_assertion",
