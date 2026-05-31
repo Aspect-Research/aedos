@@ -78,12 +78,25 @@ class EvaluationMetrics:
     false_abstain: int
     false_abstain_rate: float
     per_failure_mode: dict[str, dict]
+    # v0.16.1 WS1: symmetric false-CONTRADICT counter — §3.2 forbids
+    # false-contradict as much as false-verify, but the harness historically
+    # only counted false-verifies. `false_contradicted` counts predictions of
+    # `contradicted` whose ground truth is NOT `contradicted`, broken out by
+    # the ground-truth bucket it stole from (verified vs abstain). Measurement
+    # only — no verdict logic changes.
+    false_contradicted: int = 0
+    false_contradicted_rate: float = 0.0
+    false_contradicted_gt_verified: int = 0
+    false_contradicted_gt_abstain: int = 0
 
     def summary(self) -> str:
         lines = [
             f"Total cases: {self.total}",
             f"Accuracy: {self.accuracy:.1%} ({self.correct}/{self.total})",
             f"False-verified rate: {self.false_verified_rate:.1%} ({self.false_verified})",
+            f"False-contradicted rate: {self.false_contradicted_rate:.1%} "
+            f"({self.false_contradicted}; gt=verified {self.false_contradicted_gt_verified}, "
+            f"gt=abstain {self.false_contradicted_gt_abstain})",
             f"False-abstain rate: {self.false_abstain_rate:.1%} ({self.false_abstain})",
             "",
             "Per-failure-mode breakdown:",
@@ -135,6 +148,9 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
     correct = 0
     false_verified = 0
     false_abstain = 0
+    false_contradicted = 0
+    false_contradicted_gt_verified = 0
+    false_contradicted_gt_abstain = 0
     total_verified_ground_truth = sum(1 for c in cases if c.ground_truth == "verified")
 
     per_mode: dict[str, dict] = {}
@@ -156,6 +172,14 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
             false_verified += 1
         if predicted == "abstain" and case.ground_truth == "verified":
             false_abstain += 1
+        # v0.16.1 WS1: symmetric false-contradict — a contradicted verdict on a
+        # case whose ground truth is not contradicted, broken out by gt bucket.
+        if predicted == "contradicted" and case.ground_truth != "contradicted":
+            false_contradicted += 1
+            if case.ground_truth == "verified":
+                false_contradicted_gt_verified += 1
+            else:
+                false_contradicted_gt_abstain += 1
 
     for mode in per_mode:
         n = per_mode[mode]["total"]
@@ -171,6 +195,10 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
         false_abstain=false_abstain,
         false_abstain_rate=false_abstain / total_verified_ground_truth if total_verified_ground_truth > 0 else 0.0,
         per_failure_mode=per_mode,
+        false_contradicted=false_contradicted,
+        false_contradicted_rate=false_contradicted / total if total > 0 else 0.0,
+        false_contradicted_gt_verified=false_contradicted_gt_verified,
+        false_contradicted_gt_abstain=false_contradicted_gt_abstain,
     )
 
 
@@ -317,6 +345,8 @@ def generate_report(
         "## Comparison",
         f"Accuracy delta: {aedos_metrics.accuracy - baseline_metrics.accuracy:+.1%}",
         f"False-verified delta: {aedos_metrics.false_verified_rate - baseline_metrics.false_verified_rate:+.1%}",
+        f"False-contradicted delta: "
+        f"{aedos_metrics.false_contradicted_rate - baseline_metrics.false_contradicted_rate:+.1%}",
         "",
         "## Phase 10.5 Acceptance Criteria",
         f"False-verified ≤ 5%: {'PASS' if aedos_metrics.false_verified_rate <= 0.05 else 'FAIL'} "

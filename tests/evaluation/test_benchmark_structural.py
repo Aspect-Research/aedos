@@ -180,6 +180,74 @@ class TestBenchmarkHarness:
         assert m.per_failure_mode["belief_revision"]["accuracy"] == 0.0
         assert m.per_failure_mode["principled_abstention"]["accuracy"] == 1.0
 
+    def test_false_contradicted_counter(self):
+        # v0.16.1 WS1: the symmetric false-contradict counter. §3.2 forbids a
+        # false-contradict as much as a false-verify. A `contradicted` prediction
+        # on a case whose ground truth is NOT contradicted counts as a
+        # false-contradict, broken out by the gt bucket it stole from; a
+        # `contradicted` prediction on a gt=contradicted case is correct and
+        # contributes 0. Pure measurement — no verdict logic is exercised here.
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, compute_metrics,
+        )
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("a1", "s", "abstain", "principled_abstention", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("c2", "s", "contradicted", "belief_revision", ""),
+        ]
+        results = [
+            RunResult("v1", "contradicted"),       # false-contradict (stole from verified)
+            RunResult("a1", "contradicted"),       # false-contradict (stole from abstain)
+            RunResult("c1", "contradicted"),       # correct — NOT a false-contradict
+            RunResult("c2", "no_grounding_found"), # a (false) abstain, not a false-contradict
+        ]
+        m = compute_metrics(cases, results)
+        assert m.false_contradicted == 2
+        assert m.false_contradicted_gt_verified == 1
+        assert m.false_contradicted_gt_abstain == 1
+        assert m.false_contradicted_rate == 0.5  # 2 of 4 cases
+        # A correct contradicted prediction never counts toward false-contradict.
+        assert m.per_failure_mode["belief_revision"]["correct"] == 1
+
+    def test_false_contradicted_zero_when_only_correct_contradictions(self):
+        # The gt=contradicted, predicted=contradicted case yields 0 — the
+        # discriminating other half of the counter (a green contradiction must
+        # never inflate the metric).
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, compute_metrics,
+        )
+        cases = [
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("c2", "s", "contradicted", "belief_revision", ""),
+        ]
+        results = [
+            RunResult("c1", "contradicted"),
+            RunResult("c2", "contradicted"),
+        ]
+        m = compute_metrics(cases, results)
+        assert m.false_contradicted == 0
+        assert m.false_contradicted_rate == 0.0
+        assert m.false_contradicted_gt_verified == 0
+        assert m.false_contradicted_gt_abstain == 0
+
+    def test_report_renders_false_contradicted_delta(self):
+        # generate_report surfaces the symmetric false-contradicted delta line
+        # alongside the false-verified delta (the observability the WS7 harness
+        # gate will read).
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, generate_report,
+        )
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+        ]
+        aedos = [RunResult("v1", "verified"), RunResult("c1", "contradicted")]
+        baseline = [RunResult("v1", "contradicted"), RunResult("c1", "verified")]
+        report = generate_report(cases, aedos, baseline)
+        assert "False-contradicted delta" in report
+        assert "False-contradicted rate" in report
+
     def test_report_renders_all_four_criteria(self):
         # generate_report must render all four Phase 10.5 acceptance criteria
         # the runbook lists (false-verified, accuracy delta, no-regression,

@@ -659,6 +659,15 @@ class KBVerifier:
                 getattr(scope_mismatch, "value_type", None), meta.object_type
             ):
                 return KBVerdictType.NO_MATCH, None, "value_type_object_type_mismatch"
+            # v0.16.1 WS1: an APPROXIMATE-year claim ("c. 1550") that did not
+            # year-match the KB value above may NEVER contradict a date predicate.
+            # An approximation ("around 1550") cannot soundly contradict a nearby
+            # exact KB date — the marker explicitly disclaims precision — so the
+            # only sound non-match outcome is abstain. Gated on object_type=="time"
+            # (a date/time predicate) so a non-date approximate string never reaches
+            # this. A PRECISE wrong year (no marker) still contradicts as before.
+            if meta.object_type == "time" and _is_approx_year(str(expected_value)):
+                return KBVerdictType.NO_MATCH, None, "approximate_date_no_year_match"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
         # Conservative DISJOINT
@@ -887,6 +896,49 @@ def _contradiction_value_type_ok(value_type: Optional[str], object_type: str) ->
 _YEAR_RE = re.compile(r"^[+-]?(\d{4})(?:-\d{2}(?:-\d{2})?)?(?:T.*)?$")
 _BARE_YEAR_RE = re.compile(r"^[+-]?\d{4}$")
 
+# v0.16.1 WS1: leading approximation markers on a CLAIM-side date value
+# ("c. 1550", "circa 1550", "~1550"). Anchored at the start, case-insensitive,
+# with trailing whitespace consumed. Ordered longest-first so "circa"/"approximately"
+# win before their abbreviations; the bare single-letter "c"/"ca" require a
+# following separator (handled by the regex word boundary / optional dot) so a
+# real word like "carved" is never stripped. The '~' marker has no boundary.
+_APPROX_YEAR_RE = re.compile(
+    r"^(?:approximately|approx\.?|circa|about|around|ca\.?|c\.?|~)\s+|^~\s*",
+    re.IGNORECASE,
+)
+
+
+def _strip_approx_year(value: str) -> Optional[str]:
+    """If `value` is an approximate-year claim ("c. 1550", "circa 1550",
+    "~1550"), return the bare 4-digit year remainder ("1550"); otherwise None.
+
+    Strips exactly ONE leading approximation marker (case-insensitive) and the
+    whitespace after it, then returns the remainder ONLY when that remainder is
+    a bare 4-digit year (matching `_BARE_YEAR_RE`). Used on the CLAIM side of
+    `_value_matches` so an approximate year matches the KB on exact year
+    equality. Returns None when there is no marker, or when the remainder is not
+    a bare year — so a precise approximate date like "c. 1550-03-01" does NOT
+    enter the year-only compare (it stays a strict literal compare)."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    m = _APPROX_YEAR_RE.match(s)
+    if not m:
+        return None
+    remainder = s[m.end():].strip()
+    if _BARE_YEAR_RE.match(remainder):
+        return remainder
+    return None
+
+
+def _is_approx_year(value: str) -> bool:
+    """True when `value` is an approximate-year claim — i.e. carries a leading
+    approximation marker AND its remainder is a bare 4-digit year. Shared with
+    `_strip_approx_year` so the verify path (year-equality match) and the
+    contradiction-suppression path (an approximation may never CONTRADICT a
+    nearby exact date) agree on exactly which claim values are 'approximate'."""
+    return _strip_approx_year(value) is not None
+
 
 def _normalize_date_value(value: str) -> Optional[str]:
     """Extract the year from a date-shaped value.
@@ -923,14 +975,23 @@ def _value_matches(kb_value, claim_object: str) -> bool:
     claim_str = claim_object.strip()
     if kb_str.lower() == claim_str.lower():
         return True
-    # Date-year normalized comparison: only fire when the claim looks
-    # like a bare year (4 digits) — that's the common pattern in the
-    # medium-bar's "founded in YYYY", "born in YYYY", "occurred in YYYY".
-    # Comparing two full ISO timestamps via year-only would be incorrect
-    # (1998-09-04 ≠ 1998-01-01 for precise temporal claims).
-    if _BARE_YEAR_RE.match(claim_str):
+    # v0.16.1 WS1: an approximate-year claim ("c. 1550", "circa 1550",
+    # "~1550") strips its leading approximation marker on the CLAIM side
+    # only, yielding the bare year to compare. This matches ONLY on exact
+    # year equality (never a fuzzy +/-N window), so it can never false-verify;
+    # it merely lets "c. 1550" match KB "1550-01-01T00:00:00Z" (year 1550).
+    # A precise approximate date like "c. 1550-03-01" returns None here and
+    # falls through to the strict literal compare unchanged.
+    approx_year = _strip_approx_year(claim_str)
+    compare_year = approx_year if approx_year is not None else claim_str
+    # Date-year normalized comparison: only fire when the (possibly
+    # approx-stripped) claim looks like a bare year (4 digits) — that's the
+    # common pattern in the medium-bar's "founded in YYYY", "born in YYYY",
+    # "occurred in YYYY". Comparing two full ISO timestamps via year-only
+    # would be incorrect (1998-09-04 ≠ 1998-01-01 for precise temporal claims).
+    if _BARE_YEAR_RE.match(compare_year):
         kb_year = _normalize_date_value(kb_str)
-        if kb_year == claim_str.lstrip("+").lstrip("-"):
+        if kb_year == compare_year.lstrip("+").lstrip("-"):
             return True
     return False
 
