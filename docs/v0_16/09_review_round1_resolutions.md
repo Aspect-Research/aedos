@@ -13,7 +13,7 @@ a fail-open-safe robustness/observability/cleanup change. No change loosens a ve
 
 Resolutions landed in two patch commits on `v0.16`:
 - **PATCH-A** (`1567b5c`) — Tier-1 soundness/correctness + cheap cleanups.
-- **PATCH-B** (this commit) — robustness/observability + dormant-mechanism documentation + calibration corpus.
+- **PATCH-B** (`b8bc1f5`) — robustness/observability + dormant-mechanism documentation + calibration corpus.
 
 ---
 
@@ -77,7 +77,7 @@ path right before sign-off**. Each carries a code comment labelling it dormant.
 
 ---
 
-## Review Round 2 — patch correctness & follow-ups (FIXED in PATCH-C `<patch-c>`)
+## Review Round 2 — patch correctness & follow-ups (FIXED in PATCH-C `385f6e3`)
 
 A second review round audited the two patch commits for correctness, *over-tightening*
 (a gate that now abstains on a claim that should soundly verify), a fresh §3.2 sweep, and
