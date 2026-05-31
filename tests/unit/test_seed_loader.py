@@ -27,6 +27,12 @@ _VALID_ROUTING_HINTS = {"user_authoritative", "kb_resolvable", "python", "abstai
 # The functional (single-valued) predicates in the seed pack — a subject has at
 # most one true object (M4 backfill). See docs/v0.15_build_log/fixup2_report.md
 # for the per-predicate reasoning.
+#
+# v0.16 WS1 (Decision 1.g): the Phase H Cluster 3 functional ALIAS rows
+# (birthplace_is, death_place_is, date_of_birth, date_of_death, founded_in,
+# inception_date) were DELETED from the seed pack along with the rest of the 21
+# synonym aliases — synonymy is now carried by binding discovery, not by
+# duplicate seed rows. The 15 canonical functional predicates below remain.
 _FUNCTIONAL_PREDICATES = {
     "born_in", "died_in", "born_on", "died_on", "capital_of", "has_capital",
     "continent_of", "founded_in_year", "head_of_government", "head_of_state",
@@ -37,13 +43,6 @@ _FUNCTIONAL_PREDICATES = {
     "status",        # one current status per entity (revisable)
     # Phase G D23 (2026-05-23) correction (was single_valued=0):
     "lives_in",      # one current residence per person (revisable on relocation)
-    # Phase H Cluster 3 (2026-05-26) — functional aliases:
-    "birthplace_is",     # alias of born_in (P19)
-    "death_place_is",    # alias of died_in (P20)
-    "date_of_birth",     # alias of born_on (P569)
-    "date_of_death",     # alias of died_on (P570)
-    "founded_in",        # alias of founded_in_year (P571)
-    "inception_date",    # alias of founded_in_year (P571)
 }
 
 
@@ -192,6 +191,96 @@ class TestSeedSingleValued:
             f"_FUNCTIONAL_PREDICATES lists {len(_FUNCTIONAL_PREDICATES)}; "
             f"sync the test fixture with the seed pack additions."
         )
+
+
+# ---------------------------------------------------------------------------
+# v0.16 WS1 alias-row deletions (Decision 1.g)
+# ---------------------------------------------------------------------------
+
+# The 21 synonym alias rows deleted from the seed pack in v0.16 WS1. Synonymy is
+# now carried by the substrate's binding discovery (Wikidata ontology + SLING),
+# not by duplicate seed rows — so these surface forms become cold-start
+# discovery targets rather than pre-seeded aliases.
+_DELETED_ALIAS_PREDICATES = {
+    "authored", "award_received", "birthplace_is", "date_of_birth",
+    "date_of_death", "death_place_is", "founded_in", "graduated_from",
+    "has_population", "held_position", "inception_date", "instance_of",
+    "occupied_position", "part_of_region", "received_award",
+    "shares_border_with", "spouse", "successor_of", "won_award", "won_prize",
+    "works_at",
+}
+
+# Canonical rows that MUST survive the alias deletion — each is the surviving
+# canonical predicate the deleted aliases were synonyms of, plus the 16 the
+# verifier agent confirmed retained.
+_CANONICAL_SURVIVORS = {
+    "holds_role", "employed_by", "born_in", "died_in", "born_on", "died_on",
+    "located_in", "founded_in_year", "member_of", "occupation", "spouse_of",
+    "population_of", "part_of", "is_a", "subclass_of", "capital_of",
+}
+
+
+class TestSeedAliasDeletions:
+    """v0.16 WS1 (Decision 1.g): the 21 synonym alias rows are gone; their
+    canonical counterparts remain; every surviving kb_resolvable row still
+    carries a kb_property that synthesizes into a binding (back-compat)."""
+
+    @pytest.fixture(scope="class")
+    def seeds(self):
+        return json.loads(_SEEDS_FILE.read_text(encoding="utf-8"))
+
+    def test_deleted_aliases_are_absent(self, seeds):
+        present = {e["aedos_predicate"] for e in seeds}
+        leaked = _DELETED_ALIAS_PREDICATES & present
+        assert not leaked, (
+            f"alias rows that v0.16 WS1 deleted are still in the seed pack: "
+            f"{sorted(leaked)} — synonymy belongs to discovery, not seed rows."
+        )
+
+    def test_canonical_survivors_remain(self, seeds):
+        present = {e["aedos_predicate"] for e in seeds}
+        missing = _CANONICAL_SURVIVORS - present
+        assert not missing, (
+            f"canonical rows that must survive the alias deletion are missing: "
+            f"{sorted(missing)}"
+        )
+
+    def test_seed_count_is_62_after_deletions(self, seeds):
+        # 83 pre-v0.16 rows minus 21 deleted aliases = 62. A hard count guards
+        # against an accidental re-add of an alias or a silent drop of a
+        # canonical row.
+        assert len(seeds) == 62, (
+            f"expected 62 seed rows after the 21 alias deletions, got {len(seeds)}"
+        )
+
+    def test_every_kb_resolvable_row_synthesizes_a_binding(self, seeds):
+        # Back-compat invariant: a surviving kb_resolvable row carries a
+        # kb_property, so PredicateMetadata.__post_init__ synthesizes exactly
+        # one legacy_scalar binding from the scalar columns (single-binding
+        # path == pre-v0.16 behavior).
+        from aedos.layer3_substrate.predicate_translation import PredicateMetadata
+
+        for entry in seeds:
+            if entry["routing_hint"] != "kb_resolvable":
+                continue
+            meta = PredicateMetadata(
+                id=0,
+                aedos_predicate=entry["aedos_predicate"],
+                object_type=entry["object_type"],
+                user_subject_required=bool(entry["user_subject_required"]),
+                distinct_slots=entry.get("distinct_slots"),
+                routing_hint=entry["routing_hint"],
+                kb_namespace=entry.get("kb_namespace"),
+                kb_property=entry.get("kb_property"),
+                slot_to_qualifier=entry.get("slot_to_qualifier"),
+                reason=entry["reason"],
+                created_at="t",
+                single_valued=bool(entry.get("single_valued", 0)),
+            )
+            assert len(meta.bindings) == 1, entry["aedos_predicate"]
+            b = meta.bindings[0]
+            assert b.source == "legacy_scalar"
+            assert b.kb_property == entry.get("kb_property")
 
 
 # ---------------------------------------------------------------------------

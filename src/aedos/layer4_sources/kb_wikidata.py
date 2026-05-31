@@ -385,6 +385,139 @@ def _build_establishing_property_query(
     )
 
 
+# v0.16 WS1: Wikidata constraint/relation property IDs used by
+# `_build_property_ontology_query`. P2302 is "property constraint"; the
+# constraint *kind* is a qualifier (pq:P2306 -> constraint-type Q-id) and the
+# constrained classes ride pq:P2308. P1647/P1696/P1659 are direct relations.
+_ONTOLOGY_CONSTRAINT_PROPERTY = "P2302"            # property constraint
+_ONTOLOGY_CONSTRAINT_TYPE_QUALIFIER = "P2308"      # class (the constrained type)
+_ONTOLOGY_CONSTRAINT_KIND_QUALIFIER = "P2306"      # which constraint this is
+_ONTOLOGY_SUBJECT_TYPE_CONSTRAINT = "Q21503250"    # subject-type constraint
+_ONTOLOGY_VALUE_TYPE_CONSTRAINT = "Q21510865"      # value-type constraint
+_ONTOLOGY_SINGLE_VALUE_CONSTRAINT = "Q19474404"    # single-value constraint
+_ONTOLOGY_SUBPROPERTY_OF = "P1647"                 # subproperty of
+_ONTOLOGY_INVERSE_PROPERTY = "P1696"               # inverse property
+_ONTOLOGY_RELATED_PROPERTY = "P1659"               # related property
+
+
+def _build_property_ontology_query(prop: KBPropertyID) -> str:
+    """v0.16 WS1: P2302 constraint statements + P1647/P1696/P1659 relations
+    for `prop`, in a single SELECT round-trip.
+
+    Pulls four things the substrate uses to BUILD `PredicateBinding`s and to
+    discover sibling/inverse properties:
+      - subject-type constraint (P2302 / Q21503250): the constrained
+        subject classes ride pq:P2308.
+      - value-type constraint (P2302 / Q21510865): the constrained value
+        classes ride pq:P2308.
+      - single-value constraint (P2302 / Q19474404): presence flags the
+        property as functional.
+      - P1647 (subproperty of), P1696 (inverse property), P1659 (related
+        property): sibling/inverse properties.
+
+    Result columns: ?constraintKind (the constraint-type Q-id), ?cls (the
+    constrained class Q-id), ?subProp, ?invProp, ?relProp. A property has at
+    most a handful of constraint statements, so the cross-product is small.
+    `_parse_property_ontology_bindings` collapses the rows into a structured
+    dict; constraint rows without a P2308 class (single-value) still carry
+    ?constraintKind.
+
+    Defense-in-depth: validates the P-id before interpolation (the SPARQL
+    boundary stays clean even if a careless caller passes a raw string)."""
+    if not _PROPERTY_ID_PATTERN.match(prop):
+        raise ValueError(f"Invalid Wikidata property ID: {prop!r}")
+    return (
+        f"SELECT ?constraintKind ?cls ?subProp ?invProp ?relProp WHERE {{\n"
+        f"  {{\n"
+        f"    wd:{prop} p:{_ONTOLOGY_CONSTRAINT_PROPERTY} ?cstmt .\n"
+        f"    ?cstmt ps:{_ONTOLOGY_CONSTRAINT_PROPERTY} ?constraintKind .\n"
+        f"    OPTIONAL {{ ?cstmt pq:{_ONTOLOGY_CONSTRAINT_TYPE_QUALIFIER} ?cls . }}\n"
+        f"  }} UNION {{\n"
+        f"    wd:{prop} wdt:{_ONTOLOGY_SUBPROPERTY_OF} ?subProp .\n"
+        f"  }} UNION {{\n"
+        f"    wd:{prop} wdt:{_ONTOLOGY_INVERSE_PROPERTY} ?invProp .\n"
+        f"  }} UNION {{\n"
+        f"    wd:{prop} wdt:{_ONTOLOGY_RELATED_PROPERTY} ?relProp .\n"
+        f"  }}\n"
+        f"}}"
+    )
+
+
+def _empty_property_ontology() -> dict:
+    """The fail-open / miss result for `fetch_property_ontology`: all-empty
+    lists, single_valued=False. The discovery flow treats this as 'the
+    ontology cannot constrain this property' and falls back to the oracle's
+    primary binding (and, optionally, SLING)."""
+    return {
+        "subject_type_qids": [],
+        "value_type_qids": [],
+        "inverse_pids": [],
+        "subproperty_pids": [],
+        "related_pids": [],
+        "single_valued": False,
+    }
+
+
+def _parse_property_ontology_bindings(bindings: list) -> dict:
+    """Collapse `_build_property_ontology_query` SELECT rows into the dict
+    `WikidataAdapter.fetch_property_ontology` returns (and
+    `PropertyRelations.fetch` caches). Shape:
+
+        {
+          "subject_type_qids": [...],   # value-of-class constraints (subject)
+          "value_type_qids": [...],     # value-of-class constraints (value)
+          "inverse_pids": [...],
+          "subproperty_pids": [...],
+          "related_pids": [...],
+          "single_valued": bool,
+        }
+
+    Defensive: ignores rows whose URIs don't resolve to Q/P-ids and de-dupes.
+    Never raises on a malformed binding row (fail-open contract)."""
+    subject_type_qids: list[str] = []
+    value_type_qids: list[str] = []
+    inverse_pids: list[str] = []
+    subproperty_pids: list[str] = []
+    related_pids: list[str] = []
+    single_valued = False
+
+    for row in bindings:
+        if not isinstance(row, dict):
+            continue
+        kind_uri = row.get("constraintKind", {}).get("value", "")
+        kind_qid = _extract_entity_id(kind_uri) if kind_uri else ""
+        cls_uri = row.get("cls", {}).get("value", "")
+        cls_qid = _extract_entity_id(cls_uri) if cls_uri else ""
+        if kind_qid:
+            if kind_qid == _ONTOLOGY_SINGLE_VALUE_CONSTRAINT:
+                single_valued = True
+            elif kind_qid == _ONTOLOGY_SUBJECT_TYPE_CONSTRAINT and _ENTITY_ID_PATTERN.match(cls_qid):
+                if cls_qid not in subject_type_qids:
+                    subject_type_qids.append(cls_qid)
+            elif kind_qid == _ONTOLOGY_VALUE_TYPE_CONSTRAINT and _ENTITY_ID_PATTERN.match(cls_qid):
+                if cls_qid not in value_type_qids:
+                    value_type_qids.append(cls_qid)
+
+        for col, bucket, pattern in (
+            ("subProp", subproperty_pids, _PROPERTY_ID_PATTERN),
+            ("invProp", inverse_pids, _PROPERTY_ID_PATTERN),
+            ("relProp", related_pids, _PROPERTY_ID_PATTERN),
+        ):
+            uri = row.get(col, {}).get("value", "")
+            pid = _extract_entity_id(uri) if uri else ""
+            if pid and pattern.match(pid) and pid not in bucket:
+                bucket.append(pid)
+
+    return {
+        "subject_type_qids": subject_type_qids,
+        "value_type_qids": value_type_qids,
+        "inverse_pids": inverse_pids,
+        "subproperty_pids": subproperty_pids,
+        "related_pids": related_pids,
+        "single_valued": single_valued,
+    }
+
+
 def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
     """Build a SPARQL query for `lookup_statements`.
 
@@ -543,6 +676,27 @@ def _parse_time_value(raw: str) -> str:
     # "+2009-01-20T00:00:00Z" → "2009-01-20"
     m = re.match(r"\+?(\d{4}-\d{2}-\d{2})", raw)
     return m.group(1) if m else raw
+
+
+def _extract_label_from_entities(data: dict, qid: KBEntityID) -> Optional[str]:
+    """v0.16 WS1: pull the English label for `qid` from a wbgetentities
+    payload (`{"entities": {"<Q>": {"labels": {"en": {"value": ...}}}}}`).
+    Also accepts a terse `{"label": "..."}` fixture shape. Returns None on any
+    missing/malformed shape — fail-open, never raises."""
+    try:
+        terse = data.get("label")
+        if isinstance(terse, str) and terse:
+            return terse
+        label = (
+            data.get("entities", {})
+            .get(qid, {})
+            .get("labels", {})
+            .get("en", {})
+            .get("value")
+        )
+    except AttributeError:
+        return None
+    return label if isinstance(label, str) and label else None
 
 
 class WikidataAdapter:
@@ -741,6 +895,34 @@ class WikidataAdapter:
             return self._live_neighbors(entity, props_tuple, direction)
         return self._fixture_neighbors(entity, props_tuple, direction)
 
+    def fetch_property_ontology(self, prop: KBPropertyID) -> dict:
+        """v0.16 WS1: fetch `prop`'s Wikidata constraint/relation ontology
+        (P2302 subject/value-type + single-value constraints, plus
+        P1647/P1696/P1659 sibling/inverse/related properties).
+
+        Returns the dict shape `_parse_property_ontology_bindings` produces
+        (subject_type_qids / value_type_qids / inverse_pids / subproperty_pids
+        / related_pids / single_valued). `PropertyRelations.fetch` caches it.
+
+        FAIL-OPEN: any error, a non-P-id input, or no constraints returns an
+        EMPTY ontology dict (all-empty lists, single_valued=False). Never
+        raises — discovery is additive enrichment; an ontology miss falls the
+        caller back to the oracle's primary binding (current behavior)."""
+        if self._live:
+            return self._live_property_ontology(prop)
+        return self._fixture_property_ontology(prop)
+
+    def fetch_label(self, qid: KBEntityID) -> Optional[str]:
+        """v0.16 WS1: fetch the English label of a Wikidata entity via
+        wbgetentities (props=labels). Used by the discovery flow and the
+        correction surface (WS5 `_format_correction` reverse-label).
+
+        FAIL-OPEN: a non-Q-id input, a missing label, or any error returns
+        None. Never raises."""
+        if self._live:
+            return self._live_label(qid)
+        return self._fixture_label(qid)
+
     # ------------------------------------------------------------------
     # Fixture-backed implementations
     # ------------------------------------------------------------------
@@ -808,6 +990,42 @@ class WikidataAdapter:
             return {p: [] for p in properties}
         bindings = data.get("results", {}).get("bindings", [])
         return _parse_neighbors_bindings(bindings, properties)
+
+    def _fixture_property_ontology(self, prop: KBPropertyID) -> dict:
+        """v0.16 WS1: fixture-backed property ontology. Reads
+        `tests/fixtures/wikidata/property_ontology_<P>.json`, which mirrors
+        the SPARQL response format (`{"results": {"bindings": [...]}}`).
+        Missing fixture (or a non-P-id) returns an EMPTY ontology — the
+        ontology cannot constrain the property, so discovery falls back to
+        the oracle binding. Empty-on-miss keeps non-live tests deterministic."""
+        if not isinstance(prop, str) or not _PROPERTY_ID_PATTERN.match(prop):
+            return _empty_property_ontology()
+        try:
+            data = _load_fixture(f"property_ontology_{prop}.json")
+        except FixtureNotFoundError:
+            return _empty_property_ontology()
+        bindings = data.get("results", {}).get("bindings", []) if isinstance(data, dict) else []
+        return _parse_property_ontology_bindings(bindings)
+
+    def _fixture_label(self, qid: KBEntityID) -> Optional[str]:
+        """v0.16 WS1: fixture-backed label fetch. Reads
+        `tests/fixtures/wikidata/label_<Q>.json` (or `labels_<Q>.json`),
+        which mirrors the wbgetentities response
+        (`{"entities": {"<Q>": {"labels": {"en": {"value": "..."}}}}}`); a
+        bare `{"label": "..."}` shape is also accepted for terse fixtures.
+        Missing fixture, a non-Q-id, or no English label returns None."""
+        if not isinstance(qid, str) or not _ENTITY_ID_PATTERN.match(qid):
+            return None
+        data = None
+        for fixture_name in (f"label_{qid}.json", f"labels_{qid}.json"):
+            try:
+                data = _load_fixture(fixture_name)
+                break
+            except FixtureNotFoundError:
+                continue
+        if not isinstance(data, dict):
+            return None
+        return _extract_label_from_entities(data, qid)
 
     def _fixture_subsumption(
         self, entity_a: KBEntityID, entity_b: KBEntityID, relation_type: str
@@ -1605,3 +1823,130 @@ class WikidataAdapter:
             },
         )
         return result
+
+    def _live_property_ontology(self, prop: KBPropertyID) -> dict:
+        """v0.16 WS1: live SPARQL fetch of `prop`'s P2302/P1647/P1696/P1659
+        ontology. One round-trip via `self._sparql_limiter`, statement TTL,
+        single retry on transient error. FAIL-OPEN: returns an empty ontology
+        on any error or a malformed P-id; one audit event either way."""
+        if not isinstance(prop, str) or not _PROPERTY_ID_PATTERN.match(prop):
+            return _empty_property_ontology()
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_property_ontology requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+        try:
+            query = _build_property_ontology_query(prop)
+        except ValueError:
+            return _empty_property_ontology()
+        params = {"query": query, "format": "json"}
+
+        start = time.monotonic()
+        retries = 0
+        last_error: Optional[str] = None
+        ontology = _empty_property_ontology()
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+            bindings = (
+                data.get("results", {}).get("bindings", [])
+                if isinstance(data, dict)
+                else []
+            )
+            ontology = _parse_property_ontology_bindings(bindings)
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_property_ontology",
+            event_subject=prop,
+            event_data={
+                "property": prop,
+                "subject_type_qids": ontology["subject_type_qids"],
+                "value_type_qids": ontology["value_type_qids"],
+                "inverse_pids": ontology["inverse_pids"],
+                "subproperty_pids": ontology["subproperty_pids"],
+                "related_pids": ontology["related_pids"],
+                "single_valued": ontology["single_valued"],
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return ontology
+
+    def _live_label(self, qid: KBEntityID) -> Optional[str]:
+        """v0.16 WS1: live wbgetentities (props=labels) fetch of `qid`'s
+        English label. One round-trip via `self._search_limiter` (the
+        action-API budget shared with wbsearchentities), entity TTL, single
+        retry. FAIL-OPEN: returns None on any error, a non-Q-id, or no label;
+        one audit event either way."""
+        if not isinstance(qid, str) or not _ENTITY_ID_PATTERN.match(qid):
+            return None
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_label requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+        url = self._cfg_value("wikidata_search_endpoint", _DEFAULT_SEARCH_ENDPOINT)
+        params = {
+            "action": "wbgetentities",
+            "ids": qid,
+            "props": "labels",
+            "languages": "en",
+            "format": "json",
+        }
+        ttl = self._cfg_value("http_cache_entity_ttl_seconds", _DEFAULT_ENTITY_TTL_SECONDS)
+
+        start = time.monotonic()
+        retries = 0
+        last_error: Optional[str] = None
+        label: Optional[str] = None
+        for attempt in range(2):
+            self._search_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+            label = _extract_label_from_entities(data, qid) if isinstance(data, dict) else None
+            last_error = None
+            break
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_fetch_label",
+            event_subject=qid,
+            event_data={
+                "qid": qid,
+                "label": label,
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": last_error,
+            },
+        )
+        return label

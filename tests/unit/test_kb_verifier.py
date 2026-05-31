@@ -443,3 +443,286 @@ class TestKBVerifierValueTypeGuard:
         )
         result = verifier.verify(_claim(object_val="Honolulu"))
         assert result.verdict == KBVerdictType.CONTRADICTED
+
+
+# ===========================================================================
+# v0.16 WS1 — MULTI-PROPERTY BINDING ARBITRATION
+#
+# The substrate now holds a RANKED LIST of (predicate -> KB property) bindings;
+# verify() loops them and arbitrates: VERIFIED if ANY binding grounds
+# positively (recording every chain in trace['bindings_tried']); CONTRADICTED
+# only from a single_valued binding that passes the value-type gate; else
+# NO_MATCH/NO_KB_PATH. These tests construct multi-binding metadata directly
+# and inject it via a stub PredicateTranslation.
+# ===========================================================================
+
+from aedos.layer3_substrate.predicate_translation import (
+    PredicateBinding,
+    PredicateMetadata,
+)
+
+
+class _StubPT:
+    """A PredicateTranslation stand-in whose consult() returns a fixed
+    PredicateMetadata, letting a test pin an exact multi-binding shape."""
+
+    def __init__(self, meta: PredicateMetadata):
+        self._meta = meta
+
+    def consult(self, predicate, kb_namespace=None):
+        return self._meta
+
+
+class _MultiPropKB:
+    """KB whose lookup_statements is keyed BY PROPERTY, so different bindings
+    ground against different statement sets. subsumption is configurable for
+    the value-type gate (copula) tests."""
+
+    def __init__(self, statements_by_property, resolutions=None, subsumptions=None):
+        self._by_prop = statements_by_property
+        self._resolutions = dict(_DEFAULT_RESOLUTIONS)
+        if resolutions:
+            self._resolutions.update(resolutions)
+        # (a_qid, b_qid, relation) -> verdict; default "unrelated".
+        self._subsumptions = subsumptions or {}
+
+    def resolve_entity(self, reference, local_context):
+        qid = self._resolutions.get(reference)
+        return [ResolutionCandidate(kb_identifier=qid, score=0.9)] if qid else []
+
+    def lookup_statements(self, entity, predicate):
+        return list(self._by_prop.get(predicate, []))
+
+    def subsumption(self, entity_a, entity_b, relation_type):
+        verdict = self._subsumptions.get((entity_a, entity_b, relation_type), "unrelated")
+        return SubsumptionResult(verdict=verdict)
+
+
+def _make_meta(predicate, bindings, object_type="entity"):
+    return PredicateMetadata(
+        id=1,
+        aedos_predicate=predicate,
+        object_type=object_type,
+        user_subject_required=False,
+        distinct_slots=None,
+        routing_hint="kb_resolvable",
+        kb_namespace=None,
+        kb_property=None,
+        slot_to_qualifier=None,
+        reason="test",
+        created_at="t",
+        bindings=bindings,
+    )
+
+
+def _make_multi_verifier(kb, meta):
+    db = open_memory_db()
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    return KBVerifier(
+        kb_protocol=kb,
+        entity_resolver=resolver,
+        predicate_translation=_StubPT(meta),
+    )
+
+
+class TestKBVerifierMultiBindingArbitration:
+    def test_any_binding_grounds_positively_is_verified(self):
+        # Two bindings: P39 (the primary) finds NO matching statement; P106
+        # (a candidate) DOES. VERIFIED wins because ANY binding grounds.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P39": [Statement(value="Q4416090", value_type="entity")],  # wrong
+                "P106": [Statement(value="Q11696", value_type="entity")],   # right
+            }
+        )
+        meta = _make_meta("works_as", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P39", source="oracle"),
+            PredicateBinding(kb_namespace="wikidata", kb_property="P106", source="ontology_p2302"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(object_val="President of the United States"))
+        assert result.verdict == KBVerdictType.VERIFIED
+
+    def test_both_bindings_recorded_in_trace(self):
+        # bindings_tried records EVERY chain attempted, even after VERIFIED is
+        # decided, so the observability surface can show what was considered.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P39": [Statement(value="Q4416090", value_type="entity")],
+                "P106": [Statement(value="Q11696", value_type="entity")],
+            }
+        )
+        meta = _make_meta("works_as", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P39", source="oracle"),
+            PredicateBinding(kb_namespace="wikidata", kb_property="P106", source="ontology_p2302"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(object_val="President of the United States"))
+        tried = result.trace.get("bindings_tried")
+        assert tried is not None
+        props = {t["property"] for t in tried}
+        assert props == {"P39", "P106"}
+        # The winning binding's verdict appears among the tried set.
+        verdicts = {t["property"]: t["verdict"] for t in tried}
+        assert verdicts["P106"] == "verified"
+
+    def test_positive_grounding_beats_a_contradiction(self):
+        # Arbitration order (Decision 1): a positive grounding from one binding
+        # WINS over a single_valued contradiction from another. P19 (functional)
+        # would contradict (KB has NYC, claim says Honolulu), but P106 grounds
+        # positively → overall VERIFIED, never CONTRADICTED.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P19": [Statement(value="Q60", value_type="entity")],       # NYC (mismatch)
+                "P106": [Statement(value="Q18094", value_type="entity")],   # Honolulu (match)
+            }
+        )
+        meta = _make_meta("born_or_works", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P19",
+                             single_valued=True, source="oracle"),
+            PredicateBinding(kb_namespace="wikidata", kb_property="P106", source="ontology_p2302"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(object_val="Honolulu"))
+        assert result.verdict == KBVerdictType.VERIFIED
+
+    def test_single_binding_path_is_byte_identical(self):
+        # Back-compat: a single binding runs the loop exactly once and produces
+        # the same verdict/trace as the pre-v0.16 single-property path.
+        kb = _MultiPropKB(
+            statements_by_property={"P39": [Statement(value="Q11696", value_type="entity")]}
+        )
+        meta = _make_meta("holds_role", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P39", source="legacy_scalar"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim())
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("property") == "P39"
+        # bindings_tried still recorded, with the one binding.
+        assert len(result.trace["bindings_tried"]) == 1
+
+    def test_no_binding_has_kb_property_is_no_kb_path(self):
+        # When no binding carries a kb_property, the result is NO_KB_PATH —
+        # identical to the pre-v0.16 `not meta.kb_property` abstention.
+        kb = _MultiPropKB(statements_by_property={})
+        meta = _make_meta("vague_pred", [
+            PredicateBinding(kb_namespace=None, kb_property=None, source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim())
+        assert result.verdict == KBVerdictType.NO_KB_PATH
+
+
+class TestKBVerifierCopulaValueTypeFix:
+    """v0.16 WS1 P31-vs-P106 copula fix. A copula "X is a physicist" routes
+    ambiguously to P31 (instance-of) and P106 (occupation). The resolved object
+    (an occupation) satisfies P106's value-type but NOT P31's — so only the
+    P106 binding may drive a contradiction. _object_satisfies_value_type fails
+    OPEN (permits the contradiction) when no value-type constraint is present.
+    """
+
+    def test_instance_of_binding_cannot_contradict_when_object_fails_value_type(self):
+        # P31 binding declares a value-type constraint (must be a class, e.g.
+        # Q5 human). The resolved object "physicist" (Q169470) is PROVABLY
+        # unrelated to that value-type → the P31 binding's contradiction is
+        # blocked (value-type gate), so it abstains with NO_MATCH.
+        kb = _MultiPropKB(
+            statements_by_property={
+                # P31 of the subject is Q5 (human); claim object is physicist
+                # (Q169470) which does not match → single_valued mismatch.
+                "P31": [Statement(value="Q5", value_type="entity")],
+            },
+            resolutions={"physicist": "Q169470"},
+            subsumptions={
+                # The object (Q169470 occupation) is unrelated to the declared
+                # value-type Q16889133 (class) — provable failure → block.
+                ("Q169470", "Q16889133", "is_a"): "unrelated",
+            },
+        )
+        meta = _make_meta("is_a", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P31",
+                single_valued=True,
+                object_entity_types=["Q16889133"],  # class — the value-type constraint
+                source="oracle",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(subject="Obama", object_val="physicist"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "value_type_incompatible_binding"
+
+    def test_occupation_binding_can_contradict_when_object_satisfies_value_type(self):
+        # P106 (occupation) declares value-type Q28640 (profession). The object
+        # "physicist" (Q169470) IS_A profession → satisfies the constraint, so
+        # the single_valued P106 binding is permitted to contradict the
+        # mismatching KB statement (KB occupation is Q82594, not physicist).
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P106": [Statement(value="Q82594", value_type="entity")],  # computer scientist
+            },
+            resolutions={"physicist": "Q169470"},
+            subsumptions={
+                ("Q169470", "Q28640", "is_a"): "a_subsumed_by_b",  # physicist IS_A profession
+            },
+        )
+        meta = _make_meta("is_a", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P106",
+                single_valued=True,
+                object_entity_types=["Q28640"],  # profession — the value-type constraint
+                source="oracle",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(subject="Obama", object_val="physicist"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_value_type_gate_fails_open_when_no_constraint(self):
+        # A single_valued binding with NO value-type constraint (object_entity_
+        # types empty) keeps the legacy contradiction behavior — the gate must
+        # NOT block when it knows nothing about the value-type. This is the
+        # invariant that keeps all existing single_valued contradiction tests
+        # green (born_in / P19 has no declared object_entity_types here).
+        kb = _MultiPropKB(
+            statements_by_property={"P19": [Statement(value="Q60", value_type="entity")]},  # NYC
+            resolutions={"Honolulu": "Q18094"},
+        )
+        meta = _make_meta("born_in", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P19",
+                single_valued=True,
+                object_entity_types=None,  # no value-type constraint → fail open
+                source="legacy_scalar",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(predicate="born_in", object_val="Honolulu"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+        # Decision 5: the contradicting KB value is surfaced for the correction.
+        assert result.trace.get("contradicting_value") == "Q60"
+
+    def test_value_type_gate_fails_open_on_kb_uncertainty(self):
+        # When the object resolves but subsumption is UNCERTAIN (not provably
+        # `unrelated` to the declared value-type — here b_subsumed_by_a), the
+        # gate fails OPEN and permits the contradiction. Soundness is preserved
+        # by only blocking on a PROVABLE value-type failure.
+        kb = _MultiPropKB(
+            statements_by_property={"P19": [Statement(value="Q60", value_type="entity")]},
+            resolutions={"Honolulu": "Q18094"},
+            subsumptions={
+                ("Q18094", "Q515", "is_a"): "b_subsumed_by_a",  # uncertain w.r.t. failure
+            },
+        )
+        meta = _make_meta("born_in", [
+            PredicateBinding(
+                kb_namespace="wikidata", kb_property="P19",
+                single_valued=True,
+                object_entity_types=["Q515"],  # city — value-type constraint present
+                source="oracle",
+            ),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(_claim(predicate="born_in", object_val="Honolulu"))
+        assert result.verdict == KBVerdictType.CONTRADICTED

@@ -54,6 +54,18 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
                 "type": ["string", "null"],
                 "description": "KB property identifier, e.g. 'P39'. Null when not kb_resolvable.",
             },
+            "candidate_kb_properties": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+                "description": (
+                    "v0.16: ADDITIONAL plausible KB property identifiers when "
+                    "more than one property could fit the predicate (e.g. a "
+                    "copula 'X is a physicist' could route to P31 instance-of "
+                    "OR P106 occupation). List the others here; evidence "
+                    "arbitrates across them at verify time. Null/omit when the "
+                    "primary kb_property is unambiguous."
+                ),
+            },
             "slot_to_qualifier": {
                 "type": ["object", "null"],
                 "description": "JSON mapping Aedos slot names to KB qualifier P-numbers.",
@@ -161,6 +173,14 @@ routing_hint — pick the SINGLE most-applicable verification source:
               matches the predicate's MEANING (founder vs. inception), not the
               first plausible match.
 
+      candidate_kb_properties: if MORE THAN ONE property could genuinely fit
+              (e.g. a copula "X is a physicist" could be P31 instance-of OR
+              P106 occupation), set kb_property to your best primary choice
+              and list the others in candidate_kb_properties. Evidence will
+              arbitrate across them at verify time — a value-type-incompatible
+              candidate simply abstains rather than contradicting. Leave it
+              null when the primary choice is unambiguous.
+
   kb_quantitative — a numeric COMPARISON predicate ('..._greater_than' /
     '..._less_than' in the name) against a count-valued Wikidata property.
     Set kb_property to the property whose value is the count (population
@@ -261,6 +281,21 @@ class PredicateBinding:
     rank: float = 1.0               # discovery-time prior; verify-time evidence reorders
 
 
+def _binding_to_dict(b: "PredicateBinding") -> dict:
+    """Serialize a PredicateBinding for the `bindings` JSON column. Mirrors the
+    keys `_row_to_metadata` reads back, so a round-trip is lossless."""
+    return {
+        "kb_namespace": b.kb_namespace,
+        "kb_property": b.kb_property,
+        "slot_to_qualifier": b.slot_to_qualifier,
+        "single_valued": bool(b.single_valued),
+        "subject_entity_types": b.subject_entity_types,
+        "object_entity_types": b.object_entity_types,
+        "source": b.source,
+        "rank": b.rank,
+    }
+
+
 @dataclass
 class PredicateMetadata:
     id: int
@@ -337,10 +372,18 @@ class PredicateTranslation:
         db: sqlite3.Connection,
         llm_client: LLMClient,
         consistency_checker=None,
+        property_relations=None,
+        sling=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
         self._consistency = consistency_checker
+        # v0.16 WS1: optional binding-discovery collaborators. Both default to
+        # None so every existing construction (tests, mocks, cold pipelines)
+        # keeps working: when absent, discovery FALLS OPEN to the oracle's
+        # single primary binding = pre-v0.16 behavior.
+        self._property_relations = property_relations
+        self._sling = sling
 
     def consult(
         self,
@@ -492,17 +535,51 @@ class PredicateTranslation:
         slot_to_qualifier_raw = raw.get("slot_to_qualifier")
         subject_types_raw = raw.get("subject_entity_types")
         object_types_raw = raw.get("object_entity_types")
+        single_valued = int(raw.get("single_valued", 0) or 0)
+
+        # v0.16 WS1: build the RANKED binding list. For a kb_resolvable
+        # predicate, discovery enriches the oracle's primary property with
+        # Wikidata-ontology-typed candidates (PropertyRelations) plus a SLING
+        # fallback when the ontology can't constrain a candidate. FALLS OPEN:
+        # when the collaborators are absent or yield nothing (mock/cold), the
+        # list is exactly the single oracle binding = pre-v0.16 behavior. The
+        # scalar columns below are kept = bindings[0] for back-compat.
+        bindings = self._discover_bindings(
+            aedos_predicate,
+            raw,
+            effective_kb_namespace,
+            slot_to_qualifier_raw,
+            bool(single_valued),
+            subject_types_raw if subject_types_raw else None,
+            object_types_raw if object_types_raw else None,
+        )
+        primary = bindings[0] if bindings else None
+        # Mirror scalar columns onto bindings[0] (back-compat / consistency-
+        # checker / seed parity). When the oracle named no property the
+        # primary mirrors the (None) oracle scalars exactly.
+        if primary is not None:
+            effective_kb_namespace = primary.kb_namespace
+            primary_kb_property = primary.kb_property
+            slot_to_qualifier_raw = primary.slot_to_qualifier
+            single_valued = int(bool(primary.single_valued))
+            subject_types_raw = primary.subject_entity_types
+            object_types_raw = primary.object_entity_types
+        else:
+            primary_kb_property = raw.get("kb_property")
+
+        bindings_json = (
+            json.dumps([_binding_to_dict(b) for b in bindings]) if bindings else None
+        )
 
         # INSERT OR REPLACE handles the case where a retracted row exists for the same
         # (predicate, namespace) key — SQLite deletes the old row and inserts the new one.
-        single_valued = int(raw.get("single_valued", 0) or 0)
         self._db.execute(
             """INSERT OR REPLACE INTO predicate_translation
                (aedos_predicate, object_type, user_subject_required, distinct_slots,
                 routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                 single_valued, subject_entity_types, object_entity_types,
-                reason, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                reason, created_at, bindings)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 aedos_predicate,
                 raw["object_type"],
@@ -510,13 +587,14 @@ class PredicateTranslation:
                 json.dumps(distinct_slots_raw) if distinct_slots_raw else None,
                 raw["routing_hint"],
                 effective_kb_namespace,
-                raw.get("kb_property"),
+                primary_kb_property,
                 json.dumps(slot_to_qualifier_raw) if slot_to_qualifier_raw else None,
                 single_valued,
                 json.dumps(subject_types_raw) if subject_types_raw else None,
                 json.dumps(object_types_raw) if object_types_raw else None,
                 raw["reason"],
                 now,
+                bindings_json,
             ),
         )
         self._db.commit()
@@ -529,7 +607,9 @@ class PredicateTranslation:
             event_data={
                 "aedos_predicate": aedos_predicate,
                 "routing_hint": raw["routing_hint"],
-                "kb_property": raw.get("kb_property"),
+                "kb_property": primary_kb_property,
+                "binding_count": len(bindings),
+                "binding_sources": [b.source for b in bindings],
             },
         )
 
@@ -547,14 +627,170 @@ class PredicateTranslation:
             distinct_slots=distinct_slots_raw,
             routing_hint=raw["routing_hint"],
             kb_namespace=effective_kb_namespace,
-            kb_property=raw.get("kb_property"),
+            kb_property=primary_kb_property,
             slot_to_qualifier=slot_to_qualifier_raw,
             reason=raw["reason"],
             created_at=now,
             single_valued=bool(single_valued),
             subject_entity_types=subject_types_raw if subject_types_raw else None,
             object_entity_types=object_types_raw if object_types_raw else None,
+            bindings=bindings,
         )
+
+    def _discover_bindings(
+        self,
+        aedos_predicate: str,
+        raw: dict,
+        kb_namespace: Optional[str],
+        slot_to_qualifier: Optional[dict],
+        oracle_single_valued: bool,
+        oracle_subject_types: Optional[list],
+        oracle_object_types: Optional[list],
+    ) -> list[PredicateBinding]:
+        """v0.16 WS1 binding discovery (Decision 1.d).
+
+        Builds the RANKED candidate-binding list for a freshly-generated row:
+
+          1. Collect candidate P-ids: the oracle's primary `kb_property` plus
+             the optional `candidate_kb_properties` it proposed.
+          2. For each candidate, fetch the Wikidata property ontology
+             (PropertyRelations). When the ontology constrains the property,
+             build an `ontology_p2302` binding (constrained value/subject types
+             from the ontology, single_valued from the ontology OR the oracle).
+             When the ontology is empty, build an `oracle` binding from the
+             oracle scalars; and (SLING) ask the distant-supervision fallback
+             for additional low-rank candidates.
+          3. Rank: ontology-typed > oracle-primary > sling.
+
+        FALLS OPEN: when `property_relations`/`sling` are absent (mock/cold) or
+        yield nothing, the result is a SINGLE oracle binding mirroring the
+        scalar columns = pre-v0.16 behavior. Never raises — any discovery
+        error degrades to the oracle binding.
+        """
+        # Only kb_resolvable predicates carry KB bindings; everything else
+        # synthesizes the same single (possibly property-less) binding the
+        # __post_init__ path would, keeping non-KB rows identical to before.
+        primary_prop = raw.get("kb_property")
+        oracle_binding = PredicateBinding(
+            kb_namespace=kb_namespace,
+            kb_property=primary_prop,
+            slot_to_qualifier=slot_to_qualifier,
+            single_valued=oracle_single_valued,
+            subject_entity_types=oracle_subject_types,
+            object_entity_types=oracle_object_types,
+            source="oracle",
+            rank=0.5,
+        )
+
+        if raw.get("routing_hint") != "kb_resolvable" or not primary_prop:
+            # Not a KB binding — preserve the legacy single-binding shape with
+            # source='legacy_scalar' so it is indistinguishable from a scalar
+            # row's read-synthesized binding.
+            oracle_binding.source = "legacy_scalar"
+            oracle_binding.rank = 1.0
+            return [oracle_binding]
+
+        if self._property_relations is None:
+            # No discovery infrastructure wired (mock/cold) → fall open to the
+            # oracle's single primary binding. Mark legacy_scalar so the row is
+            # byte-identical to a scalar-synthesized single-binding row.
+            oracle_binding.source = "legacy_scalar"
+            oracle_binding.rank = 1.0
+            return [oracle_binding]
+
+        try:
+            return self._discover_bindings_inner(
+                aedos_predicate, raw, kb_namespace, slot_to_qualifier,
+                oracle_single_valued, oracle_subject_types, oracle_object_types,
+                oracle_binding,
+            )
+        except Exception as exc:  # discovery is enrichment; never break a write
+            log_event(
+                self._db,
+                event_type="binding_discovery_failed",
+                event_subject=f"predicate_translation:{aedos_predicate}",
+                event_data={"error": str(exc)},
+            )
+            oracle_binding.source = "legacy_scalar"
+            oracle_binding.rank = 1.0
+            return [oracle_binding]
+
+    def _discover_bindings_inner(
+        self,
+        aedos_predicate: str,
+        raw: dict,
+        kb_namespace: Optional[str],
+        slot_to_qualifier: Optional[dict],
+        oracle_single_valued: bool,
+        oracle_subject_types: Optional[list],
+        oracle_object_types: Optional[list],
+        oracle_binding: PredicateBinding,
+    ) -> list[PredicateBinding]:
+        primary_prop = raw.get("kb_property")
+        candidates: list[str] = [primary_prop]
+        extra = raw.get("candidate_kb_properties")
+        if isinstance(extra, list):
+            for pid in extra:
+                if isinstance(pid, str) and pid and pid not in candidates:
+                    candidates.append(pid)
+
+        ontology_bindings: list[PredicateBinding] = []
+        sling_bindings: list[PredicateBinding] = []
+        any_ontology_empty = False
+
+        for pid in candidates:
+            ontology = self._property_relations.fetch(
+                pid, kb_namespace or "wikidata"
+            )
+            if ontology is not None and not ontology.is_empty():
+                ontology_bindings.append(
+                    PredicateBinding(
+                        kb_namespace=kb_namespace,
+                        kb_property=pid,
+                        # Ontology doesn't carry Aedos slot maps; reuse oracle's.
+                        slot_to_qualifier=slot_to_qualifier,
+                        # Ontology single-value constraint is authoritative when
+                        # present; else fall back to the oracle's flag.
+                        single_valued=bool(
+                            ontology.single_valued or oracle_single_valued
+                        ),
+                        subject_entity_types=(
+                            ontology.subject_type_qids or oracle_subject_types
+                        ),
+                        object_entity_types=(
+                            ontology.value_type_qids or oracle_object_types
+                        ),
+                        source="ontology_p2302",
+                        rank=1.0,
+                    )
+                )
+            else:
+                any_ontology_empty = True
+
+        # SLING fallback: only when the ontology couldn't constrain a candidate
+        # (long-tail edges). Lowest rank; never licenses a contradiction.
+        if any_ontology_empty and self._sling is not None:
+            proposed = self._sling.propose_bindings(aedos_predicate, raw)
+            if isinstance(proposed, list):
+                sling_bindings = [b for b in proposed if isinstance(b, PredicateBinding)]
+
+        # Rank: ontology-typed first, then oracle-primary, then sling. Keep the
+        # oracle binding always present so the primary property is verifiable
+        # even when its own ontology was empty.
+        ranked = [*ontology_bindings, oracle_binding, *sling_bindings]
+
+        # De-dup by (kb_namespace, kb_property) keeping the first (highest-rank)
+        # occurrence — an ontology binding for the primary property supersedes
+        # the plain oracle binding for the same P-id.
+        seen: set = set()
+        deduped: list[PredicateBinding] = []
+        for b in ranked:
+            key = (b.kb_namespace, b.kb_property)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(b)
+        return deduped or [oracle_binding]
 
     @staticmethod
     def _row_to_metadata(row: sqlite3.Row) -> PredicateMetadata:

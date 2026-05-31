@@ -2,68 +2,16 @@ from __future__ import annotations
 
 import re
 
-# Phase H Cluster 3 (2026-05-26): the map's right-hand side targets the
-# seed-pack canonical names (`seeds/predicate_translation.json`). When a
-# canonical Aedos predicate name is itself the natural surface form (e.g.
-# `instance_of`), the entry maps to itself so callers can normalize without
-# special-casing already-canonical inputs.
-#
-# Lookup accepts both space-separated ("works at") and underscored
-# ("works_at") forms — `normalize_predicate` collapses underscores to
-# spaces before the lookup, so the map only needs to list each surface
-# form once.
-_CANONICAL_MAP: dict[str, str] = {
-    "is employed by": "employed_by",
-    "works for": "employed_by",
-    "works at": "employed_by",
-    "was employed by": "employed_by",
-    "is employed at": "employed_by",
-    "was employed at": "employed_by",
-    "is born in": "born_in",
-    "was born in": "born_in",
-    "was born": "born_in",
-    "born in": "born_in",
-    "died in": "died_in",
-    "passed away in": "died_in",
-    "is located in": "located_in",
-    "lives in": "located_in",
-    "resides in": "located_in",
-    "is in": "located_in",
-    "is situated in": "located_in",
-    "was awarded": "received_award",
-    "was awarded the": "received_award",
-    "received the award": "received_award",
-    "received award": "received_award",
-    "won": "received_award",
-    "won the": "received_award",
-    "awarded": "received_award",
-    "studied at": "educated_at",
-    "attended": "educated_at",
-    "graduated from": "graduated_from",
-    "served as": "holds_role",
-    "is a member of": "member_of",
-    "is member of": "member_of",
-    "is affiliated with": "affiliated_with",
-    "is part of": "part_of",
-    "belongs to": "part_of",
-    "is made of": "made_of",
-    "is composed of": "composed_of",
-    "is the founder of": "founded",
-    "co-founded": "co_founded",
-    "co founded": "co_founded",
-    "is the capital of": "is_capital_of",
-    "is the president of": "is_president_of",
-    "is the ceo of": "is_ceo_of",
-    "is the author of": "authored",
-    "has written": "authored",
-    "wrote": "authored",
-    "is a": "instance_of",
-    "is an": "instance_of",
-    "was a": "instance_of",
-    "was an": "instance_of",
-    "is the": "holds_role",
-    "was the": "holds_role",
-}
+# v0.16 WS1 (Decision 1.g): the surface→canonical synonym map was DELETED.
+# Predicate synonymy is no longer a hardcoded lookup table — it is carried by
+# the substrate's multi-property binding discovery (Wikidata-ontology +
+# SLING) and the seed pack's canonical rows. `normalize_predicate` now keeps
+# ONLY mechanical normalization (lower/strip, underscore↔space, single
+# aux-prefix strip, trailing-article strip, snake_case), consistent with the
+# project's "no hardcoded mappings" invariant: a surface form like "works at"
+# normalizes mechanically to `works_at` and the oracle's cold-start discovery
+# resolves it to its KB property (e.g. P108), rather than the map collapsing
+# it to `employed_by` up front.
 
 _AUX_PREFIX = re.compile(
     r"^(is|was|were|has|have|had|will|would|does|did)\s+",
@@ -72,31 +20,26 @@ _AUX_PREFIX = re.compile(
 
 
 def normalize_predicate(raw: str) -> str:
-    """Normalize a predicate to canonical snake_case, tense-neutral, voice-neutral form.
+    """Normalize a predicate to canonical snake_case, tense-neutral,
+    voice-neutral form via MECHANICAL transforms only (v0.16 WS1).
 
-    Phase H Cluster 3: accepts both space-separated ("works at") and
-    underscored ("works_at") surface forms. Underscores are collapsed
-    to spaces before the canonical-map lookup, so an extractor that
-    emits `works_at` and an extractor that emits "works at" both
-    produce `employed_by`.
+    Steps: lower/strip → underscores treated as spaces → strip a single
+    leading auxiliary verb → strip a trailing definite/indefinite article →
+    snake_case. There is no longer a synonym lookup table: e.g. "works at"
+    → `works_at` (not `employed_by`); the substrate's binding discovery and
+    the seed pack's canonical rows now carry the synonymy.
     """
     stripped = raw.strip().lower()
     if not stripped:
         return "unknown_predicate"
 
-    # Phase H Cluster 3: treat underscores as equivalent to spaces for
-    # map lookup. An already-snake_case input that doesn't hit the map
-    # still falls through to the snake_case fallback unchanged.
+    # Treat underscores as equivalent to spaces so an extractor that emits
+    # `works_at` and one that emits "works at" normalize identically.
     space_form = stripped.replace("_", " ")
 
-    if space_form in _CANONICAL_MAP:
-        return _CANONICAL_MAP[space_form]
-
-    # Try stripping a leading auxiliary verb once
+    # Strip a leading auxiliary verb once ("is employed by" → "employed by").
     no_aux = _AUX_PREFIX.sub("", space_form).strip()
-    if no_aux != space_form:
-        if no_aux in _CANONICAL_MAP:
-            return _CANONICAL_MAP[no_aux]
+    if no_aux:
         space_form = no_aux
 
     # Remove trailing definite/indefinite article

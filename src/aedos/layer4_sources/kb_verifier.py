@@ -86,10 +86,17 @@ class KBVerifier:
         kb_protocol: KBProtocol,
         entity_resolver: EntityResolver,
         predicate_translation: PredicateTranslation,
+        exception_cache=None,
     ) -> None:
         self._kb = kb_protocol
         self._resolver = entity_resolver
         self._pt = predicate_translation
+        # v0.16 WS1: the bounded NOGOOD cache (substrate_exceptions). It is
+        # OPTIONAL — the SubstrateExceptionCache itself is WS3, so the consult
+        # below is a guarded no-op until that lands. When present and exposing
+        # a `vetoes(predicate, property_path, subject_qid)` predicate, the
+        # binding loop skips a binding the nogood vetoes.
+        self._exception_cache = exception_cache
 
     def verify(
         self,
@@ -125,13 +132,151 @@ class KBVerifier:
         except PredicateTranslationError:
             return KBVerdict(verdict=KBVerdictType.NO_KB_PATH, trace={"reason": "predicate_translation_failed"})
 
-        if meta.routing_hint != "kb_resolvable" or not meta.kb_property:
+        if meta.routing_hint != "kb_resolvable" or not meta.bindings:
             return KBVerdict(verdict=KBVerdictType.NO_KB_PATH, trace={"reason": "not_kb_resolvable"})
 
+        # v0.16 WS1: the substrate now holds a RANKED LIST of candidate
+        # (predicate → KB property) bindings. Evidence arbitrates across them
+        # (Decision 1). For the common/legacy/mock case of a single binding,
+        # this loop runs exactly once and reproduces the pre-v0.16 single-
+        # property path byte-for-byte: the same _lookup_targets / resolve /
+        # lookup_statements / _compare_positive sequence on bindings[0].
+        #
+        # Arbitration:
+        #   - VERIFIED if ANY binding grounds positively (we record every
+        #     verifying chain in trace['bindings_tried']).
+        #   - CONTRADICTED only from a single_valued binding whose resolved
+        #     object satisfies that binding's value-type constraint
+        #     (_object_satisfies_value_type fails OPEN — see invariants).
+        #   - else NO_MATCH (carry the per-binding abstention reasons) or, when
+        #     no binding even has a kb_property, NO_KB_PATH.
+        bindings_tried: list[dict] = []
+        verified_outcome: Optional[tuple[KBVerdict, dict]] = None
+        contradicted_outcome: Optional[tuple[KBVerdict, dict]] = None
+        last_no_match: Optional[KBVerdict] = None
+        had_kb_path = False
+
+        for binding in meta.bindings:
+            if not binding.kb_property:
+                continue
+            had_kb_path = True
+
+            # v0.16 WS1: NOGOOD gate. Consult the optional exception cache for
+            # a cached "binding does not hold here" before this binding can
+            # drive a verdict. Guarded no-op until WS3 lands the cache.
+            if self._binding_vetoed(claim, binding):
+                bindings_tried.append(
+                    {
+                        "property": binding.kb_property,
+                        "source": binding.source,
+                        "verdict": KBVerdictType.NO_MATCH.value,
+                        "abstention_reason": "nogood_veto",
+                    }
+                )
+                continue
+
+            outcome = self._verify_binding(
+                claim, meta, binding, current_time, source_text
+            )
+            bindings_tried.append(
+                {
+                    "property": binding.kb_property,
+                    "source": binding.source,
+                    "verdict": outcome.verdict.value,
+                    "abstention_reason": outcome.trace.get("abstention_reason"),
+                }
+            )
+
+            if outcome.verdict == KBVerdictType.VERIFIED and verified_outcome is None:
+                verified_outcome = (outcome, dict(outcome.trace))
+            elif (
+                outcome.verdict == KBVerdictType.CONTRADICTED
+                and contradicted_outcome is None
+            ):
+                contradicted_outcome = (outcome, dict(outcome.trace))
+            elif outcome.verdict in (KBVerdictType.NO_MATCH, KBVerdictType.NO_KB_PATH):
+                last_no_match = outcome
+
+        # No binding carried an actual KB property — identical to the pre-v0.16
+        # `not meta.kb_property` abstention.
+        if not had_kb_path:
+            return KBVerdict(verdict=KBVerdictType.NO_KB_PATH, trace={"reason": "not_kb_resolvable"})
+
+        # Arbitration order: a positive grounding wins (Decision 1); else a
+        # sound single_valued contradiction; else the last abstention.
+        if verified_outcome is not None:
+            chosen, trace = verified_outcome
+            trace["bindings_tried"] = bindings_tried
+            return KBVerdict(
+                verdict=chosen.verdict,
+                matched_statement=chosen.matched_statement,
+                subject_kb_id=chosen.subject_kb_id,
+                trace=trace,
+            )
+        if contradicted_outcome is not None:
+            chosen, trace = contradicted_outcome
+            trace["bindings_tried"] = bindings_tried
+            # Decision 5: surface the KB statement value that contradicted the
+            # claim so the correction surface can name it.
+            stmt = chosen.matched_statement
+            if stmt is not None and "contradicting_value" not in trace:
+                trace["contradicting_value"] = getattr(stmt, "value", None)
+            return KBVerdict(
+                verdict=chosen.verdict,
+                matched_statement=chosen.matched_statement,
+                subject_kb_id=chosen.subject_kb_id,
+                trace=trace,
+            )
+        if last_no_match is not None:
+            trace = dict(last_no_match.trace)
+            trace["bindings_tried"] = bindings_tried
+            return KBVerdict(
+                verdict=last_no_match.verdict,
+                matched_statement=last_no_match.matched_statement,
+                subject_kb_id=last_no_match.subject_kb_id,
+                trace=trace,
+            )
+        # Defensive: had a kb_property but produced no outcome (all vetoed).
+        return KBVerdict(
+            verdict=KBVerdictType.NO_MATCH,
+            trace={"reason": "no_binding_grounded", "bindings_tried": bindings_tried},
+        )
+
+    def _binding_vetoed(self, claim: Claim, binding) -> bool:
+        """v0.16 WS1 NOGOOD gate. Consult the optional SubstrateExceptionCache
+        (WS3) for a cached "this binding does not hold for this subject". Until
+        WS3 lands the cache this is a guarded no-op: an absent cache, or a cache
+        without a `vetoes` predicate, never vetoes. Fails open (any error →
+        not vetoed) — a flaky cache must never suppress a sound verdict."""
+        cache = self._exception_cache
+        if cache is None:
+            return False
+        vetoes = getattr(cache, "vetoes", None)
+        if vetoes is None:
+            return False
+        try:
+            return bool(
+                vetoes(claim.predicate, binding.kb_property, claim.subject)
+            )
+        except Exception:
+            return False
+
+    def _verify_binding(
+        self,
+        claim: Claim,
+        meta,
+        binding,
+        current_time: str,
+        source_text: Optional[str],
+    ) -> KBVerdict:
+        """Verify the claim against ONE candidate binding. This is the per-
+        binding equivalent of the pre-v0.16 single-property verify body —
+        resolve → lookup → _compare_positive — keyed on the binding's
+        kb_property / slot_to_qualifier / entity-types / single_valued."""
         # Step 2: map the claim's slots onto KB statement positions (D19). An
         # inverse predicate keys its statement on the claim's *object*, so the
         # lookup entity and the expected value are swapped vs a standard one.
-        targets = _lookup_targets(claim, meta)
+        targets = _lookup_targets(claim, binding)
         if targets is None:
             # A slot_to_qualifier shape the verifier cannot interpret. Abstain
             # with a clear trace note — never guess a direction, never crash.
@@ -139,7 +284,8 @@ class KBVerifier:
                 verdict=KBVerdictType.NO_KB_PATH,
                 trace={
                     "reason": "unsupported_slot_to_qualifier",
-                    "slot_to_qualifier": meta.slot_to_qualifier,
+                    "slot_to_qualifier": binding.slot_to_qualifier,
+                    "abstention_reason": "unsupported_slot_to_qualifier",
                 },
             )
         lookup_ref, expected_ref, lookup_inverted = targets
@@ -158,7 +304,7 @@ class KBVerifier:
             predicate=claim.predicate,
             slot_position=lookup_slot,
             asserting_party=claim.asserting_party,
-            expected_entity_types=_types_for_slot(meta, lookup_slot),
+            expected_entity_types=_types_for_slot(binding, lookup_slot),
             source_text=source_text,
             claim_subject=claim.subject,
             claim_predicate=claim.predicate,
@@ -192,8 +338,8 @@ class KBVerifier:
             # resolving "Europe" to the continent (see _GEO_CONTAINER_TYPES).
             # Only widens an existing non-empty filter; an open (None/empty)
             # filter is left open.
-            value_types = _types_for_slot(meta, value_slot)
-            if value_types and meta.kb_property in _LOCATION_KB_PROPERTIES:
+            value_types = _types_for_slot(binding, value_slot)
+            if value_types and binding.kb_property in _LOCATION_KB_PROPERTIES:
                 value_types = list(dict.fromkeys([*value_types, *_GEO_CONTAINER_TYPES]))
             value_ctx = LocalContext(
                 predicate=claim.predicate,
@@ -214,7 +360,7 @@ class KBVerifier:
                 value_resolved = True
 
         # Step 5: look up KB statements for (lookup entity, kb_property).
-        statements = self._kb.lookup_statements(lookup_subject_id, meta.kb_property)
+        statements = self._kb.lookup_statements(lookup_subject_id, binding.kb_property)
         if not statements:
             # Phase 10.5 Step 6 Tier A3: no-statements subsumption fallback.
             # Some entity classes don't carry the specific kb_property the
@@ -260,7 +406,7 @@ class KBVerifier:
                 trace={
                     "reason": "no_statements_found",
                     "entity": lookup_subject_id,
-                    "property": meta.kb_property,
+                    "property": binding.kb_property,
                     "abstention_reason": "no_statements",
                     "lookup_inverted": lookup_inverted,
                 },
@@ -271,8 +417,36 @@ class KBVerifier:
         # value against the statement values regardless of which Aedos slot the
         # expected value came from.
         pos_verdict, statement, abstention_reason = self._compare_positive(
-            statements, claim, expected_value, value_resolved, meta, current_time
+            statements, claim, expected_value, value_resolved, meta, binding, current_time
         )
+
+        # v0.16 WS1: the copula fix. A single_valued binding can drive
+        # CONTRADICTED only when the resolved object satisfies that binding's
+        # value-type constraint (P2302 value-type). This is the P31-vs-P106
+        # case: a copula claim routed ambiguously to P31 (instance-of) vs P106
+        # (occupation) — the resolved object (an occupation) satisfies P106's
+        # value-type but not P31's, so only the P106 binding can contradict.
+        # _object_satisfies_value_type fails OPEN (True when the binding has no
+        # value-type constraint, or when the object can't be type-confirmed),
+        # so the legacy single_valued contradiction tests are unaffected.
+        if pos_verdict == KBVerdictType.CONTRADICTED:
+            resolved_obj = (
+                expected_value if value_resolved and isinstance(expected_value, str) else None
+            )
+            if not self._object_satisfies_value_type(resolved_obj, binding):
+                return KBVerdict(
+                    verdict=KBVerdictType.NO_MATCH,
+                    subject_kb_id=lookup_subject_id,
+                    trace={
+                        "entity": lookup_subject_id,
+                        "property": binding.kb_property,
+                        "value_entity": expected_value,
+                        "value_resolved": value_resolved,
+                        "polarity": claim.polarity,
+                        "lookup_inverted": lookup_inverted,
+                        "abstention_reason": "value_type_incompatible_binding",
+                    },
+                )
 
         # Step 7: apply claim polarity (C1). A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
@@ -280,12 +454,12 @@ class KBVerifier:
 
         trace = {
             "entity": lookup_subject_id,
-            "property": meta.kb_property,
+            "property": binding.kb_property,
             "value_entity": expected_value,
             "value_resolved": value_resolved,
             "polarity": claim.polarity,
             "positive_verdict": pos_verdict.value,
-            "single_valued": meta.single_valued,
+            "single_valued": binding.single_valued,
             "lookup_inverted": lookup_inverted,
         }
         # When the verdict is an abstention (NO_MATCH), record *why* — Phase 10.5
@@ -301,6 +475,52 @@ class KBVerifier:
             trace=trace,
         )
 
+    def _object_satisfies_value_type(self, resolved_obj_qid: Optional[str], binding) -> bool:
+        """v0.16 WS1 (copula fix). True when the resolved object provably
+        satisfies the binding's value-type constraint — or when the binding has
+        NO value-type constraint, or the object can't be type-confirmed.
+
+        Fails OPEN (returns True = 'cannot rule out, so this binding MAY
+        contradict') in every uncertain case, per the invariant:
+          - no binding value-type constraint known  → True (permit)
+          - object did not resolve to a Q-id         → True (permit)
+          - KB error / unknown subsumption verdict   → True (permit)
+        It returns False — blocking the contradiction — only when the binding
+        DOES declare a value-type constraint AND the resolved object PROVABLY
+        fails it (subsumption says the object is `unrelated` to every declared
+        value-type). That is the only case where letting this binding contradict
+        would be unsound (the predicate was mis-routed to a value-type-
+        incompatible property, e.g. P31 for an occupation claim)."""
+        value_types = list(binding.object_entity_types or [])
+        if not value_types:
+            return True  # no constraint known → permit the contradiction
+        if not resolved_obj_qid or not isinstance(resolved_obj_qid, str):
+            return True  # object not type-confirmable → permit (fail open)
+        # The object satisfies the constraint if it is_a (or equals) ANY of the
+        # declared value-types. We only BLOCK when every declared type is
+        # provably `unrelated` — any uncertainty (error / unknown) permits.
+        any_unrelated_only = True
+        for vt in value_types:
+            if not isinstance(vt, str):
+                any_unrelated_only = True
+                continue
+            if vt == resolved_obj_qid:
+                return True
+            try:
+                r = self._kb.subsumption(resolved_obj_qid, vt, "is_a")
+            except Exception:
+                return True  # KB error → permit (fail open)
+            if r.verdict in ("a_subsumed_by_b", "equivalent"):
+                return True  # provably satisfies the value-type
+            if r.verdict != "unrelated":
+                # b_subsumed_by_a or any non-`unrelated` verdict is uncertain
+                # w.r.t. "object fails the constraint" → permit (fail open).
+                any_unrelated_only = False
+        # Reached only when no declared value-type was satisfied. Block the
+        # contradiction only if EVERY check came back `unrelated` (provable
+        # failure); otherwise an uncertain verdict permits.
+        return not any_unrelated_only
+
     def _compare_positive(
         self,
         statements: list[Statement],
@@ -308,6 +528,7 @@ class KBVerifier:
         expected_value,
         value_resolved: bool,
         meta,
+        binding,
         current_time: str,
     ) -> tuple[KBVerdictType, Optional[Statement], Optional[str]]:
         """Verdict for the claim's positive content, ignoring polarity.
@@ -360,7 +581,7 @@ class KBVerifier:
         ):
             return KBVerdictType.VERIFIED, scope_mismatch, None
 
-        if scope_mismatch is not None and meta.single_valued:
+        if scope_mismatch is not None and binding.single_valued:
             if value_unresolved:
                 # N1: the expected-value reference never resolved — the mismatch
                 # is a resolution failure, not a contradiction. Abstain, not lie.
@@ -392,7 +613,7 @@ class KBVerifier:
             and value_resolved
             and isinstance(scope_mismatch.value, str)
             and isinstance(expected_value, str)
-            and meta.kb_property in _LOCATION_KB_PROPERTIES
+            and binding.kb_property in _LOCATION_KB_PROPERTIES
             and self._location_disjoint(scope_mismatch.value, expected_value)
         ):
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
@@ -490,8 +711,12 @@ class KBVerifier:
         return False
 
 
-def _lookup_targets(claim: Claim, meta) -> Optional[tuple[str, str, bool]]:
+def _lookup_targets(claim: Claim, binding) -> Optional[tuple[str, str, bool]]:
     """Map a claim's slots onto KB statement positions via slot_to_qualifier (D19).
+
+    v0.16 WS1: ``binding`` is a ``PredicateBinding`` (the per-binding
+    slot_to_qualifier). It exposes the same ``slot_to_qualifier`` attribute the
+    pre-v0.16 ``meta`` did, so the direction logic is unchanged.
 
     Returns ``(kb_lookup_ref, expected_value_ref, lookup_inverted)``:
 
@@ -521,7 +746,7 @@ def _lookup_targets(claim: Claim, meta) -> Optional[tuple[str, str, bool]]:
     in ``docs/v0.15_build_log/fixup3_scope.md``); this branch guards only against
     malformed inline-generated rows.
     """
-    slot_map = meta.slot_to_qualifier
+    slot_map = binding.slot_to_qualifier
     if not slot_map:
         return (claim.subject, claim.object, False)
     subject_slot = slot_map.get("subject")
@@ -533,14 +758,17 @@ def _lookup_targets(claim: Claim, meta) -> Optional[tuple[str, str, bool]]:
     return None
 
 
-def _types_for_slot(meta, slot: str) -> list[str]:
+def _types_for_slot(binding, slot: str) -> list[str]:
     """Phase G D33: pick the entity-types list that corresponds to the Aedos
     slot being resolved. Returns an empty list when no types are configured
-    for that slot (the adapter then skips its post-filter)."""
+    for that slot (the adapter then skips its post-filter).
+
+    v0.16 WS1: ``binding`` is a ``PredicateBinding`` carrying the per-binding
+    subject/object entity-types (mirrors the pre-v0.16 ``meta`` accessor)."""
     if slot == "subject":
-        return list(meta.subject_entity_types or [])
+        return list(binding.subject_entity_types or [])
     if slot == "object":
-        return list(meta.object_entity_types or [])
+        return list(binding.object_entity_types or [])
     return []
 
 

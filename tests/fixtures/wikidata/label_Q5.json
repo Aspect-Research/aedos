@@ -1,0 +1,10 @@
+{
+  "_note": "v0.16 WS1 fixture for fetch_label(Q5). Mirrors the wbgetentities (props=labels) response shape consumed by _extract_label_from_entities.",
+  "entities": {
+    "Q5": {
+      "labels": {
+        "en": {"language": "en", "value": "human"}
+      }
+    }
+  }
+}

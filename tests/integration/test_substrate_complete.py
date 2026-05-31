@@ -108,6 +108,10 @@ class TestCrossOracleConsistency:
         meta = substrate.predicate_translation.consult("holds_role")
         assert meta.routing_hint == "kb_resolvable"
         assert meta.kb_property is not None
+        # v0.16 WS1: the scalar kb_property mirrors bindings[0]. Read through
+        # the authoritative binding list to confirm the single-binding synthesis.
+        assert meta.bindings
+        assert meta.bindings[0].kb_property == meta.kb_property
 
     def test_kb_property_used_in_subsumption_alignment(self):
         # If predicate maps to P39, and subsumption returns a_subsumed_by_b,
@@ -118,4 +122,6 @@ class TestCrossOracleConsistency:
             EntityRef("wikidata", "Q76"), EntityRef("wikidata", "Q5"), "is_a"
         )
         assert meta.kb_property == "P39"
+        # v0.16 WS1: the binding-level view agrees with the scalar accessor.
+        assert meta.bindings[0].kb_property == "P39"
         assert sub_result.source == "kb"
