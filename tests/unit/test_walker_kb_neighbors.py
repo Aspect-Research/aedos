@@ -47,7 +47,6 @@ from aedos.layer4_sources.tier_u import LookupResult
 from aedos.layer4_sources.walker import (
     VerificationContext,
     Walker,
-    _D5_NEIGHBOR_PROPS_BY_RELATION,
 )
 
 
@@ -167,14 +166,24 @@ def _make_kb(
     """
     kb = MagicMock()
 
-    def fake(entity, properties, direction="outgoing"):
+    # v0.16.1 WS5c: the walker now passes the OPAQUE relation_type and the
+    # adapter resolves the P-id neighbor set internally. Mirror that mapping
+    # here so the mock returns per-property neighbor lists for the requested
+    # relation (matching kb_wikidata._NEIGHBOR_PROPERTIES_BY_RELATION).
+    _NEIGHBOR_PROPS = {
+        "is_a": ("P31", "P279"),
+        "part_of": ("P131", "P361", "P17"),
+    }
+
+    def fake(entity, properties=None, direction="outgoing", relation_type=None):
+        props = tuple(properties) if properties else _NEIGHBOR_PROPS.get(relation_type, ())
         if direction == "incoming":
             if incoming_by_prop is None:
-                return {p: [] for p in properties}
-            return {p: list(incoming_by_prop.get(p, [])) for p in properties}
+                return {p: [] for p in props}
+            return {p: list(incoming_by_prop.get(p, [])) for p in props}
         if neighbors_by_prop is None:
-            return {p: [] for p in properties}
-        return {p: list(neighbors_by_prop.get(p, [])) for p in properties}
+            return {p: [] for p in props}
+        return {p: list(neighbors_by_prop.get(p, [])) for p in props}
 
     kb.enumerate_neighbors.side_effect = fake
     kb.verify_transitive_path.return_value = TransitivePathResult(holds=path_holds)
@@ -438,9 +447,11 @@ class TestD5Fallback:
         ]
         assert kb_edges == []
 
-    def test_correct_properties_passed_per_relation(self):
-        """is_a uses (P31, P279); part_of uses (P131, P361, P17). Verify
-        the right property tuple reaches enumerate_neighbors."""
+    def test_correct_relation_passed_per_relation(self):
+        """v0.16.1 WS5c: CORE no longer names P-ids — the walker passes the
+        OPAQUE relation_type ("is_a"/"part_of") to enumerate_neighbors and the
+        adapter resolves the property set internally. Verify both relations are
+        requested through the relation_type keyword."""
         substrate = _make_substrate(
             distribution_verdict="distributes_down",
             sub_neighbors=[],
@@ -454,12 +465,18 @@ class TestD5Fallback:
         # and part_of (subject + object × 2 relation_types = up to 4 calls).
         walker.walk(_claim(), _ctx())
 
-        called_properties = [
-            call.args[1] for call in kb.enumerate_neighbors.call_args_list
-        ]
-        # We see calls for both is_a and part_of relation types.
-        assert ["P31", "P279"] in called_properties
-        assert ["P131", "P361", "P17"] in called_properties
+        called_relations = {
+            call.kwargs.get("relation_type")
+            for call in kb.enumerate_neighbors.call_args_list
+        }
+        # We see calls for both is_a and part_of relation types, and CORE
+        # never passes an explicit P-id properties list.
+        assert "is_a" in called_relations
+        assert "part_of" in called_relations
+        for call in kb.enumerate_neighbors.call_args_list:
+            # properties is never passed positionally or as a kwarg by CORE.
+            assert len(call.args) <= 1
+            assert not call.kwargs.get("properties")
 
 
 # ---------------------------------------------------------------------------

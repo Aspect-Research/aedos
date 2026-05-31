@@ -99,11 +99,18 @@ class KBProtocol(Protocol):
     #     `child` direction. Reverse enumeration is implementation-bounded
     #     by a `LIMIT` clause (default 100) to keep unbounded properties
     #     like P17=Q30 manageable.
+    # v0.16.1 WS5c: `relation_type` ("is_a"/"part_of") is the OPAQUE relation
+    # selector — CORE passes it instead of naming Wikidata P-ids, and the
+    # adapter resolves the relation's neighbor property set internally. An
+    # explicit `properties` list (e.g. SLING's co-occurrence sampler) takes
+    # precedence; an empty list + a known relation uses the relation's set; an
+    # empty list + no/unknown relation uses the adapter default.
     def enumerate_neighbors(
         self,
         entity: KBEntityID,
-        properties: list[KBPropertyID],
+        properties: Optional[list[KBPropertyID]] = None,
         direction: str = "outgoing",
+        relation_type: Optional[str] = None,
     ) -> dict[KBPropertyID, list[KBEntityID]]: ...
 
     # v0.16 WS2 §1: the first-class transitive-path primitive. Where
@@ -186,3 +193,39 @@ class KBProtocol(Protocol):
     def geographic_disjoint(
         self, value_qid: KBEntityID, expected_qid: KBEntityID
     ) -> bool: ...
+
+    # v0.16.1 WS5c: the entity-surface SEARCH + TYPE-FETCH operations the
+    # Wikipedia normalizer's Stage B/C consume, relocated from CORE's
+    # reach-arounds into adapter privates (`wbsearchentities`,
+    # `_fetch_p31_for_candidates`). Both are backend operations — the search
+    # API endpoint and the P31 type vocabulary are Wikidata facts that belong
+    # with the adapter, not in a layer1 module. CORE calls them through this
+    # interface so the normalizer no longer touches adapter privates.
+
+    # `search(query, limit=None)` — ranked entity candidates for the surface
+    # query. Each candidate exposes `.qid`, `.label`, `.description`,
+    # `.aliases`, `.match_type`, `.rank` (the normalizer's Stage B/C consume
+    # these duck-typed). Fails open: returns `[]` on error / empty query.
+    def search(self, query: str, limit: Optional[int] = None) -> list: ...
+
+    # `fetch_types(qids)` — batch-fetch each Q-id's instance-of (P31) type
+    # list. Returns `(types_by_qid, error)`: `types_by_qid` maps every input
+    # Q-id to its type-Q-id list (missing/unparseable → empty list); `error`
+    # is None on full success or the stringified failure on a transient API
+    # error (the caller treats non-None as fail-open — pass candidates
+    # unfiltered rather than abstain). Never raises on a lookup failure.
+    def fetch_types(
+        self, qids: list[KBEntityID]
+    ) -> "tuple[dict[KBEntityID, list[KBEntityID]], Optional[str]]": ...
+
+    # v0.16.1 WS5c: the (start, end) temporal interval-qualifier keys CORE's
+    # interval resolver reads off `Statement.qualifiers` (Wikidata P580 start /
+    # P582 end). The qualifier P-ids are a backend fact — the same authority
+    # that POPULATES `Statement.qualifiers` owns their names. CORE reads them
+    # through this accessor instead of hardcoding the P-ids in the walker. The
+    # return order is contractual: (start_key, end_key). OPTIONAL on the
+    # protocol — CORE calls it via `getattr` so adapters predating WS5c keep
+    # satisfying KBProtocol; an absent accessor falls back to the historical
+    # (P580, P582) default (behavior-neutral, since interval grounding only ever
+    # runs against a live adapter that does provide it).
+    def interval_qualifier_keys(self) -> "tuple[KBPropertyID, KBPropertyID]": ...

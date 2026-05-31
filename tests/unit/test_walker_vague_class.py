@@ -158,8 +158,8 @@ def _make_kb(*, holds: bool = True, error: str | None = None):
         holds=holds, error=error, establishing_property="P31"
     )
 
-    def _enum(entity, properties, direction="outgoing"):
-        return {p: [] for p in properties}
+    def _enum(entity, properties=None, direction="outgoing", relation_type=None):
+        return {}
 
     kb.enumerate_neighbors.side_effect = _enum
     return kb

@@ -297,3 +297,60 @@ class TestConfigIntegration:
             Config(wikidata_wbsearch_limit=0)
         with pytest.raises(ValueError, match="wikidata_wbsearch_limit"):
             Config(wikidata_wbsearch_limit=51)
+
+
+class TestWS5cProtocolSurface:
+    """v0.16.1 WS5c: the KBProtocol `search` / `fetch_types` ops the Wikipedia
+    normalizer now consumes (replacing its reach-arounds into adapter privates
+    `wbsearchentities` / `_fetch_p31_for_candidates`). They delegate to those
+    implementations, so behavior is identical."""
+
+    def test_search_delegates_to_wbsearchentities(self):
+        adapter, _ = _make_adapter()
+        body = _search_response([
+            {"id": "Q76", "label": "Barack Obama", "description": "president"},
+        ])
+        with patch("httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = body
+            via_search = adapter.search("Barack Obama")
+        assert [c.qid for c in via_search] == ["Q76"]
+        assert via_search[0].label == "Barack Obama"
+
+    def test_search_passes_limit_through(self):
+        adapter, _ = _make_adapter()
+        captured: dict = {}
+
+        def fake_get(url, params, ttl_seconds):
+            captured["params"] = params
+            return {"search": []}
+
+        with patch.object(adapter._http, "get", side_effect=fake_get):
+            adapter.search("x", limit=7)
+        assert captured["params"]["limit"] == 7
+
+    def test_fetch_types_delegates_to_p31_fetch(self):
+        adapter, _ = _make_adapter()
+        entities = {
+            "Q76": {"claims": {"P31": [{
+                "mainsnak": {"datavalue": {"value": {"id": "Q5"}}}
+            }]}}
+        }
+
+        def fake_get(url, params, ttl_seconds):
+            return {"entities": entities}
+
+        with patch.object(adapter._http, "get", side_effect=fake_get):
+            types_by_qid, error = adapter.fetch_types(["Q76"])
+        assert error is None
+        assert types_by_qid == {"Q76": ["Q5"]}
+
+    def test_fetch_types_empty_input_returns_empty(self):
+        adapter, _ = _make_adapter()
+        assert adapter.fetch_types([]) == ({}, None)
+
+    def test_adapter_satisfies_search_and_fetch_types_protocol(self):
+        from aedos.layer4_sources.kb_protocol import KBProtocol
+        adapter, _ = _make_adapter()
+        assert isinstance(adapter, KBProtocol)
+        assert hasattr(adapter, "search") and callable(adapter.search)
+        assert hasattr(adapter, "fetch_types") and callable(adapter.fetch_types)

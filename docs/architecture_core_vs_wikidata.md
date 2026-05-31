@@ -66,25 +66,32 @@ prompt teach the LLM to emit Wikidata property ids; the Python logic stores them
 strings. This is the intended pattern (knowledge in prompt/KB/oracle, not Python lookup tables)
 and is why those modules classify as core despite mentioning P-ids.
 
-## Residual calibration above the seam (future-refactor candidates — NOT changed here)
+## Residual calibration above the seam
 
-The separation is clean in the substrate/result core but imperfect at the verification surface
-and the normalizer. These are documented as roadmap items, deliberately **not** modified in the
-cleanliness pass (which makes no functional changes):
+The v0.16.1 WS5 relocations closed the residual leaks below. They were behavior-neutral
+moves — the Wikidata vocabulary now lives inside the adapter and CORE consumes it only through
+the `KBProtocol` seam:
 
-1. `layer1_extraction/wikipedia_normalizer.py` reaches **around** the protocol into
-   adapter-private methods (`self._kb_adapter.wbsearchentities(...)`,
-   `self._kb_adapter._fetch_p31_for_candidates(...)`) and hardcodes the Wikipedia endpoint.
-   A future `KBProtocol.search` / type-fetch operation would close this.
-2. `layer4_sources/walker.py` hardcodes a relation→P-id table (`_D5_NEIGHBOR_PROPS_BY_RELATION`
-   = P31/P279/P131/P361/P17) and the P580/P582 temporal-qualifier keys. The base property is
-   routed through the oracle, but the qualifier semantics are baked in.
-3. `layer4_sources/kb_verifier.py` holds Wikidata constants in control flow: `CONTINENT_QIDS`,
-   `_LOCATION_KB_PROPERTIES` (P131/P17/P30/P361/P206/P276), `_GEO_CONTAINER_TYPES` (Q5107), and
-   direct P580/P582 qualifier reads. This geographic/temporal calibration sits just above the
-   adapter seam rather than inside it.
+1. **CLOSED (WS5c).** `layer1_extraction/wikipedia_normalizer.py` previously reached **around**
+   the protocol into adapter-private methods (`self._kb_adapter.wbsearchentities(...)`,
+   `self._kb_adapter._fetch_p31_for_candidates(...)`) and hardcoded the Wikipedia endpoint. It now
+   calls `KBProtocol.search(query, limit=...)` and `KBProtocol.fetch_types(qids)` (implemented on
+   `WikidataAdapter`, delegating to the existing methods); the MediaWiki endpoint default is
+   sourced from `Config.wikipedia_api_url` (its canonical home) instead of a hardcoded layer1
+   string.
+2. **CLOSED (WS5c).** `layer4_sources/walker.py` previously hardcoded a relation→P-id table
+   (`_D5_NEIGHBOR_PROPS_BY_RELATION` = P31/P279/P131/P361/P17) and the P580/P582
+   temporal-qualifier keys. The neighbor table moved into the adapter's `enumerate_neighbors`
+   (which now accepts the opaque `relation_type` and resolves the property set internally via
+   `_NEIGHBOR_PROPERTIES_BY_RELATION`); the interval-qualifier keys moved behind
+   `KBProtocol.interval_qualifier_keys()` (the adapter owns P580/P582, the authority that
+   populates `Statement.qualifiers`).
+3. **CLOSED (WS5a).** `layer4_sources/kb_verifier.py` previously held Wikidata constants in
+   control flow: `CONTINENT_QIDS`, `_LOCATION_KB_PROPERTIES` (P131/P17/P30/P361/P206/P276),
+   `_GEO_CONTAINER_TYPES` (Q5107), and direct P580/P582 qualifier reads. The geographic cluster
+   moved behind `KBProtocol.is_location_property` / `geo_container_types` / `geographic_disjoint`
+   (the closed seven-continent set and the geographic P-ids live inside the adapter).
 
-Pushing (2) and (3) behind the protocol, and giving the normalizer a protocol-level search,
-would make the core/Wikidata cut crisp: *everything is core except the adapter and the
-normalizer.* That refactor is out of scope for the cleanliness pass and would be its own
-functional change with its own tests.
+With these closed, the core/Wikidata cut is crisp: *everything is core except the adapter and the
+normalizer's HTTP-surface plumbing*, which talk to Wikidata/Wikipedia endpoints directly. CORE
+treats KB identifiers as opaque strings throughout.

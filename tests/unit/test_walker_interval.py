@@ -71,11 +71,22 @@ class _StubKBVerifier:
 
 
 class _StubKB:
-    """lookup_statements keyed by (entity, property). Optionally raises."""
+    """lookup_statements keyed by (entity, property). Optionally raises.
 
-    def __init__(self, statements_by_key=None, raise_on_lookup=False):
+    v0.16.1 WS5c: when `qualifier_keys` is provided the stub exposes the
+    KBProtocol `interval_qualifier_keys` accessor returning it, so a test can
+    confirm CORE reads the start/end qualifier keys from the adapter rather than
+    a hardcoded P-id. When omitted, the stub has NO accessor (mirroring an
+    adapter predating WS5c) and the walker's fail-safe (P580, P582) default
+    applies — the behavior-neutral path the bulk of the suite exercises.
+    """
+
+    def __init__(self, statements_by_key=None, raise_on_lookup=False,
+                 qualifier_keys=None):
         self._by_key = statements_by_key or {}
         self._raise = raise_on_lookup
+        if qualifier_keys is not None:
+            self.interval_qualifier_keys = lambda: tuple(qualifier_keys)
 
     def lookup_statements(self, entity, prop):
         if self._raise:
@@ -776,3 +787,67 @@ class TestGatherInterval:
             _claim(predicate="employment_started"), "P108", _ctx()
         )
         assert iv is None
+
+
+# ---------------------------------------------------------------------------
+# v0.16.1 WS5c — interval qualifier keys sourced from the KB adapter
+# ---------------------------------------------------------------------------
+
+class TestWS5cIntervalQualifierKeys:
+    """CORE reads the (start, end) interval-qualifier keys from the KB adapter's
+    `interval_qualifier_keys` accessor, not a hardcoded walker P-id. With a stub
+    returning ALTERNATE keys, the endpoint grounds against statements carrying
+    those keys and the trace records them — proving the relocation is wired
+    (and behavior-neutral when the adapter returns the canonical P580/P582)."""
+
+    def test_accessor_keys_drive_interval_gathering(self):
+        # Stub returns alternate qualifier keys; statements carry them. The
+        # endpoint must ground against the start key the accessor reported.
+        alt_statements = [
+            Statement(value="Q11942", value_type="entity", rank="preferred",
+                      qualifiers={"START": "1933-10-01", "END": "1955-04-18"}),
+        ]
+        kb = _StubKB(
+            statements_by_key={("Q937", "P108"): alt_statements},
+            qualifier_keys=("START", "END"),
+        )
+        w = _make_walker(
+            kb=kb,
+            meta_by_pred={"employment_started": _StubMeta("P108"),
+                          "employment_ended": _StubMeta("P108")},
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1933"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, grounding = out
+        assert verdict == "verified"
+        assert grounding["qualifier"] == "START"
+        assert grounding["endpoint_value"] == "1933-10-01"
+
+    def test_canonical_p580_p582_when_accessor_returns_them(self):
+        # An adapter returning the canonical keys is byte-identical to the
+        # historical hardcoded path.
+        kb = _StubKB(
+            statements_by_key={("Q937", "P108"): _ias_statements()},
+            qualifier_keys=("P580", "P582"),
+        )
+        w = _make_walker(
+            kb=kb,
+            meta_by_pred={"employment_started": _StubMeta("P108"),
+                          "employment_ended": _StubMeta("P108")},
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_ended", object_val="1955"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, grounding = out
+        assert verdict == "verified"
+        assert grounding["qualifier"] == "P582"
+
+    def test_adapter_exposes_interval_qualifier_keys(self):
+        # The live WikidataAdapter returns the canonical (P580, P582).
+        from aedos.layer4_sources.kb_wikidata import WikidataAdapter
+        assert WikidataAdapter().interval_qualifier_keys() == ("P580", "P582")

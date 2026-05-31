@@ -22,6 +22,7 @@ from aedos.layer4_sources.kb_protocol import TransitivePathResult
 from aedos.layer4_sources.kb_wikidata import (
     WikidataAdapter,
     _DEFAULT_NEIGHBOR_PROPERTIES,
+    _NEIGHBOR_PROPERTIES_BY_RELATION,
     _SUBSUMPTION_PROPERTIES,
     _build_neighbors_query,
     _build_subsumption_ask_query,
@@ -196,6 +197,36 @@ class TestFixtureNeighbors:
         # API: empty list means "use the default property set".
         adapter = WikidataAdapter()
         result = adapter.enumerate_neighbors("Q49112", [])
+        for p in _DEFAULT_NEIGHBOR_PROPERTIES:
+            assert p in result
+
+    def test_relation_type_resolves_property_set(self):
+        # v0.16.1 WS5c: CORE passes the OPAQUE relation_type and the adapter
+        # resolves the P-id neighbor set internally (no P-id naming above the
+        # seam). is_a -> (P31, P279); part_of -> (P131, P361, P17).
+        adapter = WikidataAdapter()
+        is_a = adapter.enumerate_neighbors("Q49112", relation_type="is_a")
+        assert set(is_a.keys()) == set(_NEIGHBOR_PROPERTIES_BY_RELATION["is_a"])
+        part_of = adapter.enumerate_neighbors("Q49112", relation_type="part_of")
+        assert set(part_of.keys()) == set(_NEIGHBOR_PROPERTIES_BY_RELATION["part_of"])
+        # Williams College fixture: P31 (is_a) carries the type neighbor,
+        # P131/P17 (part_of) carry the containment neighbors.
+        assert "Q3918" in is_a["P31"]
+        assert "Q771397" in part_of["P131"]
+        assert "Q30" in part_of["P17"]
+
+    def test_explicit_properties_take_precedence_over_relation(self):
+        # An explicit properties list wins over relation_type (SLING's
+        # co-occurrence sampler passes an explicit list).
+        adapter = WikidataAdapter()
+        result = adapter.enumerate_neighbors(
+            "Q49112", ["P31"], relation_type="part_of"
+        )
+        assert set(result.keys()) == {"P31"}
+
+    def test_unknown_relation_type_falls_back_to_default(self):
+        adapter = WikidataAdapter()
+        result = adapter.enumerate_neighbors("Q49112", relation_type="bogus")
         for p in _DEFAULT_NEIGHBOR_PROPERTIES:
             assert p in result
 

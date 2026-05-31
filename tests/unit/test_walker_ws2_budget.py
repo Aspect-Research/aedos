@@ -104,9 +104,15 @@ def _blowup_kb():
     counter = {"n": 0}
     kb = MagicMock()
 
-    def fake_enum(entity, properties, direction="outgoing"):
+    # v0.16.1 WS5c: CORE passes the opaque relation_type; resolve the P-id set
+    # here (matching kb_wikidata._NEIGHBOR_PROPERTIES_BY_RELATION) so the
+    # fanout worst case is preserved.
+    _NEIGHBOR_PROPS = {"is_a": ("P31", "P279"), "part_of": ("P131", "P361", "P17")}
+
+    def fake_enum(entity, properties=None, direction="outgoing", relation_type=None):
+        props = tuple(properties) if properties else _NEIGHBOR_PROPS.get(relation_type, ())
         out = {}
-        for p in properties:
+        for p in props:
             ids = []
             for _ in range(20):
                 counter["n"] += 1
