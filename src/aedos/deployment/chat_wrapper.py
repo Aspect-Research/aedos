@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from ..layer1_extraction.extractor import ExtractionContext
-from ..layer1_extraction.triage import TriageDecision
+from ..layer1_extraction.triage import AbstentionReason
 from ..layer4_sources.walker import VerificationContext
 from ..layer5_result.aggregator import (
     ClaimVerdict,
@@ -188,6 +188,13 @@ def select_interventions(
     actions: list[ClaimAction] = []
     verified_count = 0
     for cv in claim_verdicts:
+        # v0.16 WS4 (4c): not_checkworthy claims are quiet — they are recorded
+        # as ClaimVerdicts (observable in VerificationResult) but produce no
+        # user-facing note and do not count toward the verified/problematic
+        # tallies that drive PASS_THROUGH/DECLINE. This keeps an all-inert draft
+        # → PASS_THROUGH (never a spurious DECLINE).
+        if cv.abstention_reason == AbstentionReason.NOT_CHECKWORTHY.value:
+            continue
         base = base_verdict_of(cv.verdict)
         conditional = is_given_assertion(cv.verdict)
         if base == "verified":
@@ -337,7 +344,12 @@ class ChatWrapper:
                 turn_id=ctx_dict.get("conversation_id"),
             )
             user_claims = self._extractor.extract(user_message, user_ctx)
-            user_claims = [c for c in user_claims if c.triage_decision == TriageDecision.VERIFY]
+            # v0.16 WS4 (4c): promote only checkworthy, well-formed assertions
+            # as premises — exclude any claim carrying an extraction-layer
+            # abstention_reason (not_checkworthy, self_referential,
+            # predicate_eq_object, subject_absent_from_source). A malformed or
+            # not-checkworthy user assertion must not become a Tier U premise.
+            user_claims = [c for c in user_claims if c.abstention_reason is None]
             if user_claims:
                 promote_assertions(user_claims, self._tier_u)
                 # The promotion's pre_verdicts (cross-source contradictions
@@ -372,8 +384,12 @@ class ChatWrapper:
                 turn_id=ctx_dict.get("conversation_id"),
             )
             claims = self._extractor.extract(draft, extraction_context)
-            # Only keep VERIFY-triaged claims for verification
-            claims = [c for c in claims if c.triage_decision == TriageDecision.VERIFY]
+            # v0.16 WS4 (4c): do NOT drop INERT_PROSE claims here. They now
+            # carry abstention_reason='not_checkworthy' (extractor) and the
+            # walker short-circuits them to no_grounding_found (4b) with zero
+            # external/LLM calls; the aggregator records a ClaimVerdict so the
+            # designation is observable, and select_interventions suppresses any
+            # not_checkworthy claim from the user-facing notes and the tallies.
 
         # 3. Verify each claim
         # Phase H D47: thread the draft (the text the extractor saw) as

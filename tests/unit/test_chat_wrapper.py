@@ -17,7 +17,7 @@ from aedos.deployment.chat_wrapper import (
     select_interventions,
 )
 from aedos.layer1_extraction.extractor import Claim
-from aedos.layer1_extraction.triage import TriageDecision
+from aedos.layer1_extraction.triage import AbstentionReason, TriageDecision
 from aedos.layer4_sources.walker import BudgetConsumption, WalkResult
 from aedos.layer5_result.aggregator import (
     Aggregator,
@@ -321,6 +321,67 @@ class TestSelectInterventionsDualDesignation:
         types = {a.action_type for a in plan.per_claim_actions}
         assert ClaimActionType.CONFIRM_CONDITIONAL in types
         assert ClaimActionType.CORRECT in types
+
+
+# ---------------------------------------------------------------------------
+# TestSelectInterventionsNotCheckworthy — v0.16 WS4 (4c.2): a not_checkworthy
+# claim is QUIET — recorded as a ClaimVerdict (observable) but produces no
+# user-facing action and does not count toward the verified/problematic
+# tallies that drive PASS_THROUGH/DECLINE.
+# ---------------------------------------------------------------------------
+
+def _not_checkworthy_cv(claim_id: str) -> ClaimVerdict:
+    c = _claim(claim_id, subject="weather", predicate="is_nice", obj="pleasant")
+    return ClaimVerdict(
+        claim_id=claim_id, claim=c, verdict="no_grounding_found",
+        abstention_reason=AbstentionReason.NOT_CHECKWORTHY.value,
+    )
+
+
+class TestSelectInterventionsNotCheckworthy:
+    def test_not_checkworthy_suppressed_from_notes(self):
+        # One verified + one not_checkworthy claim. The not_checkworthy claim
+        # must NOT produce an ABSTAIN action (it is quiet), even though its
+        # base verdict is no_grounding_found. With only a verified claim
+        # remaining and no actions, the plan is PASS_THROUGH.
+        c_ok = _claim("c0")
+        cvs = [
+            ClaimVerdict(claim_id="c0", claim=c_ok, verdict="verified"),
+            _not_checkworthy_cv("c1"),
+        ]
+        plan = select_interventions(cvs)
+        assert plan.overall == InterventionType.PASS_THROUGH
+        # No ABSTAIN action was emitted for the not_checkworthy claim.
+        action_cids = {a.claim_id for a in plan.per_claim_actions}
+        assert "c1" not in action_cids
+        assert all(
+            a.action_type != ClaimActionType.ABSTAIN for a in plan.per_claim_actions
+        )
+
+    def test_not_checkworthy_alongside_real_problem_only_problem_surfaces(self):
+        # A not_checkworthy claim must not be conflated with a genuine
+        # abstention: only the real contradicted claim surfaces an action.
+        c_ok = _claim("c0")
+        c_bad = _claim("c2", subject="Subject2", predicate="is", obj="Wrong")
+        cvs = [
+            ClaimVerdict(claim_id="c0", claim=c_ok, verdict="verified"),
+            _not_checkworthy_cv("c1"),
+            ClaimVerdict(claim_id="c2", claim=c_bad, verdict="contradicted"),
+        ]
+        plan = select_interventions(cvs)
+        assert plan.overall == InterventionType.INTERVENE
+        action_cids = {a.claim_id for a in plan.per_claim_actions}
+        assert action_cids == {"c2"}
+
+    def test_all_inert_draft_passes_through(self):
+        # An all-not_checkworthy draft (e.g. "That's a great question!") would,
+        # without the tally-skip, yield N≥2 abstain actions + 0 verified →
+        # spurious DECLINE. The skip removes them from actions AND verified_count
+        # → empty effective set → PASS_THROUGH (never DECLINE).
+        cvs = [_not_checkworthy_cv("c0"), _not_checkworthy_cv("c1"), _not_checkworthy_cv("c2")]
+        plan = select_interventions(cvs)
+        assert plan.overall == InterventionType.PASS_THROUGH
+        assert plan.per_claim_actions == ()
 
 
 # ---------------------------------------------------------------------------

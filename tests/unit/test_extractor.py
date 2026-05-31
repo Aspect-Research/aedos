@@ -13,7 +13,7 @@ from aedos.layer1_extraction.extractor import (
     ExtractionContext,
     Extractor,
 )
-from aedos.layer1_extraction.triage import TriageDecision
+from aedos.layer1_extraction.triage import AbstentionReason, TriageDecision
 from aedos.layer1_extraction.temporal import BEFORE_PRESENT
 from aedos.llm.client import LLMClient
 
@@ -399,8 +399,12 @@ class TestSourceTextDiscipline:
 # ---------------------------------------------------------------------------
 
 class TestHardClaimDiscipline:
-    def test_entity_not_in_text_is_dropped(self):
-        # Bob is not in text — extractor should drop Bob's claim
+    def test_entity_not_in_text_emits_with_subject_absent_reason(self):
+        # v0.16 WS4 (4a): Bob's subject AND object are absent from the text.
+        # Previously the claim was SILENTLY DROPPED; it is now EMITTED carrying
+        # abstention_reason='subject_absent_from_source' (the walker
+        # short-circuits it pre-lookup to no_grounding_found — abstention, the
+        # conservative outcome). This inverts the v0.15 drop assertion.
         raws = [
             _raw_claim(subject="Asa", object="Google", source_text="Asa works at Google"),
             _raw_claim(subject="Bob", predicate="employed_by", object="Microsoft",
@@ -408,9 +412,14 @@ class TestHardClaimDiscipline:
         ]
         extractor, _ = _make_extractor(raws)
         claims = extractor.extract("Asa works at Google", _default_context())
-        subjects = {c.subject for c in claims}
-        assert "Asa" in subjects
-        assert "Bob" not in subjects
+        by_subject = {c.subject: c for c in claims}
+        assert "Asa" in by_subject
+        assert "Bob" in by_subject  # no longer dropped
+        assert by_subject["Asa"].abstention_reason is None
+        assert (
+            by_subject["Bob"].abstention_reason
+            == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+        )
 
     def test_entity_in_text_is_kept(self):
         raw = _raw_claim(subject="Williams College", object="Massachusetts",
@@ -453,6 +462,97 @@ class TestContrastiveCorrections:
         extractor, _ = _make_extractor([raw])
         claims = extractor.extract("Actually Paris, not London", _default_context())
         assert claims[0].polarity == 0
+
+
+# ---------------------------------------------------------------------------
+# TestAbstentionReasonStamping — v0.16 WS4 (4a): _build_claim NEVER drops a
+# shaped claim silently. The four former early `return None` drops now stamp
+# an abstention_reason and the claim is emitted; the walker short-circuits it
+# pre-lookup. The ONE remaining `return None` is the future-tense filter
+# (TestFutureTenseRejection, unchanged).
+# ---------------------------------------------------------------------------
+
+class TestAbstentionReasonStamping:
+    def test_abstention_reason_defaults_none(self):
+        # A well-formed, checkworthy claim carries no abstention_reason.
+        extractor, _ = _make_extractor([_raw_claim()])
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        assert len(claims) == 1
+        assert claims[0].abstention_reason is None
+
+    def test_self_referential_sets_reason(self):
+        # subject == object (after trim/casefold) → emitted with
+        # abstention_reason='self_referential' (was a silent drop in v0.15).
+        # Subject is present in the text so the hard-claim check passes and
+        # subject_absent does NOT pre-empt self_referential.
+        raw = _raw_claim(
+            subject="Einstein", predicate="born_in", object="Einstein",
+            source_text="Einstein was born in 1879",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Einstein was born in 1879", _default_context())
+        assert len(claims) == 1
+        assert claims[0].abstention_reason == AbstentionReason.SELF_REFERENTIAL.value
+
+    def test_predicate_eq_object_sets_reason(self):
+        # predicate == object (verb repeated into the object slot) → emitted
+        # with abstention_reason='predicate_eq_object'. Subject is in the text
+        # so the hard-claim check passes.
+        raw = _raw_claim(
+            subject="Berlin Wall", predicate="fell", object="fell",
+            source_text="The Berlin Wall fell in 1989",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("The Berlin Wall fell in 1989", _default_context())
+        assert len(claims) == 1
+        assert claims[0].abstention_reason == AbstentionReason.PREDICATE_EQ_OBJECT.value
+
+    def test_subject_absent_sets_reason(self):
+        # Both subject AND object are absent from the source text → emitted
+        # with abstention_reason='subject_absent_from_source'.
+        raw = _raw_claim(
+            subject="Zorblax", predicate="employed_by", object="Acme",
+            source_text="Zorblax works at Acme",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Something entirely unrelated here", _default_context())
+        assert len(claims) == 1
+        assert (
+            claims[0].abstention_reason
+            == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+        )
+
+    def test_inert_prose_sets_not_checkworthy(self):
+        # A claim triaging to INERT_PROSE (no named entity, no number, unknown
+        # predicate) → emitted with abstention_reason='not_checkworthy'. The
+        # subject is present in the text so the hard-claim check passes.
+        raw = _raw_claim(
+            subject="weather", predicate="is_nice", object="pleasant",
+            source_text="the weather is nice",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("the weather is nice", _default_context())
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.triage_decision == TriageDecision.INERT_PROSE
+        assert c.abstention_reason == AbstentionReason.NOT_CHECKWORTHY.value
+
+    def test_reason_precedence(self):
+        # When multiple reasons apply simultaneously, the FIRST in precedence
+        # order wins: subject_absent_from_source > self_referential. Here the
+        # subject == object AND both are absent from the source text — the
+        # hard-claim check (checked first) must win.
+        raw = _raw_claim(
+            subject="Zorblax", predicate="is", object="Zorblax",
+            source_text="Zorblax is Zorblax",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Completely different text", _default_context())
+        assert len(claims) == 1
+        assert (
+            claims[0].abstention_reason
+            == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+        )
 
 
 # ---------------------------------------------------------------------------

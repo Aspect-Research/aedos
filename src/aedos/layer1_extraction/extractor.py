@@ -9,7 +9,7 @@ from ..llm.client import LLMClient
 from .decomposition import decompose_event
 from .normalization import normalize_predicate
 from .temporal import BEFORE_PRESENT, TemporalScope, extract_temporal_scope
-from .triage import TriageDecision, triage
+from .triage import AbstentionReason, TriageDecision, triage
 
 _FIRST_PERSON = re.compile(
     r"^(I|me|my|mine|myself|we|us|our|ours|ourselves)$", re.IGNORECASE
@@ -511,6 +511,9 @@ class Extractor:
         claims: list[Claim] = []
         for raw in flat:
             claim = self._build_claim(raw, text, context)
+            # v0.16 WS4: _build_claim now returns None ONLY for future-tense
+            # claims (Rule 4 filter). Every other shaped claim is returned,
+            # carrying an abstention_reason when malformed / not-checkworthy.
             if claim is not None:
                 claims.append(claim)
 
@@ -523,33 +526,39 @@ class Extractor:
     def _build_claim(
         self, raw: dict, text: str, context: ExtractionContext
     ) -> Optional[Claim]:
+        # v0.16 WS4: this function NEVER returns None for a SHAPED claim. The
+        # four former early `return None` drops (hard-claim, self-referential,
+        # predicate==object, content-less-event) are gone; the first three now
+        # capture an abstention_reason and fall through to the single Claim(...)
+        # construction at the end (the content-less-event filter is DELETED
+        # outright). The walker short-circuits any claim carrying an
+        # abstention_reason pre-lookup (no KB/Tier U/Python/LLM call), so the
+        # §3.2 soundness intent of the old drops is preserved.
+        #
+        # Abstention-reason precedence (FIRST set wins; matches the old
+        # top-to-bottom drop order so a claim that today is dropped by the
+        # hard-claim check still carries subject_absent_from_source):
+        #   subject_absent_from_source → self_referential
+        #     → predicate_eq_object → not_checkworthy
+        #
+        # The ONE remaining `return None` is the future-tense drop (Rule 4):
+        # future claims are not shaped claims to verify. TestFutureTenseRejection
+        # depends on it.
         raw_subject = raw.get("subject", "")
         raw_object = raw.get("object", "")
         reified_id = raw.get("reified_event_id")
 
-        # Hard-claim discipline heuristic: reject claims whose entities don't appear in text
-        if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
-            return None
+        abstention_reason: Optional[str] = None
 
-        # Phase 10.5 Step 6 Batch 6: reject standalone event-occurrence
-        # claims with no verifiable content. When the LLM mis-decomposes
-        # a temporal qualifier ("Churchill was PM during World War II")
-        # by emitting BOTH the primary claim AND a standalone
-        # `(World War II, occurred, '')` event claim, the event claim
-        # has empty object and routes through a predicate the walker
-        # can't ground. The compound aggregator then drags the overall
-        # verdict to abstain even when the primary claim verified. The
-        # right architectural fix is Rule 15 compliance (valid_during_ref
-        # qualifier on the primary), but until the extractor reliably
-        # applies it, filtering these content-less event claims preserves
-        # the primary's verdict.
-        raw_pred_check = (raw.get("predicate") or "").strip().lower()
-        if (
-            raw_pred_check in {"occurred", "happened", "took_place", "took place"}
-            and not raw_object.strip()
-            and not reified_id
-        ):
-            return None
+        # Hard-claim discipline: subject/object absent from source text.
+        if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
+            abstention_reason = AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+
+        # v0.16 WS4 Deletion #2: the content-less occurred/happened/took_place
+        # event filter is REMOVED (contract item 4, obsolete). A standalone
+        # `(World War II, occurred, '')` claim now flows; per-claim verdicts
+        # are independent (no compound-verdict drag), and an empty object
+        # grounds to no_grounding_found — abstention, the conservative outcome.
 
         # (S2) Date-valued event predicate selection happens in the extraction
         # prompt (Rule 23): "Einstein was born in 1879" arrives as
@@ -581,10 +590,11 @@ class Extractor:
         # P571, `born_on` → P569) directly, the strict drop preserves
         # soundness at the cost of accuracy on these cases.
         if (
-            raw_subject.strip().casefold() == raw_object.strip().casefold()
+            abstention_reason is None
+            and raw_subject.strip().casefold() == raw_object.strip().casefold()
             and raw_subject.strip()
         ):
-            return None
+            abstention_reason = AbstentionReason.SELF_REFERENTIAL.value
 
         # Phase 10.5 Step 6 Batch 8+: also drop claims where the
         # PREDICATE equals the object (after trim/case-fold). This is
@@ -598,8 +608,11 @@ class Extractor:
         # potentially producing a §3.2 false-contradiction shape.
         raw_pred_check = (raw.get("predicate") or "").strip().casefold()
         raw_obj_check = raw_object.strip().casefold()
-        if raw_pred_check and raw_obj_check and raw_pred_check == raw_obj_check:
-            return None
+        if (
+            abstention_reason is None
+            and raw_pred_check and raw_obj_check and raw_pred_check == raw_obj_check
+        ):
+            abstention_reason = AbstentionReason.PREDICATE_EQ_OBJECT.value
 
         verb_tense = raw.get("verb_tense", "present")
         scope = extract_temporal_scope(
@@ -648,6 +661,10 @@ class Extractor:
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
         )
+        # v0.16 WS4: inert prose is the lowest-precedence reason — only stamp
+        # it if no malformed reason was already captured above.
+        if abstention_reason is None and triage_decision == TriageDecision.INERT_PROSE:
+            abstention_reason = AbstentionReason.NOT_CHECKWORTHY.value
 
         return Claim(
             claim_id=str(uuid.uuid4()),
@@ -662,6 +679,7 @@ class Extractor:
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
             reified_event_id=reified_id,
+            abstention_reason=abstention_reason,
         )
 
     def _canonicalize(self, subject: str, asserting_party: str) -> str:

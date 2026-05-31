@@ -627,3 +627,139 @@ class TestWalkerPolarityTracking:
         c = _claim(polarity=0)
         result = walker.walk(c, _ctx())
         assert 0 in result.trace.polarity_trace
+
+
+# ---------------------------------------------------------------------------
+# TestWalkerAbstentionReasonShortCircuit — v0.16 WS4 (4b): a claim carrying an
+# extraction-layer abstention_reason is short-circuited to no_grounding_found
+# at walk() entry, BEFORE any Tier U / KB / Python / LLM lookup. This is the
+# §3.2-soundness guard: malformed triples (self_referential /
+# predicate_eq_object) must never reach a KB lookup that could false-contradict.
+# ---------------------------------------------------------------------------
+
+class _CallCountingTierU:
+    """Tier U whose lookup methods record whether they were called — to pin
+    the pre-lookup guarantee (the short-circuit must fire before any lookup)."""
+
+    def __init__(self):
+        self.lookup_calls = 0
+        self.object_conflict_calls = 0
+
+    def lookup(self, claim, current_time=None, exclude_row_ids=None):
+        self.lookup_calls += 1
+        return LookupResult(found=False)
+
+    def lookup_object_conflict(self, claim, current_time=None):
+        self.object_conflict_calls += 1
+        return LookupResult(found=False)
+
+    def write(self, *a, **kw):
+        pass
+
+
+class _CallCountingKBVerifier:
+    def __init__(self):
+        self.verify_calls = 0
+
+    def verify(self, claim, current_time=None, source_text=None):
+        self.verify_calls += 1
+        return KBVerdict(verdict=KBVerdictType.NO_MATCH, subject_kb_id="Q76")
+
+
+def _make_counting_walker():
+    db = open_memory_db()
+    transport = MockTransport(routing_hint="kb_resolvable")
+    client = LLMClient(_transport=transport)
+    pt = PredicateTranslation(db=db, llm_client=client)
+
+    class StubKB:
+        def resolve_entity(self, r, lc): return [ResolutionCandidate("Q76", score=0.9)]
+        def lookup_statements(self, e, p): return []
+        def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+
+    resolver = EntityResolver(kb_protocol=StubKB(), db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=StubKB())
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+
+    tier_u = _CallCountingTierU()
+    kb_verifier = _CallCountingKBVerifier()
+    walker = Walker(
+        tier_u=tier_u,
+        kb_verifier=kb_verifier,
+        python_verifier=PythonVerifier(),
+        substrate=substrate,
+    )
+    return walker, tier_u, kb_verifier
+
+
+def _reasoned_claim(abstention_reason, subject="Einstein", predicate="born_in",
+                    object_val="Einstein", polarity=1):
+    return Claim(
+        claim_id="rc1",
+        subject=subject,
+        predicate=predicate,
+        object=object_val,
+        polarity=polarity,
+        source_text="test",
+        asserting_party="user_test",
+        triage_decision=TriageDecision.VERIFY,
+        abstention_reason=abstention_reason,
+    )
+
+
+class TestWalkerAbstentionReasonShortCircuit:
+    def test_abstention_reason_short_circuits_pre_lookup(self):
+        # A claim carrying abstention_reason='self_referential' walks to
+        # no_grounding_found with the reason echoed, AND neither the Tier U
+        # lookup nor the KB verify was EVER called (the pre-lookup guarantee).
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim("self_referential")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "self_referential"
+        assert tier_u.lookup_calls == 0
+        assert tier_u.object_conflict_calls == 0
+        assert kb_verifier.verify_calls == 0
+        # Zero budget consumed — the guard returns before the budget loop.
+        assert result.budget_consumption.llm_calls == 0
+
+    def test_predicate_eq_object_short_circuits_pre_lookup(self):
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim("predicate_eq_object", predicate="fell", object_val="fell")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "predicate_eq_object"
+        assert tier_u.lookup_calls == 0
+        assert kb_verifier.verify_calls == 0
+
+    def test_not_checkworthy_short_circuits_pre_lookup(self):
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim("not_checkworthy", predicate="is_nice", object_val="pleasant")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "not_checkworthy"
+        assert tier_u.lookup_calls == 0
+        assert kb_verifier.verify_calls == 0
+
+    def test_content_less_event_walks_to_no_grounding_never_contradicted(self):
+        # v0.16 WS4 Deletion #2 regression: the content-less-event extractor
+        # filter is removed; a (World War II, occurred, '') shape now reaches
+        # the walker with abstention_reason=None. With an empty object and no
+        # KB grounding it must abstain (no_grounding_found) — and crucially
+        # must NEVER yield 'contradicted' (the conservative-outcome invariant).
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = Claim(
+            claim_id="cle1",
+            subject="World War II",
+            predicate="occurred",
+            object="",
+            polarity=1,
+            source_text="World War II occurred",
+            asserting_party="user_test",
+            triage_decision=TriageDecision.VERIFY,
+            abstention_reason=None,
+        )
+        result = walker.walk(claim, _ctx())
+        assert result.verdict != "contradicted"
+        assert result.verdict == "no_grounding_found"
