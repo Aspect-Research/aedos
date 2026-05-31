@@ -203,7 +203,6 @@ The codebase is laid out by pipeline layer:
 ```
 src/aedos/
   layer1_extraction/    extraction, normalization, decomposition, temporal, triage
-  layer2_routing/       the router and structural validator
   layer3_substrate/     entity resolver, the three oracles, consistency checker
   layer4_sources/       Tier U, the KB protocol + Wikidata adapter, Python
                         verifier, the derivation walker

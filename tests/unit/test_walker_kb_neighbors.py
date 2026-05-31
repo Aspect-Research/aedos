@@ -125,6 +125,15 @@ def _make_substrate(
     else:
         sub.find_neighbors.return_value = list(sub_neighbors)
     sub.consult.return_value = SubsumptionResult(verdict=consult_verdict)
+    pt = MagicMock()
+    # Realistic predicate metadata for the walker's oracle reads
+    # (routing_hint / user_subject_required). A bare MagicMock would expose a
+    # truthy `user_subject_required`, spuriously tripping the walker's
+    # user_subject_required anomaly guard before KB enumeration runs.
+    pt_meta = MagicMock()
+    pt_meta.routing_hint = "kb_resolvable"
+    pt_meta.user_subject_required = False
+    pt.consult.return_value = pt_meta
     resolver = MagicMock()
     if resolved_qid is None:
         resolver.resolve.return_value = []
@@ -132,7 +141,6 @@ def _make_substrate(
         resolver.resolve.return_value = [
             ResolutionCandidate(kb_identifier=resolved_qid, score=1.0)
         ]
-    pt = MagicMock()
     return Substrate(
         resolver=resolver,
         predicate_translation=pt,
