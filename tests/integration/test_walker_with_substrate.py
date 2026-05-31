@@ -12,7 +12,12 @@ from aedos.layer3_substrate.predicate_distribution import PredicateDistributionO
 from aedos.layer3_substrate.predicate_translation import PredicateTranslation
 from aedos.layer3_substrate.resolver import EntityResolver
 from aedos.layer3_substrate.subsumption import SubsumptionOracle
-from aedos.layer4_sources.kb_protocol import ResolutionCandidate, Statement, SubsumptionResult
+from aedos.layer4_sources.kb_protocol import (
+    ResolutionCandidate,
+    Statement,
+    SubsumptionResult,
+    TransitivePathResult,
+)
 from aedos.layer4_sources.kb_verifier import KBVerdictType, KBVerifier
 from aedos.layer4_sources.python_verifier import PythonVerifier
 from aedos.layer4_sources.tier_u import TierU
@@ -25,7 +30,9 @@ from aedos.llm.client import LLMClient
 # ---------------------------------------------------------------------------
 
 _RESOLUTIONS = {"Obama": "Q76", "President": "Q11696", "Honolulu": "Q18094",
-                "Berlin": "Q64", "Germany": "Q183"}
+                "Berlin": "Q64", "Germany": "Q183",
+                "Williamstown": "Q771397", "Massachusetts": "Q771",
+                "United States": "Q30"}
 
 
 class MockTransport:
@@ -54,19 +61,26 @@ class MockTransport:
 
 
 class MockKB:
-    def __init__(self, stmts=None):
+    def __init__(self, stmts=None, transitive_paths=None):
         self._stmts = stmts or []
+        # v0.16 WS2 §1: (source_qid, target_qid) pairs whose part_of/is_a
+        # transitive path HOLDS. Hand-rolled stub must implement the new
+        # KBProtocol method (MagicMock-based stubs get it free).
+        self._transitive_paths = set(transitive_paths or ())
     def resolve_entity(self, r, lc):
         qid = _RESOLUTIONS.get(r)
         return [ResolutionCandidate(qid, score=0.9)] if qid else []
     def lookup_statements(self, e, p): return list(self._stmts)
     def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+    def verify_transitive_path(self, source, target, kb_property, relation_type=None):
+        return TransitivePathResult(holds=(source, target) in self._transitive_paths)
 
 
-def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0, slot_to_qualifier=None):
+def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0,
+                      slot_to_qualifier=None, kb=None, wire_kb=False):
     db = open_memory_db()
     client = LLMClient(_transport=MockTransport(kb_property, single_valued, slot_to_qualifier))
-    kb = MockKB(kb_stmts)
+    kb = kb or MockKB(kb_stmts)
     pt = PredicateTranslation(db=db, llm_client=client)
     resolver = EntityResolver(kb_protocol=kb, db=db)
     sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
@@ -87,7 +101,14 @@ def _make_full_system(kb_stmts=None, kb_property="P39", single_valued=0, slot_to
     tier_u.write = _write_external  # type: ignore[method-assign]
     kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
     py_verifier = PythonVerifier()
-    walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier, substrate=substrate)
+    # v0.16 WS2 §4: premise-forward + KB-neighbor discovery require the walker's
+    # `kb` to be wired. Most mechanics tests construct the walker without it
+    # (kb=None disables KB-side discovery); premise-forward tests pass
+    # wire_kb=True to drive the new bidirectional-meet grounding.
+    walker = Walker(
+        tier_u=tier_u, kb_verifier=kb_verifier, python_verifier=py_verifier,
+        substrate=substrate, kb=(kb if wire_kb else None),
+    )
     return walker, tier_u, db
 
 
@@ -265,9 +286,18 @@ class TestWalkerSubsumptionDerivation:
         edge_types = [e.edge_type for e in result.trace.edges]
         assert "subsumption_traversal" in edge_types
 
-    def test_distribution_gate_blocks_invalid_traversal(self):
+    def test_distribution_neither_rejected_at_verify_time(self):
         # der_multihop_009: `prefers` does NOT distribute over is_a. Even with a
-        # subsumption row golden_retriever is_a dog, the gate must stay closed.
+        # subsumption row golden_retriever is_a dog (the structural edge HOLDS),
+        # the substitution must not ground the claim.
+        #
+        # v0.16 WS2 §3.2 (gate -> ranker): pre-v0.16 the distribution `neither`
+        # verdict was a GATE that skipped the relation outright. Now the relation
+        # is EXPLORED (distribution is a ranker), but `_verify_chain` REJECTS the
+        # is_a substitution because the kind-entailment authority
+        # (distribution=neither) says `prefers` does not transfer across is_a.
+        # OUTCOME is identical to the old gate (no_grounding_found, no surviving
+        # subsumption_traversal edge) — reached soundly, at verify time.
         walker, tier_u, db = _make_full_system()
         tier_u.write(_claim(subject="Asa", predicate="prefers", object_val="golden_retriever"))
         _seed_subsumption(db, "golden_retriever", "dog", "is_a")
@@ -287,6 +317,44 @@ class TestWalkerSubsumptionDerivation:
         goal = _claim(subject="Obama", predicate="has_property", object_val="mortal")
         result = walker.walk(goal, _ctx())
         assert result.verdict == "verified"
+
+
+class TestWalkerPremiseForward:
+    """v0.16 WS2 §4: premise-forward / bidirectional-meet search.
+
+    The walker seeds a forward frontier from a Tier U premise about the goal's
+    subject (surfaced by `lookup_object_conflict` as a DIFFERENT object O′),
+    resolves O′ and the goal object O to Q-ids, and confirms O is reachable from
+    O′ via the part_of transitive path. When it grounds, it emits a
+    `premise_forward` trace edge and substitutes O→O′ so the walk re-looks-up
+    the grounded premise. This grounds WITHOUT any seeded subsumption /
+    distribution substrate rows — the KB transitive primitive is the evidence."""
+
+    def test_premise_forward_meets_goal(self):
+        # Tier U: lives_in(Asa, Williamstown). Goal: lives_in(Asa, Massachusetts).
+        # Williamstown part_of Massachusetts (KB transitive path holds). No
+        # subsumption/distribution rows are seeded — premise-forward is the
+        # only path that can ground this.
+        kb = MockKB(transitive_paths={("Q771397", "Q771")})  # Williamstown ⊂ MA
+        walker, tier_u, db = _make_full_system(kb=kb, wire_kb=True)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Massachusetts")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "verified"
+        edge_types = [e.edge_type for e in result.trace.edges]
+        assert "premise_forward" in edge_types
+
+    def test_premise_forward_abstains_when_path_does_not_hold(self):
+        # Same shape, but the KB transitive path does NOT hold (Williamstown is
+        # NOT part_of Germany). Premise-forward must not ground it — abstain,
+        # never false-verify (§3.2).
+        kb = MockKB(transitive_paths=set())  # no path holds
+        walker, tier_u, db = _make_full_system(kb=kb, wire_kb=True)
+        tier_u.write(_claim(subject="Asa", predicate="lives_in", object_val="Williamstown"))
+        goal = _claim(subject="Asa", predicate="lives_in", object_val="Germany")
+        result = walker.walk(goal, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert "premise_forward" not in [e.edge_type for e in result.trace.edges]
 
 
 class TestWalkerPolarityVerdicts:

@@ -43,6 +43,17 @@ class VerificationContext:
 class WalkerBudget:
     wall_clock_seconds: float = 30.0
     max_llm_calls: int = 10
+    # v0.16 WS2 §5: per-walk fanout bound on discovery candidates. The depth==0
+    # cap on KB-neighbor enumeration is removed to enable bidirectional/forward
+    # search, but un-capped blind incoming enumeration fans out
+    # multiplicatively across depth (the D51 18-min / OOM blowup). The
+    # wall-clock budget is only sampled at depth boundaries, so a single
+    # depth's frontier can explode before the next check; this bound is sampled
+    # WITHIN the frontier loop (every node's discovery) so the walker abstains
+    # the moment cumulative expansion crosses the bound — making the budget the
+    # true cost bound. Permissive default (config-tunable per contract §0.11
+    # decision 6); seeds + premise-forward keep real walks far below it.
+    max_frontier_expansions: int = 2000
 
 
 @dataclass
@@ -201,11 +212,17 @@ def _apply_assertion_designation(base_verdict: str, trace: JustificationTrace) -
 
 
 def _distribution_directions(verdict) -> set[str]:
-    """Neighbor directions the walker may traverse for a distribution verdict.
+    """Preferred neighbor directions (ranking hint), not a gate.
+
+    v0.16 WS2 §3: distribution is demoted from a GATE to a RANKER. This maps
+    a verdict to the directions the predicate is EXPECTED to distribute over;
+    `_discover_chains` uses the set to ORDER candidates (preferred-first), NOT
+    to skip a relation. Soundness moved to `_verify_chain` — a `neither`
+    verdict (empty set) no longer forecloses the relation; it deprioritizes it.
 
     distributes_up   (P(X) and X R Y => P(Y)): to verify P(E), descend to children.
     distributes_down (P(Y) and X R Y => P(X)): to verify P(E), ascend to parents.
-    both: either direction. neither: gate closed.
+    both: either direction. neither: no preference (empty — ranks last).
     """
     v = verdict.value if hasattr(verdict, "value") else verdict
     if v == "distributes_up":
@@ -324,6 +341,12 @@ class Walker:
         visited: dict[str, Claim] = {}
         depth = 0
         current_verdict: Optional[str] = None
+        # v0.16 WS2 §5: cumulative discovery-expansion counter. Sampled WITHIN
+        # the frontier loop so an un-capped KB-enumeration fanout (the removed
+        # depth==0 cap's failure mode) can't explode a single depth's frontier
+        # past the budget before the depth-boundary wall-clock check fires.
+        total_expansions = 0
+        fanout_exceeded = False
 
         while frontier and depth < self._max_depth:
             # Budget check
@@ -374,10 +397,40 @@ class Walker:
                     # the rest of this frontier so a conflicting verdict is caught.
                     continue
 
-                # Expand via substrate (ungrounded nodes only)
-                expanded, llm_delta = self._expand_via_substrate(node, trace, depth)
+                # v0.16 WS2 §2: discover liberally, verify soundly. Discovery
+                # proposes candidate substitutions (subsumption neighbors +
+                # premise-forward) without the distribution gate; _verify_chain
+                # (called inside _discover_chains per candidate) admits a
+                # candidate only if the taxonomy/transitive edge is confirmed
+                # in a source. Soundness lives entirely at verify time (§3.2).
+                expanded, llm_delta = self._discover_chains(node, trace, depth)
                 llm_calls += llm_delta
                 next_frontier.extend(expanded)
+                total_expansions += len(expanded)
+
+                # v0.16 WS2 §5 fanout bound: abstain the moment cumulative
+                # discovery crosses the budget. This is the cost bound that
+                # replaces the removed depth==0 cap — without it, blind
+                # incoming enumeration fans out multiplicatively (OOM in the
+                # D51 worst case). Breaking mid-frontier stops accumulation
+                # before the next node enumerates.
+                if total_expansions > budget.max_frontier_expansions:
+                    fanout_exceeded = True
+                    break
+
+            if fanout_exceeded:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "fanout"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_fanout",
+                    budget_consumption=consumption,
+                )
 
             if current_verdict in ("verified", "contradicted"):
                 break
@@ -904,32 +957,40 @@ class Walker:
         except Exception:
             return False
 
-    def _expand_via_substrate(
+    def _discover_chains(
         self, node: Claim, trace: JustificationTrace, depth: int
     ) -> tuple[list[Claim], int]:
-        """Expand node into subsumed claims. Returns (new_nodes, llm_calls).
+        """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
+
+        Replaces `_expand_via_substrate`. Composes the (now un-gated)
+        subsumption-neighbor expansion with the new premise-forward frontier,
+        proposing candidate substitution claims WITHOUT the distribution gate
+        foreclosing relations. Each candidate is admitted to the returned
+        frontier only if `_verify_chain` confirms the taxonomy/transitive edge
+        in a source (§3.2 never-false-verify: soundness lives at verify time).
 
         The walker does not emit a predicate-equivalence expansion edge: an
         equivalent predicate shares the same `kb_property`, so its KB lookup is
         identical to the original's, and `TierU.lookup` stage 3 already
-        broadens by the same `predicate_translation` oracle. The edge was
-        redundant (D7); only distribution-gated subsumption traversal remains.
+        broadens by the same `predicate_translation` oracle (D7).
 
-        Phase H D5: when the substrate's subsumption oracle produces no
-        expansion for a relation_type (no cached rows match), the walker
-        falls back to live KB neighbor enumeration via
-        `_expand_via_kb_neighbors`. Cheapest-path-first per D5 design
-        Decision 5.
+        Discovery sources (no gate; distribution demoted to RANKER per §3):
+          1. Subsumption-neighbor expansion. For each relation_type, consult
+             predicate_distribution to learn the PREFERRED direction (ranking
+             hint only — `neither` no longer skips the relation), gather
+             substrate `find_neighbors` AND (now un-capped, §5) KB
+             `enumerate_neighbors` candidates, ORDER preferred-direction
+             neighbors first, and admit each via `_verify_chain`.
+          2. Premise-forward expansion (`_expand_from_premises`, §4): seed a
+             forward frontier from Tier U facts about the goal's subject and
+             expand via bounded OUTGOING KB edges to meet the goal's object.
+
+        Trace edges carry the existing keys PLUS a `discovery_source`
+        observability key (`"subsumption_neighbor"` | `"premise_forward"`).
         """
         expanded: list[Claim] = []
         llm_delta = 0
 
-        # Distribution-gated subsumption traversal.
-        # For goal claim P(E): consult predicate_distribution to learn whether
-        # the predicate distributes over the relation; if so, substitute the
-        # slot entity with a taxonomy neighbor and emit a subsumption_traversal
-        # edge. distributes_up => descend to children; distributes_down =>
-        # ascend to parents; neither => gate closed.
         for relation_type in ("is_a", "part_of"):
             try:
                 dist = self._substrate.predicate_distribution.consult(
@@ -939,13 +1000,24 @@ class Walker:
             except Exception:
                 continue
 
-            directions = _distribution_directions(dist.verdict)
-            if not directions:
-                continue  # gate closed (neither)
+            # v0.16 WS2 §3: distribution is a RANKER, not a gate. `neither` no
+            # longer forecloses the relation — it deprioritizes it (empty
+            # preferred set ranks every direction last). Soundness is enforced
+            # downstream in _verify_chain (the transitive-path/substrate edge
+            # check), so a wrong `neither` can no longer cause a false-abstain
+            # by skipping a genuinely-entailing chain, and a wrong non-`neither`
+            # can no longer admit an unentailed chain.
+            preferred = _distribution_directions(dist.verdict)
+            verdict_label = (
+                dist.verdict.value if hasattr(dist.verdict, "value")
+                else str(dist.verdict)
+            )
 
             sub_produced: list[Claim] = []
             for slot in ("subject", "object"):
                 slot_val = node.subject if slot == "subject" else node.object
+                if not slot_val:
+                    continue
                 entity_ref = EntityRef(namespace="aedos", identifier=slot_val)
                 try:
                     sub_neighbors = self._substrate.subsumption.find_neighbors(
@@ -953,10 +1025,24 @@ class Walker:
                     )
                 except Exception:
                     continue
-                for sub in sub_neighbors:
-                    if sub.direction not in directions:
-                        continue
+                # Rank: preferred-direction neighbors first (ranking hint),
+                # but KEEP all of them (no direction gate, §3).
+                ranked = sorted(
+                    sub_neighbors,
+                    key=lambda s: 0 if s.direction in preferred else 1,
+                )
+                for sub in ranked:
                     new_id = sub.entity.identifier
+                    # SOUND admission: confirm the taxonomy edge before
+                    # substituting. _verify_chain routes child->parent through
+                    # the KB transitive primitive (Q-ids) or the substrate
+                    # consult (aedos surface forms), or — for intensional is_a
+                    # with no KB path — the distribution kind-entailment verdict.
+                    if not self._verify_chain(
+                        node, sub.entity.identifier, sub.direction,
+                        relation_type, slot, dist.verdict, trace,
+                    ):
+                        continue
                     if slot == "subject":
                         new_node = _claim_from_parts(node, subject=new_id)
                     else:
@@ -968,75 +1054,332 @@ class Walker:
                         metadata={
                             "relation_type": relation_type,
                             "direction": sub.direction,
-                            "distribution": dist.verdict.value,
+                            "distribution": verdict_label,
                             "subsumption_row_id": sub.row_id,
+                            "discovery_source": "subsumption_neighbor",
                             "polarity": node.polarity,
                         },
                     ))
                     sub_produced.append(new_node)
             expanded.extend(sub_produced)
 
-            # Phase H D5 fallback: substrate oracle had nothing for this
-            # relation_type → try live KB neighbor enumeration. Only fires
-            # when the distribution gate is open (`directions` non-empty)
-            # and substrate produced nothing. Capped to depth==0 (the
-            # initial frontier) — without this cap, the D51 reverse-direction
-            # fanout (~20 entities per call × 5 properties × 2 slots × 2
-            # relations × per-depth multiplication) blew past 18-min per-case
-            # wall-clock in the first D51 diagnostic. KB-enumerated
-            # children become Q-id-keyed claims that the walker still
-            # explores via Tier U / KB verifier; further KB enumeration
-            # on those Q-id claims rarely yields useful premises and
-            # multiplies cost catastrophically.
-            if not sub_produced and depth == 0:
+            # v0.16 WS2 §5: the depth==0 cap on KB-neighbor enumeration is
+            # REMOVED. The D51 18-min blowup was a multiplicative-fanout
+            # problem; it is now bounded structurally rather than by a depth
+            # cap: (a) _verify_chain admits only CONFIRMED edges to the
+            # frontier (collapsing the un-verified-substitution fanout the cap
+            # was guarding against), (b) the premise-forward frontier (§4)
+            # seeds expansion from a bounded Tier U premise set rather than
+            # blind taxonomy enumeration, and (c) the existing
+            # _DEFAULT_NEIGHBOR_REVERSE_LIMIT=20 + the walk loop's max_depth +
+            # wall-clock/LLM budget remain as the cost bounds. Removing the cap
+            # is required for the bidirectional/forward search (contract item e).
+            if not sub_produced:
                 kb_produced = self._expand_via_kb_neighbors(
-                    node, relation_type, directions, dist.verdict, trace
+                    node, relation_type, preferred, dist.verdict, trace
                 )
                 expanded.extend(kb_produced)
 
+        # Discovery source 2: premise-forward frontier (§4).
+        try:
+            premise_forward = self._expand_from_premises(node, trace)
+            expanded.extend(premise_forward)
+        except Exception:
+            pass
+
         return expanded, llm_delta
+
+    def _verify_chain(
+        self,
+        node: Claim,
+        neighbor_id: str,
+        direction: str,
+        relation_type: str,
+        slot: str,
+        distribution_verdict,
+        trace: JustificationTrace,
+    ) -> bool:
+        """v0.16 WS2 §2/§3.2/§6: the SOUND per-edge admission check.
+
+        Where `_discover_chains` proposes liberally, this gate admits a
+        substitution ONLY IF the taxonomy/transitive edge actually holds in a
+        source — preserving the §3.2 never-false-verify invariant now that the
+        distribution gate is demoted to a ranker. A `neither` predicate (e.g.
+        `prefers × is_a`) is still explored, but rejected here, so the OUTCOME
+        is identical to the old gate (no_grounding_found) for a SOUND reason
+        (verify-time rejection, not discovery-time skip).
+
+        Duality note (§2b): this handles the SLOT-SUBSTITUTION case (the goal
+        slot is a taxonomic ancestor/descendant of a grounded premise's slot).
+        The verifier-internal SPARQL ASK (`kb_verifier._subsumption_upgrades`)
+        handles the dual SUBJECT-FIXED/value-subsumption case (a KB statement
+        value is more specific than the claimed value). They are duals, not
+        duplicates, and must not be merged.
+
+        Two-axis soundness (contract item g — the predicate_distribution split):
+          - STRUCTURAL EDGE (does the taxonomy hop hold in a source?): confirmed
+            by the KB transitive primitive when both endpoints resolve to Q-ids,
+            else by `SubsumptionOracle.consult` (KB -> substrate -> LLM, §6) on
+            the aedos surface forms. For find_neighbors-derived candidates the
+            substrate row already exists, so consult resolves to that row (the
+            sound evidence) without an LLM call; only a genuinely-absent edge
+            reaches the LLM last-resort authority.
+          - ENTAILMENT VALIDITY (does the PREDICATE transfer across that hop?):
+            * `part_of` containment is a GRAPH property: locative-containment
+              predicates distribute over part_of, so a confirmed structural edge
+              IS sufficient and the distribution verdict is a pure RANKER here.
+            * `is_a` kind-entailment is a PREDICATE-SEMANTICS property: no KB
+              transitive path expresses "mortal distributes_down", so the
+              distribution oracle is the kind-entailment AUTHORITY — a confirmed
+              is_a structural edge is admitted ONLY IF the distribution verdict
+              is non-`neither`. This is exactly why `prefers × is_a` (verdict
+              `neither`) is REJECTED even though golden_retriever is_a dog holds
+              structurally: the edge is real, but `prefers` does not distribute.
+
+        The §3.2 never-false-verify invariant lives entirely here: with the
+        distribution gate demoted to a ranker, a `neither` predicate is still
+        EXPLORED but its substitution is REJECTED (verify-time), giving the same
+        OUTCOME as the old gate for a sound reason.
+
+        The WS3 nogood cache is consulted FIRST (entailment-safety): a nogood
+        flagging "this path does NOT hold" vetoes the edge before any
+        confirmation. Optional / fail-open no-op until WS3 wires the cache.
+        """
+        slot_val = node.subject if slot == "subject" else node.object
+
+        # Orient the edge child -> parent.
+        if direction == "parent":
+            child_surface, parent_surface = slot_val, neighbor_id
+        else:  # "child": the neighbor is subsumed by the slot value
+            child_surface, parent_surface = neighbor_id, slot_val
+
+        # is_a kind-entailment authority gate: the distribution oracle decides
+        # whether the predicate transfers across an is_a hop at all. A `neither`
+        # verdict forecloses is_a substitution regardless of a real structural
+        # edge (the `prefers × is_a` case). part_of containment is a graph
+        # property — distribution does not gate it (pure ranker, §3b).
+        if relation_type == "is_a":
+            dv = (
+                distribution_verdict.value
+                if hasattr(distribution_verdict, "value")
+                else distribution_verdict
+            )
+            if not dv or dv == "neither":
+                return False
+
+        # --- Structural edge confirmation ---
+        # 1. KB transitive-path (sound, when both endpoints resolve to Q-ids).
+        if self._kb is not None:
+            child_qid = self._resolve_qid(node, child_surface, slot)
+            parent_qid = self._resolve_qid(node, parent_surface, slot)
+            if child_qid and parent_qid:
+                # WS3 nogood cache consult FIRST (entailment-safety): a nogood
+                # vetoes a path flagged "does NOT hold". Optional — fail-open
+                # no-op until WS3 wires the cache. A True veto rejects the edge.
+                if self._nogood_vetoes(child_qid, parent_qid, relation_type):
+                    return False
+                try:
+                    tp = self._kb.verify_transitive_path(
+                        child_qid, parent_qid, None, relation_type=relation_type
+                    )
+                except Exception:
+                    tp = None
+                if tp is not None and getattr(tp, "holds", False):
+                    return True
+                # Path not confirmed — fall through to substrate/LLM consult.
+
+        # 2. Substrate consult (KB -> substrate -> LLM, §6) on aedos surface forms.
+        try:
+            verdict = self._substrate.subsumption.consult(
+                EntityRef("aedos", child_surface),
+                EntityRef("aedos", parent_surface),
+                relation_type,
+            )
+            v = verdict.verdict
+            v = v.value if hasattr(v, "value") else v
+            # child -> parent edge: consistent verdicts are "child subsumed by
+            # parent" (a=child, b=parent => a_subsumed_by_b) or equivalent.
+            if v in ("a_subsumed_by_b", "equivalent"):
+                return True
+        except Exception:
+            pass
+
+        return False
+
+    def _resolve_qid(self, node: Claim, surface: str, slot: str) -> Optional[str]:
+        """Resolve a surface form to a KB Q-id via the substrate resolver.
+        Returns the Q-id string (starting with 'Q') or None. Fail-open: any
+        resolution failure / non-Q candidate returns None (the caller falls
+        back to the substrate consult path). Never raises."""
+        if not surface:
+            return None
+        # An already-resolved Q-id (e.g. a KB-enumerated neighbor) passes
+        # through without a redundant resolver round-trip.
+        if surface.startswith("Q") and surface[1:].isdigit():
+            return surface
+        try:
+            lc = LocalContext(
+                predicate=node.predicate,
+                slot_position=slot,
+                asserting_party=node.asserting_party,
+                source_text=node.source_text,
+                claim_subject=node.subject,
+                claim_predicate=node.predicate,
+                claim_object=node.object,
+                claim_id=node.claim_id,
+            )
+            candidates = self._substrate.resolver.resolve(surface, lc)
+        except Exception:
+            return None
+        if not candidates:
+            return None
+        qid = candidates[0].kb_identifier
+        if qid and qid.startswith("Q"):
+            return qid
+        return None
+
+    def _nogood_vetoes(
+        self, child_qid: str, parent_qid: str, relation_type: str
+    ) -> bool:
+        """v0.16 WS3 hook (entailment-safety): consult the bounded nogood
+        cache (substrate_exceptions) for a flag that this transitive path does
+        NOT hold for (relation_type, child -> parent). Until WS3 wires the
+        `SubstrateExceptionCache`, the lookup is an additive fail-open no-op
+        (always returns False — no veto). The walker accesses the optional
+        cache via `getattr` so this works before WS3 lands and after, with no
+        signature change here."""
+        cache = getattr(self, "_exception_cache", None)
+        if cache is None:
+            cache = getattr(self._kb_verifier, "_exception_cache", None)
+        if cache is None:
+            return False
+        try:
+            return bool(
+                cache.is_nogood(
+                    relation_type=relation_type,
+                    source_identifier=child_qid,
+                    target_identifier=parent_qid,
+                )
+            )
+        except Exception:
+            return False
+
+    def _expand_from_premises(
+        self, node: Claim, trace: JustificationTrace
+    ) -> list[Claim]:
+        """v0.16 WS2 §4: premise-forward frontier.
+
+        Seed a forward frontier from Tier U facts about the goal's subject and
+        expand via bounded OUTGOING KB edges, meeting the goal's object.
+
+        For goal P(S, O): the walker already has Tier U premises about S with a
+        DIFFERENT object O' (surfaced by `lookup_object_conflict`). Premise-
+        forward resolves O' to a Q-id, confirms the goal's object O is reachable
+        from O' via the part_of transitive path
+        (`verify_transitive_path(O'_qid, O_qid, part_of)`), and — when it grounds
+        — emits a `premise_forward` trace edge and the substituted claim P(S, O')
+        as a candidate (which the walk loop re-looks-up against the grounding
+        Tier U premise). This is the BIDIRECTIONAL meet: subsumption-neighbor
+        discovery expands DOWN from the goal object; premise-forward expands UP
+        from the premise object; they meet in the middle. It replaces the
+        depth==0 cap (§5) as the cost-control mechanism (the forward frontier is
+        seeded by a small set of premises, not blind enumeration).
+
+        Fail-open: any resolution/KB failure returns no candidate for that
+        premise; never raises. Bounded by the OUTGOING (un-LIMIT'd, naturally
+        small) fanout of `verify_transitive_path` and the walk loop's max_depth.
+        """
+        if self._kb is None:
+            return []
+        if node.polarity != 1 or not node.object:
+            return []
+
+        try:
+            oc_result = self._tier_u.lookup_object_conflict(node)
+        except Exception:
+            return []
+        if not oc_result.found:
+            return []
+
+        goal_qid = self._resolve_qid(node, node.object, "object")
+        if not goal_qid:
+            return []
+
+        expanded: list[Claim] = []
+        for row in oc_result.rows:
+            premise_obj = row.get("object")
+            if not premise_obj:
+                continue
+            premise_qid = self._resolve_qid(node, premise_obj, "object")
+            if not premise_qid:
+                continue
+            # Premise object O' reaches goal object O via part_of? (O' is the
+            # more specific place; O the ancestor — Williamstown -> US.)
+            try:
+                tp = self._kb.verify_transitive_path(
+                    premise_qid, goal_qid, None, relation_type="part_of"
+                )
+            except Exception:
+                continue
+            if tp is None or not getattr(tp, "holds", False):
+                continue
+            # Grounded: the goal is P(S, O), the premise is P(S, O'), and
+            # O' part_of O. Substitute the goal object with the premise object
+            # so the walk loop re-looks-up the grounded premise claim.
+            new_node = _claim_from_parts(node, object_val=premise_obj)
+            trace.edges.append(TraceEdge(
+                edge_type="premise_forward",
+                source=TraceNode("claim", {"object": node.object}),
+                target=TraceNode("claim", {"object": premise_obj}),
+                metadata={
+                    "relation_type": "part_of",
+                    "direction": "child",
+                    "discovery_source": "premise_forward",
+                    "premise_object_qid": premise_qid,
+                    "goal_object_qid": goal_qid,
+                    "tier_u_row_id": row.get("id"),
+                    "establishing_property": getattr(tp, "establishing_property", None),
+                    "polarity": node.polarity,
+                },
+            ))
+            expanded.append(new_node)
+
+        return expanded
 
     def _expand_via_kb_neighbors(
         self,
         node: Claim,
         relation_type: str,
-        directions: set[str],
+        preferred: set[str],
         distribution_verdict,
         trace: JustificationTrace,
     ) -> list[Claim]:
-        """Phase H D5 + D51: enumerate KB neighbors of `node`'s slot
-        entities and emit expanded claims with the slot substituted by
-        each neighbor.
+        """Phase H D5 + D51: enumerate KB neighbors of `node`'s slot entities
+        and emit expanded claims with the slot substituted by each neighbor.
 
-        Fires as a fallback when `_expand_via_substrate` produced no
-        expansion for `relation_type` (per D5 design Decision 5 —
-        cheapest-path-first).
+        Fires as the DISCOVERY enumerator when `find_neighbors` produced no
+        substrate expansion for `relation_type` (cheapest-path-first). v0.16
+        WS2 §3/§5: the distribution verdict is a RANKER (not a gate) and the
+        depth==0 cap is gone — BOTH directions (parent via outgoing, child via
+        incoming) are now enumerated regardless of the distribution verdict;
+        `preferred` only ORDERS the calls (preferred direction first). Unlike
+        the substrate-neighbor candidates, KB-enumerated neighbors do NOT pass
+        through `_verify_chain`: each is a KB Q-id reached by the relation's
+        property set in a SINGLE confirmed hop (E -> neighbor), so the
+        enumeration edge IS the structural evidence; the substituted claim is
+        grounded at the next depth via Tier U / KB verifier re-lookup, and the
+        per-walk fanout budget (§5) bounds the cost the removed cap once guarded.
+        The trace records each direction (`"parent"` / `"child"`) and the KB
+        property used.
 
         Direction mapping (D5 + D51):
-          - `"parent"` ∈ directions (distributes_down, both): call
-            `enumerate_neighbors(direction="outgoing")` — yields E's
-            parents (entities E points to via P31/P361/P131/P17/P279).
-            Walker substitutes E with one of its parents.
-          - `"child"` ∈ directions (distributes_up, both): call
-            `enumerate_neighbors(direction="incoming")` — yields E's
-            children (entities pointing to E). Walker substitutes E
-            with one of its children. D51 (2026-05-24).
+          - `"parent"`: `enumerate_neighbors(direction="outgoing")` — yields E's
+            parents (entities E points to via the relation's property set).
+          - `"child"`: `enumerate_neighbors(direction="incoming")` — yields E's
+            children (entities pointing to E). D51 (2026-05-24).
 
-        Both directions fire when distribution is `both`; the trace
-        records each direction separately so Phase 10.5 attribution
-        can distinguish.
-
-        Audit shape: each emitted expansion gets a
-        `kb_neighbor_enumeration` trace edge with the source slot value,
-        resolved Q-id, neighbor Q-id, KB property used, the
-        distribution-verdict that authorized the traversal, and the
-        direction (`"parent"` or `"child"`). The `_live_neighbors` call
-        itself writes a `kb_live_neighbors` audit-log event with
-        `direction` recorded.
-
-        Fail-open shape: any failure in resolution, KB call, or parsing
-        returns no expansion for the affected slot; the walker continues
-        with whatever expansions other slots produced. Never raises.
+        Fail-open: any failure in resolution, KB call, or parsing returns no
+        expansion for the affected slot; never raises.
         """
         if self._kb is None:
             return []
@@ -1044,18 +1387,10 @@ class Walker:
         if not properties:
             return []
 
-        # Map walker-direction → KB enumerate-neighbors-direction. The two
-        # vocabularies use different words for symmetric concepts (the
-        # walker thinks in terms of taxonomy direction; the KB call thinks
-        # in terms of edge direction). For each walker-direction the
-        # operator selected, do one enumeration call.
-        kb_calls: list[tuple[str, str]] = []  # (walker_dir, kb_dir)
-        if "parent" in directions:
-            kb_calls.append(("parent", "outgoing"))
-        if "child" in directions:
-            kb_calls.append(("child", "incoming"))
-        if not kb_calls:
-            return []
+        # v0.16 WS2 §3: both directions fire (gate removed); `preferred` ranks
+        # the enumeration order (the distribution-preferred direction first).
+        all_calls = [("parent", "outgoing"), ("child", "incoming")]  # (walker_dir, kb_dir)
+        kb_calls = sorted(all_calls, key=lambda c: 0 if c[0] in preferred else 1)
 
         verdict_label = (
             distribution_verdict.value
@@ -1116,6 +1451,7 @@ class Walker:
                                 "distribution": verdict_label,
                                 "kb_property": prop_id,
                                 "subject_qid": entity_qid,
+                                "discovery_source": "kb_neighbor_enumeration",
                                 "polarity": node.polarity,
                             },
                         ))

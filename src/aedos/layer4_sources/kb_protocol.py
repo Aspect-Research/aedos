@@ -52,6 +52,20 @@ class SubsumptionResult:
     traversal_chain: list[KBEntityID] = field(default_factory=list)
 
 
+# v0.16 WS2 §1: result of the first-class transitive-path primitive
+# `verify_transitive_path`. Unlike `SubsumptionResult` (symmetric,
+# four-verdict, both-direction), this is a SINGLE-direction path-existence
+# answer the walker's discover/verify can drive for ANY transitive KB
+# property. `holds` is the ASK boolean; `error` non-None means the lookup
+# failed and `holds` was forced False (fail-open per architecture §3.1 —
+# a transitive-path miss must abstain, never false-verify).
+@dataclass
+class TransitivePathResult:
+    holds: bool  # ASK boolean (path source -> target exists)
+    establishing_property: Optional[str] = None  # depth-1 anchor (observability)
+    error: Optional[str] = None  # non-None => fail-open (holds=False)
+
+
 @runtime_checkable
 class KBProtocol(Protocol):
     def resolve_entity(
@@ -92,6 +106,32 @@ class KBProtocol(Protocol):
         properties: list[KBPropertyID],
         direction: str = "outgoing",
     ) -> dict[KBPropertyID, list[KBEntityID]]: ...
+
+    # v0.16 WS2 §1: the first-class transitive-path primitive. Where
+    # `subsumption` is hardwired to the `relation_type -> _SUBSUMPTION_PROPERTIES`
+    # alternation and always runs BOTH directions + an establishing-property
+    # SELECT, `verify_transitive_path` is a SINGLE-direction, SINGLE-property
+    # (or relation-alternation) path-existence check the walker's
+    # discover/verify can drive for ANY transitive KB property (not just
+    # is_a/part_of) — e.g. P171 (parent taxon), P127 (owned by).
+    #
+    #   - `relation_type` supplied: reuse the curated `_SUBSUMPTION_PROPERTIES`
+    #     alternation (+ the type-guarded P361 bridge for part_of), so the
+    #     walker's is_a/part_of hops share the verifier's entailment-correct
+    #     query. `kb_property` is ignored in this branch.
+    #   - `relation_type` None: build a single-property `(wdt:{kb_property})+`
+    #     path — the generic transitive case.
+    #
+    # FAIL-OPEN: any error (timeout/network/malformed) returns
+    # `TransitivePathResult(holds=False, error=...)`; the primitive NEVER
+    # raises on a lookup failure (a transitive-path miss abstains, per §3.1).
+    def verify_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        kb_property: KBPropertyID,
+        relation_type: Optional[str] = None,
+    ) -> "TransitivePathResult": ...
 
     # v0.16 WS1: two ontology/label operations supporting multi-property
     # binding discovery (PropertyRelations) and the WS5 correction surface.

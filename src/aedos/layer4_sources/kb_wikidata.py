@@ -19,6 +19,7 @@ from .kb_protocol import (
     ResolutionCandidate,
     Statement,
     SubsumptionResult,
+    TransitivePathResult,
 )
 
 
@@ -321,30 +322,44 @@ _GEO_REGION_TYPES: tuple[str, ...] = (
 _PART_OF_BRIDGE_PROPERTY = "P361"  # geographic "part of", type-guarded above
 
 
-def _build_subsumption_ask_query(
-    source: KBEntityID, target: KBEntityID, relation_type: str
+def _build_transitive_ask_query(
+    source: KBEntityID,
+    target: KBEntityID,
+    properties: tuple[KBPropertyID, ...],
+    use_part_of_bridge: bool,
 ) -> str:
-    """Build an ASK query: does `source` reach `target` via the
-    relation_type's property alternation? Path-existence only — fast,
-    short-circuits on first match. Used per direction by `_live_subsumption`.
+    """v0.16 WS2 §1: build an ASK query asking whether `source` reaches
+    `target` via a transitive `(wdt:P)+` path over `properties`. Path-existence
+    only — ASK short-circuits on first match.
 
-    For `part_of`, the safe alternation (P131/P30/P17) is augmented with a
-    single TYPE-GUARDED P361 bridge: a P361 edge participates only between two
-    geographic-region-typed nodes (_GEO_REGION_TYPES). This reopens region
-    containment the Run-6 trim closed (Massachusetts ⊂ New England) without
-    reopening the leaky city/historical P361 paths (Warsaw ⊄ Germany)."""
+    Two shapes (extracted from the former `_build_subsumption_ask_query` body
+    so the verifier's subsumption ASK and the walker's transitive-path check
+    share ONE construction):
+      - `use_part_of_bridge=False`: a plain alternation path
+        `ASK {{ wd:source (wdt:P1|wdt:P2|...)+ wd:target . }}`. This serves
+        both the is_a relation alternation (P31|P279) and any single-property
+        generic transitive check (e.g. P171 parent-taxon).
+      - `use_part_of_bridge=True`: the safe alternation (P131/P30/P17) augmented
+        with a single TYPE-GUARDED P361 bridge — a P361 edge participates only
+        between two geographic-region-typed nodes (_GEO_REGION_TYPES). This
+        reopens region containment the Run-6 trim closed (Massachusetts ⊂ New
+        England) without reopening the leaky city/historical P361 paths
+        (Warsaw ⊄ Germany). The bridge logic is preserved byte-identical to the
+        v0.15 subsumption ASK; do not edit without re-pinning Warsaw⊄Germany.
+
+    Defense-in-depth: validates source/target via `_ENTITY_ID_PATTERN` and
+    every property via `_PROPERTY_ID_PATTERN` at the SPARQL boundary."""
     if not _ENTITY_ID_PATTERN.match(source):
         raise ValueError(f"Invalid Wikidata entity ID: {source!r}")
     if not _ENTITY_ID_PATTERN.match(target):
         raise ValueError(f"Invalid Wikidata entity ID: {target!r}")
-    props = _SUBSUMPTION_PROPERTIES.get(relation_type)
-    if props is None:
-        raise ValueError(
-            f"Unsupported relation_type: {relation_type!r} "
-            f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
-        )
-    path = "|".join(f"wdt:{p}" for p in props)
-    if relation_type != "part_of":
+    if not properties:
+        raise ValueError("properties must be a non-empty sequence")
+    for prop in properties:
+        if not _PROPERTY_ID_PATTERN.match(prop):
+            raise ValueError(f"Invalid Wikidata property ID: {prop!r}")
+    path = "|".join(f"wdt:{p}" for p in properties)
+    if not use_part_of_bridge:
         return f"ASK {{ wd:{source} ({path})+ wd:{target} . }}"
     region_values = " ".join(f"wd:{t}" for t in _GEO_REGION_TYPES)
     bp = _PART_OF_BRIDGE_PROPERTY
@@ -362,6 +377,27 @@ def _build_subsumption_ask_query(
         f"    ?r1 wdt:P31 ?gt1 . wd:{target} wdt:P31 ?gt2 .\n"
         f"    VALUES ?gt1 {{ {region_values} }} VALUES ?gt2 {{ {region_values} }} }}\n"
         f"}}"
+    )
+
+
+def _build_subsumption_ask_query(
+    source: KBEntityID, target: KBEntityID, relation_type: str
+) -> str:
+    """Build an ASK query: does `source` reach `target` via the
+    relation_type's property alternation? Path-existence only — fast,
+    short-circuits on first match. Used per direction by `_live_subsumption`.
+
+    v0.16 WS2 §1: delegates to `_build_transitive_ask_query` (which holds the
+    path-construction + the type-guarded P361 bridge); output is byte-identical
+    to the v0.15 query for both the is_a and part_of cases."""
+    props = _SUBSUMPTION_PROPERTIES.get(relation_type)
+    if props is None:
+        raise ValueError(
+            f"Unsupported relation_type: {relation_type!r} "
+            f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
+        )
+    return _build_transitive_ask_query(
+        source, target, props, use_part_of_bridge=(relation_type == "part_of")
     )
 
 
@@ -758,6 +794,41 @@ class WikidataAdapter:
             return self._live_subsumption(entity_a, entity_b, relation_type)
         return self._fixture_subsumption(entity_a, entity_b, relation_type)
 
+    def verify_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        kb_property: KBPropertyID,
+        relation_type: Optional[str] = None,
+    ) -> TransitivePathResult:
+        """v0.16 WS2 §1: single-direction transitive-path existence check.
+
+        Resolves the property alternation:
+          - `relation_type` supplied: reuse the curated
+            `_SUBSUMPTION_PROPERTIES` alternation (+ type-guarded P361 bridge
+            for part_of). `kb_property` is ignored in this branch.
+          - `relation_type` None: a single-property `(wdt:{kb_property})+` path.
+
+        Single direction only (source -> target). FAIL-OPEN: any error returns
+        `TransitivePathResult(holds=False, error=...)`. See
+        `KBProtocol.verify_transitive_path`."""
+        if relation_type is not None:
+            props = _SUBSUMPTION_PROPERTIES.get(relation_type)
+            if props is None:
+                raise ValueError(
+                    f"Unsupported relation_type: {relation_type!r} "
+                    f"(expected one of {sorted(_SUBSUMPTION_PROPERTIES)})"
+                )
+            use_bridge = relation_type == "part_of"
+        else:
+            props = (kb_property,)
+            use_bridge = False
+        if self._live:
+            return self._live_transitive_path(source, target, props, use_bridge)
+        return self._fixture_transitive_path(
+            source, target, props, use_bridge, relation_type
+        )
+
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None
     ) -> list[WBSearchCandidate]:
@@ -1051,6 +1122,50 @@ class WikidataAdapter:
             verdict="a_subsumed_by_b",
             establishing_property="P31",
             traversal_chain=chain,
+        )
+
+    def _fixture_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        use_part_of_bridge: bool,
+        relation_type: Optional[str],
+    ) -> TransitivePathResult:
+        """v0.16 WS2 §1: fixture-backed transitive-path check. Reuses the
+        `_fixture_subsumption` keying convention — reads
+        `tests/fixtures/wikidata/sparql_subsumption_<source>.json` (mirroring
+        the SPARQL ASK/SELECT response format). The path is treated as
+        HOLDING (holds=True) when the fixture's `results.bindings` is
+        non-empty and `target` either ends the recorded chain or appears in
+        it; otherwise holds=False. Missing fixture => holds=False (no path).
+        Single direction (source -> target), consistent with the live ASK."""
+        fixture_name = f"sparql_subsumption_{source}.json"
+        try:
+            data = _load_fixture(fixture_name)
+        except FixtureNotFoundError:
+            return TransitivePathResult(holds=False)
+
+        # ASK-shaped fixture: {"boolean": true|false}.
+        if isinstance(data, dict) and "boolean" in data:
+            return TransitivePathResult(holds=bool(data.get("boolean")))
+
+        bindings = data.get("results", {}).get("bindings", [])
+        if not bindings:
+            return TransitivePathResult(holds=False)
+        chain = [
+            _extract_entity_id(row.get("intermediate", {}).get("value", ""))
+            for row in bindings
+            if row.get("intermediate", {}).get("value")
+        ]
+        # A chain to `target` exists iff target ends the recorded chain or
+        # appears within it; an empty/None chain with present bindings is
+        # treated as a hit (mirrors `_fixture_subsumption`'s any-chain rule).
+        holds = (not chain) or (target in chain)
+        establishing = properties[0] if properties else None
+        return TransitivePathResult(
+            holds=holds,
+            establishing_property=establishing if holds else None,
         )
 
     # ------------------------------------------------------------------
@@ -1657,6 +1772,97 @@ class WikidataAdapter:
         translates to `unrelated` when both directions fail."""
         url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
         query = _build_subsumption_ask_query(source, target, relation_type)
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+
+        retries = 0
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt == 0:
+                    retries += 1
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                return (False, retries, f"{type(exc).__name__}: {exc}")
+            except Exception as exc:
+                return (False, retries, f"{type(exc).__name__}: {exc}")
+
+            # ASK responses: {"head": {}, "boolean": true|false}
+            if not isinstance(data, dict):
+                return (False, retries, "malformed_response")
+            return (bool(data.get("boolean", False)), retries, None)
+
+        return (False, retries, "unreachable_code")  # pragma: no cover
+
+    def _live_transitive_path(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        use_part_of_bridge: bool,
+    ) -> TransitivePathResult:
+        """v0.16 WS2 §1: live single-direction transitive-path ASK.
+
+        One ASK (source -> target) via `_run_transitive_ask`, mirroring the
+        rate-limit/retry/cache shape of `_run_subsumption_ask`. Unlike
+        `_live_subsumption` (which runs BOTH directions + an establishing
+        SELECT for the four-verdict symmetric case), this is single-direction
+        and skips the establishing SELECT — the depth-1 anchor is approximated
+        by the alternation's first property for observability only.
+
+        FAIL-OPEN: on timeout/network/malformed the ASK returns False with an
+        error; this method surfaces it as `TransitivePathResult(holds=False,
+        error=...)`. One audit event `kb_verify_transitive_path`."""
+        if self._http is None:
+            raise RuntimeError(
+                "WikidataAdapter._live_transitive_path requires an http_cache; "
+                "build_pipeline must construct the adapter with a CachingHTTPClient"
+            )
+
+        start = time.monotonic()
+        holds, retries, error = self._run_transitive_ask(
+            source, target, properties, use_part_of_bridge
+        )
+        establishing = properties[0] if (holds and properties) else None
+
+        duration_ms = (time.monotonic() - start) * 1000.0
+        self._log_audit_event(
+            event_type="kb_verify_transitive_path",
+            event_subject=f"{source}->{target}",
+            event_data={
+                "holds": holds,
+                "properties": list(properties),
+                "use_part_of_bridge": use_part_of_bridge,
+                "establishing_property": establishing,
+                "duration_ms": round(duration_ms, 2),
+                "retry_count": retries,
+                "error": error,
+            },
+        )
+        return TransitivePathResult(
+            holds=holds, establishing_property=establishing, error=error
+        )
+
+    def _run_transitive_ask(
+        self,
+        source: KBEntityID,
+        target: KBEntityID,
+        properties: tuple[KBPropertyID, ...],
+        use_part_of_bridge: bool,
+    ) -> tuple[bool, int, Optional[str]]:
+        """Execute one transitive-path ASK (single direction). Returns
+        (boolean, retry_count, error_or_None). Mirrors `_run_subsumption_ask`
+        (rate-limit, single retry, treat timeout/error as a False ASK) but
+        builds the query via `_build_transitive_ask_query` so it serves the
+        single-property generic path as well as the relation alternation."""
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        query = _build_transitive_ask_query(
+            source, target, properties, use_part_of_bridge
+        )
         params = {"query": query, "format": "json"}
         ttl = self._cfg_value(
             "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
