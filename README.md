@@ -14,11 +14,12 @@ tradition, specialized for the natural-language verification setting. It is
 **not** a chatbot — it is the engine that sits behind one (or behind a
 document checker, or a generated-content filter) and decides what is grounded.
 
-> **Status:** v0.15.0 — released and tagged. The architecture is complete, the
-> mocked test suite is green, and the calibration and medium-bar measurements
-> that gated the release have run. v0.15.0 is a *soundness-validated* release,
-> not a beats-baseline one — see [Status](#status). Internal release deployment
-> is the next phase of work.
+> **Status:** v0.15.0 is released and tagged. **v0.16** is the current development
+> line (branch `v0.16`): a structural rebuild — multi-property substrate,
+> discover/verify composition, partial-TMS provenance, verify-every-claim,
+> per-claim corrections, temporal T1 — built, reviewed, and medium-bar evaluated
+> (not yet tagged). Soundness holds across both (0% false-verified); see
+> [Status](#status).
 
 ---
 
@@ -154,40 +155,42 @@ the architecture is correct.
 
 ## Status
 
-This is **v0.15.0** — released and tagged at the head of the Phase 10.5
-remediation work.
+**v0.15.0** was released and tagged at the head of the Phase 10.5 remediation
+work. **v0.16** is the current development line on branch `v0.16` — a structural
+rebuild (multi-property substrate, discover/verify composition, partial-TMS
+provenance, verify-every-claim, per-claim corrections, temporal T1) that has been
+built, reviewed (two adversarial review rounds + three patch rounds), and
+medium-bar evaluated. It is not yet tagged.
 
 What is verified: the architecture is fully implemented across all five layers;
-the mocked test suite is green (~700 tests, plus 11 calibration corpora behind
-`--run-calibration`); the verdict-production audit chain (Phases A–D, three
-fix-up cycles, two re-audits) cleared the pipeline as sound — no path produces
-a false `verified`; and the gating measurements ran (Phase 10.5). The
-calibration corpora measured **zero §3.2 false-verifieds across 668 case-mode
-invocations**.
+the mocked test suite is green (~1,390 tests, plus the calibration corpora behind
+`--run-calibration`); no path produces a false `verified`. The v0.15 calibration
+corpora measured **zero §3.2 false-verifieds across 668 case-mode invocations**,
+and the v0.16 live medium-bar run held the **false-verified rate at 0%**.
 
-**This is a soundness-validated release, not a beats-baseline one.** The
-medium-bar evaluation showed Aedos trading coverage for soundness: ~55–70%
-accuracy (a single-run-variance band) against an LLM-only baseline of ~76%, but
-a **0% false-verified rate against the baseline's ~12%**. The architectural
-commitment is soundness over coverage; the measurement validates that the
-commitment held.
+**Soundness over coverage — validated across both versions.** The v0.16 medium-bar
+run (122 cases, live) scored **60.7% accuracy with 0% false-verified**, against an
+LLM-only baseline of ~76% accuracy but ~12% false-verified — and improved on v0.15
+(57.4% → 60.7% accuracy, 48.8% → 44.0% false-abstain) while holding the 0%
+false-verified invariant. See
+[`docs/v0_16/10_medium_bar_step1.md`](docs/v0_16/10_medium_bar_step1.md) and
+[`docs/v0_16/11_step2_build_examine.md`](docs/v0_16/11_step2_build_examine.md).
 
-Known capability gaps carried into v0.16 (full backlog through D60 in
-[`docs/v0.16_planning.md`](docs/v0.16_planning.md)):
+Known remaining work (the v0.16 planning backlog and the completed v0.16 change
+specs are archived under
+[`docs/archive/v0.16_planning.md`](docs/archive/v0.16_planning.md) and
+[`docs/archive/v0_16/`](docs/archive/v0_16/)):
 
-- **Multi-hop derivation depth.** Forward KB-neighbor enumeration landed in
-  v0.15 (D5), but the reverse (child-direction) enumeration (D51) and
-  distribution-gate tuning (D52) that the locative `part_of` multi-hop cases
-  need are v0.16 work; those chains still abstain.
-- **The retraction cascade and re-derivation.** Over-time soundness now holds
-  across process restarts (D6, audit-log replay), but the
-  verdict-to-dependent-verdict cascade and re-derivation from remaining
-  premises (D14) are not yet implemented.
-- **Coverage refinements.** Free-text class subsumption, compound-claim
-  semantics, quantitative routing, DISJOINT verdict refinement, cold-start
-  oracle calibration on novel predicates, claim-model temporal-reference fields
-  (`valid_from_ref` / `valid_until_ref`), and hybrid mixed-vocabulary
-  measurement are all captured for v0.16.
+- **Multi-hop derivation depth & discovery latency.** Multi-hop locative chains
+  still abstain in some cases, and the discover/verify composition's per-neighbor
+  KB verification makes live discovery markedly slower than v0.15 — both are
+  recorded in the v0.16 evaluation findings.
+- **The retraction cascade and re-derivation.** Over-time soundness holds across
+  process restarts, but the full verdict-to-dependent-verdict cascade and
+  re-derivation from remaining premises are not yet implemented.
+- **Coverage refinements.** Free-text class subsumption, compound-claim semantics,
+  the `_location_disjoint` shared-continent (country-vs-country) path under the
+  walk budget, and cold-start oracle calibration on novel predicates remain.
 
 These gaps preserve soundness — they cause false *abstains*, never false
 *verifieds*.
@@ -218,9 +221,11 @@ mocked by default and needs no API keys or network.
 
 The complete build history — phase plans, audit reports, the three fix-up
 cycles, and the two re-audits — is archived under
-[`docs/v0.15_build_log/`](docs/v0.15_build_log/). It is the institutional record
-of how v0.15 was built and why specific decisions were made; consult it when
-investigating a behavior that traces back to a v0.15 design choice.
+[`docs/archive/v0.15_build_log/`](docs/archive/v0.15_build_log/), alongside the
+v0.16 change specs and the Phase A–H build logs in [`docs/archive/`](docs/archive/).
+It is the institutional record of how the system was built and why specific
+decisions were made; consult it when investigating a behavior that traces back to
+an earlier design choice.
 
 ---
 
