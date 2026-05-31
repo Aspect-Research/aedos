@@ -190,6 +190,19 @@ routing_hint — pick the SINGLE most-applicable verification source:
               arbitrate across them at verify time — a value-type-incompatible
               candidate simply abstains rather than contradicting. Leave it
               null when the primary choice is unambiguous.
+              COPULA / instance_of RULE: for the copula predicate
+              `instance_of` (or `is_a`) — "X is a <noun>" — ALWAYS set
+              kb_property=P31 (instance of) as the primary AND list
+              candidate_kb_properties=["P106"] (occupation). The object may be a
+              profession/role noun ("guitarist", "physicist", "novelist"), in
+              which case the subject's true grounding is P106 not P31 (a person's
+              P31 is just Q5 human). The P106 candidate is value-type-gated: it
+              only verifies when the object is a confirmed occupation/profession,
+              so a non-profession copula ("X is a river"/"X is a city") harmlessly
+              falls back to the P31 instance-of check. Leave the row-level
+              object_entity_types null/open (the P31 object can be ANY class —
+              river, city, profession); the P106 candidate's occupation value-type
+              constraint is supplied by P106's own ontology at discovery time.
 
   kb_quantitative — a numeric COMPARISON predicate ('..._greater_than' /
     '..._less_than' in the name) against a count-valued Wikidata property.
@@ -287,8 +300,16 @@ class PredicateBinding:
     single_valued: bool = False
     subject_entity_types: Optional[list[str]] = None
     object_entity_types: Optional[list[str]] = None
-    source: str = "legacy_scalar"   # legacy_scalar | oracle | ontology_p2302 | sling
+    source: str = "legacy_scalar"   # legacy_scalar | oracle | ontology_p2302 | sling | candidate
     rank: float = 1.0               # discovery-time prior; verify-time evidence reorders
+    # v0.16.1 WS2 (occupation-copula grounding): when True, this binding's
+    # POSITIVE grounding is FAIL-CLOSED type-gated — it may only yield VERIFIED
+    # when the resolved object is PROVABLY subsumed by one of `object_entity_types`
+    # (a confirmed occupation/profession class). Set on the P106 candidate binding
+    # synthesized for a copula's `instance_of`/`is_a` predicate so a non-occupation
+    # copula ("X is a river") cannot false-verify through the occupation property.
+    # The primary binding (P31) leaves this False — its positive path is unchanged.
+    value_type_gated: bool = False
 
 
 def _binding_to_dict(b: "PredicateBinding") -> dict:
@@ -303,6 +324,7 @@ def _binding_to_dict(b: "PredicateBinding") -> dict:
         "object_entity_types": b.object_entity_types,
         "source": b.source,
         "rank": b.rank,
+        "value_type_gated": bool(b.value_type_gated),
     }
 
 
@@ -745,16 +767,28 @@ class PredicateTranslation:
                 if isinstance(pid, str) and pid and pid not in candidates:
                     candidates.append(pid)
 
-        ontology_bindings: list[PredicateBinding] = []
+        primary_ontology_bindings: list[PredicateBinding] = []
+        candidate_ontology_bindings: list[PredicateBinding] = []
+        candidate_bindings: list[PredicateBinding] = []
         sling_bindings: list[PredicateBinding] = []
         any_ontology_empty = False
 
         for pid in candidates:
+            # v0.16.1 WS2: a NON-PRIMARY candidate (e.g. P106 occupation proposed
+            # alongside the primary P31 for a copula) is FAIL-CLOSED type-gated on
+            # its positive path — it may only VERIFY when the resolved object is a
+            # confirmed value-type-class member. The primary property is never
+            # positive-gated (its mapping is the oracle's best choice).
+            is_candidate = pid != primary_prop
             ontology = self._property_relations.fetch(
                 pid, kb_namespace or "wikidata"
             )
             if ontology is not None and not ontology.is_empty():
-                ontology_bindings.append(
+                target = (
+                    candidate_ontology_bindings if is_candidate
+                    else primary_ontology_bindings
+                )
+                target.append(
                     PredicateBinding(
                         kb_namespace=kb_namespace,
                         kb_property=pid,
@@ -777,10 +811,30 @@ class PredicateTranslation:
                         ),
                         source="ontology_p2302",
                         rank=1.0,
+                        value_type_gated=is_candidate,
                     )
                 )
             else:
                 any_ontology_empty = True
+                # v0.16.1 WS2: even with an empty ontology, keep a NON-PRIMARY
+                # candidate binding so the alternative property (P106) is
+                # verifiable. It carries the oracle's object_entity_types hint as
+                # the value-type constraint and is FAIL-CLOSED positive-gated, so
+                # it can only verify a confirmed occupation/profession object.
+                if is_candidate:
+                    candidate_bindings.append(
+                        PredicateBinding(
+                            kb_namespace=kb_namespace,
+                            kb_property=pid,
+                            slot_to_qualifier=slot_to_qualifier,
+                            single_valued=oracle_single_valued,
+                            subject_entity_types=oracle_subject_types,
+                            object_entity_types=oracle_object_types,
+                            source="candidate",
+                            rank=0.4,
+                            value_type_gated=True,
+                        )
+                    )
 
         # SLING fallback: only when the ontology couldn't constrain a candidate
         # (long-tail edges). Lowest rank; never licenses a contradiction.
@@ -797,10 +851,20 @@ class PredicateTranslation:
             if isinstance(proposed, list):
                 sling_bindings = [b for b in proposed if isinstance(b, PredicateBinding)]
 
-        # Rank: ontology-typed first, then oracle-primary, then sling. Keep the
-        # oracle binding always present so the primary property is verifiable
-        # even when its own ontology was empty.
-        ranked = [*ontology_bindings, oracle_binding, *sling_bindings]
+        # Rank: the PRIMARY property first (its ontology binding, else the oracle
+        # binding), then the value-type-gated CANDIDATE bindings (the P106 copula
+        # path — ontology-typed first, then the empty-ontology fallback), then
+        # sling. bindings[0] stays the primary property so every scalar reader and
+        # the single-binding back-compat path are unchanged. The oracle binding is
+        # always present so the primary property is verifiable even when its own
+        # ontology was empty.
+        ranked = [
+            *primary_ontology_bindings,
+            oracle_binding,
+            *candidate_ontology_bindings,
+            *candidate_bindings,
+            *sling_bindings,
+        ]
 
         # De-dup by (kb_namespace, kb_property) keeping the first (highest-rank)
         # occurrence — an ontology binding for the primary property supersedes
@@ -861,6 +925,7 @@ class PredicateTranslation:
                         object_entity_types=b.get("object_entity_types"),
                         source=b.get("source", "legacy_scalar"),
                         rank=b.get("rank", 1.0),
+                        value_type_gated=bool(b.get("value_type_gated", False)),
                     )
                 )
 

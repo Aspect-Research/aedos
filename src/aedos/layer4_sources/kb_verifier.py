@@ -512,6 +512,40 @@ class KBVerifier:
                     },
                 )
 
+        # v0.16.1 WS2 (occupation-copula grounding): FAIL-CLOSED positive gate.
+        # A value-type-gated binding (the P106 occupation candidate synthesized
+        # for a copula's instance_of/is_a) may yield VERIFIED only when the
+        # resolved object is PROVABLY a member of one of the binding's declared
+        # value-type classes (a confirmed occupation/profession). This is the new
+        # POSITIVE grounding path — so it fails CLOSED (unlike the CONTRADICTED
+        # gate above which fails OPEN): any type uncertainty, an unresolved object,
+        # a KB error, or a missing constraint blocks the verify and falls through
+        # to NO_MATCH, abstaining (and letting the primary P31 binding handle the
+        # claim). So "Paris is a city" / "X is a river" — whose object is not a
+        # confirmed occupation class — never false-verifies through P106. The
+        # primary binding (value_type_gated=False) is untouched. P106 stays
+        # single_valued=0, so a wrong occupation never CONTRADICTED above; here a
+        # wrong occupation simply doesn't VERIFY → abstain.
+        if pos_verdict == KBVerdictType.VERIFIED and getattr(binding, "value_type_gated", False):
+            resolved_obj = (
+                expected_value if value_resolved and isinstance(expected_value, str) else None
+            )
+            if not self._object_confirms_value_type(resolved_obj, binding):
+                return KBVerdict(
+                    verdict=KBVerdictType.NO_MATCH,
+                    subject_kb_id=lookup_subject_id,
+                    trace={
+                        "entity": lookup_subject_id,
+                        "property": binding.kb_property,
+                        "value_entity": expected_value,
+                        "value_resolved": value_resolved,
+                        "polarity": claim.polarity,
+                        "lookup_inverted": lookup_inverted,
+                        "abstention_reason": "value_type_unconfirmed_positive_gate",
+                        "resolution_cache_row_id": resolution_cache_row_id,
+                    },
+                )
+
         # Step 7: apply claim polarity. A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
         final_verdict = _apply_polarity(pos_verdict, claim.polarity)
@@ -585,6 +619,43 @@ class KBVerifier:
         # contradiction only if EVERY check came back `unrelated` (provable
         # failure); otherwise an uncertain verdict permits.
         return not any_unrelated_only
+
+    def _object_confirms_value_type(self, resolved_obj_qid: Optional[str], binding) -> bool:
+        """v0.16.1 WS2 (occupation-copula grounding). FAIL-CLOSED dual of
+        ``_object_satisfies_value_type``: True ONLY when the resolved object is
+        PROVABLY a member of one of the binding's declared value-type classes
+        (subsumption returns ``a_subsumed_by_b`` / ``equivalent``, or the object
+        Q-id equals a declared type). Used to gate the POSITIVE grounding of a
+        value-type-gated candidate binding (P106 occupation): a positive verify
+        is a new grounding surface, so it must fail CLOSED.
+
+        Returns False — blocking the verify, so the claim abstains — in EVERY
+        uncertain case, the mirror of the CONTRADICTED gate's fail-open:
+          - no declared value-type constraint        → False (cannot confirm)
+          - object did not resolve to a Q-id          → False (cannot confirm)
+          - KB error on a subsumption probe           → False (cannot confirm)
+          - no declared type is provably satisfied     → False (cannot confirm)
+        So "X is a river" (object resolves to a river class, not an occupation/
+        profession class) does NOT verify through P106 — the type gate abstains
+        and the primary P31 binding handles the claim. Only a confirmed
+        occupation object can VERIFY via the gated P106 binding."""
+        value_types = list(binding.object_entity_types or [])
+        if not value_types:
+            return False  # no constraint → cannot confirm → fail closed
+        if not resolved_obj_qid or not isinstance(resolved_obj_qid, str):
+            return False  # object not type-confirmable → fail closed
+        for vt in value_types:
+            if not isinstance(vt, str):
+                continue
+            if vt == resolved_obj_qid:
+                return True  # the object IS the declared value-type class
+            try:
+                r = self._kb.subsumption(resolved_obj_qid, vt, "is_a")
+            except Exception:
+                continue  # KB error on this probe → try the next; never confirm on error
+            if r.verdict in ("a_subsumed_by_b", "equivalent"):
+                return True  # provably a member of the declared value-type class
+        return False  # nothing provably confirmed → fail closed (abstain)
 
     def _compare_positive(
         self,

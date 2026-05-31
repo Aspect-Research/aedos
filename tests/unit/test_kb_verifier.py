@@ -1129,3 +1129,161 @@ class TestKBVerifierApproximateDate:
         )
         result = verifier.verify(_claim(predicate="born_on", object_val="1600"))
         assert result.verdict == KBVerdictType.CONTRADICTED
+
+
+# ===========================================================================
+# v0.16.1 WS2 — OCCUPATION-COPULA POSITIVE GROUNDING (P106) + FAIL-CLOSED GATE
+#
+# A profession copula "X is a guitarist" extracts as instance_of → primary P31
+# (a person's P31 is Q5 human, so it never grounds the occupation). The seed
+# now also synthesizes a value-type-gated P106 (occupation) candidate binding.
+# The binding loop verifies the asserted occupation against the subject's P106
+# set. The POSITIVE P106 path is FAIL-CLOSED type-gated: it may VERIFY only
+# when the resolved object is PROVABLY an occupation/profession class. A
+# non-occupation copula ("X is a river") falls through the gate to P31; a wrong
+# occupation abstains (P106 single_valued=0, never contradicts).
+# ===========================================================================
+
+# Q-ids used below: Q12737077 occupation, Q28640 profession (the gate's value-
+# type constraint); Q5982903 = guitarist (a confirmed occupation); Q4022 = river
+# (NOT an occupation); Q177220 = singer (a confirmed occupation, the KB's actual
+# P106 value used for the wrong-occupation abstain case).
+_OCCUPATION_VT = ["Q12737077", "Q28640"]
+
+
+def _gated_p106_meta(predicate="instance_of"):
+    """meta with the seed-synthesized [P31 (primary), P106 (value-type-gated
+    occupation candidate)] shape."""
+    return _make_meta(predicate, [
+        PredicateBinding(kb_namespace="wikidata", kb_property="P31",
+                         single_valued=False, source="legacy_scalar"),
+        PredicateBinding(kb_namespace="wikidata", kb_property="P106",
+                         single_valued=False, object_entity_types=_OCCUPATION_VT,
+                         source="candidate", value_type_gated=True),
+    ])
+
+
+class TestKBVerifierOccupationCopulaPositiveGate:
+    def test_confirmed_occupation_verifies_via_p106(self):
+        # "Robby Krieger is a guitarist". P31 holds Q5 (human) — no match. P106
+        # holds Q5982903 (guitarist) — matches the resolved object, and the
+        # object IS_A occupation (a_subsumed_by_b Q12737077) → the fail-closed
+        # positive gate is satisfied ⇒ VERIFIED via P106.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],       # human
+                "P106": [Statement(value="Q5982903", value_type="entity")],  # guitarist
+            },
+            resolutions={"guitarist": "Q5982903"},
+            subsumptions={("Q5982903", "Q12737077", "is_a"): "a_subsumed_by_b"},
+        )
+        verifier = _make_multi_verifier(kb, _gated_p106_meta())
+        result = verifier.verify(_claim(subject="Obama", predicate="instance_of",
+                                        object_val="guitarist"))
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("property") == "P106"
+
+    def test_non_occupation_copula_falls_through_gate_to_p31(self):
+        # "Paris is a city" — the object (Q515 city) is PROVABLY not an
+        # occupation (unrelated to both Q12737077 and Q28640), so the P106
+        # positive gate fails closed (abstains). P31 holds Q515 (city) and the
+        # resolved object matches ⇒ VERIFIED via the primary P31 binding, NOT
+        # P106. The gate prevented a false-verify through occupation.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P31": [Statement(value="Q515", value_type="entity")],   # city
+                "P106": [Statement(value="Q515", value_type="entity")],  # (would spuriously match)
+            },
+            resolutions={"city": "Q515", "Paris": "Q90"},
+            subsumptions={
+                ("Q515", "Q12737077", "is_a"): "unrelated",
+                ("Q515", "Q28640", "is_a"): "unrelated",
+            },
+        )
+        verifier = _make_multi_verifier(kb, _gated_p106_meta())
+        result = verifier.verify(_claim(subject="Paris", predicate="instance_of",
+                                        object_val="city"))
+        assert result.verdict == KBVerdictType.VERIFIED
+        # The winning binding is P31, not the gated P106.
+        assert result.trace.get("property") == "P31"
+        tried = {t["property"]: t for t in result.trace["bindings_tried"]}
+        assert tried["P106"]["verdict"] == "no_match"
+        assert tried["P106"]["abstention_reason"] == "value_type_unconfirmed_positive_gate"
+
+    def test_river_copula_p106_abstains_no_false_verify(self):
+        # "The Amazon is a river" — P31 has NO matching statement (subject's P31
+        # is e.g. Q4022 river but object resolves to a different river class) and
+        # P106 would spuriously match the object, but the object (Q4022 river) is
+        # provably NOT an occupation → P106 positive gate fails closed. No
+        # binding grounds positively ⇒ NO_MATCH (abstain), never a false-verify.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],     # mismatch (human)
+                "P106": [Statement(value="Q4022", value_type="entity")],
+            },
+            resolutions={"river": "Q4022", "Amazon": "Q3783"},
+            subsumptions={
+                ("Q4022", "Q12737077", "is_a"): "unrelated",
+                ("Q4022", "Q28640", "is_a"): "unrelated",
+            },
+        )
+        verifier = _make_multi_verifier(kb, _gated_p106_meta())
+        result = verifier.verify(_claim(subject="Amazon", predicate="instance_of",
+                                        object_val="river"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+
+    def test_wrong_occupation_abstains_never_contradicts(self):
+        # "X is a guitarist" but the KB P106 set holds only Q177220 (singer) —
+        # the object (guitarist, a CONFIRMED occupation) resolves and is_a
+        # occupation, so the gate would PERMIT a positive verify, but P106 has no
+        # matching statement. Because P106 is single_valued=0, the mismatch is
+        # NO_MATCH (abstain), NEVER CONTRADICTED. P31 (Q5 human) also abstains.
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],
+                "P106": [Statement(value="Q177220", value_type="entity")],  # singer
+            },
+            resolutions={"guitarist": "Q5982903"},
+            subsumptions={("Q5982903", "Q12737077", "is_a"): "a_subsumed_by_b"},
+        )
+        verifier = _make_multi_verifier(kb, _gated_p106_meta())
+        result = verifier.verify(_claim(subject="Obama", predicate="instance_of",
+                                        object_val="guitarist"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+
+    def test_gate_fails_closed_on_kb_uncertainty(self):
+        # The fail-CLOSED dual of the CONTRADICTED gate's fail-open: when the
+        # object resolves and P106 matches but subsumption is UNCERTAIN (not
+        # provably a_subsumed_by_b / equivalent — here b_subsumed_by_a), the
+        # positive gate does NOT confirm ⇒ the P106 verify is blocked. No new
+        # positive grounding surface on uncertainty (§3.2).
+        kb = _MultiPropKB(
+            statements_by_property={
+                "P31": [Statement(value="Q5", value_type="entity")],
+                "P106": [Statement(value="Q5982903", value_type="entity")],
+            },
+            resolutions={"guitarist": "Q5982903"},
+            subsumptions={
+                ("Q5982903", "Q12737077", "is_a"): "b_subsumed_by_a",  # uncertain
+                ("Q5982903", "Q28640", "is_a"): "unrelated",
+            },
+        )
+        verifier = _make_multi_verifier(kb, _gated_p106_meta())
+        result = verifier.verify(_claim(subject="Obama", predicate="instance_of",
+                                        object_val="guitarist"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+
+    def test_object_confirms_value_type_equality_short_circuit(self):
+        # Direct unit on the gate helper: an object Q-id equal to a declared
+        # value-type class confirms without a subsumption probe.
+        kb = _MultiPropKB(statements_by_property={})
+        verifier = _make_multi_verifier(kb, _gated_p106_meta())
+        b = PredicateBinding(kb_namespace="wikidata", kb_property="P106",
+                             object_entity_types=_OCCUPATION_VT, value_type_gated=True)
+        assert verifier._object_confirms_value_type("Q12737077", b) is True
+        # No constraint → cannot confirm → fail closed.
+        b2 = PredicateBinding(kb_namespace="wikidata", kb_property="P106",
+                              object_entity_types=None, value_type_gated=True)
+        assert verifier._object_confirms_value_type("Q5982903", b2) is False
+        # Unresolved object → fail closed.
+        assert verifier._object_confirms_value_type(None, b) is False

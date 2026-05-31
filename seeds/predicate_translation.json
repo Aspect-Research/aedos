@@ -249,7 +249,9 @@
     "kb_property": "P31",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 0,
-    "reason": "Seed mapping. Wikidata P31 (instance of). Multi-valued: entities have many types."
+    "candidate_kb_properties": ["P106"],
+    "candidate_object_entity_types": {"P106": ["Q12737077", "Q28640"]},
+    "reason": "Seed mapping. Wikidata P31 (instance of). Multi-valued: entities have many types. v0.16.1 WS2: a copula 'X is a <profession>' also fits P106 (occupation) — synthesized as a value-type-gated candidate binding (positive verify only for a confirmed occupation/profession object Q12737077/Q28640; never contradicts), so 'Krieger is a guitarist' grounds against his P106 set while 'Paris is a city' falls through the type gate to P31."
   },
   {
     "aedos_predicate": "subclass_of",
@@ -262,6 +264,20 @@
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 0,
     "reason": "Seed mapping. Wikidata P279 (subclass of). Used for taxonomic subsumption. Multi-valued: a class may be a subclass of several superclasses."
+  },
+  {
+    "aedos_predicate": "instance_of",
+    "object_type": "entity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_resolvable",
+    "kb_namespace": "wikidata",
+    "kb_property": "P31",
+    "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
+    "single_valued": 0,
+    "candidate_kb_properties": ["P106"],
+    "candidate_object_entity_types": {"P106": ["Q12737077", "Q28640"]},
+    "reason": "Seed mapping for the copula predicate the extractor emits ('X is a Y', Rule 19/22). Wikidata P31 (instance of) is the primary binding; multi-valued. v0.16.1 WS2: a profession copula ('Robby Krieger is a guitarist') also fits P106 (occupation), synthesized as a value-type-gated candidate binding — its positive verify fires only for a confirmed occupation/profession object (Q12737077 occupation / Q28640 profession) and it never contradicts (single_valued=0), so 'X is a river' falls through the type gate to P31 while the occupation grounds against the subject's P106 set."
   },
   {
     "aedos_predicate": "nationality",
