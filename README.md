@@ -14,12 +14,11 @@ tradition, specialized for the natural-language verification setting. It is
 **not** a chatbot — it is the engine that sits behind one (or behind a
 document checker, or a generated-content filter) and decides what is grounded.
 
-> **Status:** v0.15.0 is released and tagged. **v0.16** is the current development
-> line (branch `v0.16`): a structural rebuild — multi-property substrate,
-> discover/verify composition, partial-TMS provenance, verify-every-claim,
-> per-claim corrections, temporal T1 — built, reviewed, and medium-bar evaluated
-> (not yet tagged). Soundness holds across both (0% false-verified); see
-> [Status](#status).
+> **Status:** **v0.16.0** is the current release — a structural rebuild on the
+> v0.15 foundation (multi-property substrate, discover/verify composition,
+> partial-TMS provenance, verify-every-claim, per-claim corrections, temporal T1),
+> built, reviewed, medium-bar evaluated, and merged to `main`. Soundness holds
+> (0% false-verified); see [Status](#status).
 
 ---
 
@@ -155,12 +154,12 @@ the architecture is correct.
 
 ## Status
 
-**v0.15.0** was released and tagged at the head of the Phase 10.5 remediation
-work. **v0.16** is the current development line on branch `v0.16` — a structural
-rebuild (multi-property substrate, discover/verify composition, partial-TMS
-provenance, verify-every-claim, per-claim corrections, temporal T1) that has been
-built, reviewed (two adversarial review rounds + three patch rounds), and
-medium-bar evaluated. It is not yet tagged.
+**v0.16.0** is the current release. It is a structural rebuild on the v0.15
+foundation — multi-property substrate, discover/verify composition, partial-TMS
+provenance, verify-every-claim, per-claim corrections, temporal T1 — built,
+reviewed (two adversarial review rounds + three patch rounds), medium-bar
+evaluated, and merged to `main`. v0.15.0 was the prior release; the next line of
+work is v0.16.1.
 
 What is verified: the architecture is fully implemented across all five layers;
 the mocked test suite is green (~1,390 tests, plus the calibration corpora behind
