@@ -1437,6 +1437,28 @@ class TestKBVerifierMultiValuedSingleValued:
         result = verifier.verify(_claim(predicate="born_on", object_val="1600"))
         assert result.verdict == KBVerdictType.CONTRADICTED
 
+    def test_same_year_differing_precision_still_contradicts(self):
+        # C2S-1 regression pin. A single_valued DATE predicate whose subject
+        # holds two NORMAL-rank statements at differing precision for the SAME
+        # year — day-precision "+1879-03-14..." and year-precision
+        # "+1879-01-01..." (a coarsening of one birth fact; the common Wikidata
+        # pattern, since only DeprecatedRank is filtered). A precise WRONG-year
+        # claim ("1900") year-matches neither. Keying the distinctness set on the
+        # RAW strings would count this subject as multi-valued and over-abstain;
+        # keying on the year-normalized value collapses both rows to "1879" (one
+        # distinct value), so the genuine wrong-year contradiction is preserved.
+        # Without C2S-1 this regressed to NO_MATCH (a §3.2-safe but avoidable
+        # over-abstention).
+        stmts = [
+            Statement(value="+1879-03-14T00:00:00Z", value_type="date"),
+            Statement(value="+1879-01-01T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="1900"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
     def test_approx_year_matches_one_of_multi_value_verifies(self):
         # WS1 (approximate date) × C2-3 (multi-value single_valued) interplay.
         # A single_valued date predicate (P571) whose subject holds MULTIPLE
