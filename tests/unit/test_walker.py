@@ -942,6 +942,46 @@ class TestWalkerAbstentionReasonShortCircuit:
         assert result.verdict != "contradicted"
         assert result.verdict == "no_grounding_found"
 
+    def test_null_object_extractor_shape_never_false_verdict(self):
+        # Cross-layer §3.2 pin for the null-slot crash fix (autonomous cycle 2,
+        # C2c): the extractor coerces an LLM-emitted null object to "" and emits
+        # the shaped claim (Deletion #2 path, abstention_reason=None). This is
+        # the exact shape that reaches the walker. It must abstain
+        # (no_grounding_found) and NEVER false-verify/false-contradict — the
+        # conservative outcome the crash previously denied (the whole statement
+        # was lost as verdict='error'). Companion to
+        # test_extractor.py::test_null_object_coerced_not_none.
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = Claim(
+            claim_id="no1",
+            subject="Asa",
+            predicate="works_at",
+            object="",  # extractor-coerced from a null LLM slot
+            polarity=1,
+            source_text="Asa works at Google",
+            asserting_party="user_test",
+            triage_decision=TriageDecision.VERIFY,
+            abstention_reason=None,
+        )
+        result = walker.walk(claim, _ctx())
+        assert result.verdict not in ("verified", "contradicted")
+        assert result.verdict == "no_grounding_found"
+
+    def test_subject_absent_extractor_shape_short_circuits(self):
+        # The empty-SUBJECT half: the extractor stamps subject_absent_from_source
+        # (the new highest-precedence guard). That claim short-circuits at walk
+        # entry to no_grounding_found with zero lookups — never a false verdict.
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim(
+            "subject_absent_from_source",
+            subject="", predicate="works_at", object_val="Google",
+        )
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "subject_absent_from_source"
+        assert tier_u.lookup_calls == 0
+        assert kb_verifier.verify_calls == 0
+
 
 # ---------------------------------------------------------------------------
 # TestEventRelativeRefsZeroVerdictRisk — v0.16.1 WS8 Stage 1: valid_from_ref /

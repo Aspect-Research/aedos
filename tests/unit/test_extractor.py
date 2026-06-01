@@ -739,6 +739,125 @@ class TestAbstentionReasonStamping:
             == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
         )
 
+    @pytest.mark.parametrize(
+        "subject,predicate,obj",
+        [
+            (None, "x", None),       # the reported crash shape
+            (None, None, None),      # all-null
+            ("Asa", None, "Google"), # null predicate
+            ("Asa", "works_at", None),  # null object
+            (None, "works_at", "Google"),  # null subject
+        ],
+    )
+    def test_null_slot_does_not_crash(self, subject, predicate, obj):
+        # Regression: an LLM-emitted explicit null in any of the three slots
+        # previously crashed _build_claim ('NoneType' has no attribute 'strip')
+        # at the self-referential check, propagating out of extract() and
+        # losing the whole statement (benchmark verdict='error'). The slots are
+        # coerced to "" at the point of use; a malformed claim must abstain,
+        # never raise.
+        raw = _raw_claim(subject=subject, predicate=predicate, object=obj,
+                         source_text="some source")
+        extractor, _ = _make_extractor([raw])
+        # Must not raise.
+        claims = extractor.extract("some source text", _default_context())
+        # The claim is emitted (WS4: never silently dropped) and any empty
+        # subject is routed to abstention rather than flowing as well-formed.
+        for c in claims:
+            if not (c.subject or "").strip():
+                assert (
+                    c.abstention_reason
+                    == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+                )
+
+    def test_null_source_text_and_polarity_do_not_crash(self):
+        # Defense-in-depth: explicit-null source_text (feeds a regex) and
+        # explicit-null polarity (int()) must not crash either; polarity
+        # defaults to the affirm value 1, not flipping a legitimate 0.
+        raw = _raw_claim(source_text=None, polarity=None)
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        assert len(claims) == 1
+        assert claims[0].polarity == 1
+
+    def test_null_slot_one_bad_claim_does_not_abort_batch(self):
+        # Defense-in-depth backstop: even if a raw claim somehow still raises
+        # in _build_claim, extract() must skip it and keep the good claims —
+        # one malformed claim cannot turn the whole statement into a lost case.
+        raws = [
+            _raw_claim(),  # well-formed, must survive
+            _raw_claim(subject=None, predicate="x", object=None,
+                       source_text="bad"),  # null-slot, must not abort batch
+        ]
+        extractor, _ = _make_extractor(raws)
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        # The good claim survives.
+        assert any(c.subject == "Asa" and c.abstention_reason is None for c in claims)
+
+    def test_build_claim_null_object_does_not_raise(self):
+        # _build_claim-level pin (the exact crash site): a raw claim with an
+        # explicit-null object reaches the self-referential check
+        # (raw_subject.strip().casefold() == raw_object.strip().casefold()) and
+        # previously raised "'NoneType' object has no attribute 'strip'". Call
+        # _build_claim directly so the regression is pinned at the unit it
+        # crashed in, not only through extract().
+        extractor, _ = _make_extractor([])
+        raw = _raw_claim(subject="Asa", predicate="works_at", object=None,
+                         source_text="Asa works at Google")
+        # Must not raise.
+        claim = extractor._build_claim(raw, "Asa works at Google", _default_context())
+        # A null object grounds to no_grounding_found (Deletion #2): it may be
+        # emitted as a shaped claim or carry an abstention_reason, but never
+        # crashes and never silently becomes well-formed-and-verifiable with a
+        # None object slot.
+        if claim is not None:
+            assert claim.object != None  # noqa: E711 — pin: coerced to "", not None
+
+    @pytest.mark.parametrize(
+        "subject,predicate,obj",
+        [
+            (None, "x", None),       # the reported crash shape
+            (None, None, None),      # all-null
+            (None, "works_at", "Google"),  # null subject (object present)
+        ],
+    )
+    def test_null_subject_routes_to_abstention(self, subject, predicate, obj):
+        # §3.2 soundness pin (task (b), empty-SUBJECT half — the extractor-side
+        # guarantee). A null/empty subject vacuously passes the hard-claim
+        # check ("" is a substring of any text), so without a guard it would
+        # flow as a well-formed triple. The extractor stamps
+        # subject_absent_from_source; the walker short-circuits any claim with
+        # abstention_reason to no_grounding_found PRE-lookup (walker.walk entry
+        # guard), so it can never reach a KB/Tier U/Python lookup and never
+        # becomes a spurious verified/contradicted. Pinned at the extractor.
+        raw = _raw_claim(subject=subject, predicate=predicate, object=obj,
+                         source_text="works at Google")
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("works at Google", _default_context())
+        for c in claims:
+            if not (c.subject or "").strip():
+                assert (
+                    c.abstention_reason
+                    == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+                ), "empty-subject claim must abstain, never flow as a triple"
+
+    def test_null_object_coerced_not_none(self):
+        # §3.2 soundness pin (task (b), empty-OBJECT half — the extractor-side
+        # invariant). Per the documented Deletion #2 design the empty-object
+        # path is intentionally NOT stamped at the extractor; instead the object
+        # is coerced from None to "" and the shaped claim flows on to ground to
+        # no_grounding_found in the walker (an abstention). The extractor's
+        # contract here is narrower but load-bearing: the object slot is NEVER
+        # left as None (which would crash the downstream .strip()/grounding),
+        # always the empty string. The walker-side no_grounding_found outcome is
+        # pinned in test_walker.py::TestNullSlotClaimGrounding.
+        raw = _raw_claim(subject="Asa", predicate="works_at", object=None,
+                         source_text="Asa works at Google")
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa works at Google", _default_context())
+        assert len(claims) == 1
+        assert claims[0].object == ""  # coerced, never None
+
 
 # ---------------------------------------------------------------------------
 # TestExtractionToolSchema
