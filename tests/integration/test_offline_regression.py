@@ -22,6 +22,9 @@ Pinned fixes:
     sub-region)
   - cycle-2 multi-value single_valued "France founded_on 843" (P571 = {843, 1958})
     -> NOT contradicted (C2-3: never contradict a value the KB holds)
+  - cycle-2 comparison-phrase object "founded_in_year 'before 1800'" -> NOT
+    contradicted (C2-FC1: never contradict on an object that doesn't parse to a
+    year; the csu_003 false-contradict the final MB surfaced)
 
 The three cycle-2 shapes were the false-contradicts the WS7 false_contradicted
 gate surfaced in the final v0.16.1 medium bar; they are pinned here through the
@@ -377,11 +380,11 @@ class TestOfflineRegression:
         kb = _MockKB(
             statements_by_property={"P361": []},
             resolutions={
-                "Williams College": "Q49205",
+                "Williams College": "Q49166",
                 "the Consortium of Liberal Arts Colleges": "Q5165061",  # illustrative Q
             },
             subsumptions={
-                ("Q49205", "Q49", "part_of"): "a_subsumed_by_b",    # Williams in North America
+                ("Q49166", "Q49", "part_of"): "a_subsumed_by_b",    # Williams in North America
                 ("Q5165061", "Q49", "part_of"): "a_subsumed_by_b",  # consortium sits on the same continent
                 # mutual unrelated (default); NO is_a place entry for the consortium.
             },
@@ -420,6 +423,28 @@ class TestOfflineRegression:
         verdict = _verdict(meta, kb, _claim("France", "founded_on", "843"))
         assert verdict != "contradicted"
 
+    def test_founded_before_comparison_phrase_not_contradicted(self):
+        # cycle-2 C2-FC1, csu_003 shape. "founded before 1800" is sometimes
+        # extracted as a founded_in_year claim whose OBJECT is the literal
+        # comparison phrase "before 1800", while a vague subject ("a university")
+        # resolves to a specific entity holding a single KB inception date (2001
+        # here). The object does not parse to a year, so comparing the KB date
+        # against it is ill-defined -> NO_MATCH (abstain), never CONTRADICTED.
+        # NON-VACUOUS: a clean 4-digit wrong-year object still contradicts (pinned
+        # in test_kb_verifier.test_clean_wrong_year_object_still_contradicts);
+        # dropping the parse guard flips this to contradicted.
+        kb = _MockKB(
+            statements_by_property={"P571": [
+                Statement(value="2001-01-15T00:00:00Z", value_type="literal")]},
+            resolutions={"a university": "Q42"},
+        )
+        meta = _meta("founded_in_year", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P571", source="oracle",
+                             single_valued=True),
+        ], object_type="time", single_valued=1)
+        verdict = _verdict(meta, kb, _claim("a university", "founded_in_year", "before 1800"))
+        assert verdict != "contradicted"
+
     def test_cycle2_shapes_clear_false_contradicted_gate(self):
         # End-to-end harness gate for the cycle-2 shapes — the durable CI net the
         # WS7 false_contradicted gate is built on. Each verdict is produced by a
@@ -443,10 +468,10 @@ class TestOfflineRegression:
 
         williams_kb = _MockKB(
             statements_by_property={"P361": []},
-            resolutions={"Williams College": "Q49205",
+            resolutions={"Williams College": "Q49166",
                          "the Consortium of Liberal Arts Colleges": "Q5165061"},
             subsumptions={
-                ("Q49205", "Q49", "part_of"): "a_subsumed_by_b",
+                ("Q49166", "Q49", "part_of"): "a_subsumed_by_b",
                 ("Q5165061", "Q49", "part_of"): "a_subsumed_by_b",
             })
         williams_meta = _meta("part_of", [
@@ -462,6 +487,15 @@ class TestOfflineRegression:
                              single_valued=True)],
             object_type="time", single_valued=1)
 
+        founded_before_kb = _MockKB(
+            statements_by_property={"P571": [
+                Statement(value="2001-01-15T00:00:00Z", value_type="literal")]},
+            resolutions={"a university": "Q42"})
+        founded_before_meta = _meta("founded_in_year", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P571", source="oracle",
+                             single_valued=True)],
+            object_type="time", single_valued=1)
+
         runs = [
             ("germany", "abstain",
              _verdict(germany_meta, germany_kb,
@@ -472,6 +506,9 @@ class TestOfflineRegression:
                              "the Consortium of Liberal Arts Colleges"))),
             ("france", "abstain",
              _verdict(france_meta, france_kb, _claim("France", "founded_on", "843"))),
+            ("founded_before", "abstain",
+             _verdict(founded_before_meta, founded_before_kb,
+                      _claim("a university", "founded_in_year", "before 1800"))),
         ]
         cases = [BenchmarkCase(cid, "s", gt, "regression", "") for cid, gt, _ in runs]
         results = [RunResult(cid, verdict) for cid, _, verdict in runs]

@@ -1528,6 +1528,43 @@ class TestKBVerifierMultiValuedSingleValued:
             == "multi_valued_single_valued_predicate"
         )
 
+    def test_comparison_phrase_object_abstains_not_contradicts(self):
+        # C2-FC1 regression pin (csu_003 shape, "founded before 1800"). The
+        # extractor sometimes maps "founded before YYYY" to a founded_in_year
+        # claim whose OBJECT is the literal comparison phrase "before 1800", and
+        # a vague subject ("a university") resolves to some specific entity with
+        # a single KB inception date (here 2001). The claim object does not
+        # parse to a year, so comparing the KB date against it is ill-defined:
+        # a non-match is a PARSE failure, not falsity. Pre-C2-FC1 this single
+        # distinct KB value promoted to a false CONTRADICTED; the parse guard
+        # now abstains. §3.2 (never contradict on an unparseable object).
+        stmts = [Statement(value="2001-01-15T00:00:00Z", value_type="literal")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(
+            _claim(predicate="founded_in_year", object_val="before 1800")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.verdict != KBVerdictType.CONTRADICTED
+        assert result.trace.get("abstention_reason") == "object_not_a_parseable_date"
+
+    def test_clean_wrong_year_object_still_contradicts(self):
+        # C2-FC1 non-vacuity / preservation dual. A CLEAN 4-digit year object
+        # ("1850") that does not match the single KB inception year (1793) is a
+        # genuine functional conflict and MUST still CONTRADICT — the parse
+        # guard only suppresses objects that do NOT normalize to a year. This
+        # pins that the guard did not over-broaden into masking real wrong-year
+        # contradictions.
+        stmts = [Statement(value="1793-01-01T00:00:00Z", value_type="literal")]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(
+            _claim(predicate="founded_in_year", object_val="1850")
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
 
 # ===========================================================================
 # v0.16.1 WS2 — OCCUPATION-COPULA POSITIVE GROUNDING (P106) + FAIL-CLOSED GATE

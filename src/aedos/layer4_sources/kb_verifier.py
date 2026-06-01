@@ -703,6 +703,22 @@ class KBVerifier:
             # this. A PRECISE wrong year (no marker) still contradicts as before.
             if meta.object_type == "time" and _is_approx_year(str(expected_value)):
                 return KBVerdictType.NO_MATCH, None, "approximate_date_no_year_match"
+            # C2-FC1 (§3.2): a date predicate may CONTRADICT only when the
+            # claim's OBJECT itself parses to a comparable year/date. A
+            # comparison phrase ("before 1800", "after 1066"), a vague date
+            # ("the early 1900s"), or any object the date normalizer cannot
+            # reduce to a year is NOT a clean exact value — comparing the KB's
+            # date against it is ill-defined, so a non-match is a PARSE failure,
+            # not evidence of falsity (the predicate was most likely a
+            # comparison mis-mapped to founded_on/founded_in_year). Abstain. This
+            # is the date/literal analog of the entity `value_unresolved` (N1)
+            # guard: resolution/parse failure is a false-abstain source, never a
+            # false-contradict source. The approx-year guard above already
+            # handles "c. 1550"-style markers; this catches non-year objects
+            # generally. A clean year/ISO-date object ("1850", "1850-03-02")
+            # normalizes fine and still CONTRADICTS a differing KB date as before.
+            if meta.object_type == "time" and _normalize_date_value(str(expected_value)) is None:
+                return KBVerdictType.NO_MATCH, None, "object_not_a_parseable_date"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
         # Conservative DISJOINT
