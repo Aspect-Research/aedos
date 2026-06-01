@@ -1063,6 +1063,67 @@ class TestKBVerifierNoStatementsDisjointArm:
         assert result.trace.get("positive_verdict") == "contradicted"
         assert result.trace.get("polarity") == 0
 
+    def test_no_statements_disjoint_nongeographic_object_abstains(self):
+        # v0.16.1 cycle-2 FULL-STACK REGRESSION (the medium-bar false-contradict):
+        # "Germany (Q183) located_in the European Union (Q458)". The P131 binding
+        # finds NO statement. The OLD path (b) false-CONTRADICTED: under the
+        # part_of alternation both Germany and the EU are a_subsumed_by_b the same
+        # continent (Europe Q46) — the EU carries P30=Europe — and Germany<->EU is
+        # `unrelated` in both directions (EU membership rides P463, invisible to
+        # P131/P30/P17). The path-b object GATE now requires the EXPECTED object
+        # to be a confirmed geographic PLACE; the EU is NOT (every is_a place
+        # probe returns the default 'unrelated'), so the gate fails closed =>
+        # geographic_disjoint False => the disjoint arm does NOT fire => NO_MATCH
+        # (ABSTAIN), never CONTRADICTED. The subsumption-UPGRADE arm also does not
+        # fire (Germany is not subsumed by the EU under part_of). §3.2.
+        kb = _MultiPropKB(
+            statements_by_property={"P131": []},
+            resolutions={"Germany": "Q183", "European Union": "Q458"},
+            subsumptions={
+                ("Q183", "Q46", "part_of"): "a_subsumed_by_b",  # Germany ⊂ Europe
+                ("Q458", "Q46", "part_of"): "a_subsumed_by_b",  # EU ⊂ Europe (P30)
+                # EU is_a <place class> => all 'unrelated' (gate fails closed);
+                # Germany ⊂ EU => 'unrelated' (no subsumption-upgrade either)
+            },
+        )
+        meta = _make_meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Germany", predicate="located_in", object_val="European Union")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("no_statements_disjoint_fallback") is None
+
+    def test_no_statements_disjoint_organization_object_abstains(self):
+        # v0.16.1 cycle-2 FULL-STACK REGRESSION: "Williams College (Q49112)
+        # part_of the Consortium (Q_consortium)". P361 is a location property, so
+        # an ORGANIZATIONAL part_of reached the disjoint arm. Even with a
+        # hypothetical shared-continent ancestor and mutual non-containment, the
+        # consortium is not a confirmed geographic place => the path-b gate fails
+        # closed => geographic_disjoint False => NO_MATCH (ABSTAIN), never
+        # CONTRADICTED. §3.2.
+        assert "P361" in _LOCATION_KB_PROPERTIES
+        kb = _MultiPropKB(
+            statements_by_property={"P361": []},
+            resolutions={"Williams College": "Q49112", "Consortium": "Q_consortium"},
+            subsumptions={
+                ("Q49112", "Q46", "part_of"): "a_subsumed_by_b",       # hypoth.
+                ("Q_consortium", "Q46", "part_of"): "a_subsumed_by_b",  # hypoth.
+                # consortium is_a <place class> => all 'unrelated' (gate fails closed)
+            },
+        )
+        meta = _make_meta("part_of", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P361", source="oracle"),
+        ])
+        verifier = _make_multi_verifier(kb, meta)
+        result = verifier.verify(
+            _claim(subject="Williams College", predicate="part_of", object_val="Consortium")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("no_statements_disjoint_fallback") is None
+
     def test_no_statements_disjoint_skipped_for_inverse_binding(self):
         # The `not lookup_inverted` gate. An inverse binding (slot_to_qualifier
         # maps the Aedos subject to statement_value) keys the lookup on the

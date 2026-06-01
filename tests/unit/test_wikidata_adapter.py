@@ -250,12 +250,139 @@ class TestGeographicCluster:
         # a_subsumed_by_b the SAME continent (Europe Q46), and Lazio is
         # `unrelated` to Germany in BOTH part_of directions => disjoint True.
         # The "Rome is in Germany" CONTRADICTED shape.
+        #
+        # v0.16.1 cycle-2 path-b GATE: the expected object (Germany) must be a
+        # confirmed geographic place (is_a country Q6256). Scripted below.
         adapter = _StubSubsumptionAdapter({
             ("Q1282", "Q46", "part_of"): "a_subsumed_by_b",  # Lazio ⊂ Europe
             ("Q183", "Q46", "part_of"): "a_subsumed_by_b",   # Germany ⊂ Europe
+            ("Q183", "Q6256", "is_a"): "a_subsumed_by_b",    # Germany is_a country
             # Lazio<->Germany unrelated in both directions (default)
         })
         assert adapter.geographic_disjoint("Q1282", "Q183") is True
+
+    def test_geographic_disjoint_path_b_nongeographic_object_false(self):
+        # v0.16.1 cycle-2 REGRESSION: "Germany (Q183) located_in the European
+        # Union (Q458)". The EU carries P30=Europe, so under the part_of
+        # alternation BOTH Germany and the EU are a_subsumed_by_b the same
+        # continent (Europe Q46), and Germany<->EU is `unrelated` in both
+        # directions (EU membership rides P463, invisible to P131/P30/P17). The
+        # OLD path b therefore false-contradicted this TRUE membership claim.
+        # The object gate: the EU is NOT a confirmed geographic place (False on
+        # every _GEO_PLACE_CLASSES is_a verdict — default 'unrelated'), so path b
+        # fails closed => disjoint False => the verifier ABSTAINS, not contradict.
+        adapter = _StubSubsumptionAdapter({
+            ("Q183", "Q46", "part_of"): "a_subsumed_by_b",  # Germany ⊂ Europe
+            ("Q458", "Q46", "part_of"): "a_subsumed_by_b",  # EU ⊂ Europe (via P30)
+            # EU is_a <place class> => all 'unrelated' (the gate fails closed)
+        })
+        assert adapter.geographic_disjoint("Q183", "Q458") is False
+
+    def test_geographic_disjoint_path_b_organization_object_false(self):
+        # v0.16.1 cycle-2 REGRESSION: "Williams College (Q49112) part_of the
+        # Consortium (Q_consortium)". P361 is a location property, so an
+        # ORGANIZATIONAL part_of reached path b. The consortium is not a
+        # confirmed geographic place => path b fails closed => disjoint False
+        # => ABSTAIN. (Even if a shared-continent ancestor existed, the gate
+        # blocks the contradiction.)
+        adapter = _StubSubsumptionAdapter({
+            ("Q49112", "Q46", "part_of"): "a_subsumed_by_b",   # Williams ⊂ Europe (hypoth.)
+            ("Q_consortium", "Q46", "part_of"): "a_subsumed_by_b",
+            # consortium is_a <place class> => all 'unrelated' (gate fails closed)
+        })
+        assert adapter.geographic_disjoint("Q49112", "Q_consortium") is False
+
+    def test_geographic_disjoint_path_b_river_object_still_true(self):
+        # v0.16.1 cycle-2 (b): the GATE must NOT over-block a genuine
+        # geographic-place object. A region (Q_region) vs the Thames (Q_thames),
+        # a non-continent geographic PLACE confirmed via is_a river (Q4022). Both
+        # share a continent ancestor (Europe Q46) and are mutually unrelated, so
+        # the region is a disjoint sub-region. The Thames passes the place gate
+        # (is_a river) => path (b) CONTRADICTS as before. Object is NOT a
+        # continent, so this genuinely exercises path (b) (not path a).
+        assert "Q_thames" not in _CONTINENT_QIDS
+        adapter = _StubSubsumptionAdapter({
+            ("Q_region", "Q46", "part_of"): "a_subsumed_by_b",
+            ("Q_thames", "Q46", "part_of"): "a_subsumed_by_b",
+            ("Q_thames", "Q4022", "is_a"): "a_subsumed_by_b",  # Thames is_a river (gate)
+            # region<->Thames unrelated in both part_of directions (default)
+        })
+        assert adapter.geographic_disjoint("Q_region", "Q_thames") is True
+
+    def test_geographic_disjoint_path_b_geographic_place_object_still_true(self):
+        # v0.16.1 cycle-2 (b): the canonical path-b geographic shape with the
+        # object confirmed a PLACE via EACH _GEO_PLACE_CLASSES member in turn —
+        # proves the gate accepts any place class (country, river, body of
+        # water, ...), not just the first. Lazio (Q1282) vs an object Q_obj that
+        # is_a the place class; both share Europe; mutually unrelated => True.
+        from aedos.layer4_sources.kb_wikidata import _GEO_PLACE_CLASSES
+
+        for place_class in _GEO_PLACE_CLASSES:
+            adapter = _StubSubsumptionAdapter({
+                ("Q1282", "Q46", "part_of"): "a_subsumed_by_b",   # Lazio ⊂ Europe
+                ("Q_obj", "Q46", "part_of"): "a_subsumed_by_b",   # object ⊂ Europe
+                ("Q_obj", place_class, "is_a"): "a_subsumed_by_b",  # object is_a <place>
+            })
+            assert adapter.geographic_disjoint("Q1282", "Q_obj") is True, place_class
+
+    def test_geographic_disjoint_path_b_place_gate_equivalent_verdict_true(self):
+        # The gate accepts an `equivalent` is_a verdict, not only
+        # `a_subsumed_by_b` (an object that IS the place class). Pin it so a
+        # later tightening to a single verdict can't silently reopen the bug on
+        # the inverse side (real path-b contradiction still fires).
+        adapter = _StubSubsumptionAdapter({
+            ("Q1282", "Q46", "part_of"): "a_subsumed_by_b",
+            ("Q_obj", "Q46", "part_of"): "a_subsumed_by_b",
+            ("Q_obj", "Q6256", "is_a"): "equivalent",  # object equivalent to country
+        })
+        assert adapter.geographic_disjoint("Q1282", "Q_obj") is True
+
+    def test_geographic_disjoint_path_b_france_in_europe_not_disjoint(self):
+        # v0.16.1 cycle-2 (c): the TRUE "France (Q142) is in Europe (Q46)" shape
+        # must NEVER contradict. Europe is a continent, so this resolves via path
+        # (a): France is subsumed by Europe ITSELF (the expected continent) and
+        # unrelated to every OTHER continent => no different-continent ancestor
+        # => disjoint False. The path-b gate is not even consulted (path a
+        # returns first), so the VERIFY path is preserved.
+        assert "Q46" in _CONTINENT_QIDS  # Europe
+        adapter = _StubSubsumptionAdapter({
+            ("Q142", "Q46", "part_of"): "a_subsumed_by_b",  # France ⊂ Europe
+        })
+        assert adapter.geographic_disjoint("Q142", "Q46") is False
+
+    def test_geographic_disjoint_path_b_place_gate_subsumption_error_fails_closed(self):
+        # v0.16.1 cycle-2 (d): fail-closed when the OBJECT's geographic-type
+        # subsumption is UNCONFIRMED via an ERROR (not merely 'unrelated'). The
+        # part_of probes resolve fine (both subsumed by Europe, mutually
+        # unrelated) so the OLD path b would contradict; but every is_a place
+        # probe RAISES, so `_is_confirmed_geographic_place` swallows it and
+        # returns False => the gate fails closed => disjoint False => ABSTAIN.
+        # §3.2: uncertainty about the object's geo-type can never contradict.
+        class _PartOfOkIsaRaisesAdapter(WikidataAdapter):
+            def subsumption(self, entity_a, entity_b, relation_type):
+                if relation_type == "is_a":
+                    raise RuntimeError("kb down on the place-class probe")
+                # part_of: both Germany-shape and EU-shape share Europe, mutually
+                # unrelated — the path-b precondition that the gate must override.
+                if (entity_a, entity_b) in (("Q183", "Q46"), ("Q458", "Q46")):
+                    return SubsumptionResult(verdict="a_subsumed_by_b")
+                return SubsumptionResult(verdict="unrelated")
+
+        adapter = _PartOfOkIsaRaisesAdapter()
+        assert adapter.geographic_disjoint("Q183", "Q458") is False
+
+    def test_geographic_disjoint_path_b_place_gate_unknown_object_fails_closed(self):
+        # v0.16.1 cycle-2 (d): fail-closed when the object's geo-type is simply
+        # UNKNOWN (every is_a place probe returns the default 'unrelated'), while
+        # the shared-continent + mutual-non-containment path-b precondition holds.
+        # Mirrors the Germany-in-EU shape but stated generically. => disjoint
+        # False => ABSTAIN.
+        adapter = _StubSubsumptionAdapter({
+            ("Q_subj", "Q46", "part_of"): "a_subsumed_by_b",
+            ("Q_unknown_obj", "Q46", "part_of"): "a_subsumed_by_b",
+            # no is_a entries for Q_unknown_obj => all place-class probes unrelated
+        })
+        assert adapter.geographic_disjoint("Q_subj", "Q_unknown_obj") is False
 
     def test_geographic_disjoint_subregion_of_expected_false(self):
         # Île-de-France (Q13917) vs Europe (Q46). Europe is a continent, so path
