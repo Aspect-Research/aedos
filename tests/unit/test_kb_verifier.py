@@ -1343,6 +1343,171 @@ class TestKBVerifierApproximateDate:
 
 
 # ===========================================================================
+# C2-3 (§3.2) — a predicate the oracle marked single_valued can still hold
+# MULTIPLE DISTINCT values for one subject in the KB data (France P571
+# inception = {843 West Francia, 1958 Fifth Republic, ...}). The confirmed
+# medium-bar false-contradict pt_006 "France was founded in 843": the claim
+# matched none of the returned statements, the first non-matching one was the
+# Fifth-Republic 1958 date, and the single_valued promotion CONTRADICTED it —
+# unsound, because 843 is itself one of the KB's held values. The fix:
+# the single_valued CONTRADICTED branch fires only when the subject presents a
+# SINGLE distinct mismatch value (a genuine functional conflict); when it holds
+# MULTIPLE distinct values and the claim matched none, abstain (NO_MATCH). The
+# VERIFIED match-any loop runs across ALL statements, so a claim matching ANY
+# held value still verifies first. The genuine single-value contradiction
+# (born_on, one distinct KB date) is preserved — see TestKBVerifierSingleValued
+# / TestKBVerifierTimeObjectTypeGate, and the explicit control below.
+# ===========================================================================
+
+
+class TestKBVerifierMultiValuedSingleValued:
+    def test_date_predicate_multi_value_claim_matches_none_abstains(self):
+        # The France-843 shape (the medium-bar pt_006 false-contradict). P571 is
+        # marked single_valued=1, but the KB holds two distinct inception dates
+        # (843 West Francia, 1958 Fifth Republic); the claim's year matches
+        # neither held value. Pre-fix this promoted to CONTRADICTED off the FIRST
+        # non-matching statement (1958). The fix downgrades it to NO_MATCH — a KB
+        # property with multiple distinct values is not functionally
+        # single-valued here, so a non-match cannot soundly contradict. NOT
+        # CONTRADICTED. (Uses 4-digit held/claim years so the demonstration is
+        # independent of sub-1000-year normalization; the real France 843 value
+        # exercises the same multi-value guard and likewise abstains.)
+        stmts = [
+            Statement(value="1958-10-04T00:00:00Z", value_type="date"),
+            Statement(value="1792-09-21T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(_claim(predicate="founded_on", object_val="1700"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert (
+            result.trace.get("abstention_reason")
+            == "multi_valued_single_valued_predicate"
+        )
+
+    def test_date_predicate_multi_value_claim_matches_one_verifies(self):
+        # The pt_006 truth-class control: the claim DOES match ONE of the
+        # multiple held values (year 1958). The match-any loop verifies on that
+        # statement before any contradiction reasoning — never contradicting a
+        # value the KB holds.
+        stmts = [
+            Statement(value="1958-10-04T00:00:00Z", value_type="date"),
+            Statement(value="1792-09-21T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(_claim(predicate="founded_on", object_val="1958"))
+        assert result.verdict == KBVerdictType.VERIFIED
+
+    def test_entity_predicate_multi_value_claim_matches_none_abstains(self):
+        # Same guarantee for an entity-valued single_valued predicate that holds
+        # multiple distinct Q-ids: the claim's resolved object matches neither →
+        # abstain, never contradict.
+        stmts = [
+            Statement(value="Q18094", value_type="entity"),  # Honolulu
+            Statement(value="Q60", value_type="entity"),      # New York City
+        ]
+        verifier = _make_verifier(
+            stmts, kb_property="P19", single_valued=1,
+            resolutions={"Some Other City": "Q1490"},  # Tokyo, matches neither
+        )
+        result = verifier.verify(
+            _claim(predicate="born_in", object_val="Some Other City")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert (
+            result.trace.get("abstention_reason")
+            == "multi_valued_single_valued_predicate"
+        )
+
+    def test_single_distinct_value_still_contradicts(self):
+        # Regression pin for the preserved genuine contradiction: when the
+        # subject holds exactly ONE distinct value (here repeated across two
+        # statement rows), a non-matching precise claim still CONTRADICTS — the
+        # multi-value guard only loosens GENUINELY multi-valued subjects.
+        stmts = [
+            Statement(value="1550-01-01T00:00:00Z", value_type="date"),
+            Statement(value="1550-01-01T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P569"
+        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="1600"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_approx_year_matches_one_of_multi_value_verifies(self):
+        # WS1 (approximate date) × C2-3 (multi-value single_valued) interplay.
+        # A single_valued date predicate (P571) whose subject holds MULTIPLE
+        # distinct inception years; the claim is an APPROXIMATE year "c. 1958"
+        # that year-matches ONE held value (1958). The match-any loop strips the
+        # approximation marker on the claim side, year-matches the 1958
+        # statement, and VERIFIES — before any contradiction reasoning. The
+        # approximate marker and the multi-value subject both run, and neither
+        # turns a held value into a contradiction.
+        stmts = [
+            Statement(value="1958-10-04T00:00:00Z", value_type="date"),
+            Statement(value="1792-09-21T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(_claim(predicate="founded_on", object_val="c. 1958"))
+        assert result.verdict == KBVerdictType.VERIFIED
+
+    def test_approx_year_matches_none_of_multi_value_abstains(self):
+        # WS1 × C2-3 interplay, miss case. The approximate claim "c. 1700"
+        # year-matches NEITHER held value (1958, 1792). Two independent §3.2
+        # backstops both forbid a contradiction here: (1) the subject presents
+        # multiple distinct values, so it is not functionally single-valued; and
+        # (2) an approximation may never contradict a nearby exact date. The
+        # multi-value guard fires first (it precedes the approx guard in
+        # _compare_positive), so the abstention reason is the multi-value one.
+        # Either way the outcome is abstain, NOT CONTRADICTED.
+        stmts = [
+            Statement(value="1958-10-04T00:00:00Z", value_type="date"),
+            Statement(value="1792-09-21T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(_claim(predicate="founded_on", object_val="c. 1700"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert (
+            result.trace.get("abstention_reason")
+            == "multi_valued_single_valued_predicate"
+        )
+
+    def test_literal_france_843_multi_value_abstains_not_contradicts(self):
+        # The verbatim France-843 medium-bar pt_006 shape, with the REAL sub-1000
+        # year values the KB stores (West Francia 843 = "+0843-...", Fifth
+        # Republic 1958). The literal claim object "843" is 3 digits, so it never
+        # enters the 4-digit year-normalized compare (a documented limitation of
+        # _BARE_YEAR_RE / _normalize_date_value) and matches no statement
+        # literally. Pre-fix that promoted to a false CONTRADICTED off the 1958
+        # statement; the multi-value guard now downgrades it to NO_MATCH/abstain.
+        # This pins the SAFE behavior: §3.2 paramount is "never contradict", and
+        # the sub-1000-year claim correctly abstains rather than VERIFYing or
+        # CONTRADICTing. (If the year normalizer is later widened to <4-digit
+        # years this should flip to VERIFIED via match-any, never CONTRADICTED.)
+        stmts = [
+            Statement(value="+0843-01-01T00:00:00Z", value_type="date"),
+            Statement(value="1958-10-04T00:00:00Z", value_type="date"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="time", single_valued=1, kb_property="P571"
+        )
+        result = verifier.verify(_claim(predicate="founded_on", object_val="843"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.verdict != KBVerdictType.CONTRADICTED
+        assert (
+            result.trace.get("abstention_reason")
+            == "multi_valued_single_valued_predicate"
+        )
+
+
+# ===========================================================================
 # v0.16.1 WS2 — OCCUPATION-COPULA POSITIVE GROUNDING (P106) + FAIL-CLOSED GATE
 #
 # A profession copula "X is a guitarist" extracts as instance_of → primary P31

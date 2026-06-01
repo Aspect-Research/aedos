@@ -616,6 +616,17 @@ class KBVerifier:
         "no_matching_statement" for NO_MATCH.
         """
         scope_mismatch: Optional[Statement] = None
+        # The DISTINCT scope-compatible values the subject holds for this
+        # property that the claim did not match. A predicate the oracle marked
+        # single_valued may nonetheless hold MULTIPLE distinct values in the KB
+        # data (e.g. France P571 inception: 843 West Francia, 1958 Fifth
+        # Republic). When that is so, a claim matching NONE of them is not a
+        # functional conflict — the KB simply isn't functionally single-valued
+        # for this subject — so it can never soundly CONTRADICT (§3.2). We only
+        # let the single_valued contradiction fire on a genuine SINGLE distinct
+        # value. (The VERIFIED match-any loop below already runs across ALL
+        # statements, so a claim that matches ANY held value verifies first.)
+        mismatch_values: set = set()
         for stmt in statements:
             if not _scope_compatible(stmt, claim, current_time):
                 continue
@@ -623,6 +634,7 @@ class KBVerifier:
                 return KBVerdictType.VERIFIED, stmt, None
             if scope_mismatch is None:
                 scope_mismatch = stmt
+            mismatch_values.add(stmt.value)
 
         value_unresolved = meta.object_type == "entity" and not value_resolved
 
@@ -649,6 +661,18 @@ class KBVerifier:
                 # N1: the expected-value reference never resolved — the mismatch
                 # is a resolution failure, not a contradiction. Abstain, not lie.
                 return KBVerdictType.NO_MATCH, None, "value_unresolved"
+            # C2-3 (§3.2): a predicate the oracle marked single_valued can still
+            # hold MULTIPLE distinct values for this subject in the KB data
+            # (France P571 = {843 West Francia, 1958 Fifth Republic, ...}). When
+            # the subject presents more than one distinct value and the claim
+            # matched none of them above, this is NOT a genuine functional
+            # conflict — the data is not functionally single-valued here — so a
+            # non-match cannot soundly contradict. Abstain. The genuine
+            # single-value contradiction (one distinct KB value differing from a
+            # precise claim, e.g. born_on) is preserved: it has exactly one
+            # distinct mismatch value and falls through to CONTRADICTED.
+            if len(mismatch_values) > 1:
+                return KBVerdictType.NO_MATCH, None, "multi_valued_single_valued_predicate"
             # S3 generalization: never contradict on a type-mismatched mapping.
             # If the looked-up statement's datatype is incompatible with the
             # predicate's object_type, the predicate is likely mis-mapped to the
