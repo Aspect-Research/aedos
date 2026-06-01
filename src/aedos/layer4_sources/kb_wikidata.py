@@ -397,6 +397,77 @@ _GEO_CONTAINER_TYPES: frozenset[str] = frozenset([
     "Q5107",  # continent
 ])
 
+# v0.16.1 cycle-2: geographic-PLACE classes that gate the shared-continent
+# sub-region disjoint path (path b in `_geographic_disjoint`). The expected
+# object of a "X located_in Y" / "X part_of Y" claim must be a CONFIRMED
+# geographic place before path b may contradict — otherwise a non-geographic
+# object that merely sits on a continent (a supranational union, an
+# organization, a consortium) is mis-classified as a geographically disjoint
+# sub-region and the verifier FALSE-CONTRADICTS a TRUE claim.
+#
+# Two false-contradicts shared this root cause:
+#   - "Germany located_in the European Union" — the EU (Q458) carries P30=Europe
+#     so it shares Germany's continent under the part_of alternation, yet
+#     Germany↔EU is `unrelated` under P131/P30/P17 (EU membership is P463, which
+#     the alternation cannot see), so path b flagged them disjoint.
+#   - "Williams College part_of the Consortium of Liberal Arts Colleges" — P361
+#     is a location property, so an ORGANIZATIONAL part_of reached path b with a
+#     consortium object.
+#
+# The set is grounded in a live Wikidata P31/P279* probe of the medium-bar geo
+# entities. It admits countries, sovereign states, continents, rivers, bodies
+# of water, and natural geographic objects, and EXCLUDES the EU / Williams /
+# consortium (each False on every member):
+#   country Q6256, sovereign state Q3624078:  Germany/France/Vatican=True, EU=False
+#   continent Q5107:                           Europe/Asia/Africa=True
+#   body of water Q15324, river Q4022:         Thames=True
+#   natural geographic object Q35145263:       continents/physical features=True
+#
+# Deliberately EXCLUDES the broad "geographic region" (Q82794) and
+# "human-geographic territorial entity" (Q15642541) classes: the probe showed
+# BOTH subsume the EU (it is genuinely a human-geographic/region entity in
+# Wikidata's loose ontology), so admitting them would reopen the
+# Germany-in-EU false-contradict. Sub-national regions (US states, Italian
+# regions) as the EXPECTED container also fall outside this set; the gate then
+# fails closed -> abstain, the §3.2-safe outcome (no current pin needs a
+# sub-national region as a path-b container).
+_GEO_PLACE_CLASSES: tuple[str, ...] = (
+    "Q6256",      # country
+    "Q3624078",   # sovereign state
+    "Q5107",      # continent
+    "Q15324",     # body of water
+    "Q4022",      # river
+    "Q35145263",  # natural geographic object
+)
+
+
+def _is_confirmed_geographic_place(subsumption_fn, value: str) -> bool:
+    """v0.16.1 cycle-2: True when `value`'s instance-of/subclass-of chain is
+    subsumption-confirmed (is_a: P31|P279) to reach a geographic-PLACE class
+    (`_GEO_PLACE_CLASSES`). Drives the path-b object gate in
+    `_geographic_disjoint`.
+
+    Reuses the KBProtocol `subsumption` callable (`is_a` relation) so the
+    live/fixture path and SubsumptionResult shape are unchanged — the ASK is
+    `value (wdt:P31|wdt:P279)+ <place_class>`, which yields
+    `a_subsumed_by_b`/`equivalent` exactly when `value` is an instance of (a
+    subclass of) the place class.
+
+    FAILS CLOSED: a non-string value, a subsumption error, or no positive
+    verdict against ANY place class returns False — so an unconfirmed /
+    organization / union / consortium object can never satisfy the gate, and
+    path b abstains rather than false-contradicting. §3.2."""
+    if not isinstance(value, str) or not value:
+        return False
+    for place_class in _GEO_PLACE_CLASSES:
+        try:
+            r = subsumption_fn(value, place_class, "is_a")
+        except Exception:
+            continue
+        if r.verdict in ("a_subsumed_by_b", "equivalent"):
+            return True
+    return False
+
 
 def _geographic_disjoint(subsumption_fn, kb_value: str, expected_value: str) -> bool:
     """v0.16.1 WS5a: relocated from `kb_verifier._location_disjoint`. True when
@@ -423,6 +494,18 @@ def _geographic_disjoint(subsumption_fn, kb_value: str, expected_value: str) -> 
         continent is Europe, and Lazio is unrelated to Germany in both
         subsumption directions.
 
+        v0.16.1 cycle-2 GATE: path b additionally requires the EXPECTED object
+        (`expected_value`) to be a subsumption-confirmed geographic PLACE
+        (`_is_confirmed_geographic_place`). Without this, a non-geographic
+        object that merely sits on a continent under the part_of alternation —
+        a supranational union (the EU carries P30=Europe), an organization, a
+        consortium — is mis-read as a disjoint sub-region and a TRUE membership
+        claim is FALSE-CONTRADICTED ("Germany located_in the EU",
+        "Williams College part_of the Consortium"). The gate fails closed: an
+        object whose geographic-place membership is not confirmed yields no
+        disjoint -> the verifier abstains (NO_MATCH). Path a (continent-level)
+        is inherently geographic and does NOT need the gate.
+
     Fails closed on error: any uncertainty preserves NO_MATCH (abstain). §3.2
     soundness-over-completeness.
     """
@@ -444,7 +527,13 @@ def _geographic_disjoint(subsumption_fn, kb_value: str, expected_value: str) -> 
                 return True
         return False
 
-    # (b) Shared-continent sub-region path
+    # (b) Shared-continent sub-region path.
+    # GATE (v0.16.1 cycle-2): the expected object must be a confirmed geographic
+    # PLACE. A union / organization / consortium that merely shares a continent
+    # under the part_of alternation is NOT a disjoint sub-region — fail closed
+    # (abstain) rather than false-contradict a true membership claim.
+    if not _is_confirmed_geographic_place(subsumption_fn, expected_value):
+        return False
     for continent in _CONTINENT_QIDS:
         try:
             kb_in = subsumption_fn(kb_value, continent, "part_of").verdict
