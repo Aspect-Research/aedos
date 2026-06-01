@@ -634,7 +634,20 @@ class KBVerifier:
                 return KBVerdictType.VERIFIED, stmt, None
             if scope_mismatch is None:
                 scope_mismatch = stmt
-            mismatch_values.add(stmt.value)
+            # C2S-1: for a date predicate, key the distinctness set on the
+            # year-normalized value so two statements that denote the SAME year
+            # at differing precision (e.g. P569 '+1879-03-14...' day-precision and
+            # '+1879-01-01...' year-precision — a coarsening of one birth fact)
+            # collapse to a single distinct value. Without this the multi-value
+            # gate below over-fires: a genuinely WRONG-year claim (born_on "1900")
+            # would see two raw strings, count as multi-valued, and be downgraded
+            # to abstain instead of the correct CONTRADICTED. Genuinely distinct
+            # YEARS (France P571 = {0843, 1958}) still normalize to two keys and
+            # keep abstaining. Non-date values are keyed verbatim.
+            if meta.object_type == "time":
+                mismatch_values.add(_normalize_date_value(stmt.value) or stmt.value)
+            else:
+                mismatch_values.add(stmt.value)
 
         value_unresolved = meta.object_type == "entity" and not value_resolved
 
