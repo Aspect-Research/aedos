@@ -552,7 +552,15 @@ class Extractor:
 
         claims: list[Claim] = []
         for raw in flat:
-            claim = self._build_claim(raw, text, context)
+            # Defense-in-depth: a single malformed raw claim must never abort
+            # the whole batch (one lost case → verdict="error" in the
+            # benchmark). The None-guards in _build_claim are the primary fix;
+            # this catch is the backstop for any unforeseen shape. Skipping a
+            # crashing raw claim is the conservative (abstain-safe) outcome.
+            try:
+                claim = self._build_claim(raw, text, context)
+            except Exception:
+                continue
             # v0.16 WS4: _build_claim now returns None ONLY for future-tense
             # claims (Rule 4 filter). Every other shaped claim is returned,
             # carrying an abstention_reason when malformed / not-checkworthy.
@@ -586,14 +594,37 @@ class Extractor:
         # The ONE remaining `return None` is the future-tense drop (Rule 4):
         # future claims are not shaped claims to verify. TestFutureTenseRejection
         # depends on it.
-        raw_subject = raw.get("subject", "")
-        raw_object = raw.get("object", "")
+        # Coerce the raw slot values to safe strings. raw.get(key, "") still
+        # returns None when the LLM emits an explicit null (the key is present
+        # with value None), so the `or ""` is load-bearing: it guarantees no
+        # downstream .strip()/.casefold()/.lower() is ever called on None (the
+        # extractor.py:637 self-referential-check crash). A well-formed claim
+        # (non-empty string slots) is unaffected — "x" or "" == "x" — so the
+        # normal path is byte-equivalent; only None/missing slots change, from
+        # a crash to "" (routed to abstention below). Mirrors the predicate
+        # coercion already used for the predicate==object check.
+        raw_subject = raw.get("subject") or ""
+        raw_object = raw.get("object") or ""
         reified_id = raw.get("reified_event_id")
 
         abstention_reason: Optional[str] = None
 
+        # A claim with an empty SUBJECT (after the coercion above) is malformed.
+        # It must not crash and must not flow as a well-formed claim: an empty
+        # subject vacuously passes the hard-claim check below ("" is a substring
+        # of any source text), so stamp the highest-precedence abstention reason
+        # here. The walker short-circuits it pre-lookup (WS4 verify-every-claim:
+        # emit, never silently drop). An empty OBJECT is intentionally left to
+        # flow (grounds to no_grounding_found — abstention; see Deletion #2
+        # comment below), so only the empty-subject case is stamped here.
+        if not raw_subject.strip():
+            abstention_reason = AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+
         # Hard-claim discipline: subject/object absent from source text.
-        if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
+        if (
+            abstention_reason is None
+            and not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id)
+        ):
             abstention_reason = AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
 
         # v0.16 WS4 Deletion #2: the content-less occurred/happened/took_place
@@ -670,10 +701,18 @@ class Extractor:
             return None
 
         subject = self._canonicalize(raw_subject, context.asserting_party)
-        predicate = normalize_predicate(raw.get("predicate", ""))
+        # `or ""` again guards an explicit-null predicate slot: normalize_predicate
+        # calls raw.strip() and would crash on None ("" → "unknown_predicate").
+        predicate = normalize_predicate(raw.get("predicate") or "")
         object_value = raw_object
-        polarity = int(raw.get("polarity", 1))
-        source_text = raw.get("source_text", "")
+        # polarity is the {0, 1} negation flag; 0 is a VALID value (negation),
+        # so coerce only an explicit null/missing slot to the affirm default —
+        # `or 1` would wrongly flip a legitimate 0 to 1.
+        raw_polarity = raw.get("polarity")
+        polarity = int(raw_polarity) if raw_polarity is not None else 1
+        # `or ""` guards an explicit-null source_text: it feeds _RESIDENCE_VERB.search
+        # below, and re.search(None) raises TypeError.
+        source_text = raw.get("source_text") or ""
 
         # When the source-text
         # verb is a residence verb (lives/lived/resides/residing + in)
