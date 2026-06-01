@@ -599,6 +599,30 @@ class Walker:
         trace.walk_metadata.update({"depth_reached": depth, "llm_calls": llm_calls})
         trace.polarity_trace = polarity_trace
 
+        # C2-FC1 (§3.2): never emit a CONTRADICTED verdict for a claim whose
+        # SUBJECT is a vague/indefinite reference ("a university", "a company").
+        # Such a subject denotes an EXISTENTIAL, not a specific entity: no
+        # grounding path — direct lookup OR a multi-hop discovery substitution
+        # that resolves the subject to one arbitrary KB entity — can soundly
+        # REFUTE it. "A university founded before 1800" is TRUE (such
+        # universities exist) even when the arbitrarily-resolved university was
+        # founded in 2001. Suppress to abstain. This is the SUBJECT-slot analog
+        # of the vague-OBJECT object-conflict guard in _direct_lookup; it sits at
+        # the single verdict chokepoint so it covers BOTH the direct and the
+        # discovered-substitution contradiction paths. Only contradiction is
+        # suppressed — an (existentially-true) verified verdict is left intact.
+        # (csu_003: the multi-hop "Asa works at a university that was founded
+        # before 1800" splits off a dangling "a university" subject whose
+        # intended referent is Asa's employer.)
+        if current_verdict == "contradicted" and _is_vague_class_object(claim.subject):
+            trace.walk_metadata["vague_subject_contradiction_suppressed"] = claim.subject
+            return WalkResult(
+                verdict=_apply_assertion_designation("no_grounding_found", trace),
+                trace=trace,
+                abstention_reason="vague_subject_existential",
+                budget_consumption=consumption,
+            )
+
         if current_verdict is not None:
             return WalkResult(
                 verdict=_apply_assertion_designation(current_verdict, trace),

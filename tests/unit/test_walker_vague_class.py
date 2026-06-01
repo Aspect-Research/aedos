@@ -419,3 +419,67 @@ class TestVagueClassNogoodVeto:
                 and c.args[1] == _CLASS_QID
                 and c.kwargs.get("relation_type") == "is_a"
             )
+
+
+# ---------------------------------------------------------------------------
+# C2-FC1: a vague/indefinite SUBJECT cannot ground a sound CONTRADICTION
+# ---------------------------------------------------------------------------
+
+class _ContradictingKBVerifier:
+    """KB verifier double that CONTRADICTS — models the live failure where a
+    vague subject ("a university") resolves to an arbitrary specific entity
+    whose KB fact mismatches the claim."""
+
+    def verify(self, claim, current_time=None, source_text=None):
+        return KBVerdict(
+            verdict=KBVerdictType.CONTRADICTED,
+            subject_kb_id="Q_arbitrary",
+            trace={"contradicting_value": "2001-01-15T00:00:00Z", "kb_property": "P571"},
+        )
+
+
+class TestVagueSubjectContradictionSuppressed:
+    """The SUBJECT-slot analog of the vague-OBJECT object-conflict guard. A
+    vague/indefinite subject denotes an existential, not a specific entity, so a
+    CONTRADICTED from resolving it to one arbitrary entity is unsound (§3.2) and
+    is suppressed to abstain. A SPECIFIC subject's contradiction is preserved."""
+
+    def _walker_with_contradicting_kb(self):
+        # Resolver/subsumption are irrelevant here — the KB verifier double
+        # decides the verdict; the substrate only supplies routing metadata.
+        substrate = _make_substrate(_resolver_by_surface({}))
+        return Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_ContradictingKBVerifier(),
+            python_verifier=None,
+            substrate=substrate,
+            kb=_make_kb(holds=False),
+        )
+
+    def test_vague_subject_contradiction_suppressed_to_abstain(self):
+        # csu_003 shape: "a university" (vague subject) + a founded_in_year claim
+        # the KB would CONTRADICT off an arbitrary resolved entity. The guard
+        # suppresses it to abstain — refuting an existential on one instance is
+        # unsound. A suppression edge records what was dropped and why.
+        walker = self._walker_with_contradicting_kb()
+        claim = _claim(subject="a university", predicate="founded_in_year",
+                       object_val="before 1800")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.verdict != "contradicted"
+        assert result.abstention_reason == "vague_subject_existential"
+        assert (
+            result.trace.walk_metadata.get("vague_subject_contradiction_suppressed")
+            == "a university"
+        )
+
+    def test_specific_subject_contradiction_preserved(self):
+        # Non-vacuity dual: the SAME contradicting KB verifier, but a SPECIFIC
+        # subject ("Harvard University") — the guard does NOT fire and the
+        # genuine contradiction is preserved. This proves the guard keys on
+        # subject vagueness, not on the predicate/object.
+        walker = self._walker_with_contradicting_kb()
+        claim = _claim(subject="Harvard University", predicate="founded_in_year",
+                       object_val="2050")
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "contradicted"
