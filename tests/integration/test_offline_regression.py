@@ -17,6 +17,16 @@ Pinned fixes:
   - circa-date "Tadhg ... born c. 1550" vs KB year 1550 -> NOT contradicted
     (WS1 approximate-date false-contradict fix)
   - copula-occupation "Robby Krieger is a guitarist" -> verified via P106 (WS2)
+  - cycle-2 geo place gate "Germany in the EU" / "Williams part_of Consortium"
+    -> NOT contradicted (C2-1/C2-2: a non-place object can't be a disjoint
+    sub-region)
+  - cycle-2 multi-value single_valued "France founded_on 843" (P571 = {843, 1958})
+    -> NOT contradicted (C2-3: never contradict a value the KB holds)
+
+The three cycle-2 shapes were the false-contradicts the WS7 false_contradicted
+gate surfaced in the final v0.16.1 medium bar; they are pinned here through the
+SAME compute_metrics/soundness_gates path so a CI regression that reopens any of
+them trips `false_contradicted == 0`, not only the unit pins.
 """
 
 from __future__ import annotations
@@ -324,6 +334,154 @@ class TestOfflineRegression:
         verdict = _verdict(meta, kb, _claim("Amazon", "instance_of", "river"))
         assert verdict != "verified"
         assert verdict != "contradicted"
+
+    def test_germany_in_eu_not_contradicted(self):
+        # cycle-2 C2-1/C2-2 geo place gate, mhd_002 shape. "Germany located_in
+        # the European Union" routes located_in -> P131; Germany carries no P131
+        # statement, so the no-statements geo-disjoint arm runs
+        # _geographic_disjoint(Germany Q183, EU Q458). Pre-fix path b fired
+        # (Germany and the EU are both subsumed by Europe Q46 and mutually
+        # unrelated) and FALSE-CONTRADICTED a TRUE membership claim. The cycle-2
+        # gate requires the EXPECTED object to be a subsumption-confirmed
+        # geographic PLACE; the EU is a union, not in _GEO_PLACE_CLASSES (no
+        # is_a place entry below), so the gate fails closed -> disjoint False ->
+        # NO_MATCH (abstain). NON-VACUOUS: drop the gate and path b restores
+        # CONTRADICTED.
+        kb = _MockKB(
+            statements_by_property={"P131": []},
+            resolutions={"Germany": "Q183", "the European Union": "Q458"},
+            subsumptions={
+                ("Q183", "Q46", "part_of"): "a_subsumed_by_b",  # Germany in Europe
+                ("Q458", "Q46", "part_of"): "a_subsumed_by_b",  # EU in Europe
+                # (Q183,Q458)/(Q458,Q183) default 'unrelated' -> mutual non-containment;
+                # NO (Q458, <place_class>, "is_a") entry -> EU not a confirmed place.
+            },
+        )
+        meta = _meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle"),
+        ])
+        verdict = _verdict(meta, kb, _claim("Germany", "located_in", "the European Union"))
+        assert verdict != "contradicted"
+
+    def test_williams_part_of_consortium_not_contradicted(self):
+        # cycle-2 C2-1/C2-2 geo place gate, pt_004 shape. "Williams College
+        # part_of the Consortium ..." routes part_of -> P361 (in the geographic
+        # part_of alternation, so a location property). Williams carries no P361
+        # statement -> the no-statements geo-disjoint arm runs
+        # _geographic_disjoint(Williams Q49205, Consortium). Pre-fix path b fired
+        # (both subsumed by North America Q49, mutually unrelated) and
+        # FALSE-CONTRADICTED a TRUE membership claim. A consortium is an
+        # organization, not a geographic place (no is_a place entry), so the gate
+        # fails closed -> NO_MATCH (abstain). NON-VACUOUS: drop the gate -> path b
+        # restores CONTRADICTED.
+        kb = _MockKB(
+            statements_by_property={"P361": []},
+            resolutions={
+                "Williams College": "Q49205",
+                "the Consortium of Liberal Arts Colleges": "Q5165061",  # illustrative Q
+            },
+            subsumptions={
+                ("Q49205", "Q49", "part_of"): "a_subsumed_by_b",    # Williams in North America
+                ("Q5165061", "Q49", "part_of"): "a_subsumed_by_b",  # consortium sits on the same continent
+                # mutual unrelated (default); NO is_a place entry for the consortium.
+            },
+        )
+        meta = _meta("part_of", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P361", source="oracle"),
+        ])
+        verdict = _verdict(
+            meta, kb,
+            _claim("Williams College", "part_of", "the Consortium of Liberal Arts Colleges"),
+        )
+        assert verdict != "contradicted"
+
+    def test_france_843_multi_value_not_contradicted(self):
+        # cycle-2 C2-3 multi-value single_valued, pt_006 shape. "France
+        # founded_on 843" routes founded_on -> P571 (single_valued). France's
+        # P571 holds MULTIPLE distinct inception years — West Francia +0843 and
+        # Fifth Republic 1958. The literal claim "843" (3 digits) year-matches
+        # neither, and the subject presents >1 distinct (year-normalized) value,
+        # so a non-match is NOT a functional conflict -> NO_MATCH (abstain),
+        # never contradicting a value the KB actually holds. value_type="literal"
+        # mirrors the real adapter (P571 dates bind as literals). NON-VACUOUS:
+        # drop the multi-value gate -> the single_valued path CONTRADICTS off the
+        # 1958 statement.
+        kb = _MockKB(
+            statements_by_property={"P571": [
+                Statement(value="+0843-01-01T00:00:00Z", value_type="literal"),
+                Statement(value="1958-10-04T00:00:00Z", value_type="literal"),
+            ]},
+            resolutions={"France": "Q142"},
+        )
+        meta = _meta("founded_on", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P571", source="oracle",
+                             single_valued=True),
+        ], object_type="time", single_valued=1)
+        verdict = _verdict(meta, kb, _claim("France", "founded_on", "843"))
+        assert verdict != "contradicted"
+
+    def test_cycle2_shapes_clear_false_contradicted_gate(self):
+        # End-to-end harness gate for the cycle-2 shapes — the durable CI net the
+        # WS7 false_contradicted gate is built on. Each verdict is produced by a
+        # real walk above and fed through compute_metrics / soundness_gates.
+        # ground_truth is the abstain class: the §3.2-SAFE outcome the post-fix
+        # engine produces under these minimal mocks (it has no positive
+        # membership evidence to VERIFY, so it grounds to abstain rather than
+        # verify). The pin's job is the false_contradicted gate, not coverage —
+        # a regression that reopens any of these false-contradicts flips the
+        # verdict to "contradicted" (gt != contradicted) and trips
+        # false_contradicted == 0.
+        germany_kb = _MockKB(
+            statements_by_property={"P131": []},
+            resolutions={"Germany": "Q183", "the European Union": "Q458"},
+            subsumptions={
+                ("Q183", "Q46", "part_of"): "a_subsumed_by_b",
+                ("Q458", "Q46", "part_of"): "a_subsumed_by_b",
+            })
+        germany_meta = _meta("located_in", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P131", source="oracle")])
+
+        williams_kb = _MockKB(
+            statements_by_property={"P361": []},
+            resolutions={"Williams College": "Q49205",
+                         "the Consortium of Liberal Arts Colleges": "Q5165061"},
+            subsumptions={
+                ("Q49205", "Q49", "part_of"): "a_subsumed_by_b",
+                ("Q5165061", "Q49", "part_of"): "a_subsumed_by_b",
+            })
+        williams_meta = _meta("part_of", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P361", source="oracle")])
+
+        france_kb = _MockKB(
+            statements_by_property={"P571": [
+                Statement(value="+0843-01-01T00:00:00Z", value_type="literal"),
+                Statement(value="1958-10-04T00:00:00Z", value_type="literal")]},
+            resolutions={"France": "Q142"})
+        france_meta = _meta("founded_on", [
+            PredicateBinding(kb_namespace="wikidata", kb_property="P571", source="oracle",
+                             single_valued=True)],
+            object_type="time", single_valued=1)
+
+        runs = [
+            ("germany", "abstain",
+             _verdict(germany_meta, germany_kb,
+                      _claim("Germany", "located_in", "the European Union"))),
+            ("williams", "abstain",
+             _verdict(williams_meta, williams_kb,
+                      _claim("Williams College", "part_of",
+                             "the Consortium of Liberal Arts Colleges"))),
+            ("france", "abstain",
+             _verdict(france_meta, france_kb, _claim("France", "founded_on", "843"))),
+        ]
+        cases = [BenchmarkCase(cid, "s", gt, "regression", "") for cid, gt, _ in runs]
+        results = [RunResult(cid, verdict) for cid, _, verdict in runs]
+
+        metrics = compute_metrics(cases, results)
+        gates = soundness_gates(metrics)
+        assert gates["false_verified == 0"] is True, [r.verdict for r in results]
+        assert gates["false_contradicted == 0"] is True, [r.verdict for r in results]
+        # None of the cycle-2 shapes may contradict (the soundness property).
+        assert all(r.verdict != "contradicted" for r in results), [r.verdict for r in results]
 
     def test_pinned_cases_clear_both_hard_soundness_gates(self):
         # End-to-end: feed the pinned verdicts (each produced by a real walk
