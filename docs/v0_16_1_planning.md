@@ -1,5 +1,11 @@
 # Aedos v0.16.1 — Forward Planning
 
+> **STATUS: COMPLETE (tagged `v0.16.1`).** Items 1–8 shipped + an autonomous
+> cycle-2 soundness follow-up; item 9 (retraction cascade) deferred. The final
+> Medium Bar passes both hard soundness gates (false_verified == 0 AND
+> false_contradicted == 0). See [v0_16_1/16_release_notes.md](v0_16_1/16_release_notes.md)
+> and [v0_16_1/15_cycle2_results.md](v0_16_1/15_cycle2_results.md).
+
 Status of v0.16: released and tagged (`v0.16.0`, merged to `main`). It delivered the structural
 rebuild (multi-property substrate, discover/verify composition, partial-TMS provenance,
 verify-every-claim, per-claim corrections, temporal T1), held the soundness invariant (0%
