@@ -536,6 +536,33 @@ class TierU:
         if self._propagator is not None:
             self._propagator.propagate_retraction("tier_u", row_id)
 
+    def clear_party(self, asserting_party: str) -> int:
+        """Hard-delete ALL Tier U rows for one asserting party.
+
+        The "start fresh" reset for the v0.16.2 deployment's per-session
+        context. Party-SCOPED: `asserting_party` is the isolation boundary the
+        rest of Tier U keys on (see `lookup` / `write`), so clearing one party
+        never touches another's rows. A hard DELETE (not a soft `retract`) is the
+        correct reset semantics — it leaves no rows behind and does NOT fan the
+        retraction propagator out per row (a session reset is not a belief
+        revision). Returns the number of rows removed. A falsy party clears
+        nothing (guards against an accidental whole-table wipe).
+        """
+        if not asserting_party:
+            return 0
+        cursor = self._db.execute(
+            "DELETE FROM tier_u WHERE asserting_party=?", (asserting_party,)
+        )
+        removed = cursor.rowcount if cursor.rowcount is not None else 0
+        self._db.commit()
+        log_event(
+            self._db,
+            event_type="party_cleared",
+            event_subject=f"tier_u:party:{asserting_party}",
+            event_data={"rows_removed": removed},
+        )
+        return removed
+
     def mark_externally_verified(
         self,
         row_id: int,
