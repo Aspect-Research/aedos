@@ -413,6 +413,45 @@ class KBVerifier:
             statements, claim, expected_value, value_resolved, meta, binding, current_time
         )
 
+        # RESOLVED-ENTITY NAME-MATCH (§3.2): a single_valued ENTITY contradiction
+        # can be a famous-entity QID tangle, not a real conflict. The value surface
+        # form ("Tokyo") resolved to a DIFFERENT same-named QID (e.g. the special-
+        # wards "Tokyo") than the one the KB statement holds (Q1490, the metropolis
+        # that Japan's P36 points to) — typically because the value-type filter
+        # excluded the KB's QID (Q1490 is typed prefecture/metropolis, not "city").
+        # If the contradicting KB value is itself NAMED by the claim's value surface
+        # form, the claim refers to that very entity, so the statement VERIFIES the
+        # claim rather than contradicting it. Fires only for a resolved entity claim
+        # whose KB value's canonical label equals the surface form; a genuine name
+        # mismatch (Honolulu vs New York City) does not match and is unaffected, and
+        # a label-fetch failure leaves the verdict as-is (fail-closed). This flips
+        # BEFORE the copula value-type gate below so the now-VERIFIED verdict is not
+        # re-evaluated as a contradiction.
+        entity_name_match = False
+        if (
+            pos_verdict == KBVerdictType.CONTRADICTED
+            and meta.object_type == "entity"
+            and value_resolved
+            and statement is not None
+            # Only a VALUE-MISMATCH contradiction (the QID tangle) may be rescued by
+            # a name match. A contradiction where the KB value ALREADY value-matched
+            # the claim is not about the value — it is the E4 temporal-currency
+            # contradiction (a present-tense role whose matching statement has
+            # ENDED, e.g. "Obama is the President" / "Francis is the pope"). The KB
+            # value is the very entity the claim names there too, so a name match
+            # would wrongly erase the sound "role ended" contradiction and
+            # FALSE-VERIFY. Excluding matched-value contradictions (this check runs
+            # BEFORE the label fetch, so it also short-circuits that work) keeps the
+            # E4 wrong-pope / ended-role catch intact.
+            and not _value_matches(getattr(statement, "value", None), expected_value)
+            and self._value_surface_names_kb_entity(
+                expected_ref, getattr(statement, "value", None)
+            )
+        ):
+            pos_verdict = KBVerdictType.VERIFIED
+            abstention_reason = None
+            entity_name_match = True
+
         # v0.16 WS1: the copula fix. A single_valued binding can drive
         # CONTRADICTED only when the resolved object satisfies that binding's
         # value-type constraint (P2302 value-type). This is the P31-vs-P106
@@ -496,6 +535,11 @@ class KBVerifier:
         # absence of evidence.
         if abstention_reason is not None:
             trace["abstention_reason"] = abstention_reason
+        if entity_name_match:
+            # Observability: this VERIFIED came from the resolved-entity name-match
+            # (the KB value is the same-named entity the claim refers to), not a
+            # direct Q-id equality in the value-match loop.
+            trace["entity_name_match"] = True
 
         return KBVerdict(
             verdict=final_verdict,
@@ -503,6 +547,35 @@ class KBVerifier:
             subject_kb_id=lookup_subject_id,
             trace=trace,
         )
+
+    def _value_surface_names_kb_entity(self, surface, kb_value) -> bool:
+        """True when the claim's value SURFACE FORM names the KB statement's entity
+        value — its canonical KB label equals the surface (trimmed, case-folded).
+
+        This recognizes the famous-entity QID tangle that would otherwise drive a
+        §3.2 false-contradict: the resolver selected a DIFFERENT same-named QID for
+        the claim's value than the QID the KB statement holds (e.g. "Tokyo" →
+        the special-wards node, while Japan's P36 is Q1490 the metropolis), so a
+        Q-id-equality compare reports a spurious mismatch even though the KB value
+        IS what the claim names.
+
+        Fails CLOSED (returns False) on a missing surface form, a non-entity KB
+        value, an adapter without `fetch_label`, an empty label, or any fetch
+        error — leaving the existing verdict untouched. Never raises."""
+        if not surface or not isinstance(kb_value, str):
+            return False
+        if _QID_RE.fullmatch(kb_value.strip()) is None:
+            return False  # KB value is not an entity Q-id → not the tangle case
+        fetch = getattr(self._kb, "fetch_label", None)
+        if not callable(fetch):
+            return False
+        try:
+            label = fetch(kb_value.strip())
+        except Exception:
+            return False
+        if not label or not isinstance(label, str):
+            return False
+        return label.strip().casefold() == str(surface).strip().casefold()
 
     def _object_satisfies_value_type(self, resolved_obj_qid: Optional[str], binding) -> bool:
         """v0.16 WS1 (copula fix). True when the resolved object provably
