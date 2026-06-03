@@ -118,5 +118,51 @@ button { cursor: pointer; font: inherit; }
 }
 .link {
   background: none; border: none; color: var(--accent); padding: 0;
-  text-decoration: underline; font-size: 12px;
+  text-decoration: underline; font-size: 12px; cursor: pointer;
 }
+.link:disabled { opacity: 0.5; }
+.ghost-on { color: var(--text); border-color: var(--accent); }
+
+/* split layout: main + inspector */
+.layout { display: block; }
+.layout-split { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+@media (max-width: 720px) { .layout-split { grid-template-columns: 1fr; } }
+
+/* live step log (the transparent process) */
+.steplog {
+  display: flex; flex-direction: column; gap: 3px;
+  margin: 6px 0; padding: 8px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 12.5px;
+}
+.step { display: flex; gap: 8px; align-items: baseline; color: var(--muted); }
+.step-phase {
+  flex: 0 0 70px; text-align: right; color: var(--accent);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.step-detail { color: var(--text); }
+.step-verifying .step-detail { color: var(--muted); }
+.step-verdict .step-phase { color: var(--conditional); }
+.step-busy { color: var(--muted); }
+.spinner {
+  display: inline-block; width: 10px; height: 10px; margin-right: 4px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* context inspector */
+.inspector {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; position: sticky; top: 12px;
+}
+.inspector-head { display: flex; justify-content: space-between; align-items: center; }
+.inspector-head h3 { margin: 0; font-size: 14px; }
+.hint.small { font-size: 12px; margin: 6px 0; }
+.ctx-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ctx-row {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; font-size: 13px;
+}
+.ctx-triple i { color: var(--accent); font-style: normal; }
+.ctx-status { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
