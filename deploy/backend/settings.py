@@ -23,8 +23,11 @@ class DeploySettings:
     # an unset key with auth on means the gate fails CLOSED (rejects all).
     deploy_key: str = ""
     require_auth: bool = True
-    # Browser origins permitted by CORS (the React dev server + the deployed UI).
-    allowed_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173"])
+    # Browser origins permitted by CORS (the Vite dev server, both hostnames, +
+    # the deployed UI). localhost and 127.0.0.1 are distinct origins to a browser.
+    allowed_origins: list[str] = field(
+        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+    )
     # Engine DB path (the seeded substrate).
     db_path: str = "aedos_phase10_5.db"
     # Per-session sliding-window rate limit.
@@ -32,6 +35,12 @@ class DeploySettings:
     rate_limit_window_seconds: float = 60.0
     # Bound on caller-supplied session ids (hygiene; SQL is parameterized anyway).
     max_session_id_len: int = 128
+    # Interactive walker budget (engine default is 30s/claim — too slow for a
+    # live chat that verifies every draft claim serially). Lower = a few more
+    # abstains but bounded, responsive turns; soundness is unaffected (abstain is
+    # safe). Streaming makes even a multi-claim turn legible.
+    walker_wall_clock_seconds: float = 12.0
+    walker_max_llm_calls: int = 10
 
     @classmethod
     def from_env(cls) -> "DeploySettings":
@@ -47,4 +56,8 @@ class DeploySettings:
                 os.environ.get("AEDOS_RATE_LIMIT_WINDOW", "60")
             ),
             max_session_id_len=int(os.environ.get("AEDOS_MAX_SESSION_ID_LEN", "128")),
+            walker_wall_clock_seconds=float(
+                os.environ.get("AEDOS_WALKER_WALL_CLOCK_SECONDS", "12")
+            ),
+            walker_max_llm_calls=int(os.environ.get("AEDOS_WALKER_MAX_LLM_CALLS", "10")),
         )

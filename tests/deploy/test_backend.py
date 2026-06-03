@@ -10,6 +10,7 @@ the access key in X-Aedos-Key.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -79,8 +80,11 @@ class FakeChatWrapper:
         self._vr = vr
         self.calls = []
 
-    def respond(self, message, conversation_context=None):
+    def respond(self, message, conversation_context=None, progress=None):
         self.calls.append((message, conversation_context))
+        if progress is not None:
+            progress({"phase": "reading", "detail": "reading your message"})
+            progress({"phase": "verdict", "detail": "verified", "claim_id": "c1"})
         action = SimpleNamespace(
             claim_id="c1",
             action_type=SimpleNamespace(value="pass_through"),
@@ -112,6 +116,20 @@ def _client(*, settings=None, pipeline=None, chat_wrapper=None) -> TestClient:
     app = create_app(settings=settings or _settings(), pipeline=pipeline,
                      chat_wrapper=chat_wrapper)
     return TestClient(app)
+
+
+def _parse_sse(text: str) -> list[tuple[str, dict | None]]:
+    events: list[tuple[str, dict | None]] = []
+    for block in text.strip().split("\n\n"):
+        kind = data = None
+        for line in block.splitlines():
+            if line.startswith("event: "):
+                kind = line[len("event: "):]
+            elif line.startswith("data: "):
+                data = line[len("data: "):]
+        if kind:
+            events.append((kind, json.loads(data) if data else None))
+    return events
 
 
 # --------------------------------------------------------------------------- #
@@ -311,6 +329,80 @@ class TestVerify:
 
 
 # --------------------------------------------------------------------------- #
+# SSE streaming (live steps then result)
+# --------------------------------------------------------------------------- #
+
+class TestStreaming:
+    def test_chat_stream_emits_steps_then_result(self):
+        c = _client(chat_wrapper=FakeChatWrapper(_vr()))
+        r = c.post("/chat/stream", json={"message": "hi"}, headers=H())
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(r.text)
+        kinds = [k for k, _ in events]
+        assert "step" in kinds          # progress events from the (fake) wrapper
+        assert kinds.count("result") == 1
+        result = next(p for k, p in events if k == "result")
+        assert result["final_message"] == "draft reply"
+        assert result["verification_id"] == "ver-123"
+
+    def test_verify_stream_emits_per_claim_steps_then_result(self):
+        claim = SimpleNamespace(claim_id="c1", subject="Paris", predicate="located_in",
+                                object="France", polarity=1, abstention_reason=None)
+        extractor = SimpleNamespace(extract=lambda text, ctx: [claim])
+        walker = SimpleNamespace(walk=lambda c, ctx: SimpleNamespace(verdict="verified"))
+        aggregator = SimpleNamespace(
+            aggregate=lambda claims, results, text_input=None: _vr("verified"))
+        c = _client(pipeline=FakePipeline(extractor=extractor, walker=walker,
+                                          aggregator=aggregator))
+        r = c.post("/verify/stream", json={"text": "Paris is in France."}, headers=H())
+        assert r.status_code == 200
+        events = _parse_sse(r.text)
+        phases = [p.get("phase") for k, p in events if k == "step"]
+        assert "extracting" in phases and "verifying" in phases and "verdict" in phases
+        result = next(p for k, p in events if k == "result")
+        assert result["observability"][0]["verdict"] == "verified"
+
+    def test_stream_surfaces_engine_error_as_error_event(self):
+        # An engine exception becomes a clean SSE 'error' event, not a dropped
+        # connection / silent "network error".
+        def boom(text, ctx):
+            raise RuntimeError("kaboom")
+        pipeline = FakePipeline(extractor=SimpleNamespace(extract=boom))
+        c = _client(pipeline=pipeline)
+        r = c.post("/verify/stream", json={"text": "x"}, headers=H())
+        assert r.status_code == 200  # the stream itself opened fine
+        events = _parse_sse(r.text)
+        assert any(k == "error" for k, _ in events)
+        err = next(p for k, p in events if k == "error")
+        assert "RuntimeError" in err["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# Context inspector (REAL TierU)
+# --------------------------------------------------------------------------- #
+
+class TestContextInspector:
+    def test_context_returns_only_this_sessions_rows(self):
+        db = open_memory_db()
+        tier_u = TierU(db)
+        tier_u.write(_claim("session:alice", "alice"), status="asserted_unverified")
+        tier_u.write(_claim("session:alice", "ada"), status="asserted_unverified")
+        tier_u.write(_claim("session:bob", "bob"), status="asserted_unverified")
+        c = _client(pipeline=FakePipeline(tier_u=tier_u))
+
+        r = c.get("/session/context", headers=H("alice"))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 2
+        subjects = sorted(row["subject"] for row in body["rows"])
+        assert subjects == ["ada", "alice"]
+        # Bob's row is invisible to alice.
+        rb = c.get("/session/context", headers=H("bob"))
+        assert rb.json()["count"] == 1
+
+
+# --------------------------------------------------------------------------- #
 # Session isolation + reset (REAL TierU on in-memory DB)
 # --------------------------------------------------------------------------- #
 
@@ -378,3 +470,23 @@ class TestClearParty:
         tier_u.write(_claim("session:A", "a1"), status="asserted_unverified")
         assert tier_u.clear_party("") == 0
         assert db.execute("SELECT COUNT(*) FROM tier_u").fetchone()[0] == 1
+
+
+class TestRowsForParty:
+    def test_returns_party_rows_only(self):
+        db = open_memory_db()
+        tier_u = TierU(db)
+        tier_u.write(_claim("session:A", "a1"), status="asserted_unverified")
+        tier_u.write(_claim("session:B", "b1"), status="asserted_unverified")
+        rows = tier_u.rows_for_party("session:A")
+        assert len(rows) == 1
+        assert rows[0]["subject"] == "a1"
+        assert rows[0]["predicate"] == "likes" and rows[0]["object"] == "coffee"
+        assert "status" in rows[0] and "valid_from" in rows[0]
+        assert tier_u.rows_for_party("session:B")[0]["subject"] == "b1"
+
+    def test_falsy_party_returns_empty(self):
+        db = open_memory_db()
+        tier_u = TierU(db)
+        tier_u.write(_claim("session:A", "a1"), status="asserted_unverified")
+        assert tier_u.rows_for_party("") == []
