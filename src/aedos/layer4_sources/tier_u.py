@@ -563,6 +563,28 @@ class TierU:
         )
         return removed
 
+    def rows_for_party(self, asserting_party: str) -> list[dict]:
+        """Return the CURRENT (non-retracted) Tier U rows for one party.
+
+        The read side of the v0.16.2 deployment's per-session context inspector —
+        "what has Aedos retained from this conversation?". Party-scoped and
+        parameterized (the same isolation boundary as `lookup`/`clear_party`);
+        returns only the fields a UI needs (no internal row plumbing beyond id).
+        A falsy party returns nothing. Read-only — no verdict/grounding effect.
+        """
+        if not asserting_party:
+            return []
+        cursor = self._db.execute(
+            """SELECT id, subject, predicate, object, polarity, status,
+                      valid_from, valid_until, asserted_at
+               FROM tier_u
+               WHERE asserting_party=? AND retracted_at IS NULL
+               ORDER BY asserted_at""",
+            (asserting_party,),
+        )
+        cols = [c[0] for c in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
     def mark_externally_verified(
         self,
         row_id: int,
