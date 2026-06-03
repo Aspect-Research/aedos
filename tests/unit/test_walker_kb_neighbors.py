@@ -89,18 +89,19 @@ class _NoMatchKBVerifier:
 
 
 class _FunctionalNoMatchKBVerifier:
-    """NO_MATCH verifier that surfaces the directed-over-enumerate signal: when
-    `functional_value_known` is True, the direct lookup found the subject's value
-    for a functional entity predicate and the directed upgrade already failed —
-    the walker should skip the futile neighbor enumeration."""
+    """NO_MATCH verifier that surfaces the directed-over-enumerate signals.
+    `value_known_entity` (subject value known) gates the part_of skip;
+    `functional_value_known` (value known AND single_valued) additionally gates the
+    is_a skip. functional_value_known True implies value_known_entity True (default)."""
 
-    def __init__(self, functional_value_known: bool):
+    def __init__(self, functional_value_known, value_known_entity=None):
         self._fvk = functional_value_known
+        self._vke = functional_value_known if value_known_entity is None else value_known_entity
 
     def verify(self, claim, current_time=None, source_text=None):
         return KBVerdict(
             verdict=KBVerdictType.NO_MATCH,
-            trace={"functional_value_known": self._fvk},
+            trace={"functional_value_known": self._fvk, "value_known_entity": self._vke},
         )
 
 
@@ -495,6 +496,29 @@ class TestD5Fallback:
         )
         walker.walk(_claim(), _ctx())
         assert kb.enumerate_neighbors.called
+
+    def test_value_known_but_not_functional_skips_part_of_only(self):
+        """Decoupled skip (the cold-started 'was born in' case): when the value is
+        known (value_known_entity) but the predicate is NOT marked single_valued
+        (functional_value_known False), the part_of enumeration (the 'descend into
+        Kenya's P17 children' fanout) is skipped — owned by the directed part_of
+        upgrade — while is_a enumeration is preserved (may ground a non-functional
+        claim). So enumerate_neighbors is called for is_a but NOT for part_of."""
+        substrate = _make_substrate(distribution_verdict="distributes_down", sub_neighbors=[])
+        kb = _make_kb({"P31": ["Q1"], "P279": [], "P131": ["Q2"], "P361": [], "P17": ["Q3"]})
+        walker = Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_FunctionalNoMatchKBVerifier(
+                functional_value_known=False, value_known_entity=True
+            ),
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        walker.walk(_claim(), _ctx())
+        relations = {
+            c.kwargs.get("relation_type") for c in kb.enumerate_neighbors.call_args_list
+        }
+        assert "is_a" in relations
+        assert "part_of" not in relations
 
     def test_correct_relation_passed_per_relation(self):
         """v0.16.1 WS5c: CORE no longer names P-ids — the walker passes the

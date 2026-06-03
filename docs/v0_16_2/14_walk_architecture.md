@@ -91,6 +91,29 @@
   is NOT in `_LOCATION_KB_PROPERTIES`, so that gate would have wrongly disabled
   "born_in USA".)
 
+### Change 2-FOLLOWUP — decouple the part_of skip from single_valued (the live miss)
+Live, "Obama born_in Kenya" STILL fanned out (~20 P17 part_of steps) despite Change 2.
+Diagnosis (full-walk repro with the real verifier): Component 2 *does* fire when the
+verifier returns `functional_value_known=True` — but live it was False, because the
+extractor emits **"was born in"** (Rule 7: `'X was born in <loc>' → predicate='was born
+in'`), which does NOT match the seed key `born_in`, so the predicate is **cold-started**
+by the oracle and not marked `single_valued` → `functional_value_known` (which requires
+single_valued) was False → no skip.
+
+Fix: **decouple**. The P17 part_of fanout (the bulk, ~19/22 steps) is owned by the
+directed all-values **part_of** upgrade regardless of single_valued, so gate the
+part_of-enumeration skip on a new `value_known_entity` signal (`bool(statements) and
+object_type=="entity"`, NO single_valued). Keep the is_a-enumeration skip gated on
+`functional_value_known` (a non-functional/copula predicate may legitimately ground via
+is_a, so don't over-skip it). Also **aggregate** both signals across bindings in
+`verify()`'s arbitration (OR), so a later no-match binding can't clobber the P19
+binding's signal. Net: cold-started "was born in Kenya" now skips the P17 bulk (and the
+slow depth-1 fanout it caused) while is_a remains; seeded `born_in` skips both.
+**Sound (non-regressive by transitivity):** the directed part_of upgrade and the part_of
+enumeration use the SAME `(P131|P30|P17)+` transitive closure — if `value ⊆ object`
+fails the directed check, no part_of-child substitution can ground it either. Skipping
+is abstain-only; §3.2 (never false-verify/contradict) is structurally untouched.
+
 ## Net behavior
 - "Obama born_in Kenya" → Change 2 skips the fanout → **fast sound abstain** at the
   root (directed upgrade already failed; functional value known).
