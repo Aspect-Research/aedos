@@ -88,6 +88,22 @@ class _NoMatchKBVerifier:
         return KBVerdict(verdict=KBVerdictType.NO_MATCH)
 
 
+class _FunctionalNoMatchKBVerifier:
+    """NO_MATCH verifier that surfaces the directed-over-enumerate signal: when
+    `functional_value_known` is True, the direct lookup found the subject's value
+    for a functional entity predicate and the directed upgrade already failed —
+    the walker should skip the futile neighbor enumeration."""
+
+    def __init__(self, functional_value_known: bool):
+        self._fvk = functional_value_known
+
+    def verify(self, claim, current_time=None, source_text=None):
+        return KBVerdict(
+            verdict=KBVerdictType.NO_MATCH,
+            trace={"functional_value_known": self._fvk},
+        )
+
+
 def _distribution_verdict(value: str):
     """A minimal mock matching `PredicateDistributionResult` shape — the
     walker reads `verdict.value` and `was_cached` to decide expansion."""
@@ -449,6 +465,36 @@ class TestD5Fallback:
             if e.edge_type == "kb_neighbor_enumeration"
         ]
         assert kb_edges == []
+
+    def test_functional_value_known_skips_enumeration(self):
+        """Directed-over-enumerate (Change 2): when the direct KB lookup found the
+        subject's value for a FUNCTIONAL entity predicate (and the directed upgrade
+        failed), the walker SKIPS neighbor enumeration — the doomed "Obama born_in
+        Kenya" fanout. enumerate_neighbors must not be called."""
+        substrate = _make_substrate(distribution_verdict="distributes_down", sub_neighbors=[])
+        kb = _make_kb({"P31": ["Q1"], "P131": ["Q2"], "P361": [], "P17": ["Q3"], "P279": []})
+        walker = Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_FunctionalNoMatchKBVerifier(functional_value_known=True),
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        result = walker.walk(_claim(), _ctx())
+        kb.enumerate_neighbors.assert_not_called()
+        assert result.verdict == "no_grounding_found"
+
+    def test_functional_value_unknown_still_enumerates(self):
+        """Control: when the subject's value is NOT known (functional_value_known
+        False — e.g. no statements found), enumeration is preserved (it may still
+        legitimately ground), so enumerate_neighbors IS called."""
+        substrate = _make_substrate(distribution_verdict="distributes_down", sub_neighbors=[])
+        kb = _make_kb({"P31": ["Q1"], "P131": ["Q2"], "P361": [], "P17": ["Q3"], "P279": []})
+        walker = Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_FunctionalNoMatchKBVerifier(functional_value_known=False),
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        walker.walk(_claim(), _ctx())
+        assert kb.enumerate_neighbors.called
 
     def test_correct_relation_passed_per_relation(self):
         """v0.16.1 WS5c: CORE no longer names P-ids — the walker passes the

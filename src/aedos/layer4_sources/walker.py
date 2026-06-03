@@ -62,6 +62,36 @@ class WalkerBudget:
     # hops, well under this cap; exceeding it only ever turns a (already-timing-
     # out) abstain into a fast abstain — verdict-preserving (§3.2: abstain is safe).
     max_kb_neighbor_probes: int = 48
+    # Hard per-walk budget on TOTAL KB round-trip WORK (not just enumeration
+    # probes). The probe cap above counts only the per-candidate transitive ASKs
+    # inside KB-neighbor enumeration; the DOMINANT cost on a fanning-out
+    # famous-entity walk is the per-frontier-node KBVerifier.verify work
+    # (resolution + lookup_statements + the un-memoized subsumption-upgrade ASKs),
+    # which no other counter sees and which accumulates — across a single
+    # fanned-out depth — past the wall clock before the depth-boundary check fires.
+    # This budget charges each verify call and each neighbor enumeration, is
+    # sampled WITHIN the node loop, and on exhaustion returns a FAST deterministic
+    # abstain (budget_kb_work) instead of a 30s timeout. A unit ≈ one rate-limited
+    # round-trip; a genuine grounding needs only a few. Config-tunable.
+    max_kb_work_units: int = 60
+
+
+@dataclass
+class _KBWork:
+    """Per-walk accounting for TOTAL KB round-trip work. Created fresh inside
+    walk() and threaded as a parameter (never an instance attr) so concurrent
+    claim-walks on the SHARED walker each get their own counter. `charge(n)`
+    accrues weighted round-trips (a KBVerifier.verify bundles several SPARQL, so it
+    is charged more than a single enumeration call) and latches `exhausted` once
+    the cap is hit, so the walk abstains fast and deterministically."""
+    limit: int
+    spent: int = 0
+    exhausted: bool = False
+
+    def charge(self, n: int = 1) -> None:
+        self.spent += n
+        if self.spent >= self.limit:
+            self.exhausted = True
 
 
 @dataclass
@@ -408,6 +438,17 @@ class Walker:
     def _user_authoritative_walk(self, value: bool) -> None:
         self._tls.user_authoritative_walk = value
 
+    @property
+    def _functional_value_known(self) -> bool:
+        # Transient per-node signal (thread-local for parallel walks): set by the
+        # most recent _try_external_grounding from the KB verifier's trace, read by
+        # the node loop to gate the directed-over-enumerate discovery skip.
+        return getattr(self._tls, "functional_value_known", False)
+
+    @_functional_value_known.setter
+    def _functional_value_known(self, value: bool) -> None:
+        self._tls.functional_value_known = value
+
     def walk(
         self,
         claim: Claim,
@@ -562,6 +603,14 @@ class Walker:
         # wall clock. Shared for the whole walk; threaded into discovery.
         probes = _KBNeighborProbes(limit=budget.max_kb_neighbor_probes)
         probe_exceeded = False
+        # Per-walk TOTAL KB-WORK budget (the general cost bound — see
+        # WalkerBudget.max_kb_work_units). Charged at every walker-side KB
+        # round-trip (verify calls, neighbor enumeration), sampled WITHIN the node
+        # loop so a single fanned-out depth's cumulative round-trips can't overrun
+        # the wall clock before being caught.
+        work = _KBWork(limit=budget.max_kb_work_units)
+        work_exceeded = False
+        wall_exceeded = False
 
         while frontier and depth < self._max_depth:
             # Budget check
@@ -595,8 +644,17 @@ class Walker:
                 visited[key] = node
                 polarity_trace.append(node.polarity)
 
+                # Within-node wall-clock backstop: re-sample here (not only at the
+                # depth-loop top) so a single fanned-out depth whose cumulative
+                # per-node round-trips overrun the budget is caught PROMPTLY rather
+                # than after the whole depth completes. Catches cost the work
+                # counter can't see (e.g. LLM/oracle latency).
+                if (time.monotonic() - start_time) > budget.wall_clock_seconds and current_verdict is None:
+                    wall_exceeded = True
+                    break
+
                 # Direct premise lookup
-                verdict, lookup_source, llm_delta = self._direct_lookup(node, context, trace)
+                verdict, lookup_source, llm_delta = self._direct_lookup(node, context, trace, work)
                 llm_calls += llm_delta
 
                 if verdict is not None:
@@ -618,10 +676,29 @@ class Walker:
                 # (called inside _discover_chains per candidate) admits a
                 # candidate only if the taxonomy/transitive edge is confirmed
                 # in a source. Soundness lives entirely at verify time (§3.2).
-                expanded, llm_delta = self._discover_chains(node, trace, depth, probes)
+                # Directed-over-enumerate: when the just-run direct KB lookup found
+                # the subject's value(s) for a FUNCTIONAL entity predicate and still
+                # abstained (the directed subsumption upgrade already tested every
+                # held value against the claim), neighbor ENUMERATION cannot ground
+                # the claim — skip the futile fanout (the doomed "descend into Kenya"
+                # search). Read the per-node signal set by _try_external_grounding.
+                functional_value_known = self._functional_value_known
+                expanded, llm_delta = self._discover_chains(
+                    node, trace, depth, probes,
+                    functional_value_known=functional_value_known,
+                    work=work,
+                )
                 llm_calls += llm_delta
                 next_frontier.extend(expanded)
                 total_expansions += len(expanded)
+
+                # KB-work bound: the general cost bound. The per-node verify +
+                # enumeration round-trips are charged against `work`; stop the
+                # moment the cap is hit so the walk abstains fast (budget_kb_work)
+                # rather than overrunning the wall clock across a fanned-out depth.
+                if work.exhausted:
+                    work_exceeded = True
+                    break
 
                 # Probe-budget bound: the dominant cost on a non-grounding walk is
                 # the rejected-candidate transitive-path ASKs inside KB-neighbor
@@ -644,7 +721,35 @@ class Walker:
 
             # Guard with `current_verdict is None`: if an earlier frontier node
             # already grounded a verdict, prefer it (fall through to the verdict
-            # return below) rather than discarding it for a probe-budget abstain.
+            # return below) rather than discarding it for a budget abstain.
+            if work_exceeded and current_verdict is None:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "kb_work"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_kb_work",
+                    budget_consumption=consumption,
+                )
+
+            if wall_exceeded and current_verdict is None:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "wall_clock"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_wall_clock",
+                    budget_consumption=consumption,
+                )
+
             if probe_exceeded and current_verdict is None:
                 elapsed = time.monotonic() - start_time
                 consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
@@ -659,7 +764,7 @@ class Walker:
                     budget_consumption=consumption,
                 )
 
-            if fanout_exceeded:
+            if fanout_exceeded and current_verdict is None:
                 elapsed = time.monotonic() - start_time
                 consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
                 trace.walk_metadata.update(
@@ -921,7 +1026,8 @@ class Walker:
         return None
 
     def _direct_lookup(
-        self, node: Claim, context: VerificationContext, trace: JustificationTrace
+        self, node: Claim, context: VerificationContext, trace: JustificationTrace,
+        work: Optional["_KBWork"] = None,
     ) -> tuple[Optional[str], str, int]:
         """Returns (verdict_or_None, source, llm_calls_used).
 
@@ -1121,7 +1227,7 @@ class Walker:
             # return plain verified — the chain flag is NOT set
             # because the verdict is externally grounded.
             upgrade_verdict, upgrade_source, upgrade_llm_delta, grounding_chain = \
-                self._try_external_grounding(node, context, trace)
+                self._try_external_grounding(node, context, trace, work)
             llm_delta += upgrade_llm_delta
             if upgrade_verdict == "verified":
                 if row_id is not None:
@@ -1155,7 +1261,7 @@ class Walker:
         # grounding (the §6.5 fallthrough — no upgrade scenario here,
         # there is no Tier U row to upgrade).
         external_verdict, external_source, external_llm_delta, _ = \
-            self._try_external_grounding(node, context, trace)
+            self._try_external_grounding(node, context, trace, work)
         llm_delta += external_llm_delta
         if external_verdict is not None:
             return external_verdict, external_source, llm_delta
@@ -1167,6 +1273,7 @@ class Walker:
         node: Claim,
         context: VerificationContext,
         trace: JustificationTrace,
+        work: Optional["_KBWork"] = None,
     ) -> tuple[Optional[str], str, int, dict]:
         """Try KB then (if route is python) Python verification for
         external grounding of `node`. Returns
@@ -1177,6 +1284,10 @@ class Walker:
         audit event — KB statement coordinates or Python execution
         identity.
         """
+        # Reset the transient directed-over-enumerate signal for THIS node — it is
+        # set True only below when a functional-entity KB lookup found the subject's
+        # value(s). A stale True from a prior node must never gate this node.
+        self._functional_value_known = False
         # External (KB / Python) grounding is structurally unreachable for a
         # user_authoritative walk — set at walk entry when the predicate routes
         # user_authoritative OR the claim's subject is a stipulated user
@@ -1261,10 +1372,25 @@ class Walker:
 
         # KB verification
         if self._kb_verifier is not None:
+            # Charge the KB-work budget: verify() bundles entity resolution +
+            # lookup_statements + (often) several un-memoized subsumption-upgrade
+            # ASKs — the dominant per-node cost. A flat weight reflects that bundle
+            # so a fanned-out depth's verifies are bounded within the node loop.
+            if work is not None:
+                work.charge(4)
             kb_result = self._kb_verifier.verify(
                 node,
                 current_time=context.current_time,
                 source_text=context.source_text,
+            )
+            # Directed-over-enumerate signal: record whether this was a FUNCTIONAL
+            # entity predicate whose subject value(s) are KNOWN (statements found).
+            # On a NO_MATCH the verifier's directed subsumption upgrade already
+            # tested every held value against the claim, so the walker can skip the
+            # futile neighbor-enumeration fanout (the doomed "descend into Kenya"
+            # search). Read by the node loop after _direct_lookup returns.
+            self._functional_value_known = bool(
+                kb_result.trace.get("functional_value_known")
             )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
@@ -1991,6 +2117,8 @@ class Walker:
     def _discover_chains(
         self, node: Claim, trace: JustificationTrace, depth: int,
         probes: Optional["_KBNeighborProbes"] = None,
+        functional_value_known: bool = False,
+        work: Optional["_KBWork"] = None,
     ) -> tuple[list[Claim], int]:
         """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
 
@@ -2135,9 +2263,20 @@ class Walker:
                 # confident `neither` skips — so a wrong distribution verdict
                 # never causes a false-abstain (WS2 §3 intent preserved). Reuses
                 # the already-computed dist.verdict (no extra oracle call).
-                if verdict_label != "neither":
+                # Directed-over-enumerate (§3.2 / budget): also skip the
+                # enumeration when functional_value_known — the direct KB lookup
+                # found the subject's value(s) for a FUNCTIONAL entity predicate and
+                # the verifier's DIRECTED subsumption upgrade already tested every
+                # held value against the claim. Neighbor enumeration only re-derives
+                # that same grounding question by generate-and-test (descending into
+                # the object's children / ascending the subject's classes), so it
+                # cannot ground the claim — the doomed "Obama born_in Kenya" fanout.
+                # Verdict-preserving: the only true case (a container claim, e.g.
+                # "born_in USA") is owned by the directed upgrade, not enumeration.
+                # The bounded premise-forward arm below still runs.
+                if verdict_label != "neither" and not functional_value_known:
                     kb_produced = self._expand_via_kb_neighbors(
-                        node, relation_type, preferred, dist.verdict, trace, probes
+                        node, relation_type, preferred, dist.verdict, trace, probes, work
                     )
                     expanded.extend(kb_produced)
                     # Stop discovering for this node once the per-walk probe
@@ -2546,6 +2685,7 @@ class Walker:
         distribution_verdict,
         trace: JustificationTrace,
         probes: Optional["_KBNeighborProbes"] = None,
+        work: Optional["_KBWork"] = None,
     ) -> list[Claim]:
         """Enumerate KB neighbors of `node`'s slot entities
         and emit expanded claims with the slot substituted by each neighbor.
@@ -2627,6 +2767,8 @@ class Walker:
                 continue
 
             for walker_dir, kb_dir in kb_calls:
+                if work is not None:
+                    work.charge(1)  # one live enumerate_neighbors round-trip
                 try:
                     neighbors_by_prop = self._kb.enumerate_neighbors(
                         entity_qid, direction=kb_dir, relation_type=relation_type,
@@ -2636,6 +2778,10 @@ class Walker:
 
                 for prop_id, neighbor_qids in neighbors_by_prop.items():
                     for neighbor_qid in neighbor_qids:
+                        # Each distinct candidate probe is also one transitive-path
+                        # ASK — charge the KB-work budget alongside the probe cap.
+                        if work is not None and probes is not None and neighbor_qid not in probes.seen:
+                            work.charge(1)
                         # Per-walk probe budget: dedupe already-probed neighbor
                         # QIDs (the same famous container — Q30, Q142 — recurs
                         # across slots/directions/depths) and HARD-CAP the number

@@ -529,6 +529,15 @@ class KBVerifier:
             "single_valued": binding.single_valued,
             "lookup_inverted": lookup_inverted,
             "resolution_cache_row_id": resolution_cache_row_id,
+            # The walker's directed-over-enumerate signal: True when this is a
+            # FUNCTIONAL entity predicate whose subject value(s) are KNOWN (the
+            # lookup found statements). On a NO_MATCH, the directed subsumption
+            # upgrade above already tested every held value against the claim, so
+            # neighbor ENUMERATION cannot ground the claim — the walker skips the
+            # fanout. (Set regardless of verdict; only read on the NO_MATCH path.)
+            "functional_value_known": bool(statements)
+            and bool(binding.single_valued)
+            and meta.object_type == "entity",
         }
         # When the verdict is an abstention (NO_MATCH), record *why* —
         # debugging needs to tell a resolution failure apart from a genuine
@@ -722,6 +731,13 @@ class KBVerifier:
         "no_matching_statement" for NO_MATCH.
         """
         scope_mismatch: Optional[Statement] = None
+        # NR (all-values directed upgrade): the DISTINCT scope-compatible ENTITY
+        # values the subject holds that the claim did not value-match, keyed by
+        # value so the subsumption upgrade below can try EVERY held value, not just
+        # the first iterated one. A multi-valued subject (Obama P19 = {hospital,
+        # Honolulu}) may have its container chain on a SIBLING value, so checking
+        # only the first scope_mismatch could miss a true "born_in USA".
+        entity_mismatch_by_value: "dict[str, Statement]" = {}
         # The DISTINCT scope-compatible values the subject holds for this
         # property that the claim did not match. A predicate the oracle marked
         # single_valued may nonetheless hold MULTIPLE distinct values in the KB
@@ -759,6 +775,8 @@ class KBVerifier:
                 return KBVerdictType.VERIFIED, stmt, None
             if scope_mismatch is None:
                 scope_mismatch = stmt
+            if meta.object_type == "entity" and isinstance(stmt.value, str):
+                entity_mismatch_by_value.setdefault(stmt.value, stmt)
             # C2S-1: for a date predicate, key the distinctness set on the
             # year-normalized value so two statements that denote the SAME year
             # at differing precision (e.g. P569 '+1879-03-14...' day-precision and
@@ -776,23 +794,34 @@ class KBVerifier:
 
         value_unresolved = meta.object_type == "entity" and not value_resolved
 
-        # Try subsumption upgrade on any
-        # scope-compatible mismatch — functional or not. A KB statement value
-        # that is a specialization of the claimed value (e.g. Honolulu when
-        # the claim says "United States"; Île-de-France when the claim says
-        # "France") VERIFIES the claim rather than contradicting / abstaining —
-        # the more-specific KB fact entails the more-general claim. Only run
-        # for entity-typed values that resolved to KB IDs; literal comparisons
-        # (numbers, dates, strings) don't subsume.
+        # Try the DIRECTED subsumption upgrade on EVERY held scope-compatible
+        # mismatch value — functional or not (NR: all-values, not just the first).
+        # A KB statement value that is a specialization of the claimed value (e.g.
+        # Honolulu when the claim says "United States"; Île-de-France when the claim
+        # says "France") VERIFIES the claim — the more-specific KB fact entails the
+        # more-general claim. Looping over all distinct held values makes the result
+        # independent of statement iteration order: Obama P19 = {hospital, Honolulu}
+        # verifies "born_in USA" via Honolulu ⊆ USA even if the hospital iterated
+        # first. Only for entity-typed values that resolved to KB IDs; literal
+        # comparisons (numbers, dates, strings) don't subsume. This is the DIRECTED
+        # grounding primitive the walker's neighbor-enumeration fanout otherwise
+        # re-derives by generate-and-test (see _discover_chains' functional skip).
         if (
-            scope_mismatch is not None
-            and meta.object_type == "entity"
+            meta.object_type == "entity"
             and value_resolved
-            and isinstance(scope_mismatch.value, str)
             and isinstance(expected_value, str)
-            and self._subsumption_upgrades(scope_mismatch.value, expected_value)
         ):
-            return KBVerdictType.VERIFIED, scope_mismatch, None
+            for mismatch_value, mismatch_stmt in entity_mismatch_by_value.items():
+                # part_of ONLY (§3.2): a held VALUE subsumed by the claim object
+                # entails the claim only via GEOGRAPHIC containment (born in a place
+                # within O ⇒ born in O). Including `is_a` here would FALSE-VERIFY a
+                # non-distributing predicate whose held value happens to be is_a the
+                # claimed object (e.g. an occupation value is_a 'river'), bypassing
+                # the multi_valued_single_valued_predicate abstain guard below.
+                if self._subsumption_upgrades(
+                    mismatch_value, expected_value, relations=("part_of",)
+                ):
+                    return KBVerdictType.VERIFIED, mismatch_stmt, None
 
         if scope_mismatch is not None and binding.single_valued:
             if value_unresolved:
@@ -951,13 +980,25 @@ class KBVerifier:
         except Exception:
             return False
 
-    def _subsumption_upgrades(self, kb_value: str, expected_value: str) -> bool:
+    def _subsumption_upgrades(
+        self, kb_value: str, expected_value: str,
+        relations: tuple = ("part_of", "is_a"),
+    ) -> bool:
         """Query the KB for whether the
         KB statement value (specific) is subsumed by the claim's expected
-        value (general). Tries `part_of` (geographic / location containment,
-        Wikidata P131/P361) and `is_a` (taxonomic, Wikidata P31/P279). The
-        first that returns `a_subsumed_by_b` or `equivalent` upgrades the
-        verdict to VERIFIED.
+        value (general). Tries the given `relations` — `part_of` (geographic /
+        location containment, Wikidata P131/P30/P17) and/or `is_a` (taxonomic,
+        Wikidata P31/P279). The first that returns `a_subsumed_by_b` or
+        `equivalent` upgrades the verdict to VERIFIED.
+
+        `relations` defaults to both, but a caller MUST restrict it to the
+        relation(s) over which the PREDICATE actually distributes. The
+        in-statements value upgrade passes `("part_of",)` only: the claim object
+        subsuming a held VALUE entails the claim only for geographic-containment
+        (born_in/located_in: born in a place ⊆ a country ⇒ born in the country).
+        An `is_a` value subsumption does NOT entail an arbitrary predicate (a held
+        value that is_a the claimed object — e.g. an occupation that happens to be
+        is_a 'river' — would FALSE-VERIFY), so it is excluded there.
 
         Fails closed on error — unknown relation types, invalid Q-IDs, or KB
         outages fall through to no-upgrade, preserving the prior CONTRADICTED
@@ -966,7 +1007,7 @@ class KBVerifier:
         """
         if kb_value == expected_value:
             return True
-        for relation_type in ("part_of", "is_a"):
+        for relation_type in relations:
             try:
                 r = self._kb.subsumption(kb_value, expected_value, relation_type)
             except Exception:
