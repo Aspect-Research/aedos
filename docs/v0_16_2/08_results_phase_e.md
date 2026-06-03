@@ -92,6 +92,22 @@ since the seeded offline substrate would also need the precision field.
   interval, past-claim-vs-future-start, date-predicate-stray-end, negated present
   role), plus the E3 prompt-contract test and the E2 pope-birthdate end-to-end pin.
 
+### Live-data smoke (real Wikidata, no LLM)
+The LLM extraction/translation layer is unchanged by Phase E; the changed verdict
+logic was exercised against LIVE Wikidata SPARQL for the actual reported subject:
+- Benedict XVI P569 birth = `1927-04-16T00:00:00Z`; pope (Q19546) P39 =
+  `P580 2005-04-19 → P582 2013-02-28` (an ended role) — exactly the data shape the
+  fixes target.
+- **E2**: "April 16, 1927" (NL) and "1927" both VERIFY against the live KB date;
+  "April 17, 1927" abstains. The original "couldn't verify the birth date" failure
+  is fixed.
+- **E4**: with the live ended-role qualifiers, a present "is the pope" claim →
+  CONTRADICTED; a past "was the pope" claim → VERIFIED. The wrong-pope false-verify
+  is fixed without contradicting history.
+(The full live chat smoke — extraction + draft — needs an LLM key, absent in this
+environment; the offline gated suite is the soundness gate and the live SPARQL
+smoke confirms the real data shape.)
+
 ## Commits (branch v0.16.2; NOT tagged / NOT pushed — awaiting operator)
 - E1 — restore chat walker budget to 30 s
 - E3 — selector always keeps the identity/role claim central
