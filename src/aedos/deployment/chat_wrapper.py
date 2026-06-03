@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, Optional
@@ -10,6 +10,7 @@ from ..layer1_extraction.extractor import ExtractionContext
 from ..layer1_extraction.triage import AbstentionReason
 from ..layer4_sources.parallel_verify import DEFAULT_MAX_WORKERS, walk_claims_parallel
 from ..layer4_sources.walker import VerificationContext
+from .claim_selection import select_central_claims
 from ..layer5_result.aggregator import (
     ClaimVerdict,
     VerificationResult,
@@ -69,6 +70,11 @@ class ChatResponse:
     verification_result: VerificationResult
     verification_id: str
     draft_message: str = ""
+    # v0.16.2 Phase D: claims extracted from the draft but NOT central to the
+    # user's question — passed through unverified (each a {claim_id, subject,
+    # predicate, object, polarity} dict), plus a one-line selection summary.
+    not_assessed_claims: list = field(default_factory=list)
+    selection_summary: str = ""
 
     @property
     def intervention_type(self) -> str:
@@ -366,6 +372,8 @@ class ChatWrapper:
         conversation_context: Optional[dict] = None,
         progress: Optional[Callable[[dict], None]] = None,
         verify_workers: int = DEFAULT_MAX_WORKERS,
+        select_central: bool = True,
+        select_min_claims: int = 4,
     ) -> ChatResponse:
         ctx_dict = conversation_context or {}
         asserting_party = ctx_dict.get("asserting_party_id", "user")
@@ -468,14 +476,42 @@ class ChatWrapper:
             asserting_party=asserting_party,
             source_text=draft,
         )
-        _emit("extracted", f"found {len(claims)} claim(s) to verify in the draft")
-        # Announce every claim up front (UI shows them pending), then verify them
-        # CONCURRENTLY — each `verdict` event (with its reasoning trace) is emitted
-        # the moment that claim's walk completes, in completion order. Verdicts are
-        # identical to serial verification (claims are independent; per-walk state
-        # is thread-local). walk_results come back in claim order for aggregation.
-        total = len(claims)
-        for i, claim in enumerate(claims):
+        _emit("extracted", f"found {len(claims)} claim(s) in the draft")
+        # 2.5 Phase D: select the claims CENTRAL to the user's question and verify
+        # ONLY those. Non-central claims pass through the draft unverified — no
+        # verdict is emitted on them (like an abstain), so this never false-
+        # verifies/contradicts; they are shown transparently as "not assessed".
+        # Fails open to ALL claims (select_central_claims handles the fallbacks).
+        will_select = select_central and len(claims) > select_min_claims
+        if will_select:
+            _emit("selecting", "deciding which claims are central to your question")
+        selection = select_central_claims(
+            self._llm, user_message, draft, claims,
+            min_claims=select_min_claims, enabled=select_central,
+        )
+        central = [c for c in claims if c.claim_id in selection.central_ids]
+        peripheral = [c for c in claims if c.claim_id not in selection.central_ids]
+        if selection.applied:
+            _emit("selected", selection.reason)
+            for c in peripheral:
+                _emit(
+                    "skipped",
+                    f"not assessed (not central): {c.subject} {c.predicate} {c.object}",
+                    claim_id=c.claim_id, subject=c.subject, predicate=c.predicate,
+                    object=c.object, polarity=c.polarity, verdict="not_assessed",
+                )
+        not_assessed_claims = [
+            {"claim_id": c.claim_id, "subject": c.subject, "predicate": c.predicate,
+             "object": c.object, "polarity": c.polarity}
+            for c in peripheral
+        ]
+
+        # 3. Verify the CENTRAL claims CONCURRENTLY — each `verdict` event (with its
+        # reasoning trace) is emitted the moment that claim's walk completes.
+        # Verdicts are identical to serial (claims independent; per-walk state
+        # thread-local); walk_results come back in claim order for aggregation.
+        total = len(central)
+        for i, claim in enumerate(central):
             _emit(
                 "verifying",
                 f"verifying: {claim.subject} {claim.predicate} {claim.object}",
@@ -488,14 +524,14 @@ class ChatWrapper:
                   **walk_result_observability(claim, result))
 
         walk_results = walk_claims_parallel(
-            self._walker, claims, verification_context,
+            self._walker, central, verification_context,
             max_workers=verify_workers, on_result=_on_result,
         )
 
-        # 4. Aggregate
+        # 4. Aggregate (central claims only; peripheral pass through the draft)
         _emit("composing", "composing the final reply")
         vr = self._aggregator.aggregate(
-            claims=claims,
+            claims=central,
             per_claim_results=walk_results,
             text_input={"message": user_message, "draft": draft},
         )
@@ -519,6 +555,8 @@ class ChatWrapper:
             verification_result=vr,
             verification_id=verification_id,
             draft_message=draft,
+            not_assessed_claims=not_assessed_claims,
+            selection_summary=selection.reason,
         )
 
     def get_verification(self, verification_id: str) -> Optional[VerificationResult]:
