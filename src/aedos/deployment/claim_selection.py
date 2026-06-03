@@ -25,8 +25,12 @@ _SYSTEM = (
     "question. A claim is central if it directly answers the question or is part "
     "of that answer. Background, tangential, or incidental claims (unrelated facts "
     "about the subject) are NOT central. Be INCLUSIVE: if a claim could plausibly "
-    "be part of the answer, include it. Respond with ONLY a JSON array of the "
-    "central claim numbers, e.g. [1,3,4] — nothing else."
+    "be part of the answer, include it. ALWAYS include any claim that establishes "
+    "WHO or WHAT the answer is about — its core identity, role, title, office, or "
+    "type (e.g. 'X is the president', 'X holds the role pope', 'X is a river') — "
+    "because the correctness of the rest of the answer depends on that being right. "
+    "Respond with ONLY a JSON array of the central claim numbers, e.g. [1,3,4] — "
+    "nothing else."
 )
 
 
