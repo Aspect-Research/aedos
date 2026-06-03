@@ -91,17 +91,30 @@ class MockKB(_GeoMixin):
     """KB whose resolve_entity maps known references to Q-numbers."""
 
     def __init__(self, statements: list[Statement], resolutions: dict | None = None,
-                 labels: dict | None = None):
+                 labels: dict | None = None, property_ontology: dict | None = None,
+                 subsumptions: dict | None = None):
         self._statements = statements
         self._resolutions = dict(_DEFAULT_RESOLUTIONS)
         if resolutions:
             self._resolutions.update(resolutions)
         self._labels = dict(labels or {})
+        # prop_id -> ontology dict (subject_type_qids / value_type_qids / ...).
+        self._property_ontology = dict(property_ontology or {})
+        # (entity_a, entity_b, relation_type) -> verdict string. Absent pairs
+        # fall back to "unrelated" (the pre-existing default).
+        self._subsumptions = dict(subsumptions or {})
 
     def fetch_label(self, qid):
         # Canonical KB label for a Q-id (the resolved-entity name-match consults
         # this). Absent by default so most mock KBs expose no labels.
         return self._labels.get(qid)
+
+    def fetch_property_ontology(self, prop):
+        # The property's Wikidata constraints (value_type_qids etc.). Empty for
+        # props not configured — mirrors the adapter's fail-open empty ontology.
+        return self._property_ontology.get(
+            prop, {"subject_type_qids": [], "value_type_qids": []}
+        )
 
     def resolve_entity(self, reference, local_context):
         qid = self._resolutions.get(reference)
@@ -113,18 +126,20 @@ class MockKB(_GeoMixin):
         return list(self._statements)
 
     def subsumption(self, entity_a, entity_b, relation_type):
-        return SubsumptionResult(verdict="unrelated")
+        verdict = self._subsumptions.get((entity_a, entity_b, relation_type), "unrelated")
+        return SubsumptionResult(verdict=verdict)
 
 
 def _make_verifier(statements, routing_hint="kb_resolvable", kb_property="P39",
                    object_type="entity", single_valued=0, resolutions=None,
-                   slot_to_qualifier=None, labels=None):
+                   slot_to_qualifier=None, labels=None, property_ontology=None,
+                   subsumptions=None):
     db = open_memory_db()
     transport = MockTransport(routing_hint, kb_property, object_type, single_valued,
                               slot_to_qualifier)
     client = LLMClient(_transport=transport)
     pt = PredicateTranslation(db=db, llm_client=client)
-    kb = MockKB(statements, resolutions, labels)
+    kb = MockKB(statements, resolutions, labels, property_ontology, subsumptions)
     resolver = EntityResolver(kb_protocol=kb, db=db)
     return KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
 
@@ -604,6 +619,75 @@ class TestEntityNameMatch:
         )
         assert result.verdict == KBVerdictType.CONTRADICTED
         assert result.trace.get("entity_name_match") is not True
+
+
+# ---------------------------------------------------------------------------
+# TestPropertyConstraintValidation: the constraint-validation layer. The
+# CONTRADICT value-type guard sources the value-type constraint from the KB
+# PROPERTY's own Wikidata constraints (P2302, via fetch_property_ontology) when
+# the oracle/seed left the binding untyped — so a claim object that provably
+# violates the property's value-type abstains instead of false-contradicting.
+# The constraint "falls out of the data" rather than the oracle's guess.
+# ---------------------------------------------------------------------------
+
+class TestPropertyConstraintValidation:
+    def test_contradiction_blocked_when_object_violates_property_value_type(self):
+        # single_valued entity predicate, binding has NO object_entity_types. The
+        # property's value-type constraint (from the ontology) is Q5 (human). The
+        # claim object resolves to Q999, provably UNRELATED to Q5. The KB value
+        # differs, so without the guard this would CONTRADICT — but the object
+        # provably violates the property's value-type, so abstain.
+        stmts = [Statement(value="Q42", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P50",
+            resolutions={"Obama": "Q76", "SomeBook": "Q999"},
+            property_ontology={"P50": {"subject_type_qids": [], "value_type_qids": ["Q5"]}},
+        )
+        result = verifier.verify(_claim(predicate="authored", object_val="SomeBook"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "value_type_incompatible_binding"
+
+    def test_contradiction_proceeds_when_object_satisfies_property_value_type(self):
+        # Control: same shape, but the object Q999 IS provably an instance of the
+        # value-type class Q5 → the guard permits → the functional mismatch
+        # CONTRADICTS as before (the layer is selective, not a blanket suppress).
+        stmts = [Statement(value="Q42", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P50",
+            resolutions={"Obama": "Q76", "SomeAuthor": "Q999"},
+            property_ontology={"P50": {"subject_type_qids": [], "value_type_qids": ["Q5"]}},
+            subsumptions={("Q999", "Q5", "is_a"): "a_subsumed_by_b"},
+        )
+        result = verifier.verify(_claim(predicate="authored", object_val="SomeAuthor"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_fail_open_when_property_has_no_value_type_constraint(self):
+        # Fail-open: no value-type constraint for the property (empty ontology) →
+        # the guard permits → contradiction proceeds, exactly as before the layer.
+        stmts = [Statement(value="Q42", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P50",
+            resolutions={"Obama": "Q76", "SomeBook": "Q999"},
+            # no property_ontology entry → fetch returns empty value_type_qids
+        )
+        result = verifier.verify(_claim(predicate="authored", object_val="SomeBook"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_declared_binding_types_take_precedence_over_property_ontology(self):
+        # When the binding DOES declare object_entity_types, those are used (the
+        # property-ontology fallback only fires for an untyped binding). Here the
+        # binding has no declared types, so the fallback supplies Q5; this pins
+        # that the fallback path is what fires (companion to the blocked test).
+        stmts = [Statement(value="Q42", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P50",
+            resolutions={"Obama": "Q76", "SomeBook": "Q999"},
+            property_ontology={"P50": {"subject_type_qids": ["Q386724"], "value_type_qids": ["Q5"]}},
+        )
+        result = verifier.verify(_claim(predicate="authored", object_val="SomeBook"))
+        # Q999 provably unrelated to the value-type Q5 -> abstain (subject-type
+        # Q386724 is not consulted by this value-side guard).
+        assert result.verdict == KBVerdictType.NO_MATCH
 
 
 # ---------------------------------------------------------------------------

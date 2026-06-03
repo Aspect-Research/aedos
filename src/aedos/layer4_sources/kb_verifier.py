@@ -577,6 +577,27 @@ class KBVerifier:
             return False
         return label.strip().casefold() == str(surface).strip().casefold()
 
+    def _property_value_type_constraint(self, binding) -> list:
+        """The KB property's OWN value-type constraint classes (Wikidata P2302
+        value-type constraint → the allowed value classes), via the adapter's
+        `fetch_property_ontology`. This is the constraint-validation layer's data
+        source: when the oracle/seed left a binding's value-type undeclared, we
+        read it from the property itself so the contradiction value-type guard
+        still applies. FAIL-OPEN: returns [] for a missing kb_property, an adapter
+        without `fetch_property_ontology` (mock/stub KBs), any fetch error, or a
+        malformed result — the caller then permits as before. Never raises."""
+        prop = getattr(binding, "kb_property", None)
+        fetch = getattr(self._kb, "fetch_property_ontology", None)
+        if not prop or not callable(fetch):
+            return []
+        try:
+            onto = fetch(prop)
+        except Exception:
+            return []
+        if not isinstance(onto, dict):
+            return []
+        return [c for c in (onto.get("value_type_qids") or []) if isinstance(c, str)]
+
     def _object_satisfies_value_type(self, resolved_obj_qid: Optional[str], binding) -> bool:
         """v0.16 WS1 (copula fix). True when the resolved object provably
         satisfies the binding's value-type constraint — or when the binding has
@@ -594,6 +615,15 @@ class KBVerifier:
         would be unsound (the predicate was mis-routed to a value-type-
         incompatible property, e.g. P31 for an occupation claim)."""
         value_types = list(binding.object_entity_types or [])
+        if not value_types:
+            # The oracle/seed declared no value-type for this binding. Fall back to
+            # the KB PROPERTY's OWN value-type constraint (Wikidata P2302), so this
+            # contradiction guard still fires for predicates the oracle left
+            # untyped (e.g. authored_by → P50, whose value-type constraint is
+            # "human"). The constraint thus "falls out of the data" rather than the
+            # oracle's guess — strengthening §3.2 without per-predicate seeding.
+            # Still fail-open: an empty/unavailable constraint permits as before.
+            value_types = self._property_value_type_constraint(binding)
         if not value_types:
             return True  # no constraint known → permit the contradiction
         if not resolved_obj_qid or not isinstance(resolved_obj_qid, str):
