@@ -280,6 +280,9 @@ def create_app(
             "verification_id": response.verification_id,
             "observability": observability,
             "given_assertion": _annotate(observability),
+            # Phase D: claims not central to the question, passed through unverified.
+            "not_assessed": list(getattr(response, "not_assessed_claims", []) or []),
+            "selection": getattr(response, "selection_summary", ""),
         }
 
     def _run_verify(party: str, text: str, emit: Callable[[dict], None]) -> dict:
@@ -358,6 +361,8 @@ def create_app(
                 request.message,
                 conversation_context={"asserting_party_id": party},
                 verify_workers=settings.verify_workers,
+                select_central=settings.select_central_claims,
+                select_min_claims=settings.select_min_claims,
             )
             _track_verification(response.verification_id, party)
             return _chat_body(response)
@@ -381,6 +386,8 @@ def create_app(
                 conversation_context={"asserting_party_id": party},
                 progress=emit,
                 verify_workers=settings.verify_workers,
+                select_central=settings.select_central_claims,
+                select_min_claims=settings.select_min_claims,
             )
             _track_verification(response.verification_id, party)
             return _chat_body(response)
