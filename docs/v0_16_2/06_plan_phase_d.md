@@ -68,3 +68,40 @@ the answer, include it") to bias away from dropping real answer claims.
    marked not-assessed, fewer walks).
 
 Commits only; no tag/push.
+
+---
+
+## Results (Phase D — done)
+
+A chat draft's claims are now narrowed to those CENTRAL to the user's question
+before verification. One LLM call (purpose `deployment:claim_selection`) selects
+the central subset; only those are walked (in parallel, as Phase C); the rest pass
+through the draft unverified, shown as "not assessed (not central to your
+question)".
+
+**Live (the reported example, "what do chipmunks eat?"):** 20 claims extracted →
+**16 selected as central** (the diet facts) → **4 not assessed** (cheek pouches,
+food-caching behavior — correctly judged peripheral to the diet question). The
+non-central claims are skipped, surfaced transparently in the UI.
+
+**Soundness — verified clean.** Skipping a non-central claim emits NO verdict on
+it (abstain-equivalent), so this never false-verifies or false-contradicts; a
+wrong selection only drops a claim to silent pass-through (the §3.2-safe
+direction). The selector **fails open to verifying ALL** on every failure mode
+(disabled / below threshold / LLM error / unparseable / empty / all-out-of-range)
+— a selector malfunction can never skip verification on everything.
+
+**Build-review-build.** Adversarial review (find→verify) of the soundness of
+skipping, partition/aggregation correctness, and fail-open completeness returned
+**7 findings, all confirmed not-a-bug**: no false-verify/contradict path;
+fail-open complete; partition exhaustive + non-overlapping (unique uuid4 ids);
+user-message premise promotion unaffected (still covers all user claims);
+`_parse_selected_numbers` defensive (range-guarded, dedup, JSON-only — no loose
+integer scrape); `not_assessed` surfacing carries only public draft content (no
+row-ids/secrets). No patch required.
+
+**Verification.** Gated suite (unit + integration + deploy): **1677 passed**,
+1 xfailed / 1 xpassed. +16 Phase D tests (parsing, fail-open rails, and a
+`respond()` integration: verifies only central + records not-assessed). Frontend
+`tsc --noEmit` + `vite build` clean. Config: `AEDOS_SELECT_CENTRAL_CLAIMS`
+(default on), `AEDOS_SELECT_MIN_CLAIMS` (default 4).
