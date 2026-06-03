@@ -4,7 +4,9 @@ import type { StepEvent } from "../api";
 // separately, from the "verdict" events, so they can fill in out of order as the
 // parallel walks complete).
 export default function StepLog({ steps, busy }: { steps: StepEvent[]; busy: boolean }) {
-  const narrative = steps.filter((s) => s.phase !== "verdict" && s.phase !== "verifying");
+  const narrative = steps.filter(
+    (s) => s.phase !== "verdict" && s.phase !== "verifying" && s.phase !== "skipped",
+  );
   const total = steps.find((s) => typeof s.total === "number")?.total;
   const done = steps.filter((s) => s.phase === "verdict").length;
 

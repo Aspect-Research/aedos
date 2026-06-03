@@ -56,6 +56,14 @@ export interface PerClaimAction {
   annotation: string | null;
 }
 
+export interface NotAssessedClaim {
+  claim_id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  polarity: number;
+}
+
 export interface ChatResponse {
   final_message: string;
   intervention_type: string;
@@ -63,6 +71,9 @@ export interface ChatResponse {
   verification_id: string;
   observability: ObsEntry[];
   given_assertion: GivenAssertion;
+  // Phase D: claims not central to the question, passed through unverified.
+  not_assessed?: NotAssessedClaim[];
+  selection?: string;
 }
 
 export interface ExtractedClaim {
