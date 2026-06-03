@@ -470,6 +470,38 @@ class TestKBVerifierValueTypeGuard:
         result = verifier.verify(_claim(object_val="Honolulu"))
         assert result.verdict == KBVerdictType.CONTRADICTED
 
+    def test_resolved_entity_vs_literal_abstains_not_contradicts(self):
+        # §3.2 false-contradict fix (the birth_name case): an `entity` predicate
+        # whose object RESOLVES to a Q-id (a person name resolving to the person
+        # entity) but whose KB statement holds the LITERAL string of the SAME
+        # surface form. S3 permits `literal` for an `entity` object_type (for
+        # literal-vs-literal external-id compares), but here the claim resolved to
+        # an entity — a resolved-entity-vs-literal cross-kind compare can never be
+        # a sound contradiction. NO_MATCH, never CONTRADICTED, despite identical
+        # surface text ("Jorge Mario Bergoglio" vs "Jorge Mario Bergoglio").
+        stmts = [Statement(value="Jorge Mario Bergoglio", value_type="literal")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P1477",
+            resolutions={"Jorge Mario Bergoglio": "Q450675"},
+        )
+        result = verifier.verify(
+            _claim(predicate="birth_name", object_val="Jorge Mario Bergoglio")
+        )
+        assert result.verdict == KBVerdictType.NO_MATCH
+        assert result.trace.get("abstention_reason") == "entity_claim_vs_literal_value"
+
+    def test_resolved_entity_vs_untagged_qid_value_still_contradicts(self):
+        # Control for the untagged-value_type fallback: a real entity value that
+        # the adapter left untagged (value_type=None) but whose value is a Q-id is
+        # treated as an entity — so a genuine entity-vs-entity mismatch still
+        # CONTRADICTS (the guard does not over-abstain on untagged Q-ids).
+        stmts = [Statement(value="Q60", value_type=None)]  # untagged, but a Q-id
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P19"
+        )
+        result = verifier.verify(_claim(object_val="Honolulu"))
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
 
 # ---------------------------------------------------------------------------
 # TestKBVerifierTimeObjectTypeGate  (v0.16 WS6 §A.4: the date→time
