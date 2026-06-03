@@ -75,3 +75,46 @@ state makes parallel verdicts identical to serial. Tested directly.
 Engine thread-safety (thread-local + locks) → parallel utility + tests (incl.
 parallel==serial) → wire chat/verify + traces → frontend → adversarial review →
 patch → live smoke + results. Commits only; no tag/push.
+
+---
+
+## Results (Phase C — done)
+
+**Parallel verification (verdict-preserving).** A turn's claims are walked
+concurrently on one shared pipeline. The audit found the per-walk mutable state to
+be exactly three attributes — `Walker._excluded_tier_u_row_ids`,
+`._user_authoritative_walk`, `Resolver._last_cache_row_id` — now thread-local; the
+shared OrderedDict-LRU caches + the sleep-based limiter (`RateLimiter`,
+`LRUHTTPCache`, `WikidataAdapter._transitive_memo`) are lock-guarded. Claims are
+independent and aggregated afterward, so isolating per-walk state makes parallel
+verdicts identical to serial — pinned by a `parallel == serial` test and a
+thread-local-isolation test.
+
+**Live:** the same 5-claim text took **105.2 s serial (workers=1) → 25.3 s
+parallel (workers=6) — ~4.2× faster**, with identical verdicts (4 verified, 1
+budget-abstain).
+
+**Per-claim traces.** Each `verdict` SSE event now carries the full reasoning
+trace (`verdict` + `abstention_reason` + `trace_human`), rendered live as an
+expandable per-claim card the moment that walk completes (out of order). The
+`no_grounding_found` case that prompted this — "Mount Everest tallest mountain" —
+now streams a **755-char trace** with `abstention_reason: budget_wall_clock`,
+showing exactly what was explored and why it abstained.
+
+**Build-review-build.** Adversarial review (two dimensions, find→verify) audited
+the whole `walk()` call graph for missed shared mutable state. It found **one**
+genuine high-severity gap (F1/C-1): `WikidataAdapter._transitive_memo` was an
+unguarded OrderedDict LRU — the same race class fixed for `LRUHTTPCache`, missed
+on the memo; an unguarded check-then-act could `KeyError` (swallowed by the
+walker to abstain) and diverge a parallel verdict from serial. **Patched** (memo
+lock). Everything else confirmed clean: KBVerifier/Substrate/TierU hold no
+per-call instance state (SQLite-backed, INSERT OR IGNORE/REPLACE on the
+`threadsafety==3` connection); the thread-local property pattern is correct;
+`walk_claims_parallel` preserves claim order, propagates exceptions, cleans up its
+pool, and runs `on_result` on the drain thread; no lock-ordering cycle
+(engine_lock above the pool; rate-limiter/cache/memo locks are leaves).
+
+**Verification.** Gated suite (unit + integration + deploy): **1661 passed**,
+1 xfailed / 1 xpassed (the v0.15 sandbox boundary). +12 Phase C tests. Frontend
+`tsc --noEmit` + `vite build` clean. Live re-smoke on the committed (post-F1)
+code confirms parallel verdicts each carrying a trace.
