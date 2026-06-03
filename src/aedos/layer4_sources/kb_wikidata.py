@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -998,6 +999,14 @@ class WikidataAdapter:
             OrderedDict()
         )
         self._transitive_memo_clock = clock or time.monotonic
+        # v0.16.2 Phase C: the memo is a bare OrderedDict LRU shared by ALL
+        # concurrent claim-walks of a turn (one adapter per pipeline). Like the
+        # sibling LRUHTTPCache and RateLimiter, its check-then-act mutations
+        # (get->del / move_to_end / popitem) are not concurrency-safe; guard them
+        # so a parallel walk can't race-raise inside verify_transitive_path (which
+        # the walker swallows to abstain) and silently diverge a verdict from
+        # serial. Leaf lock: held only across in-memory dict ops, never the ASK.
+        self._transitive_memo_lock = threading.Lock()
         # v0.16 WS3 §3D: bounded nogood cache (SubstrateExceptionCache). When
         # build_pipeline wires it, verify_transitive_path consults it BEFORE the
         # SPARQL ASK (return holds=False on a cached nogood — the leak guard) and
@@ -1175,20 +1184,21 @@ class WikidataAdapter:
         entry simply falls through to the live ASK. An expired entry is dropped
         on access (lazy TTL eviction)."""
         key = (cache_relation, source, target)
-        entry = self._transitive_memo.get(key)
-        if entry is None:
-            return None
-        cached, expires_at = entry
-        if self._transitive_memo_clock() >= expires_at:
-            # Stale: drop so a Wikidata edit cannot pin it past the TTL.
-            del self._transitive_memo[key]
-            return None
-        self._transitive_memo.move_to_end(key)  # LRU touch
-        return TransitivePathResult(
-            holds=cached.holds,
-            establishing_property=cached.establishing_property,
-            error=None,
-        )
+        with self._transitive_memo_lock:
+            entry = self._transitive_memo.get(key)
+            if entry is None:
+                return None
+            cached, expires_at = entry
+            if self._transitive_memo_clock() >= expires_at:
+                # Stale: drop so a Wikidata edit cannot pin it past the TTL.
+                del self._transitive_memo[key]
+                return None
+            self._transitive_memo.move_to_end(key)  # LRU touch
+            return TransitivePathResult(
+                holds=cached.holds,
+                establishing_property=cached.establishing_property,
+                error=None,
+            )
 
     def _transitive_memo_put(
         self,
@@ -1207,10 +1217,11 @@ class WikidataAdapter:
             establishing_property=result.establishing_property,
             error=None,
         )
-        self._transitive_memo[key] = (stored, expires_at)
-        self._transitive_memo.move_to_end(key)
-        while len(self._transitive_memo) > _TRANSITIVE_MEMO_MAX_ENTRIES:
-            self._transitive_memo.popitem(last=False)  # evict oldest (LRU)
+        with self._transitive_memo_lock:
+            self._transitive_memo[key] = (stored, expires_at)
+            self._transitive_memo.move_to_end(key)
+            while len(self._transitive_memo) > _TRANSITIVE_MEMO_MAX_ENTRIES:
+                self._transitive_memo.popitem(last=False)  # evict oldest (LRU)
 
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None

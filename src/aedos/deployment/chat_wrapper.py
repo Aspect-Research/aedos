@@ -8,6 +8,7 @@ from typing import Callable, Optional
 
 from ..layer1_extraction.extractor import ExtractionContext
 from ..layer1_extraction.triage import AbstentionReason
+from ..layer4_sources.parallel_verify import DEFAULT_MAX_WORKERS, walk_claims_parallel
 from ..layer4_sources.walker import VerificationContext
 from ..layer5_result.aggregator import (
     ClaimVerdict,
@@ -244,6 +245,33 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
+def walk_result_observability(claim, walk_result) -> dict:
+    """Per-claim observability built from a raw WalkResult (pre-aggregation), for
+    STREAMING each claim's verdict + reasoning trace the moment its walk
+    completes. Mirrors the lightweight `claim_observability` entry: verdict, base
+    verdict, given-assertion flag, abstention reason, and the row-id-free human
+    trace (`trace_human`) — the latter is what answers "how did it conclude
+    `no_grounding_found`" (sources/edges tried + why it abstained)."""
+    from ..layer5_result.trace import trace_to_human
+
+    verdict = walk_result.verdict
+    trace = getattr(walk_result, "trace", None)
+    return {
+        "claim_id": claim.claim_id,
+        "subject": claim.subject,
+        "predicate": claim.predicate,
+        "object": claim.object,
+        "polarity": claim.polarity,
+        "verdict": verdict,
+        "base_verdict": base_verdict_of(verdict),
+        "conditional": is_given_assertion(verdict),
+        "abstention_reason": getattr(walk_result, "abstention_reason", None),
+        "trace_human": (
+            trace_to_human(trace, claim=claim, verdict=verdict) if trace else None
+        ),
+    }
+
+
 def claim_observability(vr: VerificationResult, verbose: bool = False) -> list[dict]:
     """WS5: structured, inspectable per-claim view.
 
@@ -337,6 +365,7 @@ class ChatWrapper:
         user_message: str,
         conversation_context: Optional[dict] = None,
         progress: Optional[Callable[[dict], None]] = None,
+        verify_workers: int = DEFAULT_MAX_WORKERS,
     ) -> ChatResponse:
         ctx_dict = conversation_context or {}
         asserting_party = ctx_dict.get("asserting_party_id", "user")
@@ -440,21 +469,28 @@ class ChatWrapper:
             source_text=draft,
         )
         _emit("extracted", f"found {len(claims)} claim(s) to verify in the draft")
-        walk_results = []
+        # Announce every claim up front (UI shows them pending), then verify them
+        # CONCURRENTLY — each `verdict` event (with its reasoning trace) is emitted
+        # the moment that claim's walk completes, in completion order. Verdicts are
+        # identical to serial verification (claims are independent; per-walk state
+        # is thread-local). walk_results come back in claim order for aggregation.
+        total = len(claims)
         for i, claim in enumerate(claims):
             _emit(
                 "verifying",
-                f"verifying claim {i + 1}/{len(claims)}: "
-                f"{claim.subject} {claim.predicate} {claim.object}",
-                index=i + 1, total=len(claims), claim_id=claim.claim_id,
+                f"verifying: {claim.subject} {claim.predicate} {claim.object}",
+                index=i + 1, total=total, claim_id=claim.claim_id,
             )
-            result = self._walker.walk(claim, verification_context)
-            walk_results.append(result)
-            _emit(
-                "verdict", str(result.verdict),
-                claim_id=claim.claim_id, verdict=str(result.verdict),
-                subject=claim.subject, predicate=claim.predicate, object=claim.object,
-            )
+
+        def _on_result(index, claim, result):
+            _emit("verdict", str(result.verdict),
+                  index=index + 1, total=total,
+                  **walk_result_observability(claim, result))
+
+        walk_results = walk_claims_parallel(
+            self._walker, claims, verification_context,
+            max_workers=verify_workers, on_result=_on_result,
+        )
 
         # 4. Aggregate
         _emit("composing", "composing the final reply")
