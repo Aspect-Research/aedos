@@ -41,6 +41,10 @@ class DeploySettings:
     # safe). Streaming makes even a multi-claim turn legible.
     walker_wall_clock_seconds: float = 12.0
     walker_max_llm_calls: int = 10
+    # Max claims verified concurrently within one turn (intra-turn parallelism;
+    # turns are still serialized by the engine lock). Bounds outbound KB/LLM
+    # concurrency. Per-walk state is thread-local so verdicts are unchanged.
+    verify_workers: int = 8
 
     @classmethod
     def from_env(cls) -> "DeploySettings":
@@ -60,4 +64,5 @@ class DeploySettings:
                 os.environ.get("AEDOS_WALKER_WALL_CLOCK_SECONDS", "12")
             ),
             walker_max_llm_calls=int(os.environ.get("AEDOS_WALKER_MAX_LLM_CALLS", "10")),
+            verify_workers=int(os.environ.get("AEDOS_VERIFY_WORKERS", "8")),
         )
