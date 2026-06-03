@@ -691,6 +691,80 @@ class TestPropertyConstraintValidation:
 
 
 # ---------------------------------------------------------------------------
+# TestAllValuesSubsumptionUpgrade (Change 2-NR): the directed subsumption upgrade
+# tries EVERY held value, not just the first iterated one — so a multi-valued
+# subject whose container chain sits on a SIBLING value still VERIFIES,
+# order-independent. (This is what makes the walker's functional discovery-skip
+# non-regressive: the directed upgrade owns the true container case.)
+# ---------------------------------------------------------------------------
+
+class TestAllValuesSubsumptionUpgrade:
+    def test_container_claim_verifies_via_sibling_value_first_iterated_misses(self):
+        # Obama-shape: P19 = [hospital Q6366688 (iterated FIRST, NOT in USA),
+        # Honolulu Q18094 (part_of USA)]. "born_in USA" must VERIFY via Honolulu ⊆
+        # USA even though the hospital iterated first (pre-fix: only the first
+        # mismatch was checked → abstain).
+        stmts = [
+            Statement(value="Q6366688", value_type="entity"),  # hospital, first
+            Statement(value="Q18094", value_type="entity"),    # Honolulu, second
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P19",
+            resolutions={"Obama": "Q76", "USA": "Q30"},
+            subsumptions={("Q18094", "Q30", "part_of"): "a_subsumed_by_b"},
+        )
+        result = verifier.verify(_claim(predicate="born_in", object_val="USA"))
+        assert result.verdict == KBVerdictType.VERIFIED
+
+    def test_no_held_value_subsumes_still_abstains(self):
+        # Control: neither held value is subsumed by the claim object → NO_MATCH
+        # (the all-values loop only verifies on a genuine containment).
+        stmts = [
+            Statement(value="Q6366688", value_type="entity"),
+            Statement(value="Q18094", value_type="entity"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P19",
+            resolutions={"Obama": "Q76", "Kenya": "Q114"},
+            # no subsumption to Q114 → all unrelated
+        )
+        result = verifier.verify(_claim(predicate="born_in", object_val="Kenya"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+
+    def test_is_a_value_subsumption_does_not_false_verify(self):
+        # §3.2 (adversarial-review catch): a non-location single_valued entity
+        # predicate (occupation P106) holding MULTIPLE values, where a SIBLING
+        # value is_a the claim object, must ABSTAIN — not VERIFY. The upgrade is
+        # part_of-ONLY, so the is_a subsumption is excluded and the multi-value
+        # guard abstains. (Pre-fix the all-values is_a upgrade false-verified here,
+        # bypassing the multi_valued_single_valued_predicate guard.)
+        stmts = [
+            Statement(value="Q111", value_type="entity"),
+            Statement(value="Q222", value_type="entity"),
+        ]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P106",
+            resolutions={"Obama": "Q76", "river": "Q4022"},
+            subsumptions={("Q222", "Q4022", "is_a"): "a_subsumed_by_b"},
+        )
+        result = verifier.verify(_claim(predicate="works_as", object_val="river"))
+        assert result.verdict == KBVerdictType.NO_MATCH
+
+    def test_single_value_is_a_subsumption_does_not_false_verify(self):
+        # The pre-existing single-value variant the same gate closes: ONE held
+        # value that is_a the claim object on a non-location predicate must NOT
+        # VERIFY (part_of-only excludes the is_a value subsumption).
+        stmts = [Statement(value="Q222", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P106",
+            resolutions={"Obama": "Q76", "river": "Q4022"},
+            subsumptions={("Q222", "Q4022", "is_a"): "a_subsumed_by_b"},
+        )
+        result = verifier.verify(_claim(predicate="works_as", object_val="river"))
+        assert result.verdict != KBVerdictType.VERIFIED
+
+
+# ---------------------------------------------------------------------------
 # TestKBVerifierTimeObjectTypeGate  (v0.16 WS6 §A.4: the date→time
 # reconciliation makes the _OBJECT_TYPE_COMPATIBLE_VALUE_TYPES gate
 # 'time' → {date, literal} LIVE for the date predicates. A functional

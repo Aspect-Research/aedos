@@ -160,6 +160,37 @@ class TestDepthCapRemovedDoesNotBlowBudget:
         # bounded path.
         assert elapsed < 5.0
 
+    def test_kb_work_budget_bounds_per_node_verify_cost(self):
+        """Change 1: the gap the probe cap misses. The dominant cost on a
+        fanning-out famous-entity walk is the per-node KBVerifier.verify work
+        (resolution + lookup_statements + subsumption ASKs), which the probe cap
+        never sees. The unified KB-WORK budget charges each verify + enumeration
+        and is sampled inside the node loop, so the walk abstains FAST as
+        `budget_kb_work` — NOT a 30s `budget_wall_clock` — with a HIGH probe cap so
+        the probe budget is provably not the binding constraint."""
+        walker = Walker(
+            tier_u=_TierU(),
+            kb_verifier=_NoMatchKBVerifier(),
+            python_verifier=None,
+            substrate=_blowup_substrate(),
+            kb=_blowup_kb(),
+            walker_max_depth=4,
+        )
+        budget = WalkerBudget(
+            wall_clock_seconds=30.0, max_llm_calls=1000,
+            max_kb_neighbor_probes=100000,  # probe cap deliberately non-binding
+            max_frontier_expansions=100000,  # fanout cap deliberately non-binding
+            max_kb_work_units=24,
+        )
+        t0 = time.monotonic()
+        result = walker.walk(_claim(), _ctx(), budget=budget)
+        elapsed = time.monotonic() - t0
+
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "budget_kb_work"
+        assert result.trace.walk_metadata.get("budget_exceeded") == "kb_work"
+        assert elapsed < 5.0
+
     def test_probe_budget_dedupes_repeated_neighbor_qids(self):
         """The per-walk `seen` dedupe collapses re-probing of the SAME neighbor
         QID across slots/directions/depths (famous containers like Q30/Q142
