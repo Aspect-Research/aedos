@@ -497,17 +497,27 @@ class TestKBVerifierTimeObjectTypeGate:
         assert result.verdict == KBVerdictType.CONTRADICTED
 
     def test_time_predicate_contradicts_on_literal_value_type(self):
-        # literal is also in the allowed set for object_type='time'. A
-        # non-matching literal statement on a functional time predicate
-        # contradicts.
-        stmts = [Statement(value="not-a-year-literal", value_type="literal")]
+        # `literal` is in the allowed value-type set for object_type='time'. A
+        # functional time predicate whose KB DATE literal genuinely DISAGREES with
+        # the claim (different year, both assert year) CONTRADICTS (E2 precision-
+        # aware mismatch).
         verifier = _make_verifier(
-            stmts, object_type="time", single_valued=1, kb_property="P569"
+            [Statement(value="1850-01-01T00:00:00Z", value_type="literal")],
+            object_type="time", single_valued=1, kb_property="P569",
         )
-        result = verifier.verify(
-            _claim(predicate="born_on", object_val="1879")
-        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="1879"))
         assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_time_predicate_abstains_on_non_date_literal(self):
+        # E2 (§3.2): a date claim vs a NON-date KB literal cannot be soundly
+        # compared (the KB value isn't a date — likely a mis-mapped predicate), so
+        # ABSTAIN rather than fabricate a contradiction.
+        verifier = _make_verifier(
+            [Statement(value="not-a-year-literal", value_type="literal")],
+            object_type="time", single_valued=1, kb_property="P569",
+        )
+        result = verifier.verify(_claim(predicate="born_on", object_val="1879"))
+        assert result.verdict == KBVerdictType.NO_MATCH
 
     def test_time_predicate_abstains_on_entity_value_type(self):
         # The KB statement is an ENTITY (as it would be if the time predicate
@@ -564,7 +574,13 @@ class TestKBVerifierTimeObjectTypeGate:
 # can never false-verify. The precise-ISO strict compare is preserved.)
 # ---------------------------------------------------------------------------
 
-from aedos.layer4_sources.kb_verifier import _value_matches
+from aedos.layer4_sources.kb_verifier import (
+    _date_parts,
+    _date_relation,
+    _end_provably_future,
+    _end_provably_past,
+    _value_matches,
+)
 
 
 class TestValueMatchesApproximateYear:
@@ -609,13 +625,64 @@ class TestValueMatchesApproximateYear:
         assert _value_matches("1999", "1998") is False
 
     def test_two_precise_dates_compare_strictly(self):
-        # The precise-ISO strict compare is preserved: a full claim date does NOT
-        # enter the year-only path (it is not a bare year), so "1998-09-04" vs KB
-        # "1998-09-04T00:00:00Z" stays a strict literal compare → False (and two
-        # genuinely different precise dates likewise don't year-collapse to a
-        # match). This pins that the approx-strip never loosened precise compares.
-        assert _value_matches("1998-09-04T00:00:00Z", "1998-09-04") is False
+        # E2 precision-aware: the SAME date in different formats/precisions MATCHES
+        # ("1998-09-04" vs KB "1998-09-04T00:00:00Z" — identical day), but two
+        # GENUINELY different precise dates do NOT (different day, both day-precise).
+        assert _value_matches("1998-09-04T00:00:00Z", "1998-09-04") is True
         assert _value_matches("1998-01-01T00:00:00Z", "1998-09-04") is False
+
+
+class TestNaturalLanguageDateMatching:
+    """E2: natural-language date objects ('December 17, 1936') compare precision-
+    aware against Wikidata ISO dates. Verify when the KB is at least as precise and
+    agrees; contradict ONLY on a year disagreement (Wikidata month/day may be a
+    precision placeholder, so a month/day diff abstains, never contradicts)."""
+
+    def test_nl_date_matches_iso(self):
+        kb = "1936-12-17T00:00:00Z"
+        assert _value_matches(kb, "December 17, 1936") is True
+        assert _value_matches(kb, "17 December 1936") is True
+        assert _value_matches(kb, "Dec 17 1936") is True
+
+    def test_nl_date_matches_iso_other(self):
+        assert _value_matches("2013-03-13T00:00:00Z", "March 13, 2013") is True
+
+    def test_year_claim_matches_precise_kb(self):
+        assert _value_matches("1998-09-04T00:00:00Z", "1998") is True
+
+    def test_date_relation_year_mismatch_is_mismatch(self):
+        assert _date_relation("1994", "1998-09-04T00:00:00Z") == "mismatch"
+        assert _date_relation("December 17, 1936", "1850-01-01T00:00:00Z") == "mismatch"
+
+    def test_date_relation_same_year_day_diff_abstains(self):
+        # Month/day differ but the year agrees: incomparable (KB month/day may be a
+        # placeholder; never contradict on it). NOT 'mismatch'.
+        assert _date_relation("December 18, 1936", "1936-12-17T00:00:00Z") is None
+
+    def test_date_relation_claim_finer_than_kb_abstains(self):
+        # Claim day-precise, KB year-only ('1936') -> KB can't confirm the day.
+        assert _date_relation("December 17, 1936", "1936") is None
+
+    def test_date_relation_comparison_phrase_incomparable(self):
+        # 'before 1800' / 'the early 1900s' are unparseable as a clean date.
+        assert _date_relation("before 1800", "2001-01-15T00:00:00Z") is None
+        assert _date_relation("the early 1900s", "1905-01-01T00:00:00Z") is None
+
+    def test_date_relation_non_date_incomparable(self):
+        assert _date_relation("Q42", "France") is None
+        assert _date_relation("60000000", "1998-09-04T00:00:00Z") is None
+
+    def test_pope_birthdate_nl_verifies_end_to_end(self):
+        # The reported case: born_on 'December 17, 1936' vs Wikidata P569
+        # '1936-12-17' now VERIFIES (NL date parsed, day==day).
+        verifier = _make_verifier(
+            [Statement(value="1936-12-17T00:00:00Z", value_type="literal")],
+            object_type="time", single_valued=1, kb_property="P569",
+        )
+        result = verifier.verify(
+            _claim(predicate="born_on", object_val="December 17, 1936")
+        )
+        assert result.verdict == KBVerdictType.VERIFIED
 
     def test_precise_approx_date_does_not_year_collapse(self):
         # An approximate but PRECISE date "c. 1550-03-01" returns None from the
@@ -623,6 +690,68 @@ class TestValueMatchesApproximateYear:
         # so it does NOT match KB year 1550 — it stays a strict literal compare.
         # This guards against the marker strip accidentally widening to dates.
         assert _value_matches("1550-01-01T00:00:00Z", "c. 1550-03-01") is False
+
+
+class TestBceEra:
+    """Review finding 3 (§3.2 false-verify): Wikidata serializes a BCE date with a
+    leading '-' ('-0044-03-15' = 44 BC) which dateutil silently drops. A BCE date
+    must NOT match the same-magnitude CE date (~2x|year| apart)."""
+
+    def test_bce_does_not_match_ce(self):
+        assert _value_matches("-1200-01-01T00:00:00Z", "1200") is False
+        assert _value_matches("-1200-01-01T00:00:00Z", "1200-01-01") is False
+        assert _value_matches("-0044-03-15T00:00:00Z", "0044-03-15") is False
+
+    def test_ce_claim_does_not_match_bce_kb(self):
+        # The dangerous direction: an ordinary 4-digit CE claim vs a BCE KB value.
+        assert _date_relation("1200", "-1200-01-01T00:00:00Z") == "mismatch"
+        assert _date_relation("753", "-0753-01-01T00:00:00Z") is None  # 3-digit: no year token
+
+    def test_bce_matches_same_bce(self):
+        # Same era, same magnitude -> still a clean match.
+        assert _value_matches("-0044-03-15T00:00:00Z", "-0044-03-15") is True
+
+    def test_bce_year_is_negative(self):
+        assert _date_parts("-1200-01-01") == (-1200, 1, 1)
+        assert _date_parts("1200-01-01") == (1200, 1, 1)
+
+    def test_zero_padded_sub100_year_not_expanded(self):
+        # Hardening: dateutil expands a BARE '0079' to 1979 / '0044' to 2044. The
+        # literal 4-digit token is authoritative, so an ancient zero-padded year
+        # never mis-parses and never drives a spurious year 'mismatch'.
+        assert _date_parts("0079") == (79, None, None)
+        assert _date_parts("0044") == (44, None, None)
+        assert _date_relation("0079", "+0079-03-15T00:00:00Z") == "match"
+        assert _date_relation("0044", "+0044-03-15T00:00:00Z") == "match"
+        assert _date_parts("-0044-03-15") == (-44, 3, 15)
+
+
+class TestDatePlaceholderCap:
+    """Review finding 4 (§3.2 false-verify): a Wikidata year-precision date is
+    stored as YYYY-01-01 and a month-precision date as YYYY-MM-01. Since we do not
+    capture wikibase:timePrecision, a KB day of 1 (and month of 1) may be a
+    placeholder — so a claim FINER than the trustworthy precision must abstain, not
+    match the mask. A real day-precise KB date (day != 1) is unaffected."""
+
+    def test_day_one_placeholder_does_not_verify_finer_claim(self):
+        # 'January 1, 2020' must NOT verify against a possible year-placeholder.
+        assert _value_matches("+2020-01-01T00:00:00Z", "January 1, 2020") is False
+
+    def test_month_start_placeholder_does_not_verify_day_claim(self):
+        # 'March 1, 2020' (day) vs '+2020-03-01' (possible month-placeholder).
+        assert _value_matches("+2020-03-01T00:00:00Z", "March 1, 2020") is False
+
+    def test_month_claim_matches_month_placeholder(self):
+        # A claim only as precise as the trustworthy KB precision still verifies.
+        assert _value_matches("+2020-03-01T00:00:00Z", "March 2020") is True
+
+    def test_year_claim_matches_jan_one_placeholder(self):
+        # Year is never a placeholder, so a bare-year claim still verifies.
+        assert _value_matches("+2020-01-01T00:00:00Z", "2020") is True
+
+    def test_real_day_precise_kb_unaffected(self):
+        # KB day != 1 is genuinely day-precise -> a matching NL day verifies.
+        assert _value_matches("1936-12-17T00:00:00Z", "December 17, 1936") is True
 
 
 # ===========================================================================
@@ -1547,7 +1676,7 @@ class TestKBVerifierMultiValuedSingleValued:
         )
         assert result.verdict == KBVerdictType.NO_MATCH
         assert result.verdict != KBVerdictType.CONTRADICTED
-        assert result.trace.get("abstention_reason") == "object_not_a_parseable_date"
+        assert result.trace.get("abstention_reason") == "date_not_a_clean_mismatch"
 
     def test_clean_wrong_year_object_still_contradicts(self):
         # C2-FC1 non-vacuity / preservation dual. A CLEAN 4-digit year object
@@ -1806,3 +1935,193 @@ class TestKBVerifierSlingBinding:
         result = verifier.verify(_claim(subject="Obama", predicate="works_as",
                                         object_val="guitarist"))
         assert result.verdict == KBVerdictType.NO_MATCH
+
+
+# ---------------------------------------------------------------------------
+# TestEndDateOrdering (E4): precision-aware ordering of a P582 end date vs now.
+# `provably_past` is the STRICT gate for the level-2 contradiction (its latest
+# possible instant must precede now); `provably_future` keeps a not-yet-over term
+# current. A year-precision end in the CURRENT year is neither (ambiguous → safe).
+# ---------------------------------------------------------------------------
+
+class TestEndDateOrdering:
+    NOW = "2026-06-03T00:00:00+00:00"
+
+    def test_provably_past_day(self):
+        assert _end_provably_past("2017-01-20", self.NOW) is True
+
+    def test_provably_past_prior_year(self):
+        assert _end_provably_past("2025", self.NOW) is True
+
+    def test_current_year_not_provably_past(self):
+        # Year precision: '2026' could denote any day in 2026 (incl. future) — its
+        # latest instant (Dec 31) is not before now, so NOT provably past.
+        assert _end_provably_past("2026", self.NOW) is False
+
+    def test_future_not_past(self):
+        assert _end_provably_past("2099", self.NOW) is False
+
+    def test_unparseable_not_past(self):
+        assert _end_provably_past("ongoing", self.NOW) is False
+        assert _end_provably_past(None, self.NOW) is False
+
+    def test_provably_future(self):
+        assert _end_provably_future("2099", self.NOW) is True
+        assert _end_provably_future("2027-03-01", self.NOW) is True
+
+    def test_current_year_not_provably_future(self):
+        assert _end_provably_future("2026", self.NOW) is False
+
+    def test_past_not_future(self):
+        assert _end_provably_future("2017-01-20", self.NOW) is False
+
+
+# ---------------------------------------------------------------------------
+# TestTemporalCurrencyRoles (E4 §3.2): a present-tense role/state claim must not
+# verify off an ENDED statement (level 1), and a present-tense claim whose value
+# matched ONLY provably-ended statements is CONTRADICTED (level 2 — the wrong-pope
+# catch). A PAST claim ("X was the pope") still verifies off the ended statement.
+# All cases pin current_time for determinism.
+# ---------------------------------------------------------------------------
+
+class TestTemporalCurrencyRoles:
+    NOW = "2026-06-03T00:00:00+00:00"
+
+    def _ended(self, end="2017-01-20", start="2009-01-20", value="Q11696"):
+        return Statement(
+            value=value, value_type="entity",
+            qualifiers={"P580": start, "P582": end},
+        )
+
+    def test_present_role_ended_contradicts(self):
+        # "Obama holds_role President" (present tense) but the P39 statement ENDED
+        # in 2017 -> the present assertion is false -> CONTRADICTED (E4 level 2).
+        v = _make_verifier([self._ended()], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.CONTRADICTED
+
+    def test_past_role_ended_verifies(self):
+        # "Obama WAS president" (valid_until == before_present) verifies off the
+        # SAME ended statement — a past claim asserts no present currency, so
+        # neither level fires. This is the critical "don't contradict history" case.
+        v = _make_verifier([self._ended()], single_valued=0)
+        r = v.verify(_claim(valid_until="before_present"), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
+
+    def test_present_role_ongoing_verifies(self):
+        # An ongoing statement (no P582) verifies a present-tense claim.
+        stmt = Statement(value="Q11696", value_type="entity",
+                         qualifiers={"P580": "2009-01-20"})
+        v = _make_verifier([stmt], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
+
+    def test_present_role_future_end_verifies(self):
+        # A provably-future end (a term not yet over) is still current -> verify.
+        v = _make_verifier([self._ended(end="2099-01-20")], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
+
+    def test_present_role_end_this_year_abstains(self):
+        # Year-precision end in the CURRENT year is ambiguous (could be a past or a
+        # future day) -> neither provably past nor future -> abstain, NEVER
+        # contradict (matched_not_past blocks level 2).
+        v = _make_verifier([self._ended(end="2026")], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.NO_MATCH
+
+    def test_present_role_mixed_current_and_ended_verifies(self):
+        # One ended + one ongoing statement for the SAME value -> the current one
+        # verifies; the ended one never forces a contradiction.
+        ongoing = Statement(value="Q11696", value_type="entity",
+                            qualifiers={"P580": "2009-01-20"})
+        v = _make_verifier([self._ended(), ongoing], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
+
+    def test_present_role_all_ended_contradicts(self):
+        # Multiple matching statements, ALL provably ended -> CONTRADICTED.
+        v = _make_verifier(
+            [self._ended(end="2013-01-20"),
+             self._ended(start="2013-01-20", end="2017-01-20")],
+            single_valued=0,
+        )
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.CONTRADICTED
+
+    def test_present_role_ended_different_value_abstains(self):
+        # The ended statement is a DIFFERENT role (Senator) — value doesn't match
+        # the claim ("President") -> no contradiction, abstain. A present role claim
+        # is never contradicted off an UNRELATED ended role.
+        senator = Statement(value="Q4416090", value_type="entity",
+                            qualifiers={"P580": "2005-01-03", "P582": "2008-11-16"})
+        v = _make_verifier([senator], single_valued=0)
+        r = v.verify(_claim(object_val="President of the United States"),
+                     current_time=self.NOW)
+        assert r.verdict == KBVerdictType.NO_MATCH
+
+    def test_negated_present_role_ended_verifies(self):
+        # Polarity: "Obama is NOT president" (polarity 0) when the role ended -> the
+        # positive content CONTRADICTS, inverted to VERIFIED ("not president" is
+        # true now). Soundness in the negated direction.
+        v = _make_verifier([self._ended()], single_valued=0)
+        r = v.verify(_claim(polarity=0), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
+
+    def test_scoped_since_claim_off_ended_abstains_not_contradicts(self):
+        # "X has held the role since 2009" (valid_from set, valid_until None) reaches
+        # the present, so level 1 makes the ended statement incompatible -> abstain.
+        # It is NOT fully unscoped, so level 2 does NOT contradict (safe: abstain).
+        v = _make_verifier([self._ended()], single_valued=0)
+        r = v.verify(_claim(valid_from="2009-01-20"), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.NO_MATCH
+
+    # --- Review finding 1 (§3.2 false-verify): a role/term that has NOT YET BEGUN
+    # (statement START provably in the future) must not verify a present claim. ---
+
+    def test_present_role_future_start_abstains(self):
+        # Future P580, no end: an announced/scheduled term not yet begun -> abstain.
+        stmt = Statement(value="Q11696", value_type="entity",
+                         qualifiers={"P580": "2030-01-01"})
+        v = _make_verifier([stmt], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.NO_MATCH
+
+    def test_present_role_fully_future_interval_abstains(self):
+        # A fully-future [start, end] term -> abstain (the provably-future END alone
+        # used to slip past the currency gate).
+        v = _make_verifier([self._ended(start="2030-01-01", end="2035-01-01")],
+                           single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.NO_MATCH
+
+    def test_past_role_future_start_abstains(self):
+        # A PAST claim ("X was president") also cannot be satisfied by a not-yet-
+        # begun term.
+        stmt = Statement(value="Q11696", value_type="entity",
+                         qualifiers={"P580": "2030-01-01"})
+        v = _make_verifier([stmt], single_valued=0)
+        r = v.verify(_claim(valid_until="before_present"), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.NO_MATCH
+
+    def test_present_role_past_start_no_end_still_verifies(self):
+        # Control: a genuinely-ongoing statement (past start, no end) is NOT provably
+        # future and still verifies a present claim — the start gate stays narrow.
+        stmt = Statement(value="Q11696", value_type="entity",
+                         qualifiers={"P580": "2009-01-20"})
+        v = _make_verifier([stmt], single_valued=0)
+        r = v.verify(_claim(), current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
+
+    # --- Review findings 2 & 5 (§3.2 false-contradict): temporal currency is gated
+    # to ENTITY role/state values. A DATE predicate carrying a stray P582 on a
+    # value-matching statement must VERIFY (the claim is true), never CONTRADICT. ---
+
+    def test_date_predicate_with_stray_end_verifies_not_contradicts(self):
+        stmt = Statement(value="1879-03-14T00:00:00Z", value_type="literal",
+                         qualifiers={"P580": "1879-03-14", "P582": "1900-01-01"})
+        v = _make_verifier([stmt], object_type="time", single_valued=1,
+                           kb_property="P569")
+        r = v.verify(_claim(predicate="born_on", object_val="1879"),
+                     current_time=self.NOW)
+        assert r.verdict == KBVerdictType.VERIFIED
