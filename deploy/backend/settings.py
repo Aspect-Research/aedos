@@ -45,6 +45,11 @@ class DeploySettings:
     # turns are still serialized by the engine lock). Bounds outbound KB/LLM
     # concurrency. Per-walk state is thread-local so verdicts are unchanged.
     verify_workers: int = 8
+    # Phase D: in /chat, verify only the claims central to the user's question
+    # (the rest pass through "not assessed"). Skipped when a turn has <= this many
+    # claims. Fails open to verifying all on any selector failure.
+    select_central_claims: bool = True
+    select_min_claims: int = 4
 
     @classmethod
     def from_env(cls) -> "DeploySettings":
@@ -65,4 +70,6 @@ class DeploySettings:
             ),
             walker_max_llm_calls=int(os.environ.get("AEDOS_WALKER_MAX_LLM_CALLS", "10")),
             verify_workers=int(os.environ.get("AEDOS_VERIFY_WORKERS", "8")),
+            select_central_claims=os.environ.get("AEDOS_SELECT_CENTRAL_CLAIMS", "1") != "0",
+            select_min_claims=int(os.environ.get("AEDOS_SELECT_MIN_CLAIMS", "4")),
         )

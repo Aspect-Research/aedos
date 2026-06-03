@@ -81,7 +81,7 @@ class FakeChatWrapper:
         self.calls = []
 
     def respond(self, message, conversation_context=None, progress=None,
-                verify_workers=None):
+                verify_workers=None, select_central=True, select_min_claims=4):
         self.calls.append((message, conversation_context))
         if progress is not None:
             progress({"phase": "reading", "detail": "reading your message"})
