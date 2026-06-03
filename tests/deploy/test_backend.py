@@ -80,7 +80,8 @@ class FakeChatWrapper:
         self._vr = vr
         self.calls = []
 
-    def respond(self, message, conversation_context=None, progress=None):
+    def respond(self, message, conversation_context=None, progress=None,
+                verify_workers=None):
         self.calls.append((message, conversation_context))
         if progress is not None:
             progress({"phase": "reading", "detail": "reading your message"})

@@ -283,10 +283,15 @@ def create_app(
         }
 
     def _run_verify(party: str, text: str, emit: Callable[[dict], None]) -> dict:
-        """The shared /verify body: extract -> walk each -> aggregate, emitting
-        per-step progress. `emit` is a no-op for the buffered endpoint."""
-        from aedos.deployment.chat_wrapper import claim_observability
+        """The shared /verify body: extract -> walk claims CONCURRENTLY ->
+        aggregate, emitting per-step progress (a `verdict` event with the full
+        reasoning trace as each claim completes). `emit` is a no-op for the
+        buffered endpoint."""
+        from aedos.deployment.chat_wrapper import (
+            claim_observability, walk_result_observability,
+        )
         from aedos.layer1_extraction.extractor import ExtractionContext
+        from aedos.layer4_sources.parallel_verify import walk_claims_parallel
         from aedos.layer4_sources.walker import VerificationContext
 
         pipeline = _ensure_pipeline()
@@ -313,21 +318,23 @@ def create_app(
             current_time=datetime.now(timezone.utc).isoformat(),
             asserting_party=party, source_text=text,
         )
-        results = []
+        total = len(groundable)
         for i, c in enumerate(groundable):
             emit({
                 "phase": "verifying",
-                "detail": f"verifying claim {i + 1}/{len(groundable)}: "
-                          f"{c.subject} {c.predicate} {c.object}",
-                "index": i + 1, "total": len(groundable), "claim_id": c.claim_id,
+                "detail": f"verifying: {c.subject} {c.predicate} {c.object}",
+                "index": i + 1, "total": total, "claim_id": c.claim_id,
             })
-            r = pipeline.walker.walk(c, vctx)
-            results.append(r)
-            emit({
-                "phase": "verdict", "detail": str(r.verdict), "claim_id": c.claim_id,
-                "verdict": str(r.verdict), "subject": c.subject,
-                "predicate": c.predicate, "object": c.object,
-            })
+
+        def _on(index, claim, result):
+            emit({"phase": "verdict", "detail": str(result.verdict),
+                  "index": index + 1, "total": total,
+                  **walk_result_observability(claim, result)})
+
+        results = walk_claims_parallel(
+            pipeline.walker, groundable, vctx,
+            max_workers=settings.verify_workers, on_result=_on,
+        )
         vr = pipeline.aggregator.aggregate(groundable, results)
         observability = claim_observability(vr)
         return {
@@ -348,7 +355,9 @@ def create_app(
         def work() -> dict:
             wrapper = _ensure_chat_wrapper()
             response = wrapper.respond(
-                request.message, conversation_context={"asserting_party_id": party}
+                request.message,
+                conversation_context={"asserting_party_id": party},
+                verify_workers=settings.verify_workers,
             )
             _track_verification(response.verification_id, party)
             return _chat_body(response)
@@ -371,6 +380,7 @@ def create_app(
                 request.message,
                 conversation_context={"asserting_party_id": party},
                 progress=emit,
+                verify_workers=settings.verify_workers,
             )
             _track_verification(response.verification_id, party)
             return _chat_body(response)
