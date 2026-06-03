@@ -123,12 +123,37 @@ export function resetSession(): Promise<{ rows_cleared: number }> {
 export interface StepEvent {
   phase: string;
   detail: string;
-  verdict?: string;
+  index?: number;
+  total?: number;
+  // present on "verdict" events (a per-claim result as its walk completes):
+  claim_id?: string;
   subject?: string;
   predicate?: string;
   object?: string;
-  index?: number;
-  total?: number;
+  polarity?: number;
+  verdict?: string;
+  base_verdict?: string;
+  conditional?: boolean;
+  abstention_reason?: string | null;
+  trace_human?: string | null;
+}
+
+// A "verdict" StepEvent carries the same fields as an ObsEntry — map it so the
+// live claim cards reuse the same renderer as the final observability.
+export function stepToObs(s: StepEvent): ObsEntry {
+  return {
+    claim_id: s.claim_id ?? "",
+    subject: s.subject ?? "",
+    predicate: s.predicate ?? "",
+    object: s.object ?? "",
+    polarity: s.polarity ?? 1,
+    verdict: s.verdict ?? "",
+    base_verdict: s.base_verdict ?? s.verdict ?? "",
+    conditional: s.conditional ?? false,
+    abstention_reason: s.abstention_reason ?? null,
+    contradicting_value: null,
+    trace_human: s.trace_human ?? null,
+  };
 }
 
 export interface StreamHandlers<R> {
