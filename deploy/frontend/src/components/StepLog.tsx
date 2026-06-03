@@ -1,23 +1,32 @@
 import type { StepEvent } from "../api";
 
-function stepClass(phase: string): string {
-  if (phase === "verdict") return "step step-verdict";
-  if (phase === "verifying") return "step step-verifying";
-  return "step";
-}
-
-// The live "thinking" trace — Aedos's process, shown as it happens.
+// The live narrative of Aedos's process (the per-claim verdict cards are rendered
+// separately, from the "verdict" events, so they can fill in out of order as the
+// parallel walks complete).
 export default function StepLog({ steps, busy }: { steps: StepEvent[]; busy: boolean }) {
-  if (!steps.length && !busy) return null;
+  const narrative = steps.filter((s) => s.phase !== "verdict" && s.phase !== "verifying");
+  const total = steps.find((s) => typeof s.total === "number")?.total;
+  const done = steps.filter((s) => s.phase === "verdict").length;
+
+  if (!narrative.length && !busy && total === undefined) return null;
+
   return (
     <div className="steplog">
-      {steps.map((s, i) => (
-        <div key={i} className={stepClass(s.phase)}>
+      {narrative.map((s, i) => (
+        <div key={i} className="step">
           <span className="step-phase">{s.phase}</span>
           <span className="step-detail">{s.detail}</span>
         </div>
       ))}
-      {busy && (
+      {total !== undefined && total > 0 && (
+        <div className="step step-progress">
+          {busy && done < total && <span className="spinner" />}
+          <span className="step-detail">
+            verified {done}/{total} claims{busy && done < total ? " (in parallel)…" : ""}
+          </span>
+        </div>
+      )}
+      {busy && total === undefined && (
         <div className="step step-busy">
           <span className="spinner" /> working…
         </div>

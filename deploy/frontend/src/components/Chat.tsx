@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { chatStream, type ChatResponse, type StepEvent } from "../api";
+import { chatStream, stepToObs, type ChatResponse, type StepEvent } from "../api";
 import Observability from "./Observability";
 import StepLog from "./StepLog";
 
@@ -48,32 +48,36 @@ export default function Chat({ onTurnComplete }: { onTurnComplete?: () => void }
         {turns.length === 0 && (
           <p className="hint">
             Say something with a factual claim — e.g. “Paris is the capital of France.”
-            Aedos extracts the claims, grounds each against Tier-U / KB / Python, and
-            replies. Premises you assert become part of your session context (see the
-            Inspector). The live trace below each message shows the process as it runs.
+            Aedos extracts the claims, verifies them in parallel against Tier-U / KB /
+            Python, and replies. Each claim’s verdict and reasoning trace appears below
+            as its check completes; premises you assert become session context (see the
+            Inspector).
           </p>
         )}
-        {turns.map((turn, i) => (
-          <div key={i} className="turn">
-            <div className="msg msg-user">{turn.user}</div>
-            <StepLog steps={turn.steps} busy={turn.busy} />
-            {turn.error && <div className="msg msg-error">error — {turn.error}</div>}
-            {turn.response && (
-              <div className="msg msg-aedos">
-                <div className="final">{turn.response.final_message}</div>
-                <div className="meta-row">
-                  <span className="pill">{turn.response.intervention_type}</span>
-                  {turn.response.given_assertion.count > 0 && (
-                    <span className="pill pill-conditional">
-                      {turn.response.given_assertion.count} given-assertion
-                    </span>
-                  )}
+        {turns.map((turn, i) => {
+          const claims = turn.steps.filter((s) => s.phase === "verdict").map(stepToObs);
+          return (
+            <div key={i} className="turn">
+              <div className="msg msg-user">{turn.user}</div>
+              <StepLog steps={turn.steps} busy={turn.busy} />
+              <Observability entries={claims} />
+              {turn.error && <div className="msg msg-error">error — {turn.error}</div>}
+              {turn.response && (
+                <div className="msg msg-aedos">
+                  <div className="final">{turn.response.final_message}</div>
+                  <div className="meta-row">
+                    <span className="pill">{turn.response.intervention_type}</span>
+                    {turn.response.given_assertion.count > 0 && (
+                      <span className="pill pill-conditional">
+                        {turn.response.given_assertion.count} given-assertion
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <Observability entries={turn.response.observability} />
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
       <div className="composer">
         <textarea
