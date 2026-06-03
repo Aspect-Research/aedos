@@ -79,3 +79,38 @@ Both are small additions; no verdict logic changes; the gated suite stays green.
   live smoke (stream a turn, read the inspector) → review → patch.
 - Gated suite (incl. tests/deploy) green throughout; frontend `tsc + vite build`
   clean; live end-to-end smoke. Commits only; no tag/push.
+
+---
+
+## Results (Phase B — done)
+
+**P1 — works end-to-end.** Diagnosed on a real uvicorn socket: the async handlers
+froze the event loop and a chat turn ran >240 s. Fixed by offloading engine work
+to a threadpool serialized by one `engine_lock` (loop stays free; the engine's
+single-threaded/one-connection assumption preserved), streaming turns over SSE,
+and an interactive walker budget (12 s/claim). Reproduced fixed: `/health` during
+a live stream returns in ~0.4–1.1 s (RESPONSIVE; was a ReadTimeout/BLOCKED), and
+turns stream incrementally instead of hanging.
+
+**P2 — visibility.** Live step log (extracting → verifying `<claim>` → `<verdict>`
+→ composing) streams into the chat as it happens; a Session-context Inspector
+shows the Tier-U premises the session has retained, refreshed each turn / on
+reset. Engine hooks `respond(progress=...)` and `rows_for_party` reviewed safe.
+
+**Build-review-build.** Adversarial review B1–B8: **B1 (high)** `/verification/{id}`
+ran a synchronous re-walk on the loop unlocked — patched to threadpool+lock
+(closes **B8**); **B4** guarded frontend SSE parse + always-clear busy state;
+**B5** reset map-rebind race → prune in place under the lock; **B7** SSE error
+frame now discloses only the exception class (matches the buffered routes).
+**B2/B3** (global one-engine-call serialization; an abandoned stream holds the
+slot to completion) are **accepted, documented limitations** for a single-instance
+internal-testing service (latency is not an Aedos goal; correctness preserved) —
+revisit with a per-call DB connection if real concurrency is needed. **B6**
+confirmed the engine hooks leak nothing and can't break verification.
+
+**Verification.** Gated suite (unit + integration + deploy) **1651 passed**,
+1 xfailed / 1 xpassed (the v0.15 sandbox boundary). Frontend `tsc --noEmit` +
+`vite build` clean. Final live smoke (post-patch, real engine): loop RESPONSIVE
+during a stream; chat streamed; the promoted premise appeared in the inspector;
+`/verification/{id}` returned its verbose trace under the new lock+threadpool and
+404'd cross-session; reset cleared the context.
