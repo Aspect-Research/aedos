@@ -19,19 +19,33 @@ A network-facing web app for Aedos: a **chat** interface (primary) and a
 
 ## Run (local dev)
 
-**1. Backend** — from the repo root, with the engine installed (`pip install -e .`):
+**1. Backend** — from the repo root, with the engine installed (`pip install -e .`).
+Invoke uvicorn via the Python launcher (`py -3 -m uvicorn`) so it works even when
+the `uvicorn` console script isn't on PATH. The provider key is read from the
+process env / a repo-root `.env` (the engine's `load_dotenv_if_present`).
 
-```bash
-# secrets + config in the PROCESS ENV (not a served-dir file)
-export ANTHROPIC_API_KEY=sk-ant-...           # provider key (engine reads it)
-export AEDOS_DEPLOY_KEY=$(openssl rand -hex 24) # shared access secret
-export AEDOS_ALLOWED_ORIGINS=http://localhost:5173
-export AEDOS_DB_PATH=aedos_phase10_5.db        # the seeded substrate
-uvicorn "deploy.backend.server:create_app" --factory --port 8000
+PowerShell (Windows):
+```powershell
+# secrets + config in the PROCESS ENV (ANTHROPIC_API_KEY may come from .env)
+$env:AEDOS_DEPLOY_KEY = "<long-random-string>"   # shared access secret
+$env:AEDOS_ALLOWED_ORIGINS = "http://localhost:5173"
+$env:AEDOS_DB_PATH = "aedos_phase10_5.db"        # the seeded substrate
+py -3 -m uvicorn "deploy.backend.server:create_app" --factory --port 8000
 ```
 
-(For purely-local dev with no network exposure you may set `AEDOS_REQUIRE_AUTH=0`
-to drop the access gate; never do this on a networked host.)
+bash/macOS/Linux:
+```bash
+export AEDOS_DEPLOY_KEY=$(openssl rand -hex 24)
+export AEDOS_ALLOWED_ORIGINS=http://localhost:5173
+export AEDOS_DB_PATH=aedos_phase10_5.db
+python -m uvicorn "deploy.backend.server:create_app" --factory --port 8000
+```
+
+The access gate is ON by default and **fails closed**: with no `AEDOS_DEPLOY_KEY`
+set, every request is 401. For purely-local dev with no network exposure you may
+instead drop the gate with `$env:AEDOS_REQUIRE_AUTH = "0"` (PowerShell) /
+`export AEDOS_REQUIRE_AUTH=0` — never on a networked host. (`npm i uvicorn`
+installs an unrelated Node package — do not use it; uvicorn is a Python package.)
 
 **2. Frontend:**
 
