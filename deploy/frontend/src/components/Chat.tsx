@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { chatStream, stepToObs, type ChatResponse, type StepEvent } from "../api";
+import NotAssessed from "./NotAssessed";
 import Observability from "./Observability";
 import StepLog from "./StepLog";
 
@@ -61,6 +62,7 @@ export default function Chat({ onTurnComplete }: { onTurnComplete?: () => void }
               <div className="msg msg-user">{turn.user}</div>
               <StepLog steps={turn.steps} busy={turn.busy} />
               <Observability entries={claims} />
+              <NotAssessed claims={turn.steps.filter((s) => s.phase === "skipped")} />
               {turn.error && <div className="msg msg-error">error — {turn.error}</div>}
               {turn.response && (
                 <div className="msg msg-aedos">

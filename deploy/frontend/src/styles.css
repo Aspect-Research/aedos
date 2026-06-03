@@ -166,3 +166,10 @@ button { cursor: pointer; font: inherit; }
 }
 .ctx-triple i { color: var(--accent); font-style: normal; }
 .ctx-status { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+/* not-assessed (non-central) claims */
+.not-assessed { margin: 6px 0; }
+.na-toggle { color: var(--muted); font-size: 12px; }
+.na-list { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; display: flex; flex-direction: column; gap: 3px; }
+.na-row { color: var(--muted); font-size: 13px; }
+.na-row i { color: var(--accent); font-style: normal; opacity: 0.8; }
