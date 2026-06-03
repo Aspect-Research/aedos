@@ -90,11 +90,18 @@ _DEFAULT_RESOLUTIONS = {
 class MockKB(_GeoMixin):
     """KB whose resolve_entity maps known references to Q-numbers."""
 
-    def __init__(self, statements: list[Statement], resolutions: dict | None = None):
+    def __init__(self, statements: list[Statement], resolutions: dict | None = None,
+                 labels: dict | None = None):
         self._statements = statements
         self._resolutions = dict(_DEFAULT_RESOLUTIONS)
         if resolutions:
             self._resolutions.update(resolutions)
+        self._labels = dict(labels or {})
+
+    def fetch_label(self, qid):
+        # Canonical KB label for a Q-id (the resolved-entity name-match consults
+        # this). Absent by default so most mock KBs expose no labels.
+        return self._labels.get(qid)
 
     def resolve_entity(self, reference, local_context):
         qid = self._resolutions.get(reference)
@@ -111,13 +118,13 @@ class MockKB(_GeoMixin):
 
 def _make_verifier(statements, routing_hint="kb_resolvable", kb_property="P39",
                    object_type="entity", single_valued=0, resolutions=None,
-                   slot_to_qualifier=None):
+                   slot_to_qualifier=None, labels=None):
     db = open_memory_db()
     transport = MockTransport(routing_hint, kb_property, object_type, single_valued,
                               slot_to_qualifier)
     client = LLMClient(_transport=transport)
     pt = PredicateTranslation(db=db, llm_client=client)
-    kb = MockKB(statements, resolutions)
+    kb = MockKB(statements, resolutions, labels)
     resolver = EntityResolver(kb_protocol=kb, db=db)
     return KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
 
@@ -501,6 +508,102 @@ class TestKBVerifierValueTypeGuard:
         )
         result = verifier.verify(_claim(object_val="Honolulu"))
         assert result.verdict == KBVerdictType.CONTRADICTED
+
+
+# ---------------------------------------------------------------------------
+# TestEntityNameMatch  (§3.2 false-contradict fix: the famous-entity QID tangle).
+# A single_valued ENTITY claim whose value surface form resolved to a DIFFERENT
+# same-named QID than the KB statement holds must NOT contradict when the KB
+# value IS named by the claim's surface form — the resolver just picked the wrong
+# same-named node (e.g. "Tokyo" → the special-wards QID while Japan's P36 is
+# Q1490, the metropolis, which isn't `city`-typed so the value-type filter
+# excludes it). It is the SAME real-world referent, so VERIFY.
+# ---------------------------------------------------------------------------
+
+class TestEntityNameMatch:
+    def test_famous_entity_qid_tangle_verifies_not_contradicts(self):
+        # Japan's capital (P36) is Q1490 (Tokyo). The claim's "Tokyo" resolves to
+        # Q7473516 (a different same-named QID). Q-id mismatch would CONTRADICT,
+        # but Q1490's label IS "Tokyo" (the claim's surface) → VERIFIED.
+        stmts = [Statement(value="Q1490", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P36",
+            resolutions={"Japan": "Q17", "Tokyo": "Q7473516"},
+            labels={"Q1490": "Tokyo"},
+        )
+        result = verifier.verify(
+            _claim(subject="Japan", predicate="capital", object_val="Tokyo")
+        )
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("entity_name_match") is True
+
+    def test_genuine_name_mismatch_still_contradicts(self):
+        # Control: a DIFFERENTLY-named value (Kyoto) does not match the KB value's
+        # label ("Tokyo"), so the functional contradiction stands — the guard is
+        # selective, not a blanket suppression.
+        stmts = [Statement(value="Q1490", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P36",
+            resolutions={"Japan": "Q17", "Kyoto": "Q34600"},
+            labels={"Q1490": "Tokyo"},
+        )
+        result = verifier.verify(
+            _claim(subject="Japan", predicate="capital", object_val="Kyoto")
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_name_match_negation_contradicts(self):
+        # Polarity: "Japan's capital is NOT Tokyo" (polarity 0) → the positive
+        # content VERIFIES via the name-match, inverted to CONTRADICTED ("not
+        # Tokyo" is false). Soundness in the negated direction.
+        stmts = [Statement(value="Q1490", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P36",
+            resolutions={"Japan": "Q17", "Tokyo": "Q7473516"},
+            labels={"Q1490": "Tokyo"},
+        )
+        result = verifier.verify(
+            _claim(subject="Japan", predicate="capital", object_val="Tokyo", polarity=0)
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_no_label_available_leaves_contradiction(self):
+        # Fail-closed: when the KB exposes no label for the value (fetch_label
+        # returns None), the guard does not fire and the existing verdict stands.
+        stmts = [Statement(value="Q1490", value_type="entity")]
+        verifier = _make_verifier(
+            stmts, object_type="entity", single_valued=1, kb_property="P36",
+            resolutions={"Japan": "Q17", "Tokyo": "Q7473516"},
+            # no labels → fetch_label returns None
+        )
+        result = verifier.verify(
+            _claim(subject="Japan", predicate="capital", object_val="Tokyo")
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+
+    def test_ended_role_with_matching_label_still_contradicts(self):
+        # §3.2 CRITICAL: the name-match must NOT rescue an E4 temporal-currency
+        # contradiction. "Obama holds_role President" (present, unscoped) where the
+        # P39 statement value MATCHED (Q11696) but ENDED in 2017 → CONTRADICTED.
+        # The KB value's label equals the claim surface, but the value already
+        # MATCHED, so the name-match is suppressed (it only rescues VALUE-MISMATCH
+        # contradictions). Otherwise this would false-VERIFY "Obama is the President
+        # of the United States" in 2026 — the wrong-pope/ended-role regression.
+        stmt = Statement(
+            value="Q11696", value_type="entity",
+            qualifiers={"P580": "2009-01-20", "P582": "2017-01-20"},
+        )
+        verifier = _make_verifier(
+            [stmt], object_type="entity", single_valued=0, kb_property="P39",
+            labels={"Q11696": "President of the United States"},
+        )
+        result = verifier.verify(
+            _claim(subject="Obama", predicate="holds_role",
+                   object_val="President of the United States"),
+            current_time="2026-06-03T00:00:00+00:00",
+        )
+        assert result.verdict == KBVerdictType.CONTRADICTED
+        assert result.trace.get("entity_name_match") is not True
 
 
 # ---------------------------------------------------------------------------
