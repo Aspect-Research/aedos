@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import calendar
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
+
+from dateutil import parser as _du_parser
 
 from ..layer1_extraction.extractor import Claim
 from ..layer1_extraction.temporal import BEFORE_PRESENT
@@ -627,10 +630,29 @@ class KBVerifier:
         # value. (The VERIFIED match-any loop below already runs across ALL
         # statements, so a claim that matches ANY held value verifies first.)
         mismatch_values: set = set()
+        # E4 level 2: among statements whose VALUE matches the claim, track those
+        # that are provably ENDED (P582 < now) vs any that are NOT provably past
+        # (still current, future, or an ambiguous same-period end). Only consulted
+        # for a strictly present-tense (fully unscoped) claim that matched no
+        # CURRENT statement — see the contradiction branch after the loop. Gated to
+        # ENTITY-valued role/state predicates: temporal currency ("the role ended")
+        # is meaningless for a date/quantity value, and a stray P582 on a date
+        # statement must never flip a value-MATCHING (true) date claim to CONTRADICT.
+        present_unscoped = _claim_present_unscoped(claim) and meta.object_type == "entity"
+        matched_ended: Optional[Statement] = None
+        matched_not_past = False
         for stmt in statements:
-            if not _scope_compatible(stmt, claim, current_time):
+            value_match = _value_matches(stmt.value, expected_value)
+            if present_unscoped and value_match:
+                stmt_until = stmt.qualifiers.get("P582")
+                if stmt_until and _end_provably_past(stmt_until, current_time):
+                    if matched_ended is None:
+                        matched_ended = stmt
+                else:
+                    matched_not_past = True
+            if not _scope_compatible(stmt, claim, current_time, meta.object_type):
                 continue
-            if _value_matches(stmt.value, expected_value):
+            if value_match:
                 return KBVerdictType.VERIFIED, stmt, None
             if scope_mismatch is None:
                 scope_mismatch = stmt
@@ -703,22 +725,21 @@ class KBVerifier:
             # this. A PRECISE wrong year (no marker) still contradicts as before.
             if meta.object_type == "time" and _is_approx_year(str(expected_value)):
                 return KBVerdictType.NO_MATCH, None, "approximate_date_no_year_match"
-            # C2-FC1 (§3.2): a date predicate may CONTRADICT only when the
-            # claim's OBJECT itself parses to a comparable year/date. A
-            # comparison phrase ("before 1800", "after 1066"), a vague date
-            # ("the early 1900s"), or any object the date normalizer cannot
-            # reduce to a year is NOT a clean exact value — comparing the KB's
-            # date against it is ill-defined, so a non-match is a PARSE failure,
-            # not evidence of falsity (the predicate was most likely a
-            # comparison mis-mapped to founded_on/founded_in_year). Abstain. This
-            # is the date/literal analog of the entity `value_unresolved` (N1)
-            # guard: resolution/parse failure is a false-abstain source, never a
-            # false-contradict source. The approx-year guard above already
-            # handles "c. 1550"-style markers; this catches non-year objects
-            # generally. A clean year/ISO-date object ("1850", "1850-03-02")
-            # normalizes fine and still CONTRADICTS a differing KB date as before.
-            if meta.object_type == "time" and _normalize_date_value(str(expected_value)) is None:
-                return KBVerdictType.NO_MATCH, None, "object_not_a_parseable_date"
+            # C2-FC1 + E2 (§3.2): a date predicate may CONTRADICT only when the
+            # claim value and the KB value are precision-aware dates that GENUINELY
+            # DISAGREE at a precision BOTH assert (`_date_relation == "mismatch"`):
+            # claim "Dec 18 1936" vs KB "1936-12-17" (differ at day) contradicts;
+            # claim "1994" vs KB "1998-…" (differ at year) contradicts. Anything
+            # the relation finds INCOMPARABLE — an unparseable/comparison-phrase
+            # object ("before 1800"), or a claim FINER than the KB so the KB can't
+            # confirm it (claim day vs KB year-only, a coarsening) — is a
+            # parse/precision gap, NOT falsity → abstain. (The approx-year guard
+            # above already handles "c. 1550"-style markers.)
+            if meta.object_type == "time":
+                if _date_relation(
+                    str(expected_value), getattr(scope_mismatch, "value", None)
+                ) != "mismatch":
+                    return KBVerdictType.NO_MATCH, None, "date_not_a_clean_mismatch"
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
 
         # Conservative DISJOINT
@@ -742,6 +763,26 @@ class KBVerifier:
             and self._geographic_disjoint(scope_mismatch.value, expected_value)
         ):
             return KBVerdictType.CONTRADICTED, scope_mismatch, None
+
+        # E4 level 2 (§3.2): a strictly present-tense claim whose value matched ONLY
+        # statements that are PROVABLY ENDED (P582 < now), with NO current matching
+        # statement, is FALSE as a present-tense assertion — the fact genuinely
+        # ended ("Francis is the pope" after the papacy ended). CONTRADICT with the
+        # ended statement (its P582 carries the end date for the explanation).
+        # Strict gates, each closing an enumerated false-contradict risk:
+        #   • present_unscoped — a bare present claim on an ENTITY role/state value
+        #     only; "X WAS the pope" carries BEFORE_PRESENT and is excluded (it
+        #     verifies off the ended statement), and a date/quantity value can never
+        #     reach here (present_unscoped folds in meta.object_type == "entity").
+        #   • we did not VERIFY above — so no scope-compatible (current/future-end)
+        #     statement matched the value.
+        #   • matched_ended is set AND not matched_not_past — EVERY value-matching
+        #     statement is provably past; if any is current/future/ambiguous we
+        #     abstain instead (matched_not_past blocks the contradiction).
+        # The value genuinely matched (entity values that failed to resolve never
+        # match), so this is not a resolution failure.
+        if present_unscoped and matched_ended is not None and not matched_not_past:
+            return KBVerdictType.CONTRADICTED, matched_ended, None
 
         reason = "value_unresolved" if value_unresolved else "no_matching_statement"
         return KBVerdictType.NO_MATCH, None, reason
@@ -995,40 +1036,229 @@ def _normalize_date_value(value: str) -> Optional[str]:
     return None
 
 
+# v0.16.2 E2: distinct sentinel defaults for dateutil precision detection. Parsing
+# a partial date ("December 1936") against two DIFFERENT defaults reveals which
+# fields the string actually specified (the ones that AGREE) vs defaulted (differ).
+_DATE_DEFAULT_A = datetime(2000, 1, 1)
+_DATE_DEFAULT_B = datetime(2001, 7, 23)
+# Gate: only attempt date parsing on a string carrying a standalone 4-digit year
+# token — so quantities ("60000000") and entity labels never get mis-parsed.
+_HAS_YEAR_TOKEN = re.compile(r"(?<!\d)\d{4}(?!\d)")
+
+
+def _date_parts(value) -> Optional[tuple[int, Optional[int], Optional[int]]]:
+    """Parse a date-shaped value to (year, month|None, day|None) with PRECISION —
+    None for components the value does not specify. Handles ISO
+    ('1936-12-17[T..Z]', '1998-09', '1998'), natural language ('December 17, 1936',
+    '17 December 1936', 'Dec 17 1936', 'March 2013'), and bare years. Returns None
+    for non-dates (no standalone 4-digit year) or anything dateutil cannot parse —
+    those are 'incomparable', never a match or a mismatch."""
+    if value is None:
+        return None
+    s = str(value).strip().lstrip("+")
+    token = _HAS_YEAR_TOKEN.search(s)
+    if not token:
+        return None
+    # ERA (§3.2): Wikidata serializes a BCE date with a leading '-' ('-0044-03-15'
+    # = 44 BC), which dateutil silently DROPS (Python datetime has no year < 1). We
+    # capture the sign here and carry it as a NEGATIVE year so a BCE date never
+    # collides with the same-magnitude CE date ('-1200' vs '1200' are ~2400 years
+    # apart). Callers that build a datetime (_date_bounds) reject the negative year.
+    is_bce = s.startswith("-")
+    try:
+        a = _du_parser.parse(s, default=_DATE_DEFAULT_A)
+        b = _du_parser.parse(s, default=_DATE_DEFAULT_B)
+    except (ValueError, OverflowError, TypeError):
+        return None
+    if a.year != b.year:
+        return None  # the year was itself defaulted → not actually in the string
+    month = a.month if a.month == b.month else None
+    day = a.day if (a.day == b.day and month is not None) else None
+    year = a.year
+    # dateutil applies 2-digit-year expansion to a BARE sub-100 4-digit token
+    # ('0079' → 1979, '0044' → 2044). The literal 4-digit token is unambiguous, so
+    # trust it whenever dateutil's year disagrees — a zero-padded ancient year then
+    # never mis-parses into the wrong year (which would otherwise drive a spurious
+    # year 'mismatch'). Full ISO dates ('0079-03-15') parse correctly and agree.
+    token_year = int(token.group())
+    if year != token_year:
+        year = token_year
+    return (-year if is_bce else year, month, day)
+
+
+def _date_precision(parts: tuple[int, Optional[int], Optional[int]]) -> int:
+    """3 = day, 2 = month, 1 = year."""
+    _, month, day = parts
+    return 3 if day is not None else (2 if month is not None else 1)
+
+
+def _date_relation(claim_value, kb_value) -> Optional[str]:
+    """Precision-aware comparison of a claim date vs a KB date.
+
+    Returns 'match' / 'mismatch' / None (incomparable).
+
+    SOUNDNESS (§3.2) — we do NOT capture Wikidata's `wikibase:timePrecision`, and
+    Wikidata stores a year-precision date as a Jan-1 placeholder and a
+    month-precision date as a day-1 placeholder. So a KB value's month/day cannot
+    be trusted as real. The conservative rule:
+      - 'mismatch' (contradiction-eligible) ONLY when the YEARS differ — years are
+        never placeholders in Wikidata, so a year disagreement is always sound
+        ('1994' vs KB '1998-…').
+      - 'match' when the claim is no FINER than the KB's TRUSTWORTHY precision and
+        agrees at every precision the claim asserts ('December 17, 1936' vs KB
+        '1936-12-17'; '1998' vs '1998-09-04').
+      - None (abstain) otherwise — a month/day DIFFERENCE (could be a placeholder),
+        a claim finer than the KB, or a non-date. Never contradict on a month/day
+        difference. (Day-level contradiction would need the timePrecision field —
+        deferred; abstaining is the §3.2-safe choice.)
+
+    PLACEHOLDER ASYMMETRY (§3.2): because we infer KB precision from the string and
+    Wikidata writes a year-precision date as YYYY-01-01 and a month-precision date
+    as YYYY-MM-01, a KB day of 1 (and month of 1) may be a placeholder rather than a
+    real value. VERIFY is the dangerous direction, so we treat such masked
+    components as UNASSERTED — capping the KB's *effective* precision DOWN — and a
+    claim finer than that abstains. (A claim of exactly 'January 1' against a
+    year-placeholder must NOT verify.) A real day-precise KB date (day != 1, e.g.
+    '1936-12-17') is unaffected.
+    """
+    c = _date_parts(claim_value)
+    k = _date_parts(kb_value)
+    if c is None or k is None:
+        return None
+    cy, cm, cd = c
+    ky, km, kd = k
+    if cy != ky:
+        return "mismatch"
+    cp, kp = _date_precision(c), _date_precision(k)
+    # Cap the KB's effective precision down over placeholder-coincident components.
+    if kd == 1:
+        kp = min(kp, 2)              # day of 1 may be a month-precision placeholder
+        if km == 1:
+            kp = min(kp, 1)          # …and Jan may be a year-precision placeholder
+    if cp > kp:
+        return None  # claim finer than the KB asserts → can't confirm → abstain
+    # Claim no finer than the KB. Agreement at every precision the claim asserts is
+    # a match; any disagreement is incomparable (month/day could be a placeholder).
+    if cp >= 2 and cm != km:
+        return None
+    if cp >= 3 and cd != kd:
+        return None
+    return "match"
+
+
+def _date_bounds(value) -> Optional[tuple[datetime, datetime]]:
+    """The (earliest, latest) instant a date string could denote, given its
+    apparent precision. Year-only '2013' spans 2013-01-01 .. 2013-12-31; month
+    '2013-05' spans the 1st .. last day; a full day is that day. Used for
+    precision-aware ordering against `now`. Returns None when unparseable."""
+    parts = _date_parts(value)
+    if parts is None:
+        return None
+    y, m, d = parts
+    if y < 1:
+        return None  # BCE / year 0 — Python datetime cannot represent it; treat the
+        # currency ordering as unknown (callers fail safe to abstain / no-suppress).
+    lo = datetime(y, m or 1, d or 1)
+    hi_month = m or 12
+    if d is not None:
+        hi_day = d
+    elif m is not None:
+        hi_day = calendar.monthrange(y, m)[1]
+    else:
+        hi_day = 31
+    hi = datetime(y, hi_month, hi_day, 23, 59, 59)
+    return lo, hi
+
+
+def _end_provably_past(end_value, ref_iso) -> bool:
+    """True iff an end date is UNAMBIGUOUSLY before `ref_iso` — its LATEST possible
+    instant precedes the reference's earliest. A year-precision end ('2025') is
+    provably past only once the whole year has elapsed. Conservative: an
+    unparseable or same-period end returns False (we cannot prove it ended).
+    This is the strict gate for the E4 level-2 CONTRADICTION."""
+    eb = _date_bounds(end_value)
+    rb = _date_bounds(ref_iso)
+    if eb is None or rb is None:
+        return False
+    return eb[1] < rb[0]
+
+
+def _end_provably_future(end_value, ref_iso) -> bool:
+    """True iff an end date is UNAMBIGUOUSLY after `ref_iso` — its EARLIEST possible
+    instant follows the reference's latest. A statement with a provably-future end
+    is still current, so it may verify a present-tense claim. Anything NOT provably
+    future (past, or an ambiguous same-period end) is treated as non-current by the
+    E4 level-1 scope check (abstain is safe)."""
+    eb = _date_bounds(end_value)
+    rb = _date_bounds(ref_iso)
+    if eb is None or rb is None:
+        return False
+    return eb[0] > rb[1]
+
+
+def _start_provably_future(start_value, ref_iso) -> bool:
+    """True iff a statement's START is UNAMBIGUOUSLY after `ref_iso` — its EARLIEST
+    possible instant follows the reference's latest. The start-side dual of
+    `_end_provably_future`: a statement whose start has not yet arrived describes a
+    role/term NOT YET BEGUN (an announced succession, a scheduled term, a future
+    contract), so it is not a realized fact and must not verify a present or past
+    claim. Conservative: a past or ambiguous same-period start is NOT provably
+    future, so a genuinely-ongoing statement (past start, no end) still verifies."""
+    sb = _date_bounds(start_value)
+    rb = _date_bounds(ref_iso)
+    if sb is None or rb is None:
+        return False
+    return sb[0] > rb[1]
+
+
+def _claim_reaches_present(claim) -> bool:
+    """True iff the claim asserts validity up to NOW — no upper temporal bound of
+    any kind. A present-tense claim extracts to a bare scope (valid_until None); a
+    PAST claim carries `valid_until == BEFORE_PRESENT` (so it does NOT reach the
+    present) and a `before <event>` upper bound sets valid_until_ref. Used by the
+    E4 level-1 scope gate: such a claim cannot be satisfied by an ended statement."""
+    return not claim.valid_until and not getattr(claim, "valid_until_ref", None)
+
+
+def _claim_present_unscoped(claim) -> bool:
+    """The STRICT present-tense signal for the E4 level-2 contradiction: a fully
+    unscoped claim (no valid_from/until/refs at all). The extractor emits exactly
+    this for a bare present-tense assertion ('X is the pope'); any explicit scope
+    (a date, 'since <year>', a 'was'/past marker → BEFORE_PRESENT, a reference
+    bound) disqualifies it, so a historical 'X was the pope' can never be
+    contradicted as if it were a present-currency claim."""
+    return (
+        not claim.valid_from
+        and not claim.valid_until
+        and not getattr(claim, "valid_from_ref", None)
+        and not getattr(claim, "valid_until_ref", None)
+        and not getattr(claim, "valid_during_ref", None)
+    )
+
+
 def _value_matches(kb_value, claim_object: str) -> bool:
-    """Loose equality: Q-number match, case-insensitive string match, or
-    date-year match. Year-aware date comparison —
-    when both values normalize to a 4-digit year, compare years rather
-    than literal strings ('1998' vs '1998-09-04T00:00:00Z' should match
-    when the claim only specifies the year)."""
+    """Loose equality: Q-number / case-insensitive string match, or a
+    precision-aware date match (a claim date VERIFIES only when the KB date is at
+    least as precise and agrees — 'December 17, 1936' matches KB '1936-12-17';
+    '1998' matches '1998-09-04'; a day-precise claim is NOT verified by a year-only
+    KB value). Natural-language dates are parsed (E2)."""
     if kb_value is None:
         return False
     kb_str = str(kb_value).strip()
     claim_str = claim_object.strip()
     if kb_str.lower() == claim_str.lower():
         return True
-    # v0.16.1 WS1: an approximate-year claim ("c. 1550", "circa 1550",
-    # "~1550") strips its leading approximation marker on the CLAIM side
-    # only, yielding the bare year to compare. This matches ONLY on exact
-    # year equality (never a fuzzy +/-N window), so it can never false-verify;
-    # it merely lets "c. 1550" match KB "1550-01-01T00:00:00Z" (year 1550).
-    # A precise approximate date like "c. 1550-03-01" returns None here and
-    # falls through to the strict literal compare unchanged.
+    # v0.16.1 WS1: an approximate-year claim ("c. 1550") strips its leading marker
+    # on the CLAIM side only, yielding the bare year — it matches ONLY on exact
+    # year equality (never a fuzzy window), so it can never false-verify.
     approx_year = _strip_approx_year(claim_str)
-    compare_year = approx_year if approx_year is not None else claim_str
-    # Date-year normalized comparison: only fire when the (possibly
-    # approx-stripped) claim looks like a bare year (4 digits) — that's the
-    # common pattern in the medium-bar's "founded in YYYY", "born in YYYY",
-    # "occurred in YYYY". Comparing two full ISO timestamps via year-only
-    # would be incorrect (1998-09-04 ≠ 1998-01-01 for precise temporal claims).
-    if _BARE_YEAR_RE.match(compare_year):
-        kb_year = _normalize_date_value(kb_str)
-        if kb_year == compare_year.lstrip("+").lstrip("-"):
-            return True
-    return False
+    claim_for_date = approx_year if approx_year is not None else claim_str
+    return _date_relation(claim_for_date, kb_str) == "match"
 
 
-def _scope_compatible(stmt: Statement, claim: Claim, current_time: str) -> bool:
+def _scope_compatible(
+    stmt: Statement, claim: Claim, current_time: str, object_type: str = "entity"
+) -> bool:
     """
     Return True if the statement's qualifier scope is compatible with the claim's temporal scope.
     If statement has no P580/P582 qualifiers, it is assumed always-valid.
@@ -1040,6 +1270,33 @@ def _scope_compatible(stmt: Statement, claim: Claim, current_time: str) -> bool:
     # No qualifier on statement → always valid
     if not stmt_from and not stmt_until:
         return True
+
+    # E4 level 1 (§3.2): temporal CURRENCY (a role/membership/office that begins and
+    # ends) is meaningful only for ENTITY-valued role/state predicates. For a date-
+    # or quantity-typed predicate, a stray P580/P582 is not a "term" and must not
+    # suppress a value match (a birth date does not "end"). So the currency gates
+    # below run ONLY for object_type == "entity"; the pre-existing explicit-scope
+    # checks (which fire only when the CLAIM carries an explicit bound) are universal.
+    if object_type == "entity":
+        # END side: a claim asserting present currency (no upper bound — a bare
+        # present-tense claim, or "since <year>") CANNOT be satisfied by a statement
+        # whose end is NOT provably in the future (P582 exists only on ENDED facts).
+        # A PAST claim carries valid_until == BEFORE_PRESENT and does NOT reach the
+        # present, so it still verifies off the ended statement ("X was the pope").
+        if stmt_until and _claim_reaches_present(claim):
+            if not _end_provably_future(stmt_until, current_time):
+                return False
+        # START side (dual): a role/term whose start is provably in the FUTURE has
+        # not begun (an announced succession, a scheduled term), so it is not a
+        # realized fact and cannot verify a present OR past claim. A genuinely-
+        # ongoing statement (past start, no end) is NOT provably future → still
+        # verifies. An explicitly future-scoped claim is out of scope here.
+        if (
+            stmt_from
+            and _start_provably_future(stmt_from, current_time)
+            and (_claim_reaches_present(claim) or claim.valid_until == BEFORE_PRESENT)
+        ):
+            return False
 
     # Claim has explicit valid_from → must not precede statement start
     if claim.valid_from and stmt_from:
