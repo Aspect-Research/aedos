@@ -1,17 +1,24 @@
 import { useState } from "react";
-import { chat, type ChatResponse } from "../api";
+import { chatStream, type ChatResponse, type StepEvent } from "../api";
 import Observability from "./Observability";
+import StepLog from "./StepLog";
 
 interface Turn {
   user: string;
+  steps: StepEvent[];
   response?: ChatResponse;
   error?: string;
+  busy: boolean;
 }
 
-export default function Chat() {
+export default function Chat({ onTurnComplete }: { onTurnComplete?: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+
+  function patch(idx: number, fn: (t: Turn) => Turn) {
+    setTurns((ts) => ts.map((t, i) => (i === idx ? fn(t) : t)));
+  }
 
   async function send() {
     const message = input.trim();
@@ -19,15 +26,19 @@ export default function Chat() {
     setInput("");
     setBusy(true);
     const idx = turns.length;
-    setTurns((t) => [...t, { user: message }]);
+    setTurns((ts) => [...ts, { user: message, steps: [], busy: true }]);
     try {
-      const response = await chat(message);
-      setTurns((t) => t.map((turn, i) => (i === idx ? { ...turn, response } : turn)));
+      await chatStream(message, {
+        onStep: (s) => patch(idx, (t) => ({ ...t, steps: [...t.steps, s] })),
+        onResult: (response) => patch(idx, (t) => ({ ...t, response, busy: false })),
+        onError: (error) => patch(idx, (t) => ({ ...t, error, busy: false })),
+      });
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      setTurns((t) => t.map((turn, i) => (i === idx ? { ...turn, error } : turn)));
+      const msg = e instanceof Error ? e.message : String(e);
+      patch(idx, (t) => ({ ...t, error: msg, busy: false }));
     } finally {
       setBusy(false);
+      onTurnComplete?.();
     }
   }
 
@@ -38,12 +49,14 @@ export default function Chat() {
           <p className="hint">
             Say something with a factual claim — e.g. “Paris is the capital of France.”
             Aedos extracts the claims, grounds each against Tier-U / KB / Python, and
-            replies. Premises you assert become part of your session context.
+            replies. Premises you assert become part of your session context (see the
+            Inspector). The live trace below each message shows the process as it runs.
           </p>
         )}
         {turns.map((turn, i) => (
           <div key={i} className="turn">
             <div className="msg msg-user">{turn.user}</div>
+            <StepLog steps={turn.steps} busy={turn.busy} />
             {turn.error && <div className="msg msg-error">error — {turn.error}</div>}
             {turn.response && (
               <div className="msg msg-aedos">

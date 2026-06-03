@@ -117,3 +117,132 @@ export function verifyText(text: string): Promise<VerifyResponse> {
 export function resetSession(): Promise<{ rows_cleared: number }> {
   return postJSON<{ rows_cleared: number }>("/session/reset", {});
 }
+
+// --- live (SSE) streaming over fetch (keeps auth/session in headers) --------
+
+export interface StepEvent {
+  phase: string;
+  detail: string;
+  verdict?: string;
+  subject?: string;
+  predicate?: string;
+  object?: string;
+  index?: number;
+  total?: number;
+}
+
+export interface StreamHandlers<R> {
+  onStep: (s: StepEvent) => void;
+  onResult: (r: R) => void;
+  onError: (message: string) => void;
+}
+
+async function streamSSE<R>(
+  path: string,
+  body: unknown,
+  h: StreamHandlers<R>,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Aedos-Key": getAccessKey(),
+        "X-Aedos-Session": getSessionId(),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    h.onError(e instanceof Error ? e.message : String(e));
+    return;
+  }
+  // Auth / validation / rate-limit errors arrive before the stream opens.
+  if (!res.ok || !res.body) {
+    let detail = res.statusText;
+    try {
+      const j = (await res.json()) as { detail?: string };
+      if (j.detail) detail = j.detail;
+    } catch {
+      /* ignore */
+    }
+    h.onError(`${res.status}: ${detail}`);
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      let kind = "";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) kind = line.slice(7);
+        else if (line.startsWith("data: ")) data = line.slice(6);
+      }
+      if (!kind) continue;
+      let payload: unknown = null;
+      if (data) {
+        try {
+          payload = JSON.parse(data);
+        } catch {
+          h.onError("malformed stream frame");
+          return;
+        }
+      }
+      if (kind === "step") h.onStep(payload as StepEvent);
+      else if (kind === "result") h.onResult(payload as R);
+      else if (kind === "error") h.onError((payload as { detail?: string })?.detail ?? "stream error");
+    }
+  }
+}
+
+export function chatStream(message: string, h: StreamHandlers<ChatResponse>): Promise<void> {
+  return streamSSE<ChatResponse>("/chat/stream", { message }, h);
+}
+
+export function verifyStream(text: string, h: StreamHandlers<VerifyResponse>): Promise<void> {
+  return streamSSE<VerifyResponse>("/verify/stream", { text }, h);
+}
+
+// --- context inspector ------------------------------------------------------
+
+export interface ContextRow {
+  id: number;
+  subject: string;
+  predicate: string;
+  object: string;
+  polarity: number;
+  status: string;
+  valid_from: string | null;
+  valid_until: string | null;
+  asserted_at: string;
+}
+
+export interface ContextResponse {
+  count: number;
+  rows: ContextRow[];
+}
+
+export async function getContext(): Promise<ContextResponse> {
+  const res = await fetch(`${API_BASE}/session/context`, {
+    headers: { "X-Aedos-Key": getAccessKey(), "X-Aedos-Session": getSessionId() },
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const j = (await res.json()) as { detail?: string };
+      if (j.detail) detail = j.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return (await res.json()) as ContextResponse;
+}

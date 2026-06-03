@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Chat from "./components/Chat";
+import Inspector from "./components/Inspector";
 import VerifyText from "./components/VerifyText";
 import {
   getAccessKey,
@@ -16,15 +17,20 @@ export default function App() {
   const [accessKey, setKeyState] = useState(getAccessKey());
   const [sessionId, setSessionId] = useState(getSessionId());
   const [status, setStatus] = useState<string | null>(null);
+  const [showInspector, setShowInspector] = useState(true);
+  const [ctxVersion, setCtxVersion] = useState(0);
 
   useEffect(() => {
     setAccessKey(accessKey);
   }, [accessKey]);
 
+  const bumpContext = () => setCtxVersion((v) => v + 1);
+
   async function onReset() {
     try {
       const { rows_cleared } = await resetSession();
       setStatus(`session context cleared (${rows_cleared} row(s))`);
+      bumpContext();
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
     }
@@ -33,6 +39,7 @@ export default function App() {
   function onNewSession() {
     setSessionId(newSessionId());
     setStatus("started a fresh session");
+    bumpContext();
   }
 
   return (
@@ -57,6 +64,12 @@ export default function App() {
           <button className="ghost" onClick={onNewSession}>
             New session
           </button>
+          <button
+            className={showInspector ? "ghost ghost-on" : "ghost"}
+            onClick={() => setShowInspector((v) => !v)}
+          >
+            Inspector
+          </button>
         </div>
       </header>
 
@@ -77,7 +90,12 @@ export default function App() {
 
       {status && <div className="status-bar">{status}</div>}
 
-      <main>{mode === "chat" ? <Chat /> : <VerifyText />}</main>
+      <div className={showInspector ? "layout layout-split" : "layout"}>
+        <main>
+          {mode === "chat" ? <Chat onTurnComplete={bumpContext} /> : <VerifyText />}
+        </main>
+        {showInspector && <Inspector version={ctxVersion} />}
+      </div>
     </div>
   );
 }
