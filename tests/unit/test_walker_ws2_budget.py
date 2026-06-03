@@ -126,12 +126,17 @@ def _blowup_kb():
 
 
 class TestDepthCapRemovedDoesNotBlowBudget:
-    def test_uncapped_enumeration_abstains_via_fanout_budget(self):
+    def test_uncapped_enumeration_abstains_via_probe_budget(self):
         """Without the depth==0 cap, a substrate that returns no neighbors and a
         KB that returns 20 fresh children per property would fan out
         multiplicatively across depth (OOM in the worst case). The per-walk
-        fanout budget must catch it: the walk abstains with `budget_fanout`
-        rather than exploding."""
+        KB-neighbor PROBE budget (max_kb_neighbor_probes, default 48) catches it
+        FIRST — tighter than the admitted-only fanout budget (max_frontier_
+        expansions=2000), because the probe budget counts EVERY candidate probed
+        (admitted or rejected), which is the real cost (one SPARQL ASK each). The
+        walk abstains with `budget_kb_neighbor_probes` rather than exploding. (The
+        fanout budget remains a backstop for the substrate/premise-forward
+        expansion arms, which the probe counter does not gate.)"""
         walker = Walker(
             tier_u=_TierU(),
             kb_verifier=_NoMatchKBVerifier(),
@@ -148,11 +153,44 @@ class TestDepthCapRemovedDoesNotBlowBudget:
         elapsed = time.monotonic() - t0
 
         assert result.verdict == "no_grounding_found"
-        assert result.abstention_reason == "budget_fanout"
-        assert result.trace.walk_metadata.get("budget_exceeded") == "fanout"
+        assert result.abstention_reason == "budget_kb_neighbor_probes"
+        assert result.trace.walk_metadata.get("budget_exceeded") == "kb_neighbor_probes"
         # The whole point: bounded, fast, no blowup. A real OOM/18-min blowup
         # would never reach this assertion; 5s is a generous ceiling for the
         # bounded path.
+        assert elapsed < 5.0
+
+    def test_probe_budget_dedupes_repeated_neighbor_qids(self):
+        """The per-walk `seen` dedupe collapses re-probing of the SAME neighbor
+        QID across slots/directions/depths (famous containers like Q30/Q142
+        recur). A KB that returns the same small fixed set every call must NOT
+        burn the probe budget on duplicates — the walk abstains fast and does
+        NOT time out on the wall clock."""
+        kb = MagicMock()
+        _NEIGHBOR_PROPS = {"is_a": ("P31", "P279"), "part_of": ("P131", "P361", "P17")}
+
+        def fixed_enum(entity, properties=None, direction="outgoing", relation_type=None):
+            props = tuple(properties) if properties else _NEIGHBOR_PROPS.get(relation_type, ())
+            # Same two QIDs every call — the dedupe must collapse them.
+            return {p: ["Q30", "Q142"] for p in props}
+
+        kb.enumerate_neighbors.side_effect = fixed_enum
+        kb.verify_transitive_path.return_value = TransitivePathResult(holds=True)
+        walker = Walker(
+            tier_u=_TierU(),
+            kb_verifier=_NoMatchKBVerifier(),
+            python_verifier=None,
+            substrate=_blowup_substrate(),
+            kb=kb,
+            walker_max_depth=4,
+        )
+        budget = WalkerBudget(wall_clock_seconds=30.0, max_llm_calls=100)
+        t0 = time.monotonic()
+        result = walker.walk(_claim(), _ctx(), budget=budget)
+        elapsed = time.monotonic() - t0
+
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason != "budget_wall_clock"  # did not time out
         assert elapsed < 5.0
 
     def test_total_expansions_bounded_by_budget(self):

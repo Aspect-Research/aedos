@@ -49,6 +49,32 @@ class WalkerBudget:
     # true cost bound. Permissive default (config-tunable per contract §0.11
     # decision 6); seeds + premise-forward keep real walks far below it.
     max_frontier_expansions: int = 2000
+    # Hard per-walk cap on KB-neighbor ENUMERATION PROBES — the number of
+    # candidate neighbor QIDs routed through `_verify_chain` (each one a
+    # rate-limited live SPARQL transitive-path ASK). The `max_frontier_expansions`
+    # bound above counts only ADMITTED expansions, so for a false/abstaining
+    # famous-entity claim — where almost every enumerated candidate is REJECTED —
+    # it never trips, and the REJECTED candidates' ASKs are otherwise unbounded:
+    # at ~5 ASK/s they accumulate to the wall-clock and the walk times out
+    # (budget_wall_clock) instead of abstaining. Counting probes whether admitted
+    # OR rejected (with per-walk QID dedupe) makes such a walk abstain FAST. A
+    # genuine grounding's true container/kind chain is reached in a few confirmed
+    # hops, well under this cap; exceeding it only ever turns a (already-timing-
+    # out) abstain into a fast abstain — verdict-preserving (§3.2: abstain is safe).
+    max_kb_neighbor_probes: int = 48
+
+
+@dataclass
+class _KBNeighborProbes:
+    """Per-walk accounting for the KB-neighbor enumeration probe budget. `seen`
+    dedupes neighbor QIDs across the whole walk (the same famous container recurs
+    across slots/directions/depths), so each distinct candidate is probed at most
+    once; `spent` counts distinct probes against `limit`; `exhausted` latches once
+    the cap is hit so `walk()` returns a fast, deterministic abstain."""
+    limit: int
+    spent: int = 0
+    exhausted: bool = False
+    seen: set = field(default_factory=set)
 
 
 @dataclass
@@ -529,6 +555,13 @@ class Walker:
         # past the budget before the depth-boundary wall-clock check fires.
         total_expansions = 0
         fanout_exceeded = False
+        # Per-walk KB-neighbor PROBE budget (the real cost bound — see
+        # WalkerBudget.max_kb_neighbor_probes). Counts distinct candidate probes
+        # (live transitive-path ASKs) across ALL depths/nodes so a non-grounding
+        # famous-entity claim abstains fast instead of timing out on the
+        # wall clock. Shared for the whole walk; threaded into discovery.
+        probes = _KBNeighborProbes(limit=budget.max_kb_neighbor_probes)
+        probe_exceeded = False
 
         while frontier and depth < self._max_depth:
             # Budget check
@@ -585,10 +618,19 @@ class Walker:
                 # (called inside _discover_chains per candidate) admits a
                 # candidate only if the taxonomy/transitive edge is confirmed
                 # in a source. Soundness lives entirely at verify time (§3.2).
-                expanded, llm_delta = self._discover_chains(node, trace, depth)
+                expanded, llm_delta = self._discover_chains(node, trace, depth, probes)
                 llm_calls += llm_delta
                 next_frontier.extend(expanded)
                 total_expansions += len(expanded)
+
+                # Probe-budget bound: the dominant cost on a non-grounding walk is
+                # the rejected-candidate transitive-path ASKs inside KB-neighbor
+                # enumeration, which the admitted-only fanout counter below does
+                # not see. Stop the moment the per-walk probe cap is hit so we
+                # abstain fast (a deterministic reason) rather than timing out.
+                if probes.exhausted:
+                    probe_exceeded = True
+                    break
 
                 # v0.16 WS2 §5 fanout bound: abstain the moment cumulative
                 # discovery crosses the budget. This is the cost bound that
@@ -599,6 +641,23 @@ class Walker:
                 if total_expansions > budget.max_frontier_expansions:
                     fanout_exceeded = True
                     break
+
+            # Guard with `current_verdict is None`: if an earlier frontier node
+            # already grounded a verdict, prefer it (fall through to the verdict
+            # return below) rather than discarding it for a probe-budget abstain.
+            if probe_exceeded and current_verdict is None:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "kb_neighbor_probes"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_kb_neighbor_probes",
+                    budget_consumption=consumption,
+                )
 
             if fanout_exceeded:
                 elapsed = time.monotonic() - start_time
@@ -1930,7 +1989,8 @@ class Walker:
             return False
 
     def _discover_chains(
-        self, node: Claim, trace: JustificationTrace, depth: int
+        self, node: Claim, trace: JustificationTrace, depth: int,
+        probes: Optional["_KBNeighborProbes"] = None,
     ) -> tuple[list[Claim], int]:
         """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
 
@@ -2077,9 +2137,14 @@ class Walker:
                 # the already-computed dist.verdict (no extra oracle call).
                 if verdict_label != "neither":
                     kb_produced = self._expand_via_kb_neighbors(
-                        node, relation_type, preferred, dist.verdict, trace
+                        node, relation_type, preferred, dist.verdict, trace, probes
                     )
                     expanded.extend(kb_produced)
+                    # Stop discovering for this node once the per-walk probe
+                    # budget is spent — the remaining relation iteration would
+                    # only add ASKs the budget already disallows.
+                    if probes is not None and probes.exhausted:
+                        break
 
         # Discovery source 2: premise-forward frontier (§4).
         try:
@@ -2480,6 +2545,7 @@ class Walker:
         preferred: set[str],
         distribution_verdict,
         trace: JustificationTrace,
+        probes: Optional["_KBNeighborProbes"] = None,
     ) -> list[Claim]:
         """Enumerate KB neighbors of `node`'s slot entities
         and emit expanded claims with the slot substituted by each neighbor.
@@ -2570,6 +2636,22 @@ class Walker:
 
                 for prop_id, neighbor_qids in neighbors_by_prop.items():
                     for neighbor_qid in neighbor_qids:
+                        # Per-walk probe budget: dedupe already-probed neighbor
+                        # QIDs (the same famous container — Q30, Q142 — recurs
+                        # across slots/directions/depths) and HARD-CAP the number
+                        # of distinct _verify_chain probes, each of which is one
+                        # rate-limited live SPARQL ASK. This counts the candidate
+                        # WHETHER OR NOT it is admitted — the dominant cost on a
+                        # non-grounding walk is the REJECTED candidates, which no
+                        # other counter bounds. Latch `exhausted` and stop.
+                        if probes is not None:
+                            if neighbor_qid in probes.seen:
+                                continue
+                            probes.seen.add(neighbor_qid)
+                            if probes.spent >= probes.limit:
+                                probes.exhausted = True
+                                break
+                            probes.spent += 1
                         # v0.16 soundness (SS3 symmetry): route every KB-enum
                         # candidate through the SAME entailment gate the
                         # find_neighbors arm uses. The single enumeration hop
@@ -2604,5 +2686,11 @@ class Walker:
                             },
                         ))
                         expanded.append(new_node)
+                    if probes is not None and probes.exhausted:
+                        break  # exit the property loop
+                if probes is not None and probes.exhausted:
+                    break  # exit the direction loop
+            if probes is not None and probes.exhausted:
+                break  # exit the slot loop
 
         return expanded
