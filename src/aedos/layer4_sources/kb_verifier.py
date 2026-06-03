@@ -716,6 +716,22 @@ class KBVerifier:
                 getattr(scope_mismatch, "value_type", None), meta.object_type
             ):
                 return KBVerdictType.NO_MATCH, None, "value_type_object_type_mismatch"
+            # ENTITY-vs-LITERAL cross-kind guard (§3.2): S3 above PERMITS a
+            # `literal` KB value to contradict an `entity` predicate — that
+            # allowance is for literal-vs-literal external-id compares (ISBN),
+            # where the object did NOT resolve (value_resolved is False). But when
+            # the claim's object RESOLVED to a KB entity (value_resolved →
+            # expected_value is a Q-id) and the contradicting statement holds a
+            # non-entity literal, the comparison is resolved-entity-vs-literal:
+            # the predicate is mis-mapped to a string/literal-datatype property and
+            # the resolver nonetheless resolved the object to an entity (e.g.
+            # `birth_name` → a monolingual-text property, object "Jorge Mario
+            # Bergoglio" resolved to the person Q-id, then compared against the
+            # literal birth-name string of the SAME surface form → a spurious
+            # CONTRADICTED). A resolved entity can never soundly contradict a
+            # literal of a different kind, so abstain.
+            if value_resolved and not _is_entity_value(scope_mismatch):
+                return KBVerdictType.NO_MATCH, None, "entity_claim_vs_literal_value"
             # v0.16.1 WS1: an APPROXIMATE-year claim ("c. 1550") that did not
             # year-match the KB value above may NEVER contradict a date predicate.
             # An approximation ("around 1550") cannot soundly contradict a nearby
@@ -964,6 +980,27 @@ def _contradiction_value_type_ok(value_type: Optional[str], object_type: str) ->
     if not value_type:
         return True
     return value_type in allowed
+
+
+# Anchored end ($) as defense-in-depth: it is used with .fullmatch() below (which
+# already anchors both ends), but the explicit $ keeps a real entity Q-id from
+# being misread if this is ever reused with .match()/.search().
+_QID_RE = re.compile(r"Q\d+$")
+
+
+def _is_entity_value(stmt) -> bool:
+    """True when a KB statement holds an ENTITY (item) value rather than a
+    literal. Prefers the adapter's value_type tag (the Wikidata adapter emits
+    "entity" iff the value is an entity URI, else "literal"); for an UNTAGGED
+    value falls back to the Q-id surface pattern so a real entity value (e.g.
+    "Q18094") is never misread as a literal."""
+    vt = getattr(stmt, "value_type", None)
+    if vt == "entity":
+        return True
+    if vt:  # any other explicit tag (literal/date/quantity/string/…) is non-entity
+        return False
+    v = getattr(stmt, "value", None)
+    return isinstance(v, str) and _QID_RE.fullmatch(v.strip()) is not None
 
 
 _YEAR_RE = re.compile(r"^[+-]?(\d{4})(?:-\d{2}(?:-\d{2})?)?(?:T.*)?$")
