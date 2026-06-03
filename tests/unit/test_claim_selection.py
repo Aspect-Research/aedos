@@ -6,6 +6,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from aedos.deployment.claim_selection import (
+    _SYSTEM,
     _parse_selected_numbers,
     select_central_claims,
 )
@@ -30,6 +31,20 @@ class FakeLLM:
         if self.raises:
             raise RuntimeError("boom")
         return self.reply
+
+
+class TestSystemPromptContract:
+    """E4/v0.16.2: the selector MUST always pull in the claim establishing the
+    answer's core identity/role/title (the wrong-pope fix relies on the role claim
+    being selected and therefore verified). Pin the instruction so it can't be
+    silently dropped — knowledge lives in the prompt, not a hardcoded allowlist."""
+
+    def test_prompt_demands_identity_role_inclusion(self):
+        low = _SYSTEM.lower()
+        assert "always include" in low
+        # names the identity dimensions it must never drop
+        assert "identity" in low
+        assert "role" in low and "title" in low
 
 
 class TestParse:
