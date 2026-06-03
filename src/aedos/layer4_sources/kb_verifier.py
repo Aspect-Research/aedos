@@ -123,6 +123,12 @@ class KBVerifier:
         contradicted_outcome: Optional[tuple[KBVerdict, dict]] = None
         last_no_match: Optional[KBVerdict] = None
         had_kb_path = False
+        # Aggregate the walker's directed-over-enumerate signals across ALL bindings
+        # (OR), so the final NO_MATCH trace reflects "any binding had a known value"
+        # rather than just the LAST binding's — otherwise a later no-match binding
+        # would clobber the P19 binding's signal and the walker would re-fan-out.
+        agg_value_known_entity = False
+        agg_functional_value_known = False
 
         for binding in meta.bindings:
             if not binding.kb_property:
@@ -150,6 +156,12 @@ class KBVerifier:
                 contradicted_outcome = (outcome, dict(outcome.trace))
             elif outcome.verdict in (KBVerdictType.NO_MATCH, KBVerdictType.NO_KB_PATH):
                 last_no_match = outcome
+            agg_value_known_entity = agg_value_known_entity or bool(
+                outcome.trace.get("value_known_entity")
+            )
+            agg_functional_value_known = agg_functional_value_known or bool(
+                outcome.trace.get("functional_value_known")
+            )
 
         # No binding carried an actual KB property — identical to the pre-v0.16
         # `not meta.kb_property` abstention.
@@ -184,6 +196,11 @@ class KBVerifier:
         if last_no_match is not None:
             trace = dict(last_no_match.trace)
             trace["bindings_tried"] = bindings_tried
+            # Use the cross-binding aggregate, not just this (last) binding's value,
+            # so the walker's directed-over-enumerate skip sees a known value found
+            # by ANY binding.
+            trace["value_known_entity"] = agg_value_known_entity
+            trace["functional_value_known"] = agg_functional_value_known
             return KBVerdict(
                 verdict=last_no_match.verdict,
                 matched_statement=last_no_match.matched_statement,
@@ -538,6 +555,16 @@ class KBVerifier:
             "functional_value_known": bool(statements)
             and bool(binding.single_valued)
             and meta.object_type == "entity",
+            # The DIRECTED-part_of signal, INDEPENDENT of single_valued: an entity
+            # predicate whose subject value(s) are KNOWN. The all-values part_of
+            # subsumption upgrade above already tested every held value's geographic
+            # containment against the claim object, so the walker can skip the
+            # part_of neighbor enumeration (the "descend into Kenya's P17 children"
+            # fanout) even when the (often cold-started) predicate was not marked
+            # single_valued — e.g. the extractor's "was born in" vs the seed's
+            # born_in. (is_a enumeration is still gated on functional_value_known,
+            # since a non-functional predicate may legitimately ground via is_a.)
+            "value_known_entity": bool(statements) and meta.object_type == "entity",
         }
         # When the verdict is an abstention (NO_MATCH), record *why* —
         # debugging needs to tell a resolution failure apart from a genuine

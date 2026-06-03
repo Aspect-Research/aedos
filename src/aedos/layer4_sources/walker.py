@@ -442,12 +442,27 @@ class Walker:
     def _functional_value_known(self) -> bool:
         # Transient per-node signal (thread-local for parallel walks): set by the
         # most recent _try_external_grounding from the KB verifier's trace, read by
-        # the node loop to gate the directed-over-enumerate discovery skip.
+        # the node loop to gate the directed-over-enumerate discovery skip (the is_a
+        # arm — gated on the predicate being functional/single_valued).
         return getattr(self._tls, "functional_value_known", False)
 
     @_functional_value_known.setter
     def _functional_value_known(self, value: bool) -> None:
         self._tls.functional_value_known = value
+
+    @property
+    def _value_known_entity(self) -> bool:
+        # Transient per-node signal: the subject's value(s) for this ENTITY
+        # predicate are KNOWN (statements found), INDEPENDENT of single_valued.
+        # Gates the part_of-enumeration skip — the directed part_of upgrade already
+        # tested geographic containment, so the "descend into the object's P17
+        # children" fanout is futile even for a (cold-started) non-single_valued
+        # predicate like "was born in".
+        return getattr(self._tls, "value_known_entity", False)
+
+    @_value_known_entity.setter
+    def _value_known_entity(self, value: bool) -> None:
+        self._tls.value_known_entity = value
 
     def walk(
         self,
@@ -683,9 +698,11 @@ class Walker:
                 # the claim — skip the futile fanout (the doomed "descend into Kenya"
                 # search). Read the per-node signal set by _try_external_grounding.
                 functional_value_known = self._functional_value_known
+                value_known_entity = self._value_known_entity
                 expanded, llm_delta = self._discover_chains(
                     node, trace, depth, probes,
                     functional_value_known=functional_value_known,
+                    value_known_entity=value_known_entity,
                     work=work,
                 )
                 llm_calls += llm_delta
@@ -1284,10 +1301,11 @@ class Walker:
         audit event — KB statement coordinates or Python execution
         identity.
         """
-        # Reset the transient directed-over-enumerate signal for THIS node — it is
-        # set True only below when a functional-entity KB lookup found the subject's
-        # value(s). A stale True from a prior node must never gate this node.
+        # Reset the transient directed-over-enumerate signals for THIS node — set
+        # True only below from the KB lookup's trace. A stale True from a prior node
+        # must never gate this node.
         self._functional_value_known = False
+        self._value_known_entity = False
         # External (KB / Python) grounding is structurally unreachable for a
         # user_authoritative walk — set at walk entry when the predicate routes
         # user_authoritative OR the claim's subject is a stipulated user
@@ -1391,6 +1409,9 @@ class Walker:
             # search). Read by the node loop after _direct_lookup returns.
             self._functional_value_known = bool(
                 kb_result.trace.get("functional_value_known")
+            )
+            self._value_known_entity = bool(
+                kb_result.trace.get("value_known_entity")
             )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
@@ -2118,6 +2139,7 @@ class Walker:
         self, node: Claim, trace: JustificationTrace, depth: int,
         probes: Optional["_KBNeighborProbes"] = None,
         functional_value_known: bool = False,
+        value_known_entity: bool = False,
         work: Optional["_KBWork"] = None,
     ) -> tuple[list[Claim], int]:
         """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
@@ -2263,18 +2285,29 @@ class Walker:
                 # confident `neither` skips — so a wrong distribution verdict
                 # never causes a false-abstain (WS2 §3 intent preserved). Reuses
                 # the already-computed dist.verdict (no extra oracle call).
-                # Directed-over-enumerate (§3.2 / budget): also skip the
-                # enumeration when functional_value_known — the direct KB lookup
-                # found the subject's value(s) for a FUNCTIONAL entity predicate and
-                # the verifier's DIRECTED subsumption upgrade already tested every
-                # held value against the claim. Neighbor enumeration only re-derives
-                # that same grounding question by generate-and-test (descending into
-                # the object's children / ascending the subject's classes), so it
-                # cannot ground the claim — the doomed "Obama born_in Kenya" fanout.
-                # Verdict-preserving: the only true case (a container claim, e.g.
-                # "born_in USA") is owned by the directed upgrade, not enumeration.
-                # The bounded premise-forward arm below still runs.
-                if verdict_label != "neither" and not functional_value_known:
+                # Directed-over-enumerate (§3.2 / budget): skip the futile neighbor
+                # enumeration that only re-derives a grounding question the directed
+                # verifier path already answered by generate-and-test. Gated PER
+                # RELATION:
+                #  - part_of: skip when value_known_entity — the directed all-values
+                #    part_of subsumption upgrade already tested every held value's
+                #    containment against the claim object, so descending into the
+                #    object's P17/P131 children is futile. INDEPENDENT of
+                #    single_valued, so it fires for a cold-started "was born in" too
+                #    (the doomed "descend into Kenya" fanout — 19 of the 22 steps).
+                #  - is_a: skip only when functional_value_known (single_valued) —
+                #    substituting the subject's class can't ground a functional fact
+                #    whose value is fixed; but for a NON-functional/copula predicate
+                #    an is_a substitution may legitimately ground, so keep it.
+                # Verdict-preserving: the only true cases are owned by the directed
+                # upgrade / the preserved is_a path. The bounded premise-forward arm
+                # below still runs.
+                skip_enum = (
+                    verdict_label == "neither"
+                    or (relation_type == "part_of" and value_known_entity)
+                    or (relation_type == "is_a" and functional_value_known)
+                )
+                if not skip_enum:
                     kb_produced = self._expand_via_kb_neighbors(
                         node, relation_type, preferred, dist.verdict, trace, probes, work
                     )
