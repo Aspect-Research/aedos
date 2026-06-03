@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Callable, Optional
 
 from ..layer1_extraction.extractor import ExtractionContext
 from ..layer1_extraction.triage import AbstentionReason
@@ -332,10 +332,28 @@ class ChatWrapper:
         self._config = config or {}
         self._verification_store: dict[str, VerificationResult] = {}
 
-    def respond(self, user_message: str, conversation_context: Optional[dict] = None) -> ChatResponse:
+    def respond(
+        self,
+        user_message: str,
+        conversation_context: Optional[dict] = None,
+        progress: Optional[Callable[[dict], None]] = None,
+    ) -> ChatResponse:
         ctx_dict = conversation_context or {}
         asserting_party = ctx_dict.get("asserting_party_id", "user")
         current_time = datetime.now(timezone.utc).isoformat()
+
+        # v0.16.2 Phase B: optional progress sink for streaming the turn's steps
+        # to a deployment UI (transparent process). `progress=None` reproduces the
+        # prior behavior exactly; a throwing sink can never break verification.
+        def _emit(phase: str, detail: str, **extra) -> None:
+            if progress is None:
+                return
+            try:
+                progress({"phase": phase, "detail": detail, **extra})
+            except Exception:
+                pass
+
+        _emit("reading", "reading your message")
 
         # Extract claims
         # from the user_message and promote them into Tier U BEFORE the
@@ -370,6 +388,8 @@ class ChatWrapper:
             user_claims = [c for c in user_claims if c.abstention_reason is None]
             if user_claims:
                 promote_assertions(user_claims, self._tier_u)
+                _emit("premises",
+                      f"recorded {len(user_claims)} premise(s) from your message as session context")
                 # The promotion's pre_verdicts (cross-source contradictions
                 # on the user's own assertions vs. prior externally-verified
                 # rows) are not surfaced to this turn's intervention — the
@@ -378,6 +398,7 @@ class ChatWrapper:
                 # A future deployment surface may consume them.
 
         # 1. Generate draft
+        _emit("draft", "composing a draft reply")
         system = self._config.get("system_prompt", "You are a helpful assistant.")
         draft = self._llm.chat(
             system=system,
@@ -418,12 +439,25 @@ class ChatWrapper:
             asserting_party=asserting_party,
             source_text=draft,
         )
+        _emit("extracted", f"found {len(claims)} claim(s) to verify in the draft")
         walk_results = []
-        for claim in claims:
+        for i, claim in enumerate(claims):
+            _emit(
+                "verifying",
+                f"verifying claim {i + 1}/{len(claims)}: "
+                f"{claim.subject} {claim.predicate} {claim.object}",
+                index=i + 1, total=len(claims), claim_id=claim.claim_id,
+            )
             result = self._walker.walk(claim, verification_context)
             walk_results.append(result)
+            _emit(
+                "verdict", str(result.verdict),
+                claim_id=claim.claim_id, verdict=str(result.verdict),
+                subject=claim.subject, predicate=claim.predicate, object=claim.object,
+            )
 
         # 4. Aggregate
+        _emit("composing", "composing the final reply")
         vr = self._aggregator.aggregate(
             claims=claims,
             per_claim_results=walk_results,
