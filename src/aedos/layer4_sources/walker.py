@@ -2058,10 +2058,28 @@ class Walker:
             # wall-clock/LLM budget remain as the cost bounds. Removing the cap
             # is required for the bidirectional/forward search (contract item e).
             if not sub_produced:
-                kb_produced = self._expand_via_kb_neighbors(
-                    node, relation_type, preferred, dist.verdict, trace
-                )
-                expanded.extend(kb_produced)
+                # Direct-binding-first (§3.2 / budget): the KB-neighbor
+                # enumeration fallback is the UNBOUNDED live-KB fanout (e.g.
+                # chasing P17 country edges off a `holds_role` claim) that can
+                # consume the whole wall-clock without ever grounding. Fire it
+                # ONLY when the predicate can actually ground THROUGH this
+                # relation. A confident `neither` distribution forecloses every
+                # substitution: an is_a `neither` candidate is rejected by
+                # _verify_chain (so enumerating it is pure waste — verdict-
+                # preserving to skip), and a part_of substitution is unsound
+                # unless the predicate distributes over part_of (the
+                # premise_forward arm already fails closed on this). So a
+                # confident `neither` skips enumeration, leaving the claim's own
+                # direct predicate binding as the grounding path instead of
+                # fanning out over irrelevant neighbors. Fail OPEN — only a
+                # confident `neither` skips — so a wrong distribution verdict
+                # never causes a false-abstain (WS2 §3 intent preserved). Reuses
+                # the already-computed dist.verdict (no extra oracle call).
+                if verdict_label != "neither":
+                    kb_produced = self._expand_via_kb_neighbors(
+                        node, relation_type, preferred, dist.verdict, trace
+                    )
+                    expanded.extend(kb_produced)
 
         # Discovery source 2: premise-forward frontier (§4).
         try:

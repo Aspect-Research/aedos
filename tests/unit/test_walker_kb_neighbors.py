@@ -273,29 +273,32 @@ class TestD5Fallback:
         # KB enumerate_neighbors should not have been called.
         kb.enumerate_neighbors.assert_not_called()
 
-    def test_neither_distribution_is_explored_but_does_not_ground(self):
-        """v0.16 WS2 §3 (gate -> ranker): when predicate_distribution returns
-        `neither`, the relation is no longer foreclosed. Discovery is LIBERAL,
-        so KB enumeration MAY fire for `neither` (the old gate would have
-        skipped it). But soundness moved to verify time: the discovered
-        substitutions never ground (no Tier U premise, KB verifier NO_MATCH),
-        so the walk still ends at `no_grounding_found`. The OUTCOME matches the
-        old gate; the reason is now grounding-failure, not a discovery skip.
+    def test_neither_distribution_skips_kb_enumeration(self):
+        """Direct-binding-first (Phase E #1): a `neither` distribution
+        forecloses every substitution through the relation, so the UNBOUNDED
+        KB-neighbor enumeration fallback is SKIPPED — the walker no longer fans
+        out over irrelevant neighbors (e.g. P17 country edges off a role claim)
+        only to reject them all. The claim's own direct binding stays the
+        grounding path; the walk ends at a FAST `no_grounding_found` instead of
+        burning the wall-clock to `budget_wall_clock`.
 
-        This is the behavioral inversion of the old
-        `test_does_not_fire_when_distribution_gate_closed`: we assert the
-        sound verdict, not that enumeration was suppressed."""
+        Verdict-preserving: an is_a `neither` candidate is rejected by
+        _verify_chain's kind-entailment gate anyway, and a part_of substitution
+        is unsound unless the predicate distributes — so skipping enumeration
+        removes only never-grounding work (and a latent false-verify surface),
+        never a sound grounding."""
         substrate = _make_substrate(
             distribution_verdict="neither",
             sub_neighbors=[],
         )
-        kb = _make_kb({"P131": ["Q771397"]})
+        kb = _make_kb({"P131": ["Q771397"], "P17": ["Q30"]})
         walker = _make_walker(substrate, kb)
 
         result = walker.walk(_claim(), _ctx())
 
-        # The relation is explored (the gate is gone); the walker still
-        # abstains because nothing the substitution reaches grounds the claim.
+        # The KB-neighbor enumeration fallback must NOT fire for a `neither`
+        # predicate — that is the whole point of the gate.
+        kb.enumerate_neighbors.assert_not_called()
         assert result.verdict == "no_grounding_found"
 
     def test_neither_distribution_admits_no_subsumption_substitution(self):
@@ -500,11 +503,12 @@ class TestKBEnumCandidateGated:
         ]
 
     def test_unentailed_is_a_candidate_rejected(self):
-        # `neither` distribution = the is_a kind-entailment authority forecloses
-        # the substitution. Only is_a neighbors are enumerated (P31), so the is_a
-        # _verify_chain gate is the sole admission path; the candidate is REJECTED
-        # and no is_a kb_neighbor_enumeration edge survives. (The KB path WOULD
-        # report holding, proving rejection is the gate, not a missing edge.)
+        # `neither` distribution forecloses the is_a substitution. Two layers now
+        # ensure no unentailed is_a candidate survives: (1) direct-binding-first
+        # skips the KB-neighbor enumeration entirely for a `neither` predicate
+        # (so no candidate is even produced), and (2) were it produced,
+        # _verify_chain's is_a kind-entailment gate would still REJECT it. Either
+        # way no is_a kb_neighbor_enumeration edge survives and the walk abstains.
         substrate = _make_substrate(
             distribution_verdict="neither",
             sub_neighbors=[],
