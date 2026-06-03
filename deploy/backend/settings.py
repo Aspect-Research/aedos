@@ -35,11 +35,12 @@ class DeploySettings:
     rate_limit_window_seconds: float = 60.0
     # Bound on caller-supplied session ids (hygiene; SQL is parameterized anyway).
     max_session_id_len: int = 128
-    # Interactive walker budget (engine default is 30s/claim — too slow for a
-    # live chat that verifies every draft claim serially). Lower = a few more
-    # abstains but bounded, responsive turns; soundness is unaffected (abstain is
-    # safe). Streaming makes even a multi-claim turn legible.
-    walker_wall_clock_seconds: float = 12.0
+    # Walker budget per claim. Matches the engine default (30s). Phase B lowered
+    # this to 12s for chat responsiveness, but Phase C made verification PARALLEL
+    # (a turn's wall-time is ~max(per-claim), not the sum), so the lower budget
+    # only bought over-abstention (budget_wall_clock on simple lookups) — and the
+    # project order is soundness > coverage > simplicity > LATENCY. Restored to 30.
+    walker_wall_clock_seconds: float = 30.0
     walker_max_llm_calls: int = 10
     # Max claims verified concurrently within one turn (intra-turn parallelism;
     # turns are still serialized by the engine lock). Bounds outbound KB/LLM
@@ -66,7 +67,7 @@ class DeploySettings:
             ),
             max_session_id_len=int(os.environ.get("AEDOS_MAX_SESSION_ID_LEN", "128")),
             walker_wall_clock_seconds=float(
-                os.environ.get("AEDOS_WALKER_WALL_CLOCK_SECONDS", "12")
+                os.environ.get("AEDOS_WALKER_WALL_CLOCK_SECONDS", "30")
             ),
             walker_max_llm_calls=int(os.environ.get("AEDOS_WALKER_MAX_LLM_CALLS", "10")),
             verify_workers=int(os.environ.get("AEDOS_VERIFY_WORKERS", "8")),
