@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -355,6 +356,31 @@ class Walker:
         # the helper falls back to the kb_verifier's cache (then no-op), so the
         # explicit wiring here and the fallback both work.
         self._exception_cache = exception_cache
+        # v0.16.2 Phase C: the two per-walk mutable flags below live in
+        # thread-local storage so the SAME Walker can verify claims concurrently
+        # (one thread per claim) without one walk's flags leaking into another's.
+        # `_user_authoritative_walk` gates whether KB grounding runs, so a cross-
+        # walk race there would be a §3.2 hazard — thread-local removes it.
+        # Exposed via same-named properties so all existing read/write sites are
+        # unchanged. (KBVerifier is stateless per verify(); the resolver's own
+        # per-resolve state is likewise thread-local — see resolver.py.)
+        self._tls = threading.local()
+
+    @property
+    def _excluded_tier_u_row_ids(self) -> set:
+        return getattr(self._tls, "excluded_tier_u_row_ids", set())
+
+    @_excluded_tier_u_row_ids.setter
+    def _excluded_tier_u_row_ids(self, value: set) -> None:
+        self._tls.excluded_tier_u_row_ids = value
+
+    @property
+    def _user_authoritative_walk(self) -> bool:
+        return getattr(self._tls, "user_authoritative_walk", False)
+
+    @_user_authoritative_walk.setter
+    def _user_authoritative_walk(self, value: bool) -> None:
+        self._tls.user_authoritative_walk = value
 
     def walk(
         self,

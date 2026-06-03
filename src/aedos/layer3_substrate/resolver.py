@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -46,7 +47,21 @@ class EntityResolver:
         self._normalizer = wikipedia_normalizer
         # WS3: entity_resolution_cache row id touched by the most recent
         # resolve() — the retractable dependency a KB verdict rests on.
-        self._last_cache_row_id: Optional[int] = None
+        # v0.16.2 Phase C: thread-local so concurrent walks (one thread per claim)
+        # each see only their own resolve()'s touched row id. Request-scoped state
+        # that the KBVerifier reads immediately after select(); a shared attr would
+        # let a parallel resolve() clobber the row id another walk is about to read,
+        # mis-recording the retraction dependency. Exposed via a same-named property
+        # so all read/write sites are unchanged.
+        self._tls = threading.local()
+
+    @property
+    def _last_cache_row_id(self) -> Optional[int]:
+        return getattr(self._tls, "last_cache_row_id", None)
+
+    @_last_cache_row_id.setter
+    def _last_cache_row_id(self, value: Optional[int]) -> None:
+        self._tls.last_cache_row_id = value
 
     def last_cache_row_id(self) -> Optional[int]:
         """WS3: the entity_resolution_cache row id touched by the most
