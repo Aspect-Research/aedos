@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     object_entity_types TEXT,
     bindings TEXT,
     premise_properties TEXT,
+    pinned INTEGER NOT NULL DEFAULT 0,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
@@ -344,6 +345,22 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
     # same idempotent ALTER pattern.
     try:
         conn.execute("ALTER TABLE predicate_translation ADD COLUMN premise_properties TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    # v0.16.3 Batch B (piece 2): predicate_translation.pinned — a durable,
+    # machine-readable mark that a row is operator-authoritative (every seed row,
+    # plus hand-pinned corrections like capital/capital_is). A pinned row is (a)
+    # immune to consistency-driven / contradiction-trace / explicit retraction and
+    # (b) never replaced by the oracle's INSERT OR REPLACE in _generate_and_store.
+    # Before this, the capital/capital_is corrections relied only on a
+    # non-retracted row being present — a future cold-start regeneration over a
+    # true cache miss could silently re-invert them. Same idempotent ALTER pattern;
+    # NOT NULL DEFAULT 0 (constant default, permitted by SQLite ADD COLUMN) so
+    # existing oracle rows default to unpinned.
+    try:
+        conn.execute(
+            "ALTER TABLE predicate_translation ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+        )
     except sqlite3.OperationalError:
         pass  # column already exists
 

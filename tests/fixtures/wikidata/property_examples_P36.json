@@ -1,0 +1,15 @@
+{
+  "head": {"vars": ["s", "v"]},
+  "results": {
+    "bindings": [
+      {
+        "s": {"type": "uri", "value": "http://www.wikidata.org/entity/Q142"},
+        "v": {"type": "uri", "value": "http://www.wikidata.org/entity/Q90"}
+      },
+      {
+        "s": {"type": "uri", "value": "http://www.wikidata.org/entity/Q183"},
+        "v": {"type": "uri", "value": "http://www.wikidata.org/entity/Q64"}
+      }
+    ]
+  }
+}

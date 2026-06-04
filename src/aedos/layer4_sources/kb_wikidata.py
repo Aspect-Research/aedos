@@ -817,6 +817,26 @@ def _build_lookup_query(entity: KBEntityID, predicate: KBPropertyID) -> str:
     )
 
 
+def _build_property_example_query(predicate: KBPropertyID, limit: int) -> str:
+    """v0.16.3 Batch B (piece 1): SPARQL to SOURCE known-true (subject, value)
+    example statements for a bare property — `?s wdt:P ?v` — used by the
+    DirectionValidator to empirically confirm which KB role each Aedos slot maps
+    to. ?s is the KB statement-subject by construction; ?v the value. Restricted
+    to entity-valued statements (FILTER isIRI) since direction-probing only
+    applies to entity-typed predicates. A SMALL LIMIT keeps WDQS from scanning a
+    high-cardinality property (the same fanout caution as the neighbor query)."""
+    if not _PROPERTY_ID_PATTERN.match(predicate):
+        raise ValueError(f"Invalid Wikidata property ID: {predicate!r}")
+    if not isinstance(limit, int) or not (0 < limit <= 50):
+        raise ValueError(f"limit must be in (0, 50], got {limit!r}")
+    return (
+        f"SELECT ?s ?v WHERE {{\n"
+        f"  ?s wdt:{predicate} ?v .\n"
+        f"  FILTER(isIRI(?v))\n"
+        f"}} LIMIT {limit}"
+    )
+
+
 def _subsumption_verdict(a_to_b: bool, b_to_a: bool) -> str:
     """Map two directional ASK results to the SubsumptionResult verdict
     string. Architecture §6.2 enumerates the four verdicts."""
@@ -827,6 +847,35 @@ def _subsumption_verdict(a_to_b: bool, b_to_a: bool) -> str:
     if b_to_a:
         return "b_subsumed_by_a"
     return "unrelated"
+
+
+def _parse_property_example_bindings(
+    bindings: list, limit: int
+) -> list[tuple[KBEntityID, KBEntityID]]:
+    """v0.16.3 Batch B: extract (subject_qid, value_qid) pairs from a `?s ?v`
+    SPARQL result. Only well-formed entity Q-ids are kept; malformed/literal rows
+    are skipped (fail-open). De-duped, capped at `limit`."""
+    pairs: list[tuple[KBEntityID, KBEntityID]] = []
+    seen: set = set()
+    for row in bindings:
+        s_raw = row.get("s", {}).get("value", "")
+        v_raw = row.get("v", {}).get("value", "")
+        s_qid = _extract_entity_id(s_raw) if s_raw.startswith(
+            "http://www.wikidata.org/entity/"
+        ) else s_raw
+        v_qid = _extract_entity_id(v_raw) if v_raw.startswith(
+            "http://www.wikidata.org/entity/"
+        ) else v_raw
+        if not (_ENTITY_ID_PATTERN.match(s_qid or "") and _ENTITY_ID_PATTERN.match(v_qid or "")):
+            continue
+        key = (s_qid, v_qid)
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append(key)
+        if len(pairs) >= limit:
+            break
+    return pairs
 
 
 def _parse_statement_bindings(
@@ -1453,6 +1502,71 @@ class WikidataAdapter:
         a non-None error is the fail-open signal (caller passes candidates
         unfiltered)."""
         return self._fetch_p31_for_candidates(qids)
+
+    def sample_property_examples(
+        self, prop: KBPropertyID, limit: int = 5
+    ) -> list[tuple[KBEntityID, KBEntityID]]:
+        """v0.16.3 Batch B (piece 1): source up to `limit` known-true
+        (statement_subject_qid, value_qid) example pairs for a property — REAL
+        Wikidata data, independent of the predicate-metadata oracle. The
+        DirectionValidator probes these against `lookup_statements` to decide
+        which KB role each Aedos slot maps to. FAIL-OPEN: returns [] on any error
+        or a malformed/non-entity result (never raises), so a sourcing failure
+        degrades the validator to 'unconfirmed', never to a wrong direction."""
+        if self._live:
+            return self._live_property_examples(prop, limit)
+        return self._fixture_property_examples(prop, limit)
+
+    def _fixture_property_examples(
+        self, prop: KBPropertyID, limit: int
+    ) -> list[tuple[KBEntityID, KBEntityID]]:
+        """Fixture twin: reads property_examples_{P}.json shaped like a SPARQL
+        SELECT (?s ?v bindings). Missing fixture → [] (fail-open)."""
+        try:
+            data = _load_fixture(f"property_examples_{prop}.json")
+        except FixtureNotFoundError:
+            return []
+        return _parse_property_example_bindings(
+            data.get("results", {}).get("bindings", []), limit
+        )
+
+    def _live_property_examples(
+        self, prop: KBPropertyID, limit: int
+    ) -> list[tuple[KBEntityID, KBEntityID]]:
+        if self._http is None:
+            return []
+        try:
+            query = _build_property_example_query(prop, limit)
+        except ValueError:
+            return []
+        url = self._cfg_value("wikidata_sparql_endpoint", _DEFAULT_SPARQL_ENDPOINT)
+        params = {"query": query, "format": "json"}
+        ttl = self._cfg_value(
+            "http_cache_statement_ttl_seconds", _DEFAULT_STATEMENT_TTL_SECONDS
+        )
+        data = None
+        for attempt in range(2):
+            self._sparql_limiter.acquire()
+            try:
+                data = self._http.get(url, params=params, ttl_seconds=ttl)
+                break
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt == 0:
+                    time.sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                return []
+            except Exception:
+                return []
+        bindings = (
+            data.get("results", {}).get("bindings", []) if isinstance(data, dict) else []
+        )
+        pairs = _parse_property_example_bindings(bindings, limit)
+        self._log_audit_event(
+            event_type="kb_property_examples",
+            event_subject=str(prop),
+            event_data={"example_count": len(pairs)},
+        )
+        return pairs
 
     def interval_qualifier_keys(self) -> tuple[KBPropertyID, KBPropertyID]:
         """v0.16.1 WS5c: the (start, end) temporal interval-qualifier keys

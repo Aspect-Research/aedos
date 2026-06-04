@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -55,6 +56,54 @@ def _is_inverse_mapping(sq_a_raw, sq_b_raw) -> bool:
     return all(a[k] == b[k] for k in a if k not in ("subject", "object"))
 
 
+def _parse_types(raw) -> list:
+    """Parse a stored *_entity_types JSON column into a Q-id list; [] on
+    None/empty/malformed."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        val = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return val if isinstance(val, list) else []
+
+
+def _role_types(sq_raw, sub_types, obj_types):
+    """Map a row's (subject_types, object_types) onto the KB statement roles per
+    its slot_to_qualifier direction. Returns
+    (statement_subject_types, statement_value_types), or None when the map is
+    qualifier-keyed / uninterpretable. Standard → (subject, object); inverse →
+    (object, subject) (the subject slot lands on statement_value)."""
+    if sq_raw is None:
+        sq = None
+    elif isinstance(sq_raw, str):
+        try:
+            sq = json.loads(sq_raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    else:
+        sq = sq_raw
+    if not sq:
+        return (sub_types, obj_types)  # absent map == standard
+    if not isinstance(sq, dict):
+        return None
+    subj, obj = sq.get("subject"), sq.get("object")
+    if subj in (None, "statement_subject") and obj in (None, "statement_value"):
+        return (sub_types, obj_types)
+    if subj == "statement_value" and obj == "statement_subject":
+        return (obj_types, sub_types)
+    return None  # qualifier-keyed / uninterpretable
+
+
+def _overlap(a, b) -> bool:
+    """True if two Q-id lists share at least one element."""
+    if not a or not b:
+        return False
+    return bool(set(a) & set(b))
+
+
 class ConsistencyChecker:
     def __init__(
         self,
@@ -107,6 +156,29 @@ class ConsistencyChecker:
         if conflict.status != "conflict":
             return
 
+        # v0.16.3 Batch B (piece 2): a PINNED row is operator-authoritative and is
+        # never retracted. If EITHER side of the conflict is pinned, skip the whole
+        # resolution (retract neither) — retracting only the un-pinned peer would
+        # leave an asymmetric state where a pinned row's legitimate counterpart is
+        # silently dropped. Do NOT bump the circuit breaker on a pin-skip (it is not
+        # an escalating substrate fault — it is a deliberate operator override); log
+        # it so the mismatch is still visible. Piece 3's coherence-aware
+        # _is_inverse_mapping prevents legitimate inverse pairs from being flagged
+        # here in the first place; this is the durable backstop.
+        if self._conflict_touches_pinned(conflict):
+            log_event(
+                self._db,
+                event_type="pin_conflict_skipped",
+                event_subject=self._question_signature(conflict),
+                event_data={
+                    "table": conflict.table,
+                    "inconsistency_class": conflict.inconsistency_class,
+                    "row_a_id": conflict.row_a_id,
+                    "row_b_id": conflict.row_b_id,
+                },
+            )
+            return
+
         now = _now_iso()
 
         for row_id in (conflict.row_a_id, conflict.row_b_id):
@@ -140,13 +212,35 @@ class ConsistencyChecker:
             },
         )
 
+    def _conflict_touches_pinned(self, conflict: ConsistencyResult) -> bool:
+        """True if either conflicting row is a pinned predicate_translation row.
+        Only predicate_translation carries the `pinned` column; for any other
+        table (or a pre-migration DB without the column) this returns False so
+        behavior is unchanged."""
+        if conflict.table != "predicate_translation":
+            return False
+        ids = [r for r in (conflict.row_a_id, conflict.row_b_id) if r is not None]
+        if not ids:
+            return False
+        placeholders = ",".join("?" for _ in ids)
+        try:
+            row = self._db.execute(
+                f"SELECT 1 FROM predicate_translation "
+                f"WHERE id IN ({placeholders}) AND pinned=1 LIMIT 1",
+                ids,
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
+        return row is not None
+
     # ------------------------------------------------------------------
     # Check per table
     # ------------------------------------------------------------------
 
     def _check_predicate_translation_row(self, row_id: int) -> ConsistencyResult:
         row = self._db.execute(
-            "SELECT aedos_predicate, kb_namespace, kb_property, slot_to_qualifier "
+            "SELECT aedos_predicate, kb_namespace, kb_property, slot_to_qualifier, "
+            "subject_entity_types, object_entity_types "
             "FROM predicate_translation WHERE id=? AND retracted_at IS NULL",
             (row_id,),
         ).fetchone()
@@ -160,18 +254,35 @@ class ConsistencyChecker:
         # Conflict: a DIFFERENT predicate maps to the same (kb_namespace, kb_property) with a different
         # slot_to_qualifier. Two predicates with incompatible mappings to the same KB property.
         conflicts = self._db.execute(
-            "SELECT id, aedos_predicate, slot_to_qualifier FROM predicate_translation "
+            "SELECT id, aedos_predicate, slot_to_qualifier, "
+            "subject_entity_types, object_entity_types FROM predicate_translation "
             "WHERE id != ? AND kb_namespace=? AND kb_property=? AND retracted_at IS NULL",
             (row_id, ns, prop),
         ).fetchall()
 
         for c in conflicts:
             if c["slot_to_qualifier"] != sq:
-                # N5: inverse predicates (capital_of / has_capital) map to the
-                # same KB property with subject/object swapped. That is a
-                # legitimate inverse pair, not an incompatible mapping — skip it.
+                # N5 + v0.16.3 Batch B (piece 3): inverse predicates (capital_of /
+                # has_capital) legitimately map to the same KB property with
+                # subject/object swapped. The PURELY STRUCTURAL swap test waved
+                # through ANY swap — including an INCOHERENT one (the bare `capital`
+                # bug: subject typed country but an inverse map that sends the
+                # country to the city-typed statement_value). Now: a structural
+                # swap is exempt ONLY when it is COHERENT — the entity-type that
+                # each row lands on the KB statement_subject role agrees across the
+                # pair (and matches the property's P2302 subject/value constraint
+                # when the ontology is available). An INCOHERENT swap is a real
+                # conflict and falls through. When type information is missing on
+                # either row, coherence cannot be assessed → fall open to the prior
+                # structural skip (conservative: never invent a conflict from
+                # absent data — the untyped capital_of/has_capital seeds stay
+                # exempt exactly as before).
                 if _is_inverse_mapping(sq, c["slot_to_qualifier"]):
-                    continue
+                    coherent = self._inverse_pair_coherence(prop, ns, row, c)
+                    if coherent is not False:
+                        # True (coherent) or None (indeterminate) → exempt, as before.
+                        continue
+                    # coherent is False → an incoherent swap → fall through to conflict.
                 # Skip conflicts where either
                 # row's slot_to_qualifier is NULL. A NULL sq on a kb-mapped
                 # predicate is a malformed runtime-oracle entry; treating it
@@ -192,6 +303,63 @@ class ConsistencyChecker:
                 )
 
         return ConsistencyResult(status="pass")
+
+    def _inverse_pair_coherence(self, prop, ns, row_a, row_b) -> Optional[bool]:
+        """v0.16.3 Batch B (piece 3): is a same-property, swapped-slot_to_qualifier
+        pair an INTERNALLY COHERENT inverse?
+
+        Returns True (coherent — exempt), False (incoherent — a real conflict), or
+        None (indeterminate — fall open to the prior structural exemption).
+
+        SOUNDNESS (adversarial-review fix): a conflict is declared ONLY on POSITIVE
+        cross-role CONTRADICTION — a type that row A places on the KB
+        statement_subject role is one that row B places on the statement_VALUE role
+        (or vice versa). That is a genuine disagreement about which entity-type is
+        the statement subject. Mere NON-OVERLAP of the two rows' role-types is NOT a
+        conflict: two correct inverse predicates routinely type the same role with
+        equivalent-but-distinct QIDs (country Q6256 vs sovereign-state Q3624078), and
+        a stored type may be a SUBCLASS of the other row's / the property's
+        constraint class. Treating non-overlap as incoherence manufactured a §3.2
+        false-conflict that retracted BOTH legitimate rows — so we never do it.
+
+        The bare-`capital` bug: capital (inverse) places country on
+        statement_VALUE and city on statement_SUBJECT; its standard peer has_capital
+        places country on statement_subject and city on statement_value. So
+        capital's statement_subject types (city) OVERLAP has_capital's
+        statement_value types (city) → positive contradiction → incoherent. The
+        legitimate capital_of/has_capital pair places country on statement_subject
+        in BOTH and city on statement_value in BOTH → no cross-role overlap →
+        coherent (exempt), even with differing country/city QIDs."""
+        a_sub = _parse_types(row_a["subject_entity_types"])
+        a_obj = _parse_types(row_a["object_entity_types"])
+        b_sub = _parse_types(row_b["subject_entity_types"])
+        b_obj = _parse_types(row_b["object_entity_types"])
+        # Need types on BOTH rows to assess coherence; otherwise indeterminate.
+        if not (a_sub or a_obj) or not (b_sub or b_obj):
+            return None
+
+        a_roles = _role_types(row_a["slot_to_qualifier"], a_sub, a_obj)
+        b_roles = _role_types(row_b["slot_to_qualifier"], b_sub, b_obj)
+        if a_roles is None or b_roles is None:
+            return None
+        a_ss, a_sv = a_roles
+        b_ss, b_sv = b_roles
+
+        # POSITIVE, ROLE-DISCRIMINATING cross-role contradiction only: a type that A
+        # places on statement_subject, B places on statement_value AND NOT also on
+        # statement_subject (so the type genuinely discriminates the two roles).
+        # The bare-`capital` bug: city is on capital's statement_subject and on
+        # has_capital's statement_value but NOT has_capital's statement_subject →
+        # incoherent. A SYMMETRIC property (spouse/sibling: human on every role in
+        # both rows) overlaps cross-role too, but the type is on BOTH roles → not
+        # discriminating → exempt (a symmetric predicate's direction is agnostic, so
+        # a swapped pair is legitimate). Non-overlap alone is never a conflict
+        # (equivalent-but-distinct vocabularies / subclasses).
+        ss_contradiction = _overlap(a_ss, b_sv) and not _overlap(a_ss, b_ss)
+        sv_contradiction = _overlap(a_sv, b_ss) and not _overlap(a_sv, b_sv)
+        if ss_contradiction or sv_contradiction:
+            return False
+        return True
 
     def _check_subsumption_row(self, row_id: int) -> ConsistencyResult:
         row = self._db.execute(

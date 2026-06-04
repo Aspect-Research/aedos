@@ -204,14 +204,19 @@ def load_seeds_into_connection(
                 (entry["aedos_predicate"],),
             )
         conn.execute(
+            # v0.16.3 Batch B (piece 2): every seed row is operator-curated and is
+            # written PINNED (pinned=1) — immune to oracle regeneration and to
+            # consistency/contradiction-trace retraction. This makes the durable
+            # guarantee the capital/capital_is corrections previously relied on
+            # (merely being present + non-retracted) machine-enforced.
             """
             INSERT OR REPLACE INTO predicate_translation
                 (aedos_predicate, object_type, user_subject_required, distinct_slots,
                  routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                  single_valued, subject_entity_types, object_entity_types,
                  reason, created_at, used_count, last_consulted_at, retracted_at,
-                 bindings, premise_properties)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
+                 bindings, premise_properties, pinned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, 1)
             """,
             (
                 entry["aedos_predicate"],
