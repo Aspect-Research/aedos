@@ -168,6 +168,95 @@ CREATE INDEX IF NOT EXISTS idx_tier_u_party_pred ON tier_u(asserting_party, pred
 CREATE INDEX IF NOT EXISTS idx_predicate_translation_pred ON predicate_translation(aedos_predicate);
 CREATE INDEX IF NOT EXISTS idx_audit_log_type ON audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log(occurred_at);
+
+-- v0.16.2 observability: durable verification store backing GET /verification/{id}.
+-- The full per-claim walk result (verdict + lossless trace + resolved QIDs +
+-- directed-over-enumerate signals + per-claim budget) is captured at verify time so
+-- the audit read needs ZERO re-walk and survives process restart. Party-scoped on
+-- the core row (mirrors tier_u isolation). persist() is delete-then-insert per
+-- verification_id, so a stale re-derivation re-persists with no orphan child rows.
+CREATE TABLE IF NOT EXISTS verification (
+    verification_id TEXT PRIMARY KEY,
+    asserting_party TEXT NOT NULL,             -- party scope (session:<id>)
+    created_at TEXT NOT NULL,                  -- ISO; when the verification finished
+    source_kind TEXT NOT NULL,                 -- 'chat' | 'verify'
+    user_message TEXT,                         -- chat only (text_input.message)
+    draft_message TEXT,                        -- the verified text (text_input.draft / raw)
+    final_message TEXT,                        -- chat only (composed reply)
+    intervention_type TEXT,                    -- chat only
+    aggregate_metadata TEXT NOT NULL,          -- JSON: full vr.aggregate_metadata
+    consistency_warnings TEXT NOT NULL DEFAULT '[]',  -- JSON list[dict]
+    audit_log_entries TEXT NOT NULL DEFAULT '[]',     -- JSON list[int] (audit_log.id refs)
+    not_assessed_claims TEXT NOT NULL DEFAULT '[]',   -- JSON list[dict] (Phase D peripheral)
+    selection_summary TEXT,
+    extracted_claims TEXT NOT NULL DEFAULT '[]',      -- JSON list[dict]: EVERY extracted claim
+                                                      -- (incl. extraction-abstained, with reason)
+    per_claim_actions TEXT NOT NULL DEFAULT '[]'      -- JSON list[dict]: intervention actions
+                                                      -- (action_type + annotation) per claim
+);
+CREATE INDEX IF NOT EXISTS idx_verification_party ON verification(asserting_party, created_at);
+
+CREATE TABLE IF NOT EXISTS verification_claim (
+    verification_id TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    claim_index INTEGER NOT NULL,              -- order within the verification
+    -- denormalized Claim
+    subject TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object TEXT NOT NULL,
+    polarity INTEGER NOT NULL,
+    source_text TEXT,
+    asserting_party TEXT NOT NULL,
+    claim_abstention_reason TEXT,              -- extraction-layer reason (Claim.abstention_reason)
+    valid_from TEXT, valid_until TEXT,
+    valid_during_ref TEXT, valid_from_ref TEXT, valid_until_ref TEXT,
+    -- verdict
+    verdict TEXT NOT NULL,
+    base_verdict TEXT NOT NULL,
+    is_given_assertion INTEGER NOT NULL DEFAULT 0,
+    abstention_reason TEXT,                     -- walk/KB-layer reason (closed bucket)
+    contradicting_value TEXT,
+    contradicting_value_type TEXT,
+    -- resolved entity refs (pulled from the trace at write time)
+    resolved_subject_qid TEXT,
+    resolved_subject_cache_row_id INTEGER,
+    resolved_value_qid TEXT,
+    -- per-claim budget (threaded from WalkResult; NOT in trace_to_json)
+    wall_clock_ms REAL,
+    llm_calls INTEGER,
+    -- directed-over-enumerate signals (from the KB edge metadata stamp)
+    functional_value_known INTEGER,
+    value_known_entity INTEGER,
+    functional_entity_predicate INTEGER,
+    PRIMARY KEY (verification_id, claim_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vclaim_vid ON verification_claim(verification_id, claim_index);
+CREATE INDEX IF NOT EXISTS idx_vclaim_pred_verdict ON verification_claim(predicate, base_verdict);
+
+CREATE TABLE IF NOT EXISTS verification_trace (
+    verification_id TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    trace_json TEXT NOT NULL,                  -- json.dumps(trace_to_json_lossless(...))
+    trace_human TEXT,                          -- row-id-free human render
+    PRIMARY KEY (verification_id, claim_id)
+);
+
+-- Retraction reverse-index: the durable, queryable form of the provenance
+-- footprint ("which verifications depend on tier_u row 42?"). literal_index keys
+-- each distinct literal so transient (NULL table/row_id) literals never collide.
+CREATE TABLE IF NOT EXISTS verification_premise (
+    verification_id TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    literal_index INTEGER NOT NULL,
+    source TEXT NOT NULL,                      -- tier_u|kb|python|subsumption|predicate_translation|entity_resolution
+    source_table TEXT,                         -- NULL for transient (live KB) literals
+    source_row_id INTEGER,                     -- NULL for transient literals
+    premise_status TEXT,                       -- tier_u premise status, else NULL
+    is_assertion INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (verification_id, claim_id, literal_index)
+);
+CREATE INDEX IF NOT EXISTS idx_vpremise_row ON verification_premise(source_table, source_row_id);
+CREATE INDEX IF NOT EXISTS idx_vpremise_claim ON verification_premise(verification_id, claim_id);
 """
 
 
@@ -369,4 +458,8 @@ TABLE_NAMES = [
     "entity_resolution_cache",
     "property_relations",
     "substrate_exceptions",
+    "verification",
+    "verification_claim",
+    "verification_trace",
+    "verification_premise",
 ]

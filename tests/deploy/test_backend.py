@@ -75,6 +75,47 @@ def _vr(verdict="verified_given_assertion"):
     )
 
 
+def _persist_fixture(db, verification_id: str, party: str) -> None:
+    """Persist a realistic abstaining verification (signals + resolved QIDs + a
+    tier_u premise) into `db` via the real VerificationStore, for /verification
+    read-path tests."""
+    from aedos.deployment.verification_store import VerificationStore
+    from aedos.layer4_sources.walker import WalkResult, BudgetConsumption
+    from aedos.layer5_result.aggregator import VerificationResult, ClaimVerdict
+    from aedos.layer5_result.trace import (
+        JustificationTrace, TraceNode, ProvenanceTerm, ProvenanceLiteral,
+    )
+
+    claim = Claim(claim_id="c1", subject="Obama", predicate="born_in", object="Kenya",
+                  polarity=1, source_text="Obama born_in Kenya", asserting_party=party,
+                  triage_decision=TriageDecision.VERIFY)
+    trace = JustificationTrace(root=TraceNode("claim", {
+        "subject": "Obama", "predicate": "born_in", "object": "Kenya", "polarity": 1}))
+    trace.walk_metadata.update({
+        "functional_entity_predicate": True, "value_known_entity": False,
+        "functional_value_known": False, "resolved_subject_qid": "Q76",
+        "resolved_value_qid": "Q114", "resolved_subject_cache_row_id": 42,
+    })
+    trace.provenance.add_alternative(ProvenanceTerm.lit(ProvenanceLiteral(
+        source="tier_u", table="tier_u", row_id=7,
+        status="asserted_unverified", assertion=True)))
+    wr = WalkResult(verdict="no_grounding_found", trace=trace,
+                    abstention_reason="depth_exhausted",
+                    budget_consumption=BudgetConsumption(wall_clock_ms=1860.0, llm_calls=0))
+    cv = ClaimVerdict(claim_id="c1", claim=claim, verdict="no_grounding_found",
+                      abstention_reason="depth_exhausted")
+    vr = VerificationResult(
+        claims_extracted=[claim], per_claim_verdicts={"c1": "no_grounding_found"},
+        per_claim_traces={"c1": trace},
+        aggregate_metadata={"claim_count": 1, "abstained": 1},
+        audit_log_entries=[], text_input={"message": "m", "draft": "d"},
+        consistency_warnings=[], claim_verdicts=[cv])
+    VerificationStore(db).persist(
+        verification_id, party, vr, source_kind="chat", created_at="2026-06-04T00:00:00Z",
+        walk_results=[wr], chat_extras={"final_message": "d", "intervention_type": "intervene",
+                                        "not_assessed_claims": [], "selection_summary": ""})
+
+
 class FakeChatWrapper:
     def __init__(self, vr):
         self._vr = vr
@@ -104,13 +145,18 @@ class FakeChatWrapper:
 
 
 class FakePipeline:
-    def __init__(self, *, extractor=None, walker=None, aggregator=None, tier_u=None):
+    def __init__(self, *, extractor=None, walker=None, aggregator=None, tier_u=None,
+                 db=None):
         self.extractor = extractor
         self.walker = walker
         self.aggregator = aggregator
         self.tier_u = tier_u
         self.kb = None
         self.llm_client = None
+        # v0.16.2: the durable verification store + /verification read path use the
+        # pipeline's shared connection. Tests that exercise /verification inject a
+        # real in-memory DB here and pre-persist via VerificationStore.
+        self.db = db
 
 
 def _client(*, settings=None, pipeline=None, chat_wrapper=None) -> TestClient:
@@ -310,7 +356,8 @@ class TestVerify:
         walker = SimpleNamespace(walk=lambda c, ctx: SimpleNamespace(verdict="verified"))
         aggregator = SimpleNamespace(
             aggregate=lambda claims, results, text_input=None: _vr("verified"))
-        return FakePipeline(extractor=extractor, walker=walker, aggregator=aggregator)
+        return FakePipeline(extractor=extractor, walker=walker, aggregator=aggregator,
+                            db=open_memory_db())
 
     def test_verify_returns_per_claim_observability(self):
         c = _client(pipeline=self._verify_pipeline())
@@ -320,6 +367,19 @@ class TestVerify:
         assert body["extracted_claims"][0]["subject"] == "Paris"
         assert body["observability"][0]["verdict"] == "verified"
         assert "given_assertion" in body
+        # v0.16.2: /verify now mints + returns a verification_id (it had none).
+        assert body["verification_id"]
+
+    def test_verify_id_is_resolvable_via_audit_endpoint(self):
+        # /verify persists durably, so its id resolves at GET /verification/{id}
+        # (it 404'd before — /verify produced no id). Party-scoped to the caller.
+        c = _client(pipeline=self._verify_pipeline())
+        vid = c.post("/verify", json={"text": "Paris is in France."},
+                     headers=H("alice")).json()["verification_id"]
+        ok = c.get(f"/verification/{vid}", headers=H("alice"))
+        assert ok.status_code == 200
+        assert ok.json()["source_kind"] == "verify"
+        assert c.get(f"/verification/{vid}", headers=H("bob")).status_code == 404
 
     def test_verify_all_abstain_returns_note(self):
         c = _client(pipeline=self._verify_pipeline(abstention="self_referential"))
@@ -435,15 +495,55 @@ class TestSessionIsolationAndReset:
         assert _count("session:bob") == 1     # other session untouched
 
     def test_verification_is_party_scoped_via_header(self):
-        c = _client(chat_wrapper=FakeChatWrapper(_vr()))
-        # Session A produces ver-123.
-        c.post("/chat", json={"message": "hi"}, headers=H("alice"))
+        # v0.16.2: /verification reads the DURABLE store (party = the persisted
+        # asserting_party). Pre-persist a verification for alice, inject a pipeline
+        # carrying the same DB, then assert party-scoped reads.
+        db = open_memory_db()
+        _persist_fixture(db, "ver-123", "session:alice")
+        c = _client(pipeline=FakePipeline(db=db))
         # A can read it (session in header, NOT the URL — F1).
         ok = c.get("/verification/ver-123", headers=H("alice"))
         assert ok.status_code == 200
+        body = ok.json()
+        # The enriched payload surfaces the full per-claim trace + signals + QIDs.
+        assert body["verification_id"] == "ver-123"
+        assert body["asserting_party"] == "session:alice"
+        cl = body["claims"][0]
+        assert cl["resolved_subject_qid"] == "Q76"
+        assert cl["signals"]["functional_entity_predicate"] is True
+        assert cl["abstention_line"]
+        assert "budget_consumption" in cl["trace"]
+        assert cl["premises"][0]["source_table"] == "tier_u"
         # B cannot (404 — never reveal another session's verification).
         nope = c.get("/verification/ver-123", headers=H("bob"))
         assert nope.status_code == 404
+        # An unknown id is the SAME 404 (no existence oracle).
+        assert c.get("/verification/does-not-exist", headers=H("alice")).status_code == 404
+
+    def test_verification_survives_restart(self):
+        # Persist on one connection; serve the endpoint from a NEW app whose
+        # pipeline carries a fresh connection to the same file — the in-memory
+        # party map is gone, but the durable row still resolves party-scoped.
+        import tempfile, os
+        from aedos.database import open_db
+        fd, path = tempfile.mkstemp(suffix=".db"); os.close(fd)
+        try:
+            conn1 = open_db(path)
+            _persist_fixture(conn1, "ver-rs", "session:alice")
+            conn1.close()
+            conn2 = open_db(path)
+            c = _client(pipeline=FakePipeline(db=conn2))
+            ok = c.get("/verification/ver-rs", headers=H("alice"))
+            assert ok.status_code == 200
+            assert ok.json()["claims"][0]["resolved_subject_qid"] == "Q76"
+            assert c.get("/verification/ver-rs", headers=H("bob")).status_code == 404
+            conn2.close()
+        finally:
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(path + suffix)
+                except OSError:
+                    pass
 
 
 # --------------------------------------------------------------------------- #

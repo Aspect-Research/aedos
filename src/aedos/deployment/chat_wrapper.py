@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from ..layer5_result.aggregator import (
     is_given_assertion,
 )
 from ..llm.client import ChatMessage
+
+_log = logging.getLogger(__name__)
 
 
 class InterventionType(str, Enum):
@@ -347,6 +350,7 @@ class ChatWrapper:
         tier_u=None,
         config: Optional[dict] = None,
         kb=None,
+        verification_store=None,
     ) -> None:
         self._extractor = extractor
         self._walker = walker
@@ -365,6 +369,11 @@ class ChatWrapper:
         self._tier_u = tier_u
         self._config = config or {}
         self._verification_store: dict[str, VerificationResult] = {}
+        # v0.16.2 observability: optional durable SQLite-backed store. When None
+        # (legacy/test constructions), behavior is exactly as before — pure
+        # in-memory, lost on restart. When wired, every turn's full result is
+        # persisted so GET /verification/{id} survives restart with no re-walk.
+        self._vstore = verification_store
 
     def respond(
         self,
@@ -548,6 +557,43 @@ class ChatWrapper:
 
         verification_id = str(uuid.uuid4())
         self._verification_store[verification_id] = vr
+        # Durable persist (observability): the full per-claim walk result, so the
+        # audit endpoint survives restart with no re-walk. walk_results is claim-
+        # ordered and aligned with vr.claim_verdicts (both from the same zip in
+        # aggregate). Best-effort: a store failure must never break the turn.
+        if self._vstore is not None:
+            try:
+                self._vstore.persist(
+                    verification_id, asserting_party, vr,
+                    source_kind="chat", created_at=current_time,
+                    walk_results=walk_results,
+                    chat_extras={
+                        "final_message": final,
+                        "intervention_type": plan.overall.value,
+                        "not_assessed_claims": not_assessed_claims,
+                        "selection_summary": selection.reason,
+                        # Per-claim intervention actions (action_type + the composed
+                        # correction/abstention/conditional annotation) so the audit
+                        # record reproduces the per-claim notes the turn showed live.
+                        "per_claim_actions": [
+                            {"claim_id": a.claim_id,
+                             "action_type": a.action_type.value,
+                             "annotation": a.annotation}
+                            for a in plan.per_claim_actions
+                        ],
+                    },
+                    # EVERY draft-extracted claim (incl. extraction-abstained ones
+                    # not walked) so the durable record reflects the full extraction.
+                    extracted_claims=[
+                        {"claim_id": c.claim_id, "subject": c.subject,
+                         "predicate": c.predicate, "object": c.object,
+                         "polarity": c.polarity,
+                         "abstention_reason": c.abstention_reason}
+                        for c in claims
+                    ],
+                )
+            except Exception:
+                _log.exception("verification_store.persist (chat) failed")
 
         return ChatResponse(
             final_message=final,
@@ -611,4 +657,9 @@ class ChatWrapper:
         for cid in stale_ids:
             propagator.clear_stale(cid)
         self._verification_store[verification_id] = refreshed
+        # NOTE: the durable store intentionally holds the VERIFY-TIME record (the
+        # faithful historical audit). We do NOT re-persist the re-derived result
+        # here: persist() would clobber the core presentation fields (final_message
+        # / selection_summary) the re-walk doesn't carry. The audit endpoint serves
+        # the verify-time record; staleness is a separate live-query concern.
         return refreshed
