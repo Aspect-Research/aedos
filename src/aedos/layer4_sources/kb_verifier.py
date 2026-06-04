@@ -316,16 +316,49 @@ class KBVerifier:
         # resolvers that predate the accessor; None when no cache row was hit.
         _last_row_id = getattr(self._resolver, "last_cache_row_id", None)
         resolution_cache_row_id = _last_row_id() if callable(_last_row_id) else None
+
+        # v0.16.3 Defect-2 (observability): map the lookup/value resolutions back
+        # onto the claim's AEDOS slots, so the durable audit labels resolved QIDs
+        # by claim subject/object — never by KB statement position. Under an
+        # INVERSE binding the KB lookup entity is the claim's OBJECT and the
+        # expected value is the claim's SUBJECT, so a position-keyed stamp (the
+        # pre-fix `subject_kb_id` → resolved_subject_qid) mislabels the slots.
+        # `_slot_trace` reads these locals at return time and merges the
+        # direction-correct slot facts into EVERY returned trace (incl. abstain),
+        # so the walker can stamp the right slot regardless of inversion. The KB
+        # statement-position fields (`entity`/`value_entity`/`subject_kb_id`) are
+        # left untouched — they correctly describe the statement, which the
+        # premise/grounding edges key on. §3.2-neutral: no verdict path reads
+        # these keys (only verification_store + the trace renderer do).
+        # `value_cache_row_id` / `resolved_value_qid_slot` initialize to None so
+        # the early subject-resolution-failed return (value not yet resolved)
+        # still produces a well-formed slot trace.
+        value_cache_row_id: Optional[int] = None
+        resolved_value_qid_slot: Optional[KBEntityID] = None
+
+        def _slot_trace(t: dict) -> dict:
+            if lookup_inverted:
+                t["aedos_subject_qid"] = resolved_value_qid_slot
+                t["aedos_object_qid"] = lookup_subject_id
+                t["aedos_subject_cache_row_id"] = value_cache_row_id
+                t["aedos_object_cache_row_id"] = resolution_cache_row_id
+            else:
+                t["aedos_subject_qid"] = lookup_subject_id
+                t["aedos_object_qid"] = resolved_value_qid_slot
+                t["aedos_subject_cache_row_id"] = resolution_cache_row_id
+                t["aedos_object_cache_row_id"] = value_cache_row_id
+            return t
+
         if lookup_subject_id is None:
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
-                trace={
+                trace=_slot_trace({
                     "reason": "subject_resolution_failed",
                     "reference": lookup_ref,
                     "abstention_reason": "lookup_subject_unresolved",
                     "lookup_inverted": lookup_inverted,
                     "resolution_cache_row_id": resolution_cache_row_id,
-                },
+                }),
             )
 
         # Step 4: resolve the expected-value entity — compared against the
@@ -361,9 +394,17 @@ class KBVerifier:
             resolved_value = self._resolver.select(
                 self._resolver.resolve(expected_ref, value_ctx), value_ctx
             )
+            # v0.16.3 Defect-2: capture the value resolution's cache row + QID for
+            # the AEDOS-slot stamp, immediately after the resolve (the resolver's
+            # request-scoped last_cache_row_id reflects THIS resolve now). Only the
+            # successfully-resolved QID becomes a slot fact — an unresolved value
+            # leaves resolved_value_qid_slot None, so the abstain stamp is honest.
+            _v_last_row_id = getattr(self._resolver, "last_cache_row_id", None)
+            value_cache_row_id = _v_last_row_id() if callable(_v_last_row_id) else None
             if resolved_value is not None:
                 expected_value = resolved_value
                 value_resolved = True
+                resolved_value_qid_slot = resolved_value
 
         # Step 5: look up KB statements for (lookup entity, kb_property).
         statements = self._kb.lookup_statements(lookup_subject_id, binding.kb_property)
@@ -396,7 +437,7 @@ class KBVerifier:
                     verdict=final_verdict,
                     matched_statement=None,
                     subject_kb_id=lookup_subject_id,
-                    trace={
+                    trace=_slot_trace({
                         "entity": lookup_subject_id,
                         "value_entity": expected_value,
                         "value_resolved": True,
@@ -405,7 +446,7 @@ class KBVerifier:
                         "lookup_inverted": lookup_inverted,
                         "no_statements_subsumption_fallback": True,
                         "resolution_cache_row_id": resolution_cache_row_id,
-                    },
+                    }),
                 )
             # Symmetric CONTRADICTED arm to the VERIFIED subsumption-upgrade
             # above: when the subject itself is geographically disjoint from the
@@ -439,7 +480,7 @@ class KBVerifier:
                     verdict=final_verdict,
                     matched_statement=None,
                     subject_kb_id=lookup_subject_id,
-                    trace={
+                    trace=_slot_trace({
                         "entity": lookup_subject_id,
                         "value_entity": expected_value,
                         "value_resolved": True,
@@ -448,20 +489,20 @@ class KBVerifier:
                         "lookup_inverted": lookup_inverted,
                         "no_statements_disjoint_fallback": True,
                         "resolution_cache_row_id": resolution_cache_row_id,
-                    },
+                    }),
                 )
             # NO_MATCH is polarity-invariant — absence of evidence is not evidence.
             return KBVerdict(
                 verdict=KBVerdictType.NO_MATCH,
                 subject_kb_id=lookup_subject_id,
-                trace={
+                trace=_slot_trace({
                     "reason": "no_statements_found",
                     "entity": lookup_subject_id,
                     "property": binding.kb_property,
                     "abstention_reason": "no_statements",
                     "lookup_inverted": lookup_inverted,
                     "resolution_cache_row_id": resolution_cache_row_id,
-                },
+                }),
             )
 
         # Step 6: verdict for the claim's *positive* content (polarity-agnostic).
@@ -528,7 +569,7 @@ class KBVerifier:
                 return KBVerdict(
                     verdict=KBVerdictType.NO_MATCH,
                     subject_kb_id=lookup_subject_id,
-                    trace={
+                    trace=_slot_trace({
                         "entity": lookup_subject_id,
                         "property": binding.kb_property,
                         "value_entity": expected_value,
@@ -537,7 +578,7 @@ class KBVerifier:
                         "lookup_inverted": lookup_inverted,
                         "abstention_reason": "value_type_incompatible_binding",
                         "resolution_cache_row_id": resolution_cache_row_id,
-                    },
+                    }),
                 )
 
         # v0.16.1 WS2 (occupation-copula grounding): FAIL-CLOSED positive gate.
@@ -562,7 +603,7 @@ class KBVerifier:
                 return KBVerdict(
                     verdict=KBVerdictType.NO_MATCH,
                     subject_kb_id=lookup_subject_id,
-                    trace={
+                    trace=_slot_trace({
                         "entity": lookup_subject_id,
                         "property": binding.kb_property,
                         "value_entity": expected_value,
@@ -571,7 +612,7 @@ class KBVerifier:
                         "lookup_inverted": lookup_inverted,
                         "abstention_reason": "value_type_unconfirmed_positive_gate",
                         "resolution_cache_row_id": resolution_cache_row_id,
-                    },
+                    }),
                 )
 
         # Step 7: apply claim polarity. A negated claim asserts the triple
@@ -618,6 +659,7 @@ class KBVerifier:
             # (the KB value is the same-named entity the claim refers to), not a
             # direct Q-id equality in the value-match loop.
             trace["entity_name_match"] = True
+        _slot_trace(trace)
 
         return KBVerdict(
             verdict=final_verdict,

@@ -1446,14 +1446,24 @@ class Walker:
             wm.setdefault("functional_value_known", self._functional_value_known)
             wm.setdefault("value_known_entity", self._value_known_entity)
             wm.setdefault("functional_entity_predicate", self._functional_entity_predicate)
-            if kb_result.subject_kb_id is not None:
-                wm.setdefault("resolved_subject_qid", kb_result.subject_kb_id)
-            _vqid = kb_result.trace.get("value_entity")
-            if _vqid is not None:
-                wm.setdefault("resolved_value_qid", _vqid)
-            _rcid = kb_result.trace.get("resolution_cache_row_id")
-            if _rcid is not None:
-                wm.setdefault("resolved_subject_cache_row_id", _rcid)
+            # v0.16.3 Defect-2: stamp resolved QIDs by the claim's AEDOS slot, not
+            # the KB statement position. The verifier's `_slot_trace` records
+            # `aedos_subject_qid` / `aedos_object_qid` (and their cache rows) with
+            # the inversion already applied, so an INVERSE predicate (capital_of,
+            # mother_of, authored, …) no longer mislabels its claim object as the
+            # subject. `resolved_value_qid` now carries the claim OBJECT's QID
+            # (was the KB statement value — identical for standard predicates, the
+            # common case). Guarded on not-None so an early abstain (object not yet
+            # resolved) does not setdefault None and block a later real value.
+            _sq = kb_result.trace.get("aedos_subject_qid")
+            if _sq is not None:
+                wm.setdefault("resolved_subject_qid", _sq)
+            _oq = kb_result.trace.get("aedos_object_qid")
+            if _oq is not None:
+                wm.setdefault("resolved_value_qid", _oq)
+            _scid = kb_result.trace.get("aedos_subject_cache_row_id")
+            if _scid is not None:
+                wm.setdefault("resolved_subject_cache_row_id", _scid)
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
                 # WS3: the resolver's entity_resolution_cache row the KB

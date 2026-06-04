@@ -156,6 +156,34 @@
     "reason": "Seed mapping. Wikidata P36 (capital); standard direction. Functional: a country has one capital in intended use."
   },
   {
+    "aedos_predicate": "capital",
+    "object_type": "entity",
+    "subject_entity_types": ["Q6256"],
+    "object_entity_types": ["Q515", "Q5119"],
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_resolvable",
+    "kb_namespace": "wikidata",
+    "kb_property": "P36",
+    "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
+    "single_valued": 1,
+    "reason": "v0.16.3 PINNED CORRECTION. The bare predicate 'capital' ('France capital Paris' = France's capital is Paris) is the STANDARD has_capital direction: the Aedos subject is the country (KB statement_subject), the object is the capital city (statement_value). The oracle's cold-start generation inverted this (subject->statement_value) — contradicting its own entity-types — which keyed the P36 lookup on the city (no P36) and abstained (kb:0). Pinned standard to match has_capital; subject=country (Q6256), object=city/capital (Q515,Q5119). Functional: a country has one capital in intended use."
+  },
+  {
+    "aedos_predicate": "capital_is",
+    "object_type": "entity",
+    "subject_entity_types": ["Q6256"],
+    "object_entity_types": ["Q515", "Q5119"],
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_resolvable",
+    "kb_namespace": "wikidata",
+    "kb_property": "P36",
+    "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
+    "single_valued": 1,
+    "reason": "v0.16.3 PINNED CORRECTION. 'X capital_is Y' ('France capital_is Paris') is the STANDARD has_capital direction (subject=country=statement_subject, object=capital city=statement_value). The oracle inverted it (subject->statement_value), keying the P36 lookup on the city (no P36) → kb:0 abstain. Pinned standard to match has_capital; subject=country (Q6256), object=city/capital (Q515,Q5119). Functional."
+  },
+  {
     "aedos_predicate": "country_of",
     "object_type": "entity",
     "user_subject_required": 0,

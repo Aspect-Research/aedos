@@ -141,11 +141,24 @@ def _validate_entry(entry: dict, idx: int) -> None:
 def load_seeds_into_connection(
     conn: sqlite3.Connection,
     seed_file: Path | str | None = None,
+    only_predicates: set[str] | None = None,
 ) -> int:
     """Load every seed entry into `conn`. Idempotent; commits inside.
 
     Returns the number of entries processed. The caller is responsible
     for deciding whether to load (e.g., gated on table emptiness).
+
+    `only_predicates`: when given, load ONLY the seed entries whose
+    `aedos_predicate` is in the set; every NON-matching row (operator edits,
+    retractions, oracle-generated rows) is left untouched. This is the
+    targeted-correction path (v0.16.3): an already-seeded live DB can re-apply
+    just the pinned predicate rows from the canonical seed pack via the same
+    validated INSERT OR REPLACE the full load uses. NOTE the matching rows ARE
+    overwritten in full — the INSERT resets used_count/last_consulted_at and
+    clears retracted_at, and INSERT OR REPLACE assigns a new row id. That is the
+    intended effect here (overwrite the bad oracle row with the pinned one); it
+    is NOT a merge, so a previously-retracted matching predicate would be
+    un-retracted.
     """
     path = Path(seed_file) if seed_file is not None else DEFAULT_SEED_FILE
     seeds_data = json.loads(path.read_text(encoding="utf-8"))
@@ -153,6 +166,8 @@ def load_seeds_into_connection(
     loaded = 0
     for idx, entry in enumerate(seeds_data):
         _validate_entry(entry, idx)
+        if only_predicates is not None and entry["aedos_predicate"] not in only_predicates:
+            continue
         slot_json = (
             json.dumps(entry["slot_to_qualifier"])
             if entry["slot_to_qualifier"] is not None
