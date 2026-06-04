@@ -93,30 +93,63 @@
 
 ### Change 2-FOLLOWUP — decouple the part_of skip from single_valued (the live miss)
 Live, "Obama born_in Kenya" STILL fanned out (~20 P17 part_of steps) despite Change 2.
-Diagnosis (full-walk repro with the real verifier): Component 2 *does* fire when the
-verifier returns `functional_value_known=True` — but live it was False, because the
-extractor emits **"was born in"** (Rule 7: `'X was born in <loc>' → predicate='was born
-in'`), which does NOT match the seed key `born_in`, so the predicate is **cold-started**
-by the oracle and not marked `single_valued` → `functional_value_known` (which requires
-single_valued) was False → no skip.
 
-Fix: **decouple**. The P17 part_of fanout (the bulk, ~19/22 steps) is owned by the
+**SUPERSEDED — the stated diagnosis was WRONG.** This followup claimed the extractor's
+"was born in" doesn't match the seed key `born_in`, so the predicate cold-started without
+`single_valued`. That is FALSE: `normalize_predicate` (extractor.py, v0.16 WS1) strips a
+leading auxiliary in CORE — `"was born in"` → `born_in` — so it hits the seed
+(`P19, single_valued=1, object_type=entity`, confirmed in the live DB, used 162×). The
+decoupling code below (the `value_known_entity` signal + cross-binding aggregation) was
+committed (cb3adf6) and is *sound but INEFFECTIVE* for the real cause: `value_known_entity`
+is also `bool(statements) and ...`, so it is still False on the path that actually fired.
+Kept for the non-functional-entity-with-statements case it does help; see Change 2-FINAL.
+
+~~Fix: **decouple**. The P17 part_of fanout (the bulk, ~19/22 steps) is owned by the
 directed all-values **part_of** upgrade regardless of single_valued, so gate the
 part_of-enumeration skip on a new `value_known_entity` signal (`bool(statements) and
 object_type=="entity"`, NO single_valued). Keep the is_a-enumeration skip gated on
-`functional_value_known` (a non-functional/copula predicate may legitimately ground via
-is_a, so don't over-skip it). Also **aggregate** both signals across bindings in
-`verify()`'s arbitration (OR), so a later no-match binding can't clobber the P19
-binding's signal. Net: cold-started "was born in Kenya" now skips the P17 bulk (and the
-slow depth-1 fanout it caused) while is_a remains; seeded `born_in` skips both.
-**Sound (non-regressive by transitivity):** the directed part_of upgrade and the part_of
-enumeration use the SAME `(P131|P30|P17)+` transitive closure — if `value ⊆ object`
-fails the directed check, no part_of-child substitution can ground it either. Skipping
-is abstain-only; §3.2 (never false-verify/contradict) is structurally untouched.
+`functional_value_known`. Also aggregate both signals across bindings in `verify()`'s
+arbitration (OR), so a later no-match binding can't clobber the P19 binding's signal.~~
+
+### Change 2-FINAL — the metadata signal (the actual fix for the live fanout)
+**True cause (pinned with a repro against the real `KBVerifier`):** the directed-over-
+enumerate signals are emitted ONLY on the statements-FOUND path (the post-`_compare_positive`
+trace dict). The two NO_MATCH paths the live walk actually took carry NO signal:
+`subject_resolution_failed` (kb_verifier.py ~278) and `no_statements_found` (~412). Both
+committed signals (`functional_value_known`, `value_known_entity`) are `bool(statements)
+and ...`, so on those paths they are False → the walker fanned out. The smoking gun: born_in
+is single_valued, so a KNOWN mismatching value yields a fast **CONTRADICTED** at the direct
+lookup (no discovery). The live walk produced an *abstain that fanned out* — which can only
+happen if **statements were not found** (e.g. "Obama" resolving ambiguously — Barack Obama
+vs *Obama, Japan* — or the looked-up entity carrying no P19). Repro:
+`fvk=vke=False` on both no-signal paths; `verdict=contradicted, fvk=vke=True` on the
+statements-found control.
+
+**Fix:** emit a METADATA-derived signal `functional_entity_predicate` from `verify()`,
+independent of `bool(statements)` — `meta.object_type == "entity" AND had_kb_path AND
+all(b.single_valued for b in meta.bindings if b.kb_property)` — set on every NO_MATCH
+return. Thread it to the walker (new thread-local `_functional_entity_predicate`, mirroring
+the two siblings) and add it as a new OR term to `skip_enum`, gating BOTH enumeration arms.
+For a functional entity predicate the directed subsumption upgrade is the only KB grounding
+path, so neighbor enumeration is futile whether or not a value was found. `all` (not `any`)
+keeps enumeration for a mixed/non-functional binding set — over-abstention is the disease to
+cure. Net: "Obama born_in Kenya" now skips the fanout regardless of whether Obama resolved /
+had a P19, and abstains fast.
+
+**Sound — abstain-only, structurally (§3.2):** `_discover_chains` runs ONLY after the direct
+verify returned None (the walk loop `continue`s on any non-None verdict), so skipping
+enumeration can never create or alter a VERIFIED/CONTRADICTED — it only removes discovery
+from an already-abstaining walk. The premise-forward arm and the substrate `find_neighbors`
+substitution stay OUTSIDE `skip_enum` (still run). Adversarial review found no false-verify/
+false-contradict and the change **net safety-positive** (it closes a pre-existing un-gated
+subject-side part_of substitution path). Residual over-abstention is theoretical only
+(subject-side is_a substitution on the statements-empty branch) with no constructible
+real-data trigger, and is covered by the still-running premise-forward / substrate arms.
 
 ## Net behavior
-- "Obama born_in Kenya" → Change 2 skips the fanout → **fast sound abstain** at the
-  root (directed upgrade already failed; functional value known).
+- "Obama born_in Kenya" (statements found) → fast **CONTRADICTED** at the direct lookup.
+- "Obama born_in Kenya" (subject unresolved / no P19) → `functional_entity_predicate` skips
+  the fanout → **fast sound abstain** (no 22-step P17 enumeration).
 - "Obama born_in USA" → directed upgrade (Honolulu ⊆ USA), strengthened by 2-NR →
   **VERIFIED**.
 - "Williams College in the US" (located_in, NOT single_valued) → unaffected by Change 2;
@@ -125,11 +158,14 @@ is abstain-only; §3.2 (never false-verify/contradict) is structurally untouched
   `budget_kb_work` abstain instead of a 30s timeout.
 
 ## Soundness summary (§3.2)
-No component admits a new grounding edge or relaxes a verify-time gate. Changes 1 & 2
-are abstain-only (can't false-verify or false-contradict; `current_verdict is None`
-guards preserve found verdicts). Change 2-NR only extends an existing positive-subsumption
-VERIFY to more held values (coverage-only, sound). Over-abstention is the only risk and
-is bounded: Change 1's cap is generous and tunable; Change 2 is a triple-conjunction gate
-(functional + entity + value-known) confined to the provably-futile class, and 2-NR
-*reduces* over-abstention. Offline-testable with the mock-KB harness; live spot-check
-confirms timing + that "born_in USA" / "Williams College in US" still verify.
+No component admits a new grounding edge or relaxes a verify-time gate. Changes 1, 2, and
+2-FINAL are abstain-only (can't false-verify or false-contradict; `_discover_chains` runs
+only when the direct verify already abstained; `current_verdict is None` guards preserve
+found verdicts). Change 2-NR only extends an existing positive-subsumption VERIFY to more
+held values (coverage-only, sound). Over-abstention is the only risk and is bounded:
+Change 1's cap is generous and tunable; Change 2's statements-based gate and 2-FINAL's
+metadata gate (`functional + entity + ALL-bindings-single_valued`) are confined to the
+provably-futile class, with the premise-forward / substrate-substitution arms left running;
+2-NR *reduces* over-abstention. Offline-testable with the mock-KB harness AND a real-
+`KBVerifier` regression (the mock that hard-coded the signal is exactly what masked the
+2-FOLLOWUP miss); adversarial-reviewed (no §3.2 hole; net safety-positive).

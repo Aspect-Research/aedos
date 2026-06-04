@@ -464,6 +464,22 @@ class Walker:
     def _value_known_entity(self, value: bool) -> None:
         self._tls.value_known_entity = value
 
+    @property
+    def _functional_entity_predicate(self) -> bool:
+        # Transient per-node signal: this predicate is a FUNCTIONAL ENTITY predicate
+        # (entity object + single_valued binding) per its METADATA — set even when
+        # the KB lookup found no statements (subject unresolved / no statement on the
+        # property), unlike the two signals above which require statements found.
+        # Gates the skip of BOTH enumeration arms: the directed subsumption upgrade is
+        # the only KB grounding path for such a predicate, so neighbor enumeration is
+        # futile regardless of whether a value was found — the live "Obama born_in
+        # Kenya" fanout (statements empty → the statements-based signals were False).
+        return getattr(self._tls, "functional_entity_predicate", False)
+
+    @_functional_entity_predicate.setter
+    def _functional_entity_predicate(self, value: bool) -> None:
+        self._tls.functional_entity_predicate = value
+
     def walk(
         self,
         claim: Claim,
@@ -699,10 +715,12 @@ class Walker:
                 # search). Read the per-node signal set by _try_external_grounding.
                 functional_value_known = self._functional_value_known
                 value_known_entity = self._value_known_entity
+                functional_entity_predicate = self._functional_entity_predicate
                 expanded, llm_delta = self._discover_chains(
                     node, trace, depth, probes,
                     functional_value_known=functional_value_known,
                     value_known_entity=value_known_entity,
+                    functional_entity_predicate=functional_entity_predicate,
                     work=work,
                 )
                 llm_calls += llm_delta
@@ -1306,6 +1324,7 @@ class Walker:
         # must never gate this node.
         self._functional_value_known = False
         self._value_known_entity = False
+        self._functional_entity_predicate = False
         # External (KB / Python) grounding is structurally unreachable for a
         # user_authoritative walk — set at walk entry when the predicate routes
         # user_authoritative OR the claim's subject is a stipulated user
@@ -1412,6 +1431,9 @@ class Walker:
             )
             self._value_known_entity = bool(
                 kb_result.trace.get("value_known_entity")
+            )
+            self._functional_entity_predicate = bool(
+                kb_result.trace.get("functional_entity_predicate")
             )
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
@@ -2140,6 +2162,7 @@ class Walker:
         probes: Optional["_KBNeighborProbes"] = None,
         functional_value_known: bool = False,
         value_known_entity: bool = False,
+        functional_entity_predicate: bool = False,
         work: Optional["_KBWork"] = None,
     ) -> tuple[list[Claim], int]:
         """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
@@ -2299,11 +2322,21 @@ class Walker:
                 #    substituting the subject's class can't ground a functional fact
                 #    whose value is fixed; but for a NON-functional/copula predicate
                 #    an is_a substitution may legitimately ground, so keep it.
+                # PLUS functional_entity_predicate (metadata, BOTH arms): a functional
+                # entity predicate grounds ONLY via the directed subsumption upgrade,
+                # so ALL enumeration is futile — and this signal is set even when the
+                # KB lookup found no statements (subject unresolved / no statement on
+                # the property), which is exactly when the two statements-based signals
+                # above are False. This is the fix for the live "Obama born_in Kenya"
+                # fanout: "Obama" resolved ambiguously / carried no P19, so statements
+                # were empty (an abstain, not the fast functional contradiction), and
+                # the old gate fanned out over Kenya's 20 P17 children anyway.
                 # Verdict-preserving: the only true cases are owned by the directed
                 # upgrade / the preserved is_a path. The bounded premise-forward arm
                 # below still runs.
                 skip_enum = (
                     verdict_label == "neither"
+                    or functional_entity_predicate
                     or (relation_type == "part_of" and value_known_entity)
                     or (relation_type == "is_a" and functional_value_known)
                 )

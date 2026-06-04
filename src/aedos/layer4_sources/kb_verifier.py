@@ -163,6 +163,35 @@ class KBVerifier:
                 outcome.trace.get("functional_value_known")
             )
 
+        # METADATA-derived directed-over-enumerate signal, INDEPENDENT of whether
+        # statements were found. A FUNCTIONAL ENTITY predicate (entity object + a
+        # single_valued binding) has exactly one KB grounding path — the directed
+        # subsumption upgrade (value ⊆ object) inside _compare_positive — so the
+        # walker's neighbor ENUMERATION (descending the object's part_of children /
+        # ascending the subject's classes) is futile and can be skipped. Unlike the
+        # value_known_entity / functional_value_known aggregates above (which are
+        # `bool(statements) and ...`, so they vanish on the NO_MATCH paths that never
+        # looked up statements — subject_resolution_failed, no_statements), this is
+        # read off binding metadata, so it is present on EVERY abstain trace. That is
+        # the fix for the live "Obama born_in Kenya" fanout: "Obama" resolved
+        # ambiguously / carried no P19, so statements were empty and the
+        # statements-based signals were False — yet the predicate is still provably a
+        # functional entity predicate, so the enumeration is still futile.
+        # Abstain-only: _discover_chains only runs AFTER the direct verify abstained,
+        # so skipping enumeration can never create or alter a verify/contradict (§3.2);
+        # the one true case ("born_in USA") verifies at the direct lookup first.
+        # `all` (not `any`): only skip when EVERY KB binding agrees the predicate is
+        # functional — over-abstention is the disease to cure, so a predicate with a
+        # mixed binding set (one functional property + a non-functional one that may
+        # legitimately ground via enumeration) keeps its enumeration. `had_kb_path`
+        # guards the vacuous-true empty case (no kb binding → handled as NO_KB_PATH
+        # above, never reaches the signal consumers).
+        functional_entity_predicate = (
+            meta.object_type == "entity"
+            and had_kb_path
+            and all(bool(b.single_valued) for b in meta.bindings if b.kb_property)
+        )
+
         # No binding carried an actual KB property — identical to the pre-v0.16
         # `not meta.kb_property` abstention.
         if not had_kb_path:
@@ -201,6 +230,9 @@ class KBVerifier:
             # by ANY binding.
             trace["value_known_entity"] = agg_value_known_entity
             trace["functional_value_known"] = agg_functional_value_known
+            # The metadata signal is present even when statements were never found —
+            # this is what gates the skip for the live born_in (statements empty) case.
+            trace["functional_entity_predicate"] = functional_entity_predicate
             return KBVerdict(
                 verdict=last_no_match.verdict,
                 matched_statement=last_no_match.matched_statement,
@@ -210,7 +242,11 @@ class KBVerifier:
         # Defensive: had a kb_property but produced no outcome (all vetoed).
         return KBVerdict(
             verdict=KBVerdictType.NO_MATCH,
-            trace={"reason": "no_binding_grounded", "bindings_tried": bindings_tried},
+            trace={
+                "reason": "no_binding_grounded",
+                "bindings_tried": bindings_tried,
+                "functional_entity_predicate": functional_entity_predicate,
+            },
         )
 
     def _verify_binding(

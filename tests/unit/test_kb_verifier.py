@@ -2418,3 +2418,53 @@ class TestTemporalCurrencyRoles:
         r = v.verify(_claim(predicate="born_on", object_val="1879"),
                      current_time=self.NOW)
         assert r.verdict == KBVerdictType.VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# v0.16.2 directed-over-enumerate METADATA signal. `functional_entity_predicate`
+# is the walker's "skip ALL neighbor enumeration" gate for a functional entity
+# predicate. Unlike functional_value_known / value_known_entity (which are
+# `bool(statements) and ...`), it is derived from binding METADATA, so it is
+# present on the NO_MATCH paths that never looked up statements — the fix for the
+# live "Obama born_in Kenya" fanout (subject unresolved / no statement on P19).
+# ---------------------------------------------------------------------------
+
+
+class TestFunctionalEntityPredicateSignal:
+    NOW = "2026-06-04T00:00:00+00:00"
+
+    def _trace(self, statements, *, subject, single_valued, object_type, kb_property,
+               resolutions):
+        v = _make_verifier(statements, kb_property=kb_property, object_type=object_type,
+                           single_valued=single_valued, resolutions=resolutions)
+        claim = _claim(subject=subject, predicate="rel", object_val="Kenya")
+        return v.verify(claim, current_time=self.NOW).trace
+
+    def test_present_on_no_statements_path(self):
+        # Subject resolves but carries no statement on the property → no_statements
+        # NO_MATCH. The metadata signal is True even though statements is empty.
+        t = self._trace([], subject="Obama", single_valued=1, object_type="entity",
+                        kb_property="P19", resolutions={"Kenya": "Q114"})
+        assert t.get("functional_entity_predicate") is True
+        assert t.get("functional_value_known") is False  # statements-based: False
+        assert t.get("value_known_entity") is False
+
+    def test_present_on_subject_unresolved_path(self):
+        # Subject does not resolve at all → subject_resolution_failed NO_MATCH.
+        t = self._trace([], subject="Zxqwobama", single_valued=1, object_type="entity",
+                        kb_property="P19", resolutions={"Kenya": "Q114"})
+        assert t.get("functional_entity_predicate") is True
+
+    def test_absent_for_non_functional_predicate(self):
+        # single_valued=0 → not a functional entity predicate (enumeration may
+        # legitimately ground), so the signal must be False.
+        t = self._trace([], subject="Obama", single_valued=0, object_type="entity",
+                        kb_property="P19", resolutions={"Obama": "Q76", "Kenya": "Q114"})
+        assert t.get("functional_entity_predicate") is False
+
+    def test_absent_for_non_entity_predicate(self):
+        # object_type='time' (a functional DATE predicate) is not an ENTITY
+        # predicate → no part_of/is_a containment substitution applies → False.
+        t = self._trace([], subject="Obama", single_valued=1, object_type="time",
+                        kb_property="P569", resolutions={"Obama": "Q76"})
+        assert t.get("functional_entity_predicate") is False
