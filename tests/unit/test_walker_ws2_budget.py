@@ -80,9 +80,18 @@ def _blowup_substrate():
     sub.find_neighbors.return_value = []
     resolver = MagicMock()
     resolver.resolve.return_value = [ResolutionCandidate(kb_identifier="Q1", score=1.0)]
+    # Realistic predicate metadata for the walker's oracle reads
+    # (routing_hint / user_subject_required). A bare MagicMock would expose a
+    # truthy `user_subject_required`, spuriously tripping the walker's
+    # user_subject_required anomaly guard before KB enumeration runs.
+    pt = MagicMock()
+    pt_meta = MagicMock()
+    pt_meta.routing_hint = "kb_resolvable"
+    pt_meta.user_subject_required = False
+    pt.consult.return_value = pt_meta
     return Substrate(
         resolver=resolver,
-        predicate_translation=MagicMock(),
+        predicate_translation=pt,
         subsumption=sub,
         predicate_distribution=pd,
     )
@@ -95,9 +104,15 @@ def _blowup_kb():
     counter = {"n": 0}
     kb = MagicMock()
 
-    def fake_enum(entity, properties, direction="outgoing"):
+    # v0.16.1 WS5c: CORE passes the opaque relation_type; resolve the P-id set
+    # here (matching kb_wikidata._NEIGHBOR_PROPERTIES_BY_RELATION) so the
+    # fanout worst case is preserved.
+    _NEIGHBOR_PROPS = {"is_a": ("P31", "P279"), "part_of": ("P131", "P361", "P17")}
+
+    def fake_enum(entity, properties=None, direction="outgoing", relation_type=None):
+        props = tuple(properties) if properties else _NEIGHBOR_PROPS.get(relation_type, ())
         out = {}
-        for p in properties:
+        for p in props:
             ids = []
             for _ in range(20):
                 counter["n"] += 1
@@ -111,12 +126,17 @@ def _blowup_kb():
 
 
 class TestDepthCapRemovedDoesNotBlowBudget:
-    def test_uncapped_enumeration_abstains_via_fanout_budget(self):
+    def test_uncapped_enumeration_abstains_via_probe_budget(self):
         """Without the depth==0 cap, a substrate that returns no neighbors and a
         KB that returns 20 fresh children per property would fan out
         multiplicatively across depth (OOM in the worst case). The per-walk
-        fanout budget must catch it: the walk abstains with `budget_fanout`
-        rather than exploding."""
+        KB-neighbor PROBE budget (max_kb_neighbor_probes, default 48) catches it
+        FIRST — tighter than the admitted-only fanout budget (max_frontier_
+        expansions=2000), because the probe budget counts EVERY candidate probed
+        (admitted or rejected), which is the real cost (one SPARQL ASK each). The
+        walk abstains with `budget_kb_neighbor_probes` rather than exploding. (The
+        fanout budget remains a backstop for the substrate/premise-forward
+        expansion arms, which the probe counter does not gate.)"""
         walker = Walker(
             tier_u=_TierU(),
             kb_verifier=_NoMatchKBVerifier(),
@@ -133,11 +153,75 @@ class TestDepthCapRemovedDoesNotBlowBudget:
         elapsed = time.monotonic() - t0
 
         assert result.verdict == "no_grounding_found"
-        assert result.abstention_reason == "budget_fanout"
-        assert result.trace.walk_metadata.get("budget_exceeded") == "fanout"
+        assert result.abstention_reason == "budget_kb_neighbor_probes"
+        assert result.trace.walk_metadata.get("budget_exceeded") == "kb_neighbor_probes"
         # The whole point: bounded, fast, no blowup. A real OOM/18-min blowup
         # would never reach this assertion; 5s is a generous ceiling for the
         # bounded path.
+        assert elapsed < 5.0
+
+    def test_kb_work_budget_bounds_per_node_verify_cost(self):
+        """Change 1: the gap the probe cap misses. The dominant cost on a
+        fanning-out famous-entity walk is the per-node KBVerifier.verify work
+        (resolution + lookup_statements + subsumption ASKs), which the probe cap
+        never sees. The unified KB-WORK budget charges each verify + enumeration
+        and is sampled inside the node loop, so the walk abstains FAST as
+        `budget_kb_work` — NOT a 30s `budget_wall_clock` — with a HIGH probe cap so
+        the probe budget is provably not the binding constraint."""
+        walker = Walker(
+            tier_u=_TierU(),
+            kb_verifier=_NoMatchKBVerifier(),
+            python_verifier=None,
+            substrate=_blowup_substrate(),
+            kb=_blowup_kb(),
+            walker_max_depth=4,
+        )
+        budget = WalkerBudget(
+            wall_clock_seconds=30.0, max_llm_calls=1000,
+            max_kb_neighbor_probes=100000,  # probe cap deliberately non-binding
+            max_frontier_expansions=100000,  # fanout cap deliberately non-binding
+            max_kb_work_units=24,
+        )
+        t0 = time.monotonic()
+        result = walker.walk(_claim(), _ctx(), budget=budget)
+        elapsed = time.monotonic() - t0
+
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "budget_kb_work"
+        assert result.trace.walk_metadata.get("budget_exceeded") == "kb_work"
+        assert elapsed < 5.0
+
+    def test_probe_budget_dedupes_repeated_neighbor_qids(self):
+        """The per-walk `seen` dedupe collapses re-probing of the SAME neighbor
+        QID across slots/directions/depths (famous containers like Q30/Q142
+        recur). A KB that returns the same small fixed set every call must NOT
+        burn the probe budget on duplicates — the walk abstains fast and does
+        NOT time out on the wall clock."""
+        kb = MagicMock()
+        _NEIGHBOR_PROPS = {"is_a": ("P31", "P279"), "part_of": ("P131", "P361", "P17")}
+
+        def fixed_enum(entity, properties=None, direction="outgoing", relation_type=None):
+            props = tuple(properties) if properties else _NEIGHBOR_PROPS.get(relation_type, ())
+            # Same two QIDs every call — the dedupe must collapse them.
+            return {p: ["Q30", "Q142"] for p in props}
+
+        kb.enumerate_neighbors.side_effect = fixed_enum
+        kb.verify_transitive_path.return_value = TransitivePathResult(holds=True)
+        walker = Walker(
+            tier_u=_TierU(),
+            kb_verifier=_NoMatchKBVerifier(),
+            python_verifier=None,
+            substrate=_blowup_substrate(),
+            kb=kb,
+            walker_max_depth=4,
+        )
+        budget = WalkerBudget(wall_clock_seconds=30.0, max_llm_calls=100)
+        t0 = time.monotonic()
+        result = walker.walk(_claim(), _ctx(), budget=budget)
+        elapsed = time.monotonic() - t0
+
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason != "budget_wall_clock"  # did not time out
         assert elapsed < 5.0
 
     def test_total_expansions_bounded_by_budget(self):

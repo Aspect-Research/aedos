@@ -561,6 +561,24 @@ class TestToolSchema:
         assert "subject_entity_types" in props
         assert "object_entity_types" in props
 
+    def test_sample_subject_qids_in_tool_schema(self):
+        # v0.16.1 WS4 (SLING activation): the oracle's tool schema must accept
+        # the optional sample_subject_qids array so distant supervision can be
+        # fed Q-ids for long-tail edges.
+        props = PREDICATE_METADATA_TOOL["input_schema"]["properties"]
+        assert "sample_subject_qids" in props
+        # Optional (array-or-null), never required.
+        assert props["sample_subject_qids"]["type"] == ["array", "null"]
+        assert "sample_subject_qids" not in PREDICATE_METADATA_TOOL["input_schema"]["required"]
+
+    def test_prompt_guides_sample_subject_qids_emission(self):
+        # v0.16.1 WS4: the prompt must instruct the LLM to emit sample_subject_qids
+        # ONLY for long-tail edges, so it doesn't routinely guess them.
+        from aedos.layer3_substrate.predicate_translation import (
+            _GENERATION_SYSTEM_PROMPT,
+        )
+        assert "sample_subject_qids" in _GENERATION_SYSTEM_PROMPT
+
     def test_prompt_guides_entity_type_emission(self):
         # Phase G D33: the system prompt must instruct the LLM on when to
         # emit entity types (and when to leave them null). Regression guard
@@ -671,7 +689,7 @@ class _StubSling:
         return list(self._bindings)
 
 
-def _make_discovery_oracle(response, property_relations=None, sling=None):
+def _make_discovery_oracle(response, property_relations=None, sling=None, enable_sling=True):
     db = open_memory_db()
     transport = MockTransport(response=response)
     client = LLMClient(_transport=transport)
@@ -680,6 +698,7 @@ def _make_discovery_oracle(response, property_relations=None, sling=None):
         llm_client=client,
         property_relations=property_relations,
         sling=sling,
+        enable_sling=enable_sling,
     )
     return oracle, db, transport
 
@@ -807,11 +826,18 @@ class TestBindingDiscoveryFromOntology:
         assert b.single_valued is False
         assert meta.single_valued is False
 
-    def test_candidate_property_adds_second_binding_ranked_above_oracle(self):
+    def test_candidate_property_adds_value_type_gated_second_binding(self):
         # The copula case: oracle primary P31, candidate P106. P106's ontology
         # constrains it → an ontology_p2302 binding for P106 is added. P31's
-        # ontology is empty → the plain oracle binding for P31 stays. Ranking:
-        # ontology-typed (P106) first, then oracle-primary (P31).
+        # ontology is empty → the plain oracle binding for P31 stays.
+        #
+        # v0.16.1 WS2 ordering correction: the PRIMARY property (P31) stays
+        # bindings[0] (scalar mirror = P31, the safe instance-of fallback), and
+        # the CANDIDATE (P106) follows as a value_type_gated binding — its
+        # POSITIVE grounding is fail-closed type-gated, so a non-occupation copula
+        # ("X is a city") can never false-verify through P106. (Pre-WS2 this
+        # ranked the candidate first and flipped the scalar to P106 — unsound for
+        # copulas: an ungated P106 would spuriously verify a non-occupation.)
         pr = _StubPropertyRelations({
             "P106": PropertyOntology(value_type_qids=["Q28640"]),  # occupation
         })
@@ -822,17 +848,23 @@ class TestBindingDiscoveryFromOntology:
         oracle, _, _ = _make_discovery_oracle(resp, property_relations=pr)
         meta = oracle.consult("is_a_physicist")
         props = [b.kb_property for b in meta.bindings]
-        assert props == ["P106", "P31"], props
-        assert meta.bindings[0].source == "ontology_p2302"
-        assert meta.bindings[0].object_entity_types == ["Q28640"]
-        assert meta.bindings[1].source == "oracle"
-        # Scalar mirror flips to bindings[0] (intended per spec — scalar mirrors
-        # the evidence-arbitrated winner).
-        assert meta.kb_property == "P106"
+        assert props == ["P31", "P106"], props
+        # Primary P31 first: oracle source, NOT value-type-gated.
+        assert meta.bindings[0].kb_property == "P31"
+        assert meta.bindings[0].source == "oracle"
+        assert meta.bindings[0].value_type_gated is False
+        # Candidate P106: ontology-typed, value-type-gated (fail-closed positive).
+        assert meta.bindings[1].kb_property == "P106"
+        assert meta.bindings[1].source == "ontology_p2302"
+        assert meta.bindings[1].object_entity_types == ["Q28640"]
+        assert meta.bindings[1].value_type_gated is True
+        # Scalar mirror stays the primary P31 (the safe fallback).
+        assert meta.kb_property == "P31"
         # Persisted JSON round-trips: re-fetch through _row_to_metadata.
         warm = oracle.consult("is_a_physicist")
-        assert [b.kb_property for b in warm.bindings] == ["P106", "P31"]
-        assert warm.bindings[0].source == "ontology_p2302"
+        assert [b.kb_property for b in warm.bindings] == ["P31", "P106"]
+        assert warm.bindings[1].source == "ontology_p2302"
+        assert warm.bindings[1].value_type_gated is True
 
     def test_candidate_kb_properties_tolerated_when_absent(self):
         # candidate_kb_properties is optional. A response WITHOUT it (the common
@@ -901,4 +933,20 @@ class TestBindingDiscoverySlingFallback:
         )
         meta = oracle.consult("holds_role")
         assert sling.calls == 1
+        assert [b.kb_property for b in meta.bindings] == ["P39"]
+
+    def test_enable_sling_false_suppresses_consultation(self):
+        # v0.16.1 WS4 config gate: with enable_sling=False, SLING is NEVER
+        # consulted even though the ontology is empty and a sling collaborator is
+        # wired — turning the flag off only loses a verify-only candidate.
+        pr = _StubPropertyRelations({})  # ontology empty → would normally fire SLING
+        sling = _StubSling([
+            PredicateBinding(kb_namespace="wikidata", kb_property="P800", source="sling")
+        ])
+        oracle, _, _ = _make_discovery_oracle(
+            _default_metadata_response(), property_relations=pr, sling=sling,
+            enable_sling=False,
+        )
+        meta = oracle.consult("holds_role")
+        assert sling.calls == 0
         assert [b.kb_property for b in meta.bindings] == ["P39"]

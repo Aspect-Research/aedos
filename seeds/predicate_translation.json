@@ -249,7 +249,9 @@
     "kb_property": "P31",
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 0,
-    "reason": "Seed mapping. Wikidata P31 (instance of). Multi-valued: entities have many types."
+    "candidate_kb_properties": ["P106"],
+    "candidate_object_entity_types": {"P106": ["Q12737077", "Q28640"]},
+    "reason": "Seed mapping. Wikidata P31 (instance of). Multi-valued: entities have many types. v0.16.1 WS2: a copula 'X is a <profession>' also fits P106 (occupation) — synthesized as a value-type-gated candidate binding (positive verify only for a confirmed occupation/profession object Q12737077/Q28640; never contradicts), so 'Krieger is a guitarist' grounds against his P106 set while 'Paris is a city' falls through the type gate to P31."
   },
   {
     "aedos_predicate": "subclass_of",
@@ -262,6 +264,20 @@
     "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
     "single_valued": 0,
     "reason": "Seed mapping. Wikidata P279 (subclass of). Used for taxonomic subsumption. Multi-valued: a class may be a subclass of several superclasses."
+  },
+  {
+    "aedos_predicate": "instance_of",
+    "object_type": "entity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "kb_resolvable",
+    "kb_namespace": "wikidata",
+    "kb_property": "P31",
+    "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
+    "single_valued": 0,
+    "candidate_kb_properties": ["P106"],
+    "candidate_object_entity_types": {"P106": ["Q12737077", "Q28640"]},
+    "reason": "Seed mapping for the copula predicate the extractor emits ('X is a Y', Rule 19/22). Wikidata P31 (instance of) is the primary binding; multi-valued. v0.16.1 WS2: a profession copula ('Robby Krieger is a guitarist') also fits P106 (occupation), synthesized as a value-type-gated candidate binding — its positive verify fires only for a confirmed occupation/profession object (Q12737077 occupation / Q28640 profession) and it never contradicts (single_valued=0), so 'X is a river' falls through the type gate to P31 while the occupation grounds against the subject's P106 set."
   },
   {
     "aedos_predicate": "nationality",
@@ -818,27 +834,29 @@
     "reason": "v0.16 T1. Role/position end date = P582 (end time) qualifier on the P39 (position held) statement. kb_interval resolver. Multi-valued."
   },
   {
-    "aedos_predicate": "status_started",
-    "object_type": "time",
+    "aedos_predicate": "born_before",
+    "object_type": "entity",
     "user_subject_required": 0,
     "distinct_slots": null,
-    "routing_hint": "kb_interval",
-    "kb_namespace": "wikidata",
-    "kb_property": "P571",
-    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P580"},
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
     "single_valued": 0,
-    "reason": "v0.16 T1. State-bearing-subject start = inception (P571). Unlike the employment/membership/role endpoints, inception/dissolution are STATEMENTS, not qualifiers, but the kb_interval resolver also gathers a Tier U started/ended row; for an org subject prefer founded_in_year (P571) / dissolved_in_year (P576) directly. Object is the date. Multi-valued (conservative)."
+    "premise_properties": {"subject": "P569", "object": "P569"},
+    "reason": "v0.16.1 WS3b (premise -> Python channel). A born-before comparison over two PEOPLE's birth dates: neither slot is a literal, so both birth years (P569) are fetched as premises and the generated code compares them. routing_hint=python; the comparison itself is deterministic over the fetched dates. FAIL-CLOSED: a missing birth date for either person abstains."
   },
   {
-    "aedos_predicate": "status_ended",
+    "aedos_predicate": "founded_before",
     "object_type": "time",
     "user_subject_required": 0,
     "distinct_slots": null,
-    "routing_hint": "kb_interval",
-    "kb_namespace": "wikidata",
-    "kb_property": "P576",
-    "slot_to_qualifier": {"subject": "statement_subject", "org": "statement_value", "object": "qualifier:P582"},
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
     "single_valued": 0,
-    "reason": "v0.16 T1. State-bearing-subject end = dissolution (P576). See status_started. Object is the date. Multi-valued (conservative)."
+    "premise_properties": {"subject": "P571"},
+    "reason": "v0.16.1 WS3b (premise -> Python channel). 'X founded before <year>' fetches the subject org's inception year (P571) as a premise and compares it to the literal year in the object slot; only the subject is fetched (the object is a literal). routing_hint=python. FAIL-CLOSED: a missing inception year abstains."
   }
 ]

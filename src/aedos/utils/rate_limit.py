@@ -12,6 +12,7 @@ the state lives. Adding concurrency protection later wraps the
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Optional
 
@@ -36,11 +37,18 @@ class RateLimiter:
                 raise ValueError("max_per_second must be positive")
             self._interval = 1.0 / max_per_second
         self._last_call: float = 0.0
+        # v0.16.2 Phase C: concurrency protection (anticipated above). Under
+        # parallel verification several walks share one adapter's limiter; the
+        # lock makes the read-wait-update atomic so the minimum interval between
+        # outbound calls is honored globally (callers stay polite to Wikidata)
+        # rather than racing and bursting.
+        self._lock = threading.Lock()
 
     def acquire(self) -> None:
         """Block until the minimum interval since the last acquire has elapsed."""
-        now = time.monotonic()
-        wait = self._interval - (now - self._last_call)
-        if wait > 0:
-            time.sleep(wait)
-        self._last_call = time.monotonic()
+        with self._lock:
+            now = time.monotonic()
+            wait = self._interval - (now - self._last_call)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_call = time.monotonic()

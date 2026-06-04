@@ -325,3 +325,60 @@ print(e("1 + 1") if e else "blocked")
         # avoid `__builtins__` entirely. The xfail documents the class
         # of attack, not this specific phrasing.
         assert not result.success
+
+
+# ===========================================================================
+# v0.16.2 — environment scrubbing / API-key non-leakage (the load-bearing
+# property for a key-holding network deployment). The sandbox child is spawned
+# with an explicitly built, secret-free env, so model-generated code cannot read
+# the process's API keys via os.environ — even if it escapes the AST scan, the
+# env channel carries no secret to leak.
+# ===========================================================================
+
+from aedos.utils.sandbox import _build_child_env, _SECRET_NAME_RE  # noqa: E402
+
+
+class TestEnvScrubbing:
+    def test_secret_name_regex_matches_credentials(self):
+        for name in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GH_TOKEN",
+                     "DB_PASSWORD", "AWS_SECRET_ACCESS_KEY", "SOME_CREDENTIAL"):
+            assert _SECRET_NAME_RE.search(name), name
+        for name in ("PATH", "SYSTEMROOT", "TEMP", "LANG", "PATHEXT"):
+            assert not _SECRET_NAME_RE.search(name), name
+
+    def test_build_child_env_excludes_api_keys(self, monkeypatch):
+        # Plant secrets in the PARENT env; the constructed child env must omit
+        # them (they are not in the non-secret passthrough allow-list).
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-FAKE-must-not-leak")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-FAKE-must-not-leak")
+        child_env = _build_child_env()
+        assert "ANTHROPIC_API_KEY" not in child_env
+        assert "OPENROUTER_API_KEY" not in child_env
+        assert all("FAKE" not in v for v in child_env.values())
+
+    def test_api_keys_unreadable_from_inside_sandbox(self, monkeypatch):
+        # END-TO-END proof: plant keys in the parent, then run REAL sandbox code
+        # that reads its own os.environ (os temporarily allowed so this tests the
+        # ENV SCRUB itself, not the AST import block). The child must see None.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-FAKE-must-not-leak")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-FAKE-must-not-leak")
+        code = (
+            "import os\n"
+            "print('ANTHROPIC=' + repr(os.environ.get('ANTHROPIC_API_KEY')))\n"
+            "print('OPENROUTER=' + repr(os.environ.get('OPENROUTER_API_KEY')))\n"
+        )
+        result = run_code(code, extra_allowed=frozenset({"os"}))
+        assert result.success, result.stderr
+        assert "ANTHROPIC=None" in result.stdout
+        assert "OPENROUTER=None" in result.stdout
+        assert "FAKE" not in result.stdout
+        assert "sk-ant" not in result.stdout and "sk-or" not in result.stdout
+
+    def test_isolated_mode_does_not_break_allowed_stdlib(self):
+        # `-I` must not block the allow-listed stdlib the verifier relies on.
+        result = run_code(
+            "import datetime, math, statistics\n"
+            "print(datetime.date(2026, 1, 1).year + math.floor(math.pi))\n"
+        )
+        assert result.success, result.stderr
+        assert "2029" in result.stdout

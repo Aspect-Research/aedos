@@ -47,7 +47,6 @@ from aedos.layer4_sources.tier_u import LookupResult
 from aedos.layer4_sources.walker import (
     VerificationContext,
     Walker,
-    _D5_NEIGHBOR_PROPS_BY_RELATION,
 )
 
 
@@ -89,6 +88,23 @@ class _NoMatchKBVerifier:
         return KBVerdict(verdict=KBVerdictType.NO_MATCH)
 
 
+class _FunctionalNoMatchKBVerifier:
+    """NO_MATCH verifier that surfaces the directed-over-enumerate signals.
+    `value_known_entity` (subject value known) gates the part_of skip;
+    `functional_value_known` (value known AND single_valued) additionally gates the
+    is_a skip. functional_value_known True implies value_known_entity True (default)."""
+
+    def __init__(self, functional_value_known, value_known_entity=None):
+        self._fvk = functional_value_known
+        self._vke = functional_value_known if value_known_entity is None else value_known_entity
+
+    def verify(self, claim, current_time=None, source_text=None):
+        return KBVerdict(
+            verdict=KBVerdictType.NO_MATCH,
+            trace={"functional_value_known": self._fvk, "value_known_entity": self._vke},
+        )
+
+
 def _distribution_verdict(value: str):
     """A minimal mock matching `PredicateDistributionResult` shape — the
     walker reads `verdict.value` and `was_cached` to decide expansion."""
@@ -125,6 +141,15 @@ def _make_substrate(
     else:
         sub.find_neighbors.return_value = list(sub_neighbors)
     sub.consult.return_value = SubsumptionResult(verdict=consult_verdict)
+    pt = MagicMock()
+    # Realistic predicate metadata for the walker's oracle reads
+    # (routing_hint / user_subject_required). A bare MagicMock would expose a
+    # truthy `user_subject_required`, spuriously tripping the walker's
+    # user_subject_required anomaly guard before KB enumeration runs.
+    pt_meta = MagicMock()
+    pt_meta.routing_hint = "kb_resolvable"
+    pt_meta.user_subject_required = False
+    pt.consult.return_value = pt_meta
     resolver = MagicMock()
     if resolved_qid is None:
         resolver.resolve.return_value = []
@@ -132,7 +157,6 @@ def _make_substrate(
         resolver.resolve.return_value = [
             ResolutionCandidate(kb_identifier=resolved_qid, score=1.0)
         ]
-    pt = MagicMock()
     return Substrate(
         resolver=resolver,
         predicate_translation=pt,
@@ -159,14 +183,24 @@ def _make_kb(
     """
     kb = MagicMock()
 
-    def fake(entity, properties, direction="outgoing"):
+    # v0.16.1 WS5c: the walker now passes the OPAQUE relation_type and the
+    # adapter resolves the P-id neighbor set internally. Mirror that mapping
+    # here so the mock returns per-property neighbor lists for the requested
+    # relation (matching kb_wikidata._NEIGHBOR_PROPERTIES_BY_RELATION).
+    _NEIGHBOR_PROPS = {
+        "is_a": ("P31", "P279"),
+        "part_of": ("P131", "P361", "P17"),
+    }
+
+    def fake(entity, properties=None, direction="outgoing", relation_type=None):
+        props = tuple(properties) if properties else _NEIGHBOR_PROPS.get(relation_type, ())
         if direction == "incoming":
             if incoming_by_prop is None:
-                return {p: [] for p in properties}
-            return {p: list(incoming_by_prop.get(p, [])) for p in properties}
+                return {p: [] for p in props}
+            return {p: list(incoming_by_prop.get(p, [])) for p in props}
         if neighbors_by_prop is None:
-            return {p: [] for p in properties}
-        return {p: list(neighbors_by_prop.get(p, [])) for p in properties}
+            return {p: [] for p in props}
+        return {p: list(neighbors_by_prop.get(p, [])) for p in props}
 
     kb.enumerate_neighbors.side_effect = fake
     kb.verify_transitive_path.return_value = TransitivePathResult(holds=path_holds)
@@ -256,29 +290,32 @@ class TestD5Fallback:
         # KB enumerate_neighbors should not have been called.
         kb.enumerate_neighbors.assert_not_called()
 
-    def test_neither_distribution_is_explored_but_does_not_ground(self):
-        """v0.16 WS2 §3 (gate -> ranker): when predicate_distribution returns
-        `neither`, the relation is no longer foreclosed. Discovery is LIBERAL,
-        so KB enumeration MAY fire for `neither` (the old gate would have
-        skipped it). But soundness moved to verify time: the discovered
-        substitutions never ground (no Tier U premise, KB verifier NO_MATCH),
-        so the walk still ends at `no_grounding_found`. The OUTCOME matches the
-        old gate; the reason is now grounding-failure, not a discovery skip.
+    def test_neither_distribution_skips_kb_enumeration(self):
+        """Direct-binding-first (Phase E #1): a `neither` distribution
+        forecloses every substitution through the relation, so the UNBOUNDED
+        KB-neighbor enumeration fallback is SKIPPED — the walker no longer fans
+        out over irrelevant neighbors (e.g. P17 country edges off a role claim)
+        only to reject them all. The claim's own direct binding stays the
+        grounding path; the walk ends at a FAST `no_grounding_found` instead of
+        burning the wall-clock to `budget_wall_clock`.
 
-        This is the behavioral inversion of the old
-        `test_does_not_fire_when_distribution_gate_closed`: we assert the
-        sound verdict, not that enumeration was suppressed."""
+        Verdict-preserving: an is_a `neither` candidate is rejected by
+        _verify_chain's kind-entailment gate anyway, and a part_of substitution
+        is unsound unless the predicate distributes — so skipping enumeration
+        removes only never-grounding work (and a latent false-verify surface),
+        never a sound grounding."""
         substrate = _make_substrate(
             distribution_verdict="neither",
             sub_neighbors=[],
         )
-        kb = _make_kb({"P131": ["Q771397"]})
+        kb = _make_kb({"P131": ["Q771397"], "P17": ["Q30"]})
         walker = _make_walker(substrate, kb)
 
         result = walker.walk(_claim(), _ctx())
 
-        # The relation is explored (the gate is gone); the walker still
-        # abstains because nothing the substitution reaches grounds the claim.
+        # The KB-neighbor enumeration fallback must NOT fire for a `neither`
+        # predicate — that is the whole point of the gate.
+        kb.enumerate_neighbors.assert_not_called()
         assert result.verdict == "no_grounding_found"
 
     def test_neither_distribution_admits_no_subsumption_substitution(self):
@@ -430,9 +467,64 @@ class TestD5Fallback:
         ]
         assert kb_edges == []
 
-    def test_correct_properties_passed_per_relation(self):
-        """is_a uses (P31, P279); part_of uses (P131, P361, P17). Verify
-        the right property tuple reaches enumerate_neighbors."""
+    def test_functional_value_known_skips_enumeration(self):
+        """Directed-over-enumerate (Change 2): when the direct KB lookup found the
+        subject's value for a FUNCTIONAL entity predicate (and the directed upgrade
+        failed), the walker SKIPS neighbor enumeration — the doomed "Obama born_in
+        Kenya" fanout. enumerate_neighbors must not be called."""
+        substrate = _make_substrate(distribution_verdict="distributes_down", sub_neighbors=[])
+        kb = _make_kb({"P31": ["Q1"], "P131": ["Q2"], "P361": [], "P17": ["Q3"], "P279": []})
+        walker = Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_FunctionalNoMatchKBVerifier(functional_value_known=True),
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        result = walker.walk(_claim(), _ctx())
+        kb.enumerate_neighbors.assert_not_called()
+        assert result.verdict == "no_grounding_found"
+
+    def test_functional_value_unknown_still_enumerates(self):
+        """Control: when the subject's value is NOT known (functional_value_known
+        False — e.g. no statements found), enumeration is preserved (it may still
+        legitimately ground), so enumerate_neighbors IS called."""
+        substrate = _make_substrate(distribution_verdict="distributes_down", sub_neighbors=[])
+        kb = _make_kb({"P31": ["Q1"], "P131": ["Q2"], "P361": [], "P17": ["Q3"], "P279": []})
+        walker = Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_FunctionalNoMatchKBVerifier(functional_value_known=False),
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        walker.walk(_claim(), _ctx())
+        assert kb.enumerate_neighbors.called
+
+    def test_value_known_but_not_functional_skips_part_of_only(self):
+        """Decoupled skip (the cold-started 'was born in' case): when the value is
+        known (value_known_entity) but the predicate is NOT marked single_valued
+        (functional_value_known False), the part_of enumeration (the 'descend into
+        Kenya's P17 children' fanout) is skipped — owned by the directed part_of
+        upgrade — while is_a enumeration is preserved (may ground a non-functional
+        claim). So enumerate_neighbors is called for is_a but NOT for part_of."""
+        substrate = _make_substrate(distribution_verdict="distributes_down", sub_neighbors=[])
+        kb = _make_kb({"P31": ["Q1"], "P279": [], "P131": ["Q2"], "P361": [], "P17": ["Q3"]})
+        walker = Walker(
+            tier_u=_MockTierU(),
+            kb_verifier=_FunctionalNoMatchKBVerifier(
+                functional_value_known=False, value_known_entity=True
+            ),
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        walker.walk(_claim(), _ctx())
+        relations = {
+            c.kwargs.get("relation_type") for c in kb.enumerate_neighbors.call_args_list
+        }
+        assert "is_a" in relations
+        assert "part_of" not in relations
+
+    def test_correct_relation_passed_per_relation(self):
+        """v0.16.1 WS5c: CORE no longer names P-ids — the walker passes the
+        OPAQUE relation_type ("is_a"/"part_of") to enumerate_neighbors and the
+        adapter resolves the property set internally. Verify both relations are
+        requested through the relation_type keyword."""
         substrate = _make_substrate(
             distribution_verdict="distributes_down",
             sub_neighbors=[],
@@ -446,12 +538,18 @@ class TestD5Fallback:
         # and part_of (subject + object × 2 relation_types = up to 4 calls).
         walker.walk(_claim(), _ctx())
 
-        called_properties = [
-            call.args[1] for call in kb.enumerate_neighbors.call_args_list
-        ]
-        # We see calls for both is_a and part_of relation types.
-        assert ["P31", "P279"] in called_properties
-        assert ["P131", "P361", "P17"] in called_properties
+        called_relations = {
+            call.kwargs.get("relation_type")
+            for call in kb.enumerate_neighbors.call_args_list
+        }
+        # We see calls for both is_a and part_of relation types, and CORE
+        # never passes an explicit P-id properties list.
+        assert "is_a" in called_relations
+        assert "part_of" in called_relations
+        for call in kb.enumerate_neighbors.call_args_list:
+            # properties is never passed positionally or as a kwarg by CORE.
+            assert len(call.args) <= 1
+            assert not call.kwargs.get("properties")
 
 
 # ---------------------------------------------------------------------------
@@ -475,11 +573,12 @@ class TestKBEnumCandidateGated:
         ]
 
     def test_unentailed_is_a_candidate_rejected(self):
-        # `neither` distribution = the is_a kind-entailment authority forecloses
-        # the substitution. Only is_a neighbors are enumerated (P31), so the is_a
-        # _verify_chain gate is the sole admission path; the candidate is REJECTED
-        # and no is_a kb_neighbor_enumeration edge survives. (The KB path WOULD
-        # report holding, proving rejection is the gate, not a missing edge.)
+        # `neither` distribution forecloses the is_a substitution. Two layers now
+        # ensure no unentailed is_a candidate survives: (1) direct-binding-first
+        # skips the KB-neighbor enumeration entirely for a `neither` predicate
+        # (so no candidate is even produced), and (2) were it produced,
+        # _verify_chain's is_a kind-entailment gate would still REJECT it. Either
+        # way no is_a kb_neighbor_enumeration edge survives and the walk abstains.
         substrate = _make_substrate(
             distribution_verdict="neither",
             sub_neighbors=[],
@@ -664,3 +763,121 @@ class TestVerifyChainKBNegativeAuthoritative:
         ]
         assert part_of_edges, "a holding KB path must admit the candidate"
         substrate.subsumption.consult.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Real-verifier regression (v0.16.2): the directed-over-enumerate skip must fire
+# even when the KB lookup found NO statements — the live "Obama born_in Kenya"
+# fanout. The `_FunctionalNoMatchKBVerifier` mock above ALWAYS hands the walker the
+# signal, so it can never catch a verifier that fails to emit it on the statements-
+# not-found NO_MATCH paths (subject_resolution_failed / no_statements). These wire
+# the REAL KBVerifier so the signal's provenance — binding METADATA, not
+# bool(statements) — is under test (the bug the mock masked).
+# ---------------------------------------------------------------------------
+
+
+class _MetaTransport:
+    """Cold-start transport driving a real PredicateTranslation: the predicate
+    maps to ONE entity binding on `kb_property`, single_valued per the flag."""
+
+    def __init__(self, single_valued=1, kb_property="P19", object_type="entity"):
+        self._sv = single_valued
+        self._prop = kb_property
+        self._ot = object_type
+
+    def extract_with_tool(self, *a, **kw):
+        return {
+            "object_type": self._ot, "user_subject_required": 0,
+            "distinct_slots": None, "routing_hint": "kb_resolvable",
+            "kb_namespace": "wikidata", "kb_property": self._prop,
+            "slot_to_qualifier": None, "single_valued": self._sv, "reason": "test",
+        }
+
+    def chat(self, *a, **kw):
+        return ""
+
+
+class _StatementlessKB:
+    """Real-verifier KB: resolves KNOWN refs, but lookup_statements is EMPTY (the
+    no_statements path); an ABSENT ref does not resolve (subject_resolution_failed).
+    No geo methods — the verifier's geo shims fail closed via getattr."""
+
+    def __init__(self, resolutions):
+        self._res = dict(resolutions)
+
+    def resolve_entity(self, ref, local_context):
+        qid = self._res.get(ref)
+        return [ResolutionCandidate(kb_identifier=qid, score=0.9)] if qid else []
+
+    def lookup_statements(self, entity, predicate):
+        return []
+
+    def subsumption(self, a, b, relation_type):
+        return SubsumptionResult(verdict="unrelated")
+
+
+def _real_verifier(resolutions, single_valued=1, kb_property="P19"):
+    from aedos.database import open_memory_db
+    from aedos.layer3_substrate.predicate_translation import PredicateTranslation
+    from aedos.layer3_substrate.resolver import EntityResolver
+    from aedos.layer4_sources.kb_verifier import KBVerifier
+    from aedos.llm.client import LLMClient
+
+    db = open_memory_db()
+    pt = PredicateTranslation(
+        db=db,
+        llm_client=LLMClient(_transport=_MetaTransport(single_valued, kb_property)),
+    )
+    kb = _StatementlessKB(resolutions)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    return KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+
+
+class TestRealVerifierStatementsNotFoundSkip:
+    """A FUNCTIONAL ENTITY predicate skips enumeration even when the KB found no
+    statements — the metadata signal (functional_entity_predicate) is present on
+    the NO_MATCH paths where the bool(statements)-gated signals vanish. Wired with
+    the REAL KBVerifier; the mock above hard-coded the signal and so masked the
+    live fanout."""
+
+    def _walk(self, kb_verifier):
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down", sub_neighbors=[],
+            resolved_qid="Q114",  # the object resolves → enumeration WOULD fire
+        )
+        kb = _make_kb(
+            {"P31": ["Q1"], "P279": [], "P131": ["Q2"], "P361": [], "P17": ["Q3"]}
+        )
+        walker = Walker(
+            tier_u=_MockTierU(), kb_verifier=kb_verifier,
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        result = walker.walk(
+            _claim(subject="Obama", predicate="born_in", object_val="Kenya"), _ctx()
+        )
+        return result, kb
+
+    def test_no_statements_functional_entity_skips_enumeration(self):
+        # Obama resolves (Q76) but carries NO P19 → no_statements NO_MATCH. The
+        # statements-based signals are False; the metadata signal still fires.
+        result, kb = self._walk(
+            _real_verifier({"Obama": "Q76", "Kenya": "Q114"}, single_valued=1)
+        )
+        kb.enumerate_neighbors.assert_not_called()
+        assert result.verdict == "no_grounding_found"
+
+    def test_subject_unresolved_functional_entity_skips_enumeration(self):
+        # 'Obama' absent from resolutions → subject_resolution_failed NO_MATCH.
+        # Again no statements-based signal, but the metadata signal fires.
+        result, kb = self._walk(_real_verifier({"Kenya": "Q114"}, single_valued=1))
+        kb.enumerate_neighbors.assert_not_called()
+        assert result.verdict == "no_grounding_found"
+
+    def test_non_functional_entity_no_statements_still_enumerates(self):
+        # Control / non-regression: single_valued=0 is NOT a functional entity
+        # predicate, so the metadata signal is False and enumeration is preserved
+        # (a non-functional predicate may legitimately ground via substitution).
+        result, kb = self._walk(
+            _real_verifier({"Obama": "Q76", "Kenya": "Q114"}, single_valued=0)
+        )
+        assert kb.enumerate_neighbors.called

@@ -66,9 +66,45 @@ PREDICATE_METADATA_TOOL: dict[str, Any] = {
                     "primary kb_property is unambiguous."
                 ),
             },
+            "sample_subject_qids": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+                "description": (
+                    "v0.16.1 (SLING distant supervision): a SMALL list (2-3) of "
+                    "well-known Wikidata subject Q-ids that are canonical, "
+                    "uncontroversial instances of this predicate's SUBJECT — set "
+                    "ONLY for a LONG-TAIL kb_resolvable edge whose Wikidata "
+                    "property has no usable P2302 type/constraint ontology (a "
+                    "niche or non-standard relation). The substrate samples these "
+                    "entities' co-occurring KB properties to propose ONE extra "
+                    "verify-only candidate binding (it can never contradict). "
+                    "Emit Q-ids you are confident name the right entity; null/omit "
+                    "for any predicate whose property is well-constrained or whose "
+                    "subjects you are unsure of (the default — no SLING sampling)."
+                ),
+            },
             "slot_to_qualifier": {
                 "type": ["object", "null"],
                 "description": "JSON mapping Aedos slot names to KB qualifier P-numbers.",
+            },
+            "premise_properties": {
+                "type": ["object", "null"],
+                "description": (
+                    "v0.16.1 (premise -> Python channel): for a routing_hint='python' "
+                    "COMPARISON predicate that must compute over a FETCHED fact about "
+                    "an entity slot (not the literal slot text), a JSON mapping of the "
+                    "Aedos slot name to the KB property whose value is the premise. "
+                    "Example: 'born_before(X, Y)' compares X's and Y's birth dates, so "
+                    "premise_properties={\"subject\": \"P569\", \"object\": \"P569\"}; "
+                    "'founded_before(X, 1800)' fetches only the subject's inception, so "
+                    "premise_properties={\"subject\": \"P571\"} (the object is a literal "
+                    "year, no fetch). The walker resolves each named slot to a Q-id, "
+                    "fetches that property's value, and passes it to the generated "
+                    "verify() as a premise. Set ONLY for python comparison predicates "
+                    "that genuinely need a fetched fact; null/omit otherwise (the "
+                    "default — the Python tier then sees only the claim's three slots, "
+                    "exactly as before)."
+                ),
             },
             "single_valued": {
                 "type": "integer",
@@ -148,6 +184,19 @@ routing_hint — pick the SINGLE most-applicable verification source:
                 is_anagram_of, lies_in_range
       signal: the verdict is a mathematical or logical computation, not a
               fact-lookup.
+      premise_properties (python comparison predicates only): when the
+              computation is over a FETCHED FACT about an entity slot rather
+              than the slot's literal text — "X born before Y" compares the two
+              people's birth dates; "X founded before 1800" compares the org's
+              inception year to a literal — set premise_properties to a JSON map
+              from the entity slot name to the KB property whose value is the
+              premise. born_before / older_than → {"subject":"P569",
+              "object":"P569"} (both birth dates, P569); founded_before /
+              inception_precedes → {"subject":"P571"} when the object is a
+              literal year (no fetch for a literal slot). Leave it null for pure
+              arithmetic/string predicates whose operands are already the literal
+              slots ("10 squared is 100", "len('aedos') is 5") — those need no
+              fetch.
 
   kb_resolvable — maps to a structured Wikidata property and refers to a
     publicly-known fact about a real-world entity.
@@ -190,6 +239,32 @@ routing_hint — pick the SINGLE most-applicable verification source:
               arbitrate across them at verify time — a value-type-incompatible
               candidate simply abstains rather than contradicting. Leave it
               null when the primary choice is unambiguous.
+              COPULA / instance_of RULE: for the copula predicate
+              `instance_of` (or `is_a`) — "X is a <noun>" — ALWAYS set
+              kb_property=P31 (instance of) as the primary AND list
+              candidate_kb_properties=["P106"] (occupation). The object may be a
+              profession/role noun ("guitarist", "physicist", "novelist"), in
+              which case the subject's true grounding is P106 not P31 (a person's
+              P31 is just Q5 human). The P106 candidate is value-type-gated: it
+              only verifies when the object is a confirmed occupation/profession,
+              so a non-profession copula ("X is a river"/"X is a city") harmlessly
+              falls back to the P31 instance-of check. Leave the row-level
+              object_entity_types null/open (the P31 object can be ANY class —
+              river, city, profession); the P106 candidate's occupation value-type
+              constraint is supplied by P106's own ontology at discovery time.
+
+      sample_subject_qids (LONG-TAIL kb_resolvable edges ONLY): when the
+              kb_property is a NICHE / non-standard Wikidata relation that lacks a
+              usable P2302 type/constraint ontology (so candidate_kb_properties
+              and the ontology can't help), you MAY list 2-3 well-known Wikidata
+              subject Q-ids that are canonical, uncontroversial instances of this
+              predicate's SUBJECT. The substrate uses distant supervision over
+              their co-occurring properties to propose ONE extra verify-only
+              candidate binding (it can never drive a contradiction and is
+              value-type-gated on the positive path). Emit Q-ids ONLY when you are
+              confident they name the right entity; leave it null for any common,
+              well-constrained property (born_in, occupation, member_of, ...) and
+              whenever you are unsure of the subjects -- the default is no sampling.
 
   kb_quantitative — a numeric COMPARISON predicate ('..._greater_than' /
     '..._less_than' in the name) against a count-valued Wikidata property.
@@ -287,8 +362,16 @@ class PredicateBinding:
     single_valued: bool = False
     subject_entity_types: Optional[list[str]] = None
     object_entity_types: Optional[list[str]] = None
-    source: str = "legacy_scalar"   # legacy_scalar | oracle | ontology_p2302 | sling
+    source: str = "legacy_scalar"   # legacy_scalar | oracle | ontology_p2302 | sling | candidate
     rank: float = 1.0               # discovery-time prior; verify-time evidence reorders
+    # v0.16.1 WS2 (occupation-copula grounding): when True, this binding's
+    # POSITIVE grounding is FAIL-CLOSED type-gated — it may only yield VERIFIED
+    # when the resolved object is PROVABLY subsumed by one of `object_entity_types`
+    # (a confirmed occupation/profession class). Set on the P106 candidate binding
+    # synthesized for a copula's `instance_of`/`is_a` predicate so a non-occupation
+    # copula ("X is a river") cannot false-verify through the occupation property.
+    # The primary binding (P31) leaves this False — its positive path is unchanged.
+    value_type_gated: bool = False
 
 
 def _binding_to_dict(b: "PredicateBinding") -> dict:
@@ -303,6 +386,7 @@ def _binding_to_dict(b: "PredicateBinding") -> dict:
         "object_entity_types": b.object_entity_types,
         "source": b.source,
         "rank": b.rank,
+        "value_type_gated": bool(b.value_type_gated),
     }
 
 
@@ -331,6 +415,16 @@ class PredicateMetadata:
     # oracle's cold-start generation.
     subject_entity_types: Optional[list[str]] = None
     object_entity_types: Optional[list[str]] = None
+    # v0.16.1 WS3b (premise -> Python channel): for a routing_hint='python'
+    # COMPARISON predicate that computes over a FETCHED fact, a JSON map from an
+    # Aedos slot name ('subject' / 'object') to the KB property whose value is
+    # the premise (e.g. {"subject": "P569", "object": "P569"} for born_before).
+    # The walker resolves each named slot to a Q-id, fetches that property, and
+    # threads the value into the generated verify(...) as a premise. None (the
+    # default) means NO premise fetch — the Python tier sees only the claim's
+    # three slots, exactly as before. Knowledge of WHICH property to fetch lives
+    # HERE (oracle/seed), never in a Python predicate->property table.
+    premise_properties: Optional[dict] = None
     # v0.16 WS1: the authoritative multi-property binding list. Evidence
     # arbitrates across these at verify time. The scalar fields above are
     # RETAINED as real dataclass fields (every existing meta.kb_property
@@ -384,6 +478,7 @@ class PredicateTranslation:
         consistency_checker=None,
         property_relations=None,
         sling=None,
+        enable_sling: bool = True,
     ) -> None:
         self._db = db
         self._llm = llm_client
@@ -394,6 +489,10 @@ class PredicateTranslation:
         # single primary binding = pre-v0.16 behavior.
         self._property_relations = property_relations
         self._sling = sling
+        # v0.16.1 WS4: config gate for SLING distant supervision. When False,
+        # the SlingFallback is never consulted even if wired — turning SLING off
+        # can only lose a (verify-only) candidate, never change a sound verdict.
+        self._enable_sling = enable_sling
 
     def consult(
         self,
@@ -583,13 +682,14 @@ class PredicateTranslation:
 
         # INSERT OR REPLACE handles the case where a retracted row exists for the same
         # (predicate, namespace) key — SQLite deletes the old row and inserts the new one.
+        premise_properties_raw = raw.get("premise_properties") or None
         self._db.execute(
             """INSERT OR REPLACE INTO predicate_translation
                (aedos_predicate, object_type, user_subject_required, distinct_slots,
                 routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                 single_valued, subject_entity_types, object_entity_types,
-                reason, created_at, bindings)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                reason, created_at, bindings, premise_properties)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 aedos_predicate,
                 raw["object_type"],
@@ -605,6 +705,7 @@ class PredicateTranslation:
                 raw["reason"],
                 now,
                 bindings_json,
+                json.dumps(premise_properties_raw) if premise_properties_raw else None,
             ),
         )
         self._db.commit()
@@ -644,6 +745,7 @@ class PredicateTranslation:
             single_valued=bool(single_valued),
             subject_entity_types=subject_types_raw if subject_types_raw else None,
             object_entity_types=object_types_raw if object_types_raw else None,
+            premise_properties=premise_properties_raw,
             bindings=bindings,
         )
 
@@ -745,16 +847,28 @@ class PredicateTranslation:
                 if isinstance(pid, str) and pid and pid not in candidates:
                     candidates.append(pid)
 
-        ontology_bindings: list[PredicateBinding] = []
+        primary_ontology_bindings: list[PredicateBinding] = []
+        candidate_ontology_bindings: list[PredicateBinding] = []
+        candidate_bindings: list[PredicateBinding] = []
         sling_bindings: list[PredicateBinding] = []
         any_ontology_empty = False
 
         for pid in candidates:
+            # v0.16.1 WS2: a NON-PRIMARY candidate (e.g. P106 occupation proposed
+            # alongside the primary P31 for a copula) is FAIL-CLOSED type-gated on
+            # its positive path — it may only VERIFY when the resolved object is a
+            # confirmed value-type-class member. The primary property is never
+            # positive-gated (its mapping is the oracle's best choice).
+            is_candidate = pid != primary_prop
             ontology = self._property_relations.fetch(
                 pid, kb_namespace or "wikidata"
             )
             if ontology is not None and not ontology.is_empty():
-                ontology_bindings.append(
+                target = (
+                    candidate_ontology_bindings if is_candidate
+                    else primary_ontology_bindings
+                )
+                target.append(
                     PredicateBinding(
                         kb_namespace=kb_namespace,
                         kb_property=pid,
@@ -777,30 +891,62 @@ class PredicateTranslation:
                         ),
                         source="ontology_p2302",
                         rank=1.0,
+                        value_type_gated=is_candidate,
                     )
                 )
             else:
                 any_ontology_empty = True
+                # v0.16.1 WS2: even with an empty ontology, keep a NON-PRIMARY
+                # candidate binding so the alternative property (P106) is
+                # verifiable. It carries the oracle's object_entity_types hint as
+                # the value-type constraint and is FAIL-CLOSED positive-gated, so
+                # it can only verify a confirmed occupation/profession object.
+                if is_candidate:
+                    candidate_bindings.append(
+                        PredicateBinding(
+                            kb_namespace=kb_namespace,
+                            kb_property=pid,
+                            slot_to_qualifier=slot_to_qualifier,
+                            single_valued=oracle_single_valued,
+                            subject_entity_types=oracle_subject_types,
+                            object_entity_types=oracle_object_types,
+                            source="candidate",
+                            rank=0.4,
+                            value_type_gated=True,
+                        )
+                    )
 
         # SLING fallback: only when the ontology couldn't constrain a candidate
         # (long-tail edges). Lowest rank; never licenses a contradiction.
         #
-        # DORMANT-MECHANISM NOTE (round-1 follow-up): SLING is DEFERRED-INERT in
-        # v0.16 — this call always yields []. propose_bindings needs sample
-        # subject Q-ids (sample_subject_qids / example_qids) in `raw`, which the
-        # predicate-metadata oracle's tool schema (PREDICATE_METADATA_TOOL) does
-        # not emit, so it samples nothing and proposes nothing. Activation
-        # (adding the schema field + a prompt to populate it) is a future
-        # operator decision; it fails open and changes no verdict today.
-        if any_ontology_empty and self._sling is not None:
+        # v0.16.1 WS4 — ACTIVATED (gated). The predicate-metadata oracle now emits
+        # optional `sample_subject_qids` (tool schema + prompt) for long-tail edges
+        # the ontology can't constrain; propose_bindings samples those entities'
+        # co-occurring properties and proposes ONE verify-only candidate. The
+        # binding is single_valued=False (can never CONTRADICT), ranks LAST, and is
+        # value_type_gated=True (fail-closed positive gate) so a noisy co-occurrence
+        # cannot false-verify on an unconfirmed object type. The `enable_sling`
+        # config flag gates consumption: when off, SLING is never consulted (a
+        # verify-only candidate is simply not produced — no sound verdict changes).
+        if any_ontology_empty and self._sling is not None and self._enable_sling:
             proposed = self._sling.propose_bindings(aedos_predicate, raw)
             if isinstance(proposed, list):
                 sling_bindings = [b for b in proposed if isinstance(b, PredicateBinding)]
 
-        # Rank: ontology-typed first, then oracle-primary, then sling. Keep the
-        # oracle binding always present so the primary property is verifiable
-        # even when its own ontology was empty.
-        ranked = [*ontology_bindings, oracle_binding, *sling_bindings]
+        # Rank: the PRIMARY property first (its ontology binding, else the oracle
+        # binding), then the value-type-gated CANDIDATE bindings (the P106 copula
+        # path — ontology-typed first, then the empty-ontology fallback), then
+        # sling. bindings[0] stays the primary property so every scalar reader and
+        # the single-binding back-compat path are unchanged. The oracle binding is
+        # always present so the primary property is verifiable even when its own
+        # ontology was empty.
+        ranked = [
+            *primary_ontology_bindings,
+            oracle_binding,
+            *candidate_ontology_bindings,
+            *candidate_bindings,
+            *sling_bindings,
+        ]
 
         # De-dup by (kb_namespace, kb_property) keeping the first (highest-rank)
         # occurrence — an ontology binding for the primary property supersedes
@@ -836,6 +982,12 @@ class PredicateTranslation:
             object_types = _parse_json(row["object_entity_types"])
         except (IndexError, KeyError):
             object_types = None
+        # v0.16.1 WS3b: premise_properties is a later column addition — absent
+        # from older DBs (IndexError/KeyError) or NULL on rows without premises.
+        try:
+            premise_properties = _parse_json(row["premise_properties"])
+        except (IndexError, KeyError):
+            premise_properties = None
 
         # v0.16 WS1: the bindings JSON column is an M1 addition and may be
         # absent from older DBs (IndexError/KeyError) or NULL on legacy rows.
@@ -861,6 +1013,7 @@ class PredicateTranslation:
                         object_entity_types=b.get("object_entity_types"),
                         source=b.get("source", "legacy_scalar"),
                         rank=b.get("rank", 1.0),
+                        value_type_gated=bool(b.get("value_type_gated", False)),
                     )
                 )
 
@@ -883,5 +1036,6 @@ class PredicateTranslation:
             single_valued=bool(row["single_valued"]),
             subject_entity_types=subject_types,
             object_entity_types=object_types,
+            premise_properties=premise_properties,
             bindings=bindings,
         )

@@ -63,6 +63,7 @@ from typing import Any, Optional
 import httpx
 
 from ..audit.log import log_event
+from ..config import Config
 from ..utils.rate_limit import RateLimiter
 
 
@@ -152,10 +153,13 @@ candidate list.
 # with downstream audit-log consumers; the variable name is generic.
 STAGE_C_ABSTAIN = "ABSTAIN"
 
-# Defaults used when no Config is wired (test paths that construct the
-# normalizer directly without a Config object). Production paths come
+# v0.16.1 WS5c: the MediaWiki/Wikipedia API endpoint is a BACKEND fact and
+# its canonical home is `Config.wikipedia_api_url` — a layer1 module must not
+# hardcode it. The only use here is the no-Config fallback (test paths that
+# construct the normalizer without a Config), so we read Config's own class
+# default rather than re-declaring the URL string. Production paths come
 # through build_pipeline which passes a Config.
-_DEFAULT_API_URL = "https://en.wikipedia.org/w/api.php"
+_DEFAULT_API_URL = Config.wikipedia_api_url
 _DEFAULT_RATE = 10.0
 _DEFAULT_ENTITY_TTL_SECONDS = 3600
 _RETRY_BACKOFF_SECONDS = 1.0
@@ -749,7 +753,7 @@ class WikipediaNormalizer:
             )
 
         try:
-            stage_b_candidates = self._kb_adapter.wbsearchentities(stage_b_query)
+            stage_b_candidates = self._kb_adapter.search(stage_b_query)
         except Exception as exc:
             duration_ms = (time.monotonic() - start_time) * 1000.0
             return NormalizationResult(
@@ -868,7 +872,7 @@ class WikipediaNormalizer:
         if self._kb_adapter is None:
             return False
         try:
-            p31_by_qid, fetch_error = self._kb_adapter._fetch_p31_for_candidates([qid])
+            p31_by_qid, fetch_error = self._kb_adapter.fetch_types([qid])
         except Exception:
             return False
         if fetch_error is not None:
@@ -907,7 +911,7 @@ class WikipediaNormalizer:
         filtered: list = list(candidates)
         if expected_entity_types and self._kb_adapter is not None:
             try:
-                p31_by_qid, fetch_error = self._kb_adapter._fetch_p31_for_candidates(
+                p31_by_qid, fetch_error = self._kb_adapter.fetch_types(
                     [c.qid for c in candidates]
                 )
             except Exception as exc:

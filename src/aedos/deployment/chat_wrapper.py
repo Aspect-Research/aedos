@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Callable, Optional
 
 from ..layer1_extraction.extractor import ExtractionContext
 from ..layer1_extraction.triage import AbstentionReason
+from ..layer4_sources.parallel_verify import DEFAULT_MAX_WORKERS, walk_claims_parallel
 from ..layer4_sources.walker import VerificationContext
+from .claim_selection import select_central_claims
 from ..layer5_result.aggregator import (
     ClaimVerdict,
     VerificationResult,
@@ -16,6 +19,8 @@ from ..layer5_result.aggregator import (
     is_given_assertion,
 )
 from ..llm.client import ChatMessage
+
+_log = logging.getLogger(__name__)
 
 
 class InterventionType(str, Enum):
@@ -68,6 +73,11 @@ class ChatResponse:
     verification_result: VerificationResult
     verification_id: str
     draft_message: str = ""
+    # v0.16.2 Phase D: claims extracted from the draft but NOT central to the
+    # user's question — passed through unverified (each a {claim_id, subject,
+    # predicate, object, polarity} dict), plus a one-line selection summary.
+    not_assessed_claims: list = field(default_factory=list)
+    selection_summary: str = ""
 
     @property
     def intervention_type(self) -> str:
@@ -244,6 +254,33 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
+def walk_result_observability(claim, walk_result) -> dict:
+    """Per-claim observability built from a raw WalkResult (pre-aggregation), for
+    STREAMING each claim's verdict + reasoning trace the moment its walk
+    completes. Mirrors the lightweight `claim_observability` entry: verdict, base
+    verdict, given-assertion flag, abstention reason, and the row-id-free human
+    trace (`trace_human`) — the latter is what answers "how did it conclude
+    `no_grounding_found`" (sources/edges tried + why it abstained)."""
+    from ..layer5_result.trace import trace_to_human
+
+    verdict = walk_result.verdict
+    trace = getattr(walk_result, "trace", None)
+    return {
+        "claim_id": claim.claim_id,
+        "subject": claim.subject,
+        "predicate": claim.predicate,
+        "object": claim.object,
+        "polarity": claim.polarity,
+        "verdict": verdict,
+        "base_verdict": base_verdict_of(verdict),
+        "conditional": is_given_assertion(verdict),
+        "abstention_reason": getattr(walk_result, "abstention_reason", None),
+        "trace_human": (
+            trace_to_human(trace, claim=claim, verdict=verdict) if trace else None
+        ),
+    }
+
+
 def claim_observability(vr: VerificationResult, verbose: bool = False) -> list[dict]:
     """WS5: structured, inspectable per-claim view.
 
@@ -313,6 +350,7 @@ class ChatWrapper:
         tier_u=None,
         config: Optional[dict] = None,
         kb=None,
+        verification_store=None,
     ) -> None:
         self._extractor = extractor
         self._walker = walker
@@ -331,11 +369,37 @@ class ChatWrapper:
         self._tier_u = tier_u
         self._config = config or {}
         self._verification_store: dict[str, VerificationResult] = {}
+        # v0.16.2 observability: optional durable SQLite-backed store. When None
+        # (legacy/test constructions), behavior is exactly as before — pure
+        # in-memory, lost on restart. When wired, every turn's full result is
+        # persisted so GET /verification/{id} survives restart with no re-walk.
+        self._vstore = verification_store
 
-    def respond(self, user_message: str, conversation_context: Optional[dict] = None) -> ChatResponse:
+    def respond(
+        self,
+        user_message: str,
+        conversation_context: Optional[dict] = None,
+        progress: Optional[Callable[[dict], None]] = None,
+        verify_workers: int = DEFAULT_MAX_WORKERS,
+        select_central: bool = True,
+        select_min_claims: int = 4,
+    ) -> ChatResponse:
         ctx_dict = conversation_context or {}
         asserting_party = ctx_dict.get("asserting_party_id", "user")
         current_time = datetime.now(timezone.utc).isoformat()
+
+        # v0.16.2 Phase B: optional progress sink for streaming the turn's steps
+        # to a deployment UI (transparent process). `progress=None` reproduces the
+        # prior behavior exactly; a throwing sink can never break verification.
+        def _emit(phase: str, detail: str, **extra) -> None:
+            if progress is None:
+                return
+            try:
+                progress({"phase": phase, "detail": detail, **extra})
+            except Exception:
+                pass
+
+        _emit("reading", "reading your message")
 
         # Extract claims
         # from the user_message and promote them into Tier U BEFORE the
@@ -370,6 +434,8 @@ class ChatWrapper:
             user_claims = [c for c in user_claims if c.abstention_reason is None]
             if user_claims:
                 promote_assertions(user_claims, self._tier_u)
+                _emit("premises",
+                      f"recorded {len(user_claims)} premise(s) from your message as session context")
                 # The promotion's pre_verdicts (cross-source contradictions
                 # on the user's own assertions vs. prior externally-verified
                 # rows) are not surfaced to this turn's intervention — the
@@ -378,6 +444,7 @@ class ChatWrapper:
                 # A future deployment surface may consume them.
 
         # 1. Generate draft
+        _emit("draft", "composing a draft reply")
         system = self._config.get("system_prompt", "You are a helpful assistant.")
         draft = self._llm.chat(
             system=system,
@@ -418,14 +485,62 @@ class ChatWrapper:
             asserting_party=asserting_party,
             source_text=draft,
         )
-        walk_results = []
-        for claim in claims:
-            result = self._walker.walk(claim, verification_context)
-            walk_results.append(result)
+        _emit("extracted", f"found {len(claims)} claim(s) in the draft")
+        # 2.5 Phase D: select the claims CENTRAL to the user's question and verify
+        # ONLY those. Non-central claims pass through the draft unverified — no
+        # verdict is emitted on them (like an abstain), so this never false-
+        # verifies/contradicts; they are shown transparently as "not assessed".
+        # Fails open to ALL claims (select_central_claims handles the fallbacks).
+        will_select = select_central and len(claims) > select_min_claims
+        if will_select:
+            _emit("selecting", "deciding which claims are central to your question")
+        selection = select_central_claims(
+            self._llm, user_message, draft, claims,
+            min_claims=select_min_claims, enabled=select_central,
+        )
+        central = [c for c in claims if c.claim_id in selection.central_ids]
+        peripheral = [c for c in claims if c.claim_id not in selection.central_ids]
+        if selection.applied:
+            _emit("selected", selection.reason)
+            for c in peripheral:
+                _emit(
+                    "skipped",
+                    f"not assessed (not central): {c.subject} {c.predicate} {c.object}",
+                    claim_id=c.claim_id, subject=c.subject, predicate=c.predicate,
+                    object=c.object, polarity=c.polarity, verdict="not_assessed",
+                )
+        not_assessed_claims = [
+            {"claim_id": c.claim_id, "subject": c.subject, "predicate": c.predicate,
+             "object": c.object, "polarity": c.polarity}
+            for c in peripheral
+        ]
 
-        # 4. Aggregate
+        # 3. Verify the CENTRAL claims CONCURRENTLY — each `verdict` event (with its
+        # reasoning trace) is emitted the moment that claim's walk completes.
+        # Verdicts are identical to serial (claims independent; per-walk state
+        # thread-local); walk_results come back in claim order for aggregation.
+        total = len(central)
+        for i, claim in enumerate(central):
+            _emit(
+                "verifying",
+                f"verifying: {claim.subject} {claim.predicate} {claim.object}",
+                index=i + 1, total=total, claim_id=claim.claim_id,
+            )
+
+        def _on_result(index, claim, result):
+            _emit("verdict", str(result.verdict),
+                  index=index + 1, total=total,
+                  **walk_result_observability(claim, result))
+
+        walk_results = walk_claims_parallel(
+            self._walker, central, verification_context,
+            max_workers=verify_workers, on_result=_on_result,
+        )
+
+        # 4. Aggregate (central claims only; peripheral pass through the draft)
+        _emit("composing", "composing the final reply")
         vr = self._aggregator.aggregate(
-            claims=claims,
+            claims=central,
             per_claim_results=walk_results,
             text_input={"message": user_message, "draft": draft},
         )
@@ -442,6 +557,43 @@ class ChatWrapper:
 
         verification_id = str(uuid.uuid4())
         self._verification_store[verification_id] = vr
+        # Durable persist (observability): the full per-claim walk result, so the
+        # audit endpoint survives restart with no re-walk. walk_results is claim-
+        # ordered and aligned with vr.claim_verdicts (both from the same zip in
+        # aggregate). Best-effort: a store failure must never break the turn.
+        if self._vstore is not None:
+            try:
+                self._vstore.persist(
+                    verification_id, asserting_party, vr,
+                    source_kind="chat", created_at=current_time,
+                    walk_results=walk_results,
+                    chat_extras={
+                        "final_message": final,
+                        "intervention_type": plan.overall.value,
+                        "not_assessed_claims": not_assessed_claims,
+                        "selection_summary": selection.reason,
+                        # Per-claim intervention actions (action_type + the composed
+                        # correction/abstention/conditional annotation) so the audit
+                        # record reproduces the per-claim notes the turn showed live.
+                        "per_claim_actions": [
+                            {"claim_id": a.claim_id,
+                             "action_type": a.action_type.value,
+                             "annotation": a.annotation}
+                            for a in plan.per_claim_actions
+                        ],
+                    },
+                    # EVERY draft-extracted claim (incl. extraction-abstained ones
+                    # not walked) so the durable record reflects the full extraction.
+                    extracted_claims=[
+                        {"claim_id": c.claim_id, "subject": c.subject,
+                         "predicate": c.predicate, "object": c.object,
+                         "polarity": c.polarity,
+                         "abstention_reason": c.abstention_reason}
+                        for c in claims
+                    ],
+                )
+            except Exception:
+                _log.exception("verification_store.persist (chat) failed")
 
         return ChatResponse(
             final_message=final,
@@ -449,6 +601,8 @@ class ChatWrapper:
             verification_result=vr,
             verification_id=verification_id,
             draft_message=draft,
+            not_assessed_claims=not_assessed_claims,
+            selection_summary=selection.reason,
         )
 
     def get_verification(self, verification_id: str) -> Optional[VerificationResult]:
@@ -503,4 +657,9 @@ class ChatWrapper:
         for cid in stale_ids:
             propagator.clear_stale(cid)
         self._verification_store[verification_id] = refreshed
+        # NOTE: the durable store intentionally holds the VERIFY-TIME record (the
+        # faithful historical audit). We do NOT re-persist the re-derived result
+        # here: persist() would clobber the core presentation fields (final_message
+        # / selection_summary) the re-walk doesn't carry. The audit endpoint serves
+        # the verify-time record; staleness is a separate live-query concern.
         return refreshed

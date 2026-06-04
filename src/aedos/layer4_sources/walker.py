@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -15,17 +16,6 @@ from ..layer4_sources.kb_verifier import (
 )
 from ..layer4_sources.kb_protocol import KBProtocol, LocalContext
 from ..layer5_result.trace import JustificationTrace, TraceEdge, TraceNode
-
-
-# Per-relation KB neighbor properties. Mirrors
-# `_SUBSUMPTION_PROPERTIES` in `kb_wikidata.py` for is_a/part_of, plus
-# P17 (country) on part_of for country-level grounding (e.g. Williams
-# College P17 → United States; useful for "X is in the United States"
-# style claims when the substrate's subsumption oracle is cold).
-_D5_NEIGHBOR_PROPS_BY_RELATION: dict[str, tuple[str, ...]] = {
-    "is_a": ("P31", "P279"),
-    "part_of": ("P131", "P361", "P17"),
-}
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +49,62 @@ class WalkerBudget:
     # true cost bound. Permissive default (config-tunable per contract §0.11
     # decision 6); seeds + premise-forward keep real walks far below it.
     max_frontier_expansions: int = 2000
+    # Hard per-walk cap on KB-neighbor ENUMERATION PROBES — the number of
+    # candidate neighbor QIDs routed through `_verify_chain` (each one a
+    # rate-limited live SPARQL transitive-path ASK). The `max_frontier_expansions`
+    # bound above counts only ADMITTED expansions, so for a false/abstaining
+    # famous-entity claim — where almost every enumerated candidate is REJECTED —
+    # it never trips, and the REJECTED candidates' ASKs are otherwise unbounded:
+    # at ~5 ASK/s they accumulate to the wall-clock and the walk times out
+    # (budget_wall_clock) instead of abstaining. Counting probes whether admitted
+    # OR rejected (with per-walk QID dedupe) makes such a walk abstain FAST. A
+    # genuine grounding's true container/kind chain is reached in a few confirmed
+    # hops, well under this cap; exceeding it only ever turns a (already-timing-
+    # out) abstain into a fast abstain — verdict-preserving (§3.2: abstain is safe).
+    max_kb_neighbor_probes: int = 48
+    # Hard per-walk budget on TOTAL KB round-trip WORK (not just enumeration
+    # probes). The probe cap above counts only the per-candidate transitive ASKs
+    # inside KB-neighbor enumeration; the DOMINANT cost on a fanning-out
+    # famous-entity walk is the per-frontier-node KBVerifier.verify work
+    # (resolution + lookup_statements + the un-memoized subsumption-upgrade ASKs),
+    # which no other counter sees and which accumulates — across a single
+    # fanned-out depth — past the wall clock before the depth-boundary check fires.
+    # This budget charges each verify call and each neighbor enumeration, is
+    # sampled WITHIN the node loop, and on exhaustion returns a FAST deterministic
+    # abstain (budget_kb_work) instead of a 30s timeout. A unit ≈ one rate-limited
+    # round-trip; a genuine grounding needs only a few. Config-tunable.
+    max_kb_work_units: int = 60
+
+
+@dataclass
+class _KBWork:
+    """Per-walk accounting for TOTAL KB round-trip work. Created fresh inside
+    walk() and threaded as a parameter (never an instance attr) so concurrent
+    claim-walks on the SHARED walker each get their own counter. `charge(n)`
+    accrues weighted round-trips (a KBVerifier.verify bundles several SPARQL, so it
+    is charged more than a single enumeration call) and latches `exhausted` once
+    the cap is hit, so the walk abstains fast and deterministically."""
+    limit: int
+    spent: int = 0
+    exhausted: bool = False
+
+    def charge(self, n: int = 1) -> None:
+        self.spent += n
+        if self.spent >= self.limit:
+            self.exhausted = True
+
+
+@dataclass
+class _KBNeighborProbes:
+    """Per-walk accounting for the KB-neighbor enumeration probe budget. `seen`
+    dedupes neighbor QIDs across the whole walk (the same famous container recurs
+    across slots/directions/depths), so each distinct candidate is probed at most
+    once; `spent` counts distinct probes against `limit`; `exhausted` latches once
+    the cap is hit so `walk()` returns a fast, deterministic abstain."""
+    limit: int
+    spent: int = 0
+    exhausted: bool = False
+    seen: set = field(default_factory=set)
 
 
 @dataclass
@@ -197,6 +243,58 @@ def _is_vague_class_object(object_value: str) -> bool:
     return False
 
 
+def _vague_class_head(object_value: str) -> Optional[str]:
+    """Extract the bare CLASS-noun head from a vague-class object phrase, or
+    None if no head can be isolated.
+
+    "a town in the United States"          -> "town"
+    "a state that borders New York"        -> "state"
+    "an institution founded before 1800"   -> "institution"
+    "some river"                           -> "river"
+
+    The head is the noun phrase BETWEEN the indefinite-article prefix and the
+    first restrictive modifier (a preposition like "in"/"of"/"that"/relative
+    clause). The walker resolves THIS head to a KB class Q-id and confirms the
+    subject's instance/subclass path to it — the qualifier ("in the United
+    States") is intentionally dropped: the §3.2-sound check is "subject is_a
+    <class>" via P31/P279 authority, and a positive path can only HOLD when the
+    membership is real. The qualifier is NOT used to broaden a positive (it
+    could only tighten one, and the KB path already enforces the tightening
+    through the resolved class).
+    """
+    if not object_value:
+        return None
+    obj = object_value.strip()
+    if not obj:
+        return None
+    lower = obj.lower()
+    head = None
+    for prefix in _VAGUE_CLASS_PREFIXES:
+        if lower.startswith(prefix):
+            head = obj[len(prefix):]
+            break
+    if head is None:
+        return None
+    head = head.strip()
+    if not head:
+        return None
+    # Cut at the first restrictive modifier: a preposition or relative-clause
+    # marker. Leaves the bare class-noun head ("town", "state", "institution").
+    cut_markers = (
+        " that ", " which ", " where ", " whose ", " who ",
+        " in ", " of ", " on ", " at ", " from ", " with ", " near ",
+        " founded ", " located ", " bordering ", " borders ", " using ",
+    )
+    head_lower = head.lower()
+    cut = len(head)
+    for marker in cut_markers:
+        idx = head_lower.find(marker)
+        if idx != -1 and idx < cut:
+            cut = idx
+    head = head[:cut].strip()
+    return head or None
+
+
 def _claim_key(claim: Claim) -> str:
     return f"{claim.asserting_party}|{claim.subject}|{claim.predicate}|{claim.object}|{claim.polarity}"
 
@@ -218,6 +316,8 @@ def _claim_from_parts(
         valid_from=template.valid_from,
         valid_until=template.valid_until,
         valid_during_ref=template.valid_during_ref,
+        valid_from_ref=template.valid_from_ref,
+        valid_until_ref=template.valid_until_ref,
     )
 
 
@@ -312,6 +412,73 @@ class Walker:
         # the helper falls back to the kb_verifier's cache (then no-op), so the
         # explicit wiring here and the fallback both work.
         self._exception_cache = exception_cache
+        # v0.16.2 Phase C: the two per-walk mutable flags below live in
+        # thread-local storage so the SAME Walker can verify claims concurrently
+        # (one thread per claim) without one walk's flags leaking into another's.
+        # `_user_authoritative_walk` gates whether KB grounding runs, so a cross-
+        # walk race there would be a §3.2 hazard — thread-local removes it.
+        # Exposed via same-named properties so all existing read/write sites are
+        # unchanged. (KBVerifier is stateless per verify(); the resolver's own
+        # per-resolve state is likewise thread-local — see resolver.py.)
+        self._tls = threading.local()
+
+    @property
+    def _excluded_tier_u_row_ids(self) -> set:
+        return getattr(self._tls, "excluded_tier_u_row_ids", set())
+
+    @_excluded_tier_u_row_ids.setter
+    def _excluded_tier_u_row_ids(self, value: set) -> None:
+        self._tls.excluded_tier_u_row_ids = value
+
+    @property
+    def _user_authoritative_walk(self) -> bool:
+        return getattr(self._tls, "user_authoritative_walk", False)
+
+    @_user_authoritative_walk.setter
+    def _user_authoritative_walk(self, value: bool) -> None:
+        self._tls.user_authoritative_walk = value
+
+    @property
+    def _functional_value_known(self) -> bool:
+        # Transient per-node signal (thread-local for parallel walks): set by the
+        # most recent _try_external_grounding from the KB verifier's trace, read by
+        # the node loop to gate the directed-over-enumerate discovery skip (the is_a
+        # arm — gated on the predicate being functional/single_valued).
+        return getattr(self._tls, "functional_value_known", False)
+
+    @_functional_value_known.setter
+    def _functional_value_known(self, value: bool) -> None:
+        self._tls.functional_value_known = value
+
+    @property
+    def _value_known_entity(self) -> bool:
+        # Transient per-node signal: the subject's value(s) for this ENTITY
+        # predicate are KNOWN (statements found), INDEPENDENT of single_valued.
+        # Gates the part_of-enumeration skip — the directed part_of upgrade already
+        # tested geographic containment, so the "descend into the object's P17
+        # children" fanout is futile even for a (cold-started) non-single_valued
+        # predicate like "was born in".
+        return getattr(self._tls, "value_known_entity", False)
+
+    @_value_known_entity.setter
+    def _value_known_entity(self, value: bool) -> None:
+        self._tls.value_known_entity = value
+
+    @property
+    def _functional_entity_predicate(self) -> bool:
+        # Transient per-node signal: this predicate is a FUNCTIONAL ENTITY predicate
+        # (entity object + single_valued binding) per its METADATA — set even when
+        # the KB lookup found no statements (subject unresolved / no statement on the
+        # property), unlike the two signals above which require statements found.
+        # Gates the skip of BOTH enumeration arms: the directed subsumption upgrade is
+        # the only KB grounding path for such a predicate, so neighbor enumeration is
+        # futile regardless of whether a value was found — the live "Obama born_in
+        # Kenya" fanout (statements empty → the statements-based signals were False).
+        return getattr(self._tls, "functional_entity_predicate", False)
+
+    @_functional_entity_predicate.setter
+    def _functional_entity_predicate(self, value: bool) -> None:
+        self._tls.functional_entity_predicate = value
 
     def walk(
         self,
@@ -381,8 +548,63 @@ class Walker:
                 budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
             )
 
+        # Per-walk routing flag. When set, external (KB / Python) grounding is
+        # structurally unreachable for this walk's claims — the claim is the
+        # user's own (user_authoritative predicate, or a stipulated
+        # user-persona subject), so it grounds only in Tier U and every verdict
+        # is conditional on the user's assertion. See _try_external_grounding.
+        self._user_authoritative_walk = False
+
+        # v0.16.1 WS5b: a persona-subject claim is the asking user, not a KB
+        # entity. When the claim's subject is a stipulated user identity for
+        # this asserting_party (tier_u.has_identity), route the claim
+        # user_authoritative exactly as a user_authoritative-predicate claim:
+        # set the chain flag (verdict family becomes *_given_assertion) AND make
+        # external grounding structurally unreachable, so the entity resolver
+        # never sees the persona name (it would otherwise misresolve "Asa" →
+        # "Asa, King of Judah" and emit a §3.2 false verified/contradicted on a
+        # negation like "Asa is not in France"). This replaces the deleted
+        # _is_persona_subject KB-skip guard with a route at walk entry.
+        # Defensive: a mock TierU in a unit test may not implement
+        # has_identity; treat a missing method / failure as "not a persona"
+        # (the conservative direction — at worst a missing route, never a
+        # false verdict).
+        _has_identity = getattr(self._tier_u, "has_identity", None)
+        try:
+            persona_subject = bool(
+                _has_identity(context.asserting_party, claim.subject)
+            ) if _has_identity is not None else False
+        except Exception:
+            persona_subject = False
+
+        route = self._predicate_routing(claim.predicate)
+
+        # user_subject_required anomaly guard (v0.16.1 WS5b, relocated from the
+        # deleted Layer-2 Validator). A predicate flagged user_subject_required
+        # (e.g. `prefers`, `believes`) asserted about a subject that is NEITHER
+        # the asserting party itself NOR a stipulated user persona is
+        # malformed — a first-person predicate attributed to a third party.
+        # FAIL-CLOSED: short-circuit to a base no_grounding_found / anomaly
+        # abstain BEFORE any Tier U / KB / Python lookup, so it can only ever
+        # become an abstain, never a verdict (it must not reach the entity
+        # resolver to misresolve + false-contradict).
+        if (
+            self._predicate_user_subject_required(claim.predicate)
+            and claim.subject != context.asserting_party
+            and not persona_subject
+        ):
+            trace.walk_metadata["short_circuit"] = "user_subject_required"
+            trace.polarity_trace = []
+            return WalkResult(
+                verdict="no_grounding_found",
+                trace=trace,
+                abstention_reason="user_subject_required",
+                budget_consumption=BudgetConsumption(wall_clock_ms=0.0, llm_calls=0),
+            )
+
         # For predicates routed
-        # `user_authoritative`, external grounding is structurally
+        # `user_authoritative` (or a persona-subject claim), external grounding
+        # is structurally
         # unreachable — no KB property maps to `prefers` / `believes` /
         # similar, and Python cannot compute first-person facts. Every
         # verdict on such a claim is therefore conditional on user
@@ -391,7 +613,8 @@ class Walker:
         # abstained), even when no Tier U premise is present (the
         # abstained_given_assertion case). See design doc §"User_authoritative
         # verdict semantics".
-        if self._predicate_routing(claim.predicate) == "user_authoritative":
+        if route == "user_authoritative" or persona_subject:
+            self._user_authoritative_walk = True
             self._record_premise(trace, source="tier_u", assertion=True)
 
         frontier: list[Claim] = [claim]
@@ -404,6 +627,21 @@ class Walker:
         # past the budget before the depth-boundary wall-clock check fires.
         total_expansions = 0
         fanout_exceeded = False
+        # Per-walk KB-neighbor PROBE budget (the real cost bound — see
+        # WalkerBudget.max_kb_neighbor_probes). Counts distinct candidate probes
+        # (live transitive-path ASKs) across ALL depths/nodes so a non-grounding
+        # famous-entity claim abstains fast instead of timing out on the
+        # wall clock. Shared for the whole walk; threaded into discovery.
+        probes = _KBNeighborProbes(limit=budget.max_kb_neighbor_probes)
+        probe_exceeded = False
+        # Per-walk TOTAL KB-WORK budget (the general cost bound — see
+        # WalkerBudget.max_kb_work_units). Charged at every walker-side KB
+        # round-trip (verify calls, neighbor enumeration), sampled WITHIN the node
+        # loop so a single fanned-out depth's cumulative round-trips can't overrun
+        # the wall clock before being caught.
+        work = _KBWork(limit=budget.max_kb_work_units)
+        work_exceeded = False
+        wall_exceeded = False
 
         while frontier and depth < self._max_depth:
             # Budget check
@@ -437,8 +675,17 @@ class Walker:
                 visited[key] = node
                 polarity_trace.append(node.polarity)
 
+                # Within-node wall-clock backstop: re-sample here (not only at the
+                # depth-loop top) so a single fanned-out depth whose cumulative
+                # per-node round-trips overrun the budget is caught PROMPTLY rather
+                # than after the whole depth completes. Catches cost the work
+                # counter can't see (e.g. LLM/oracle latency).
+                if (time.monotonic() - start_time) > budget.wall_clock_seconds and current_verdict is None:
+                    wall_exceeded = True
+                    break
+
                 # Direct premise lookup
-                verdict, lookup_source, llm_delta = self._direct_lookup(node, context, trace)
+                verdict, lookup_source, llm_delta = self._direct_lookup(node, context, trace, work)
                 llm_calls += llm_delta
 
                 if verdict is not None:
@@ -460,10 +707,42 @@ class Walker:
                 # (called inside _discover_chains per candidate) admits a
                 # candidate only if the taxonomy/transitive edge is confirmed
                 # in a source. Soundness lives entirely at verify time (§3.2).
-                expanded, llm_delta = self._discover_chains(node, trace, depth)
+                # Directed-over-enumerate: when the just-run direct KB lookup found
+                # the subject's value(s) for a FUNCTIONAL entity predicate and still
+                # abstained (the directed subsumption upgrade already tested every
+                # held value against the claim), neighbor ENUMERATION cannot ground
+                # the claim — skip the futile fanout (the doomed "descend into Kenya"
+                # search). Read the per-node signal set by _try_external_grounding.
+                functional_value_known = self._functional_value_known
+                value_known_entity = self._value_known_entity
+                functional_entity_predicate = self._functional_entity_predicate
+                expanded, llm_delta = self._discover_chains(
+                    node, trace, depth, probes,
+                    functional_value_known=functional_value_known,
+                    value_known_entity=value_known_entity,
+                    functional_entity_predicate=functional_entity_predicate,
+                    work=work,
+                )
                 llm_calls += llm_delta
                 next_frontier.extend(expanded)
                 total_expansions += len(expanded)
+
+                # KB-work bound: the general cost bound. The per-node verify +
+                # enumeration round-trips are charged against `work`; stop the
+                # moment the cap is hit so the walk abstains fast (budget_kb_work)
+                # rather than overrunning the wall clock across a fanned-out depth.
+                if work.exhausted:
+                    work_exceeded = True
+                    break
+
+                # Probe-budget bound: the dominant cost on a non-grounding walk is
+                # the rejected-candidate transitive-path ASKs inside KB-neighbor
+                # enumeration, which the admitted-only fanout counter below does
+                # not see. Stop the moment the per-walk probe cap is hit so we
+                # abstain fast (a deterministic reason) rather than timing out.
+                if probes.exhausted:
+                    probe_exceeded = True
+                    break
 
                 # v0.16 WS2 §5 fanout bound: abstain the moment cumulative
                 # discovery crosses the budget. This is the cost bound that
@@ -475,7 +754,52 @@ class Walker:
                     fanout_exceeded = True
                     break
 
-            if fanout_exceeded:
+            # Guard with `current_verdict is None`: if an earlier frontier node
+            # already grounded a verdict, prefer it (fall through to the verdict
+            # return below) rather than discarding it for a budget abstain.
+            if work_exceeded and current_verdict is None:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "kb_work"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_kb_work",
+                    budget_consumption=consumption,
+                )
+
+            if wall_exceeded and current_verdict is None:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "wall_clock"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_wall_clock",
+                    budget_consumption=consumption,
+                )
+
+            if probe_exceeded and current_verdict is None:
+                elapsed = time.monotonic() - start_time
+                consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
+                trace.walk_metadata.update(
+                    {"depth_reached": depth, "budget_exceeded": "kb_neighbor_probes"}
+                )
+                trace.polarity_trace = polarity_trace
+                return WalkResult(
+                    verdict=_apply_assertion_designation("no_grounding_found", trace),
+                    trace=trace,
+                    abstention_reason="budget_kb_neighbor_probes",
+                    budget_consumption=consumption,
+                )
+
+            if fanout_exceeded and current_verdict is None:
                 elapsed = time.monotonic() - start_time
                 consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
                 trace.walk_metadata.update(
@@ -499,6 +823,30 @@ class Walker:
         consumption = BudgetConsumption(wall_clock_ms=elapsed * 1000, llm_calls=llm_calls)
         trace.walk_metadata.update({"depth_reached": depth, "llm_calls": llm_calls})
         trace.polarity_trace = polarity_trace
+
+        # C2-FC1 (§3.2): never emit a CONTRADICTED verdict for a claim whose
+        # SUBJECT is a vague/indefinite reference ("a university", "a company").
+        # Such a subject denotes an EXISTENTIAL, not a specific entity: no
+        # grounding path — direct lookup OR a multi-hop discovery substitution
+        # that resolves the subject to one arbitrary KB entity — can soundly
+        # REFUTE it. "A university founded before 1800" is TRUE (such
+        # universities exist) even when the arbitrarily-resolved university was
+        # founded in 2001. Suppress to abstain. This is the SUBJECT-slot analog
+        # of the vague-OBJECT object-conflict guard in _direct_lookup; it sits at
+        # the single verdict chokepoint so it covers BOTH the direct and the
+        # discovered-substitution contradiction paths. Only contradiction is
+        # suppressed — an (existentially-true) verified verdict is left intact.
+        # (csu_003: the multi-hop "Asa works at a university that was founded
+        # before 1800" splits off a dangling "a university" subject whose
+        # intended referent is Asa's employer.)
+        if current_verdict == "contradicted" and _is_vague_class_object(claim.subject):
+            trace.walk_metadata["vague_subject_contradiction_suppressed"] = claim.subject
+            return WalkResult(
+                verdict=_apply_assertion_designation("no_grounding_found", trace),
+                trace=trace,
+                abstention_reason="vague_subject_existential",
+                budget_consumption=consumption,
+            )
 
         if current_verdict is not None:
             return WalkResult(
@@ -535,8 +883,186 @@ class Walker:
             ))
         )
 
+    def _record_python_premise_term(self, trace, premise_literals, *, assertion):
+        """v0.16.1 WS3b (gate 3): record the premise -> Python derivation as a
+        single AND-alternative on the provenance term. The python computation
+        and EVERY fetched premise row are conjoined (`op='and'`) — a verdict
+        derived this way holds only if the python literal AND all premise rows
+        survive, so the composed verdict's retraction footprint is the union of
+        all premise rows. The python literal carries `assertion=assertion`
+        (gate a): when any premise rests on an asserted_unverified row the whole
+        derivation is assertion-conditional, so the DERIVED
+        chain_includes_assertion fires and the walk's final verdict becomes
+        *_given_assertion. When there are no fetched premises (premise_literals
+        empty), this falls back to a plain python OR-literal — exactly the prior
+        behavior."""
+        from ..layer5_result.trace import ProvenanceLiteral, ProvenanceTerm
+        python_lit = ProvenanceTerm.lit(ProvenanceLiteral(
+            source="python", assertion=assertion,
+        ))
+        if not premise_literals:
+            # No fetched premises -> the historical plain-python literal.
+            trace.provenance.add_alternative(python_lit)
+            return
+        and_children = [python_lit]
+        for lit in premise_literals:
+            and_children.append(ProvenanceTerm.lit(lit))
+        trace.provenance.add_alternative(
+            ProvenanceTerm(op="and", children=and_children)
+        )
+
+    def _gather_python_premises(
+        self, claim: Claim, context: VerificationContext
+    ) -> Optional[tuple[dict, list, bool]]:
+        """v0.16.1 WS3b: gather a BOUNDED, GROUNDED premise dict for a
+        routing_hint='python' comparison predicate, driven by the predicate's
+        `premise_properties` metadata (slot -> KB property). Returns:
+
+          * ([], [], False) when the predicate declares NO premise_properties
+            (the common case) — behave EXACTLY as today (no fetch).
+          * (premises, literals, assertion) on success: `premises` is the dict
+            threaded into PythonVerifier.verify (keyed by slot name, each
+            {'value', 'source', 'kb_property'}); `literals` are the
+            ProvenanceLiteral rows for the AND-term; `assertion` is True iff any
+            premise rests on an asserted_unverified Tier-U row.
+          * None (gate b — FAIL CLOSED) when a DECLARED premise slot could not
+            be resolved to a Q-id or its KB property had no usable value. The
+            caller abstains; the verifier is NOT invoked with a fabricated input.
+
+        WHICH property to fetch comes ONLY from `meta.premise_properties` (the
+        oracle/seed) — there is NO hardcoded predicate->property table in Python.
+        The fetch reuses the same resolver + lookup_statements path as
+        _verify_kb_quantitative / _gather_interval (KB premises are externally
+        grounded -> assertion=False). Bounded to the two entity slots the
+        metadata may name (subject / object)."""
+        from ..layer5_result.trace import ProvenanceLiteral
+
+        try:
+            meta = self._substrate.predicate_translation.consult(claim.predicate)
+        except Exception:
+            # Cannot read metadata -> behave as today (no premise fetch). A
+            # consult miss must not block the plain (premise-less) python path.
+            return ({}, [], False)
+
+        premise_map = getattr(meta, "premise_properties", None)
+        if not premise_map or not isinstance(premise_map, dict):
+            # No declared premises -> exact prior behavior (no fetch).
+            return ({}, [], False)
+
+        # The resolver path is required to fetch a premise; if it is unwired we
+        # cannot ground a DECLARED premise -> fail closed.
+        if (
+            self._kb_verifier is None
+            or not hasattr(self._kb_verifier, "_resolver")
+            or self._kb is None
+        ):
+            return None
+        resolver = self._kb_verifier._resolver
+
+        slot_values = {"subject": claim.subject, "object": claim.object}
+        premises: dict = {}
+        literals: list = []
+        assertion = False
+
+        for slot, kb_property in premise_map.items():
+            if slot not in slot_values or not kb_property:
+                # The metadata named a slot we cannot bind (e.g. a literal slot
+                # the oracle should have omitted). Skip it — only entity slots
+                # carry fetchable premises; a literal operand stays in the
+                # claim's own slot text the generated code already sees.
+                continue
+            slot_surface = slot_values[slot]
+            if not slot_surface:
+                # A declared entity slot is empty -> cannot ground -> fail closed.
+                return None
+
+            lookup_ctx = LocalContext(
+                predicate=claim.predicate,
+                slot_position=slot,
+                asserting_party=claim.asserting_party,
+                source_text=context.source_text,
+                claim_subject=claim.subject,
+                claim_predicate=claim.predicate,
+                claim_object=claim.object,
+                claim_id=claim.claim_id,
+            )
+            try:
+                resolved = resolver.select(
+                    resolver.resolve(slot_surface, lookup_ctx), lookup_ctx
+                )
+            except Exception:
+                return None
+            if resolved is None:
+                # Gate b: a declared premise slot did not resolve -> abstain.
+                return None
+
+            try:
+                statements = self._kb.lookup_statements(resolved, kb_property)
+            except Exception:
+                return None
+            value = self._premise_value_from_statements(statements)
+            if value is None:
+                # Gate b: the KB carries no usable value for the declared
+                # premise property -> abstain (no fabricated input).
+                return None
+
+            premises[slot] = {
+                "value": value,
+                "source": "kb",
+                "kb_property": kb_property,
+                "entity": resolved,
+            }
+            # KB premises are externally grounded (assertion=False). The
+            # row_id is None (live KB statement, no cached substrate row), but
+            # the literal still participates in the AND-term footprint.
+            literals.append(ProvenanceLiteral(
+                source="kb", table=None, row_id=None,
+                status=None, assertion=False,
+            ))
+
+        if not premises:
+            # premise_properties named only slots we could not bind (all
+            # literal) -> no fetch needed; behave as the plain python path.
+            return ({}, [], False)
+        return (premises, literals, assertion)
+
+    @staticmethod
+    def _premise_value_from_statements(statements: list) -> Optional[str]:
+        """Pick a single usable premise value from KB statements, or None.
+
+        Prefers a `preferred`-ranked statement; else, when all non-deprecated
+        values agree, returns that value; conflicting values with no preferred
+        discriminator -> None (fail-closed, never pick arbitrarily). Date values
+        are normalized to their 4-digit year via _normalize_date_value so the
+        generated comparison code receives a clean comparable token; non-date
+        values pass through as their string form."""
+        if not statements:
+            return None
+        preferred = None
+        seen: set[str] = set()
+        for stmt in statements:
+            if getattr(stmt, "rank", "normal") == "deprecated":
+                continue
+            raw = stmt.value
+            if raw is None:
+                continue
+            year = _normalize_date_value(str(raw))
+            token = year if year is not None else str(raw).strip()
+            if not token:
+                continue
+            if getattr(stmt, "rank", "normal") == "preferred" and preferred is None:
+                preferred = token
+            seen.add(token)
+        if preferred is not None:
+            return preferred
+        if len(seen) == 1:
+            return next(iter(seen))
+        # Zero usable values or conflicting values with no preferred -> abstain.
+        return None
+
     def _direct_lookup(
-        self, node: Claim, context: VerificationContext, trace: JustificationTrace
+        self, node: Claim, context: VerificationContext, trace: JustificationTrace,
+        work: Optional["_KBWork"] = None,
     ) -> tuple[Optional[str], str, int]:
         """Returns (verdict_or_None, source, llm_calls_used).
 
@@ -613,6 +1139,20 @@ class Walker:
                 assertion=(flipped_status == "asserted_unverified"),
             )
             return "contradicted", "tier_u", 0
+
+        # v0.16.1 WS3 Step 0: vague-class instance check. When the claim's
+        # OBJECT is a vague descriptive class ("a town in the United States"),
+        # the walker normally abstains (it cannot match a free-text class as a
+        # literal). Try a SOUND positive grounding: resolve the class to a KB
+        # Q-id and confirm the SUBJECT's instance/subclass path to it via the
+        # `is_a` (P31|P279+) transitive authority the walker already trusts.
+        # Fires ONLY on a definite positive; on any miss / uncertainty it
+        # returns None and falls through to the existing logic below (which
+        # still abstains on the vague class — sound, never a cold LLM positive).
+        if node.polarity == 1 and _is_vague_class_object(node.object):
+            vague_verdict = self._verify_vague_class_instance(node, trace)
+            if vague_verdict == "verified":
+                return "verified", "kb", 0
 
         # Object-conflict belief revision: a functional
         # (single_valued) predicate admits at most one object value per
@@ -722,7 +1262,7 @@ class Walker:
             # return plain verified — the chain flag is NOT set
             # because the verdict is externally grounded.
             upgrade_verdict, upgrade_source, upgrade_llm_delta, grounding_chain = \
-                self._try_external_grounding(node, context, trace)
+                self._try_external_grounding(node, context, trace, work)
             llm_delta += upgrade_llm_delta
             if upgrade_verdict == "verified":
                 if row_id is not None:
@@ -756,7 +1296,7 @@ class Walker:
         # grounding (the §6.5 fallthrough — no upgrade scenario here,
         # there is no Tier U row to upgrade).
         external_verdict, external_source, external_llm_delta, _ = \
-            self._try_external_grounding(node, context, trace)
+            self._try_external_grounding(node, context, trace, work)
         llm_delta += external_llm_delta
         if external_verdict is not None:
             return external_verdict, external_source, llm_delta
@@ -768,6 +1308,7 @@ class Walker:
         node: Claim,
         context: VerificationContext,
         trace: JustificationTrace,
+        work: Optional["_KBWork"] = None,
     ) -> tuple[Optional[str], str, int, dict]:
         """Try KB then (if route is python) Python verification for
         external grounding of `node`. Returns
@@ -778,18 +1319,25 @@ class Walker:
         audit event — KB statement coordinates or Python execution
         identity.
         """
-        # Skip KB verification when the
-        # claim's subject is a known user persona stipulated in Tier U
-        # (via a "user identity X" row). Otherwise the entity resolver
-        # may resolve the persona name (e.g. "Asa") to an unrelated
-        # Wikidata entity (Asa, King of Judah; or a different person
-        # named Asa entirely), and the kb_verifier's polarity-aware
-        # branch will emit verified/contradicted on facts about that
-        # wrong entity. For negation claims ("Asa is not in France")
-        # this produces a §3.2 false-contradiction when the misresolved
-        # entity happens to be in France. The persona's true
-        # verification is in Tier U; KB is the wrong source.
-        if self._is_persona_subject(node):
+        # Reset the transient directed-over-enumerate signals for THIS node — set
+        # True only below from the KB lookup's trace. A stale True from a prior node
+        # must never gate this node.
+        self._functional_value_known = False
+        self._value_known_entity = False
+        self._functional_entity_predicate = False
+        # External (KB / Python) grounding is structurally unreachable for a
+        # user_authoritative walk — set at walk entry when the predicate routes
+        # user_authoritative OR the claim's subject is a stipulated user
+        # persona (tier_u.has_identity). For a persona subject this is the
+        # critical §3.2 guard: otherwise the entity resolver may resolve the
+        # persona name (e.g. "Asa") to an unrelated Wikidata entity (Asa, King
+        # of Judah; or a different person named Asa), and the kb_verifier's
+        # polarity-aware branch would emit verified/contradicted on facts about
+        # that wrong entity — a false-contradiction on a negation like "Asa is
+        # not in France". The persona's true verification is in Tier U; KB is
+        # the wrong source. (Replaces the deleted _is_persona_subject KB-skip
+        # guard with the walk-entry user_authoritative route.)
+        if getattr(self, "_user_authoritative_walk", False):
             return None, "", 0, {}
 
         # kb_quantitative comparison path.
@@ -861,11 +1409,51 @@ class Walker:
 
         # KB verification
         if self._kb_verifier is not None:
+            # Charge the KB-work budget: verify() bundles entity resolution +
+            # lookup_statements + (often) several un-memoized subsumption-upgrade
+            # ASKs — the dominant per-node cost. A flat weight reflects that bundle
+            # so a fanned-out depth's verifies are bounded within the node loop.
+            if work is not None:
+                work.charge(4)
             kb_result = self._kb_verifier.verify(
                 node,
                 current_time=context.current_time,
                 source_text=context.source_text,
             )
+            # Directed-over-enumerate signal: record whether this was a FUNCTIONAL
+            # entity predicate whose subject value(s) are KNOWN (statements found).
+            # On a NO_MATCH the verifier's directed subsumption upgrade already
+            # tested every held value against the claim, so the walker can skip the
+            # futile neighbor-enumeration fanout (the doomed "descend into Kenya"
+            # search). Read by the node loop after _direct_lookup returns.
+            self._functional_value_known = bool(
+                kb_result.trace.get("functional_value_known")
+            )
+            self._value_known_entity = bool(
+                kb_result.trace.get("value_known_entity")
+            )
+            self._functional_entity_predicate = bool(
+                kb_result.trace.get("functional_entity_predicate")
+            )
+            # v0.16.2 observability stamp (§3.2-NEUTRAL — no verdict path reads
+            # walk_metadata): persist the ROOT claim's KB-verify facts so the
+            # durable audit (GET /verification/{id}) can surface resolved QIDs +
+            # the directed-over-enumerate signals even on an abstaining walk (the
+            # signals are otherwise thread-local + transient on kb_result.trace).
+            # setdefault → the root claim's verify wins; later discovery-node
+            # verifies (substitutions) do NOT overwrite the claim-level facts.
+            wm = trace.walk_metadata
+            wm.setdefault("functional_value_known", self._functional_value_known)
+            wm.setdefault("value_known_entity", self._value_known_entity)
+            wm.setdefault("functional_entity_predicate", self._functional_entity_predicate)
+            if kb_result.subject_kb_id is not None:
+                wm.setdefault("resolved_subject_qid", kb_result.subject_kb_id)
+            _vqid = kb_result.trace.get("value_entity")
+            if _vqid is not None:
+                wm.setdefault("resolved_value_qid", _vqid)
+            _rcid = kb_result.trace.get("resolution_cache_row_id")
+            if _rcid is not None:
+                wm.setdefault("resolved_subject_cache_row_id", _rcid)
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
                 # WS3: the resolver's entity_resolution_cache row the KB
@@ -948,7 +1536,33 @@ class Walker:
             self._python_verifier is not None
             and self._predicate_routing(node.predicate) == "python"
         ):
-            py_result = self._python_verifier.verify(node)
+            # v0.16.1 WS3b: premise -> Python channel. When the predicate's
+            # metadata declares `premise_properties` (slot -> KB property), the
+            # walker resolves the named entity slots and fetches those facts as
+            # PREMISES the generated code computes over (e.g. born_before needs
+            # both people's P569 birth years). `_gather_python_premises` is
+            # FAIL-CLOSED: it returns None to signal "a declared premise could
+            # not be grounded" (gate b — abstain, never fabricate). It returns
+            # a (premises, literals, assertion) triple otherwise; an empty
+            # premises dict (no premise_properties declared) reproduces today's
+            # behavior exactly. `assertion` is True iff ANY premise rests on an
+            # asserted_unverified Tier-U row (gate a — forces the chain-flag).
+            gathered = self._gather_python_premises(node, context)
+            if gathered is None:
+                # Gate b: a declared premise was unresolvable/ungrounded ->
+                # abstain on this path. Fall through (no terminal verdict here).
+                return None, "", 0, {}
+            premises, premise_literals, premise_assertion = gathered
+
+            # Back-compat: when there are NO fetched premises (the common case —
+            # the predicate declared no premise_properties), call verify(node)
+            # with the exact prior 1-arg shape so existing verifiers/mocks that
+            # do not yet accept the optional `premises` kwarg keep working. Only
+            # the genuinely premise-bearing comparison path uses the new kwarg.
+            if premises:
+                py_result = self._python_verifier.verify(node, premises=premises)
+            else:
+                py_result = self._python_verifier.verify(node)
             if py_result.verdict != "no_terminal_result":
                 trace.source_breakdown["python"] = trace.source_breakdown.get("python", 0) + 1
                 trace.edges.append(TraceEdge(
@@ -958,13 +1572,30 @@ class Walker:
                         "code": getattr(py_result, "generated_code", ""),
                         "output": str(getattr(py_result, "output", "")),
                     }),
-                    metadata={"source": "python", "verdict": py_result.verdict},
+                    metadata={
+                        "source": "python",
+                        "verdict": py_result.verdict,
+                        # Observability: which premises fed the computation.
+                        "premise_count": len(premise_literals),
+                        "premise_includes_assertion": premise_assertion,
+                    },
                 ))
-                self._record_premise(trace, source="python", assertion=False)
+                # Gate 3 (provenance AND-term): the Python verdict rests on the
+                # CONJUNCTION of the python computation AND every fetched premise
+                # row. Record them as ONE and-alternative so the composed
+                # verdict's retraction footprint includes every premise row.
+                # Gate a: if any premise literal is assertion-conditional, the
+                # python literal carries assertion=True too, so the derived
+                # chain_includes_assertion fires and the final verdict becomes
+                # *_given_assertion (never a laundered plain verify/contradict).
+                self._record_python_premise_term(
+                    trace, premise_literals, assertion=premise_assertion
+                )
                 grounding = {
                     "source": "python",
                     "output": str(getattr(py_result, "output", "")),
                     "verdict": py_result.verdict,
+                    "premise_count": len(premise_literals),
                 }
                 return py_result.verdict, "python", 0, grounding
 
@@ -1158,15 +1789,16 @@ class Walker:
         # org-narrowing branch read getattr(claim, 'object_org', None), which was
         # always None, so it was dead code (round-1 robustness follow-up: removed).
         kb_interval = self._interval_from_statements(statements)
-        # DORMANT-MECHANISM NOTE (round-1 follow-up) — status_started/status_ended
-        # (kb_property P571 inception / P576 dissolution): the KB arm here is
-        # intentionally INERT for these two. _interval_from_statements reads the
-        # P580/P582 *qualifiers* off the base statement, but for P571/P576 the
-        # date is the statement VALUE itself, not a P580/P582 qualifier, so this
-        # call yields no start/end for them. That is by design: status endpoints
-        # ground via Tier U (below) or via the founded_in_year (P571) /
-        # dissolved_in_year (P576) date-in-object predicates on the normal KB
-        # path — NOT through this qualifier-gathering arm.
+        # DATA-MODEL NOTE — a kb_interval predicate that maps to a STATEMENT-VALUED
+        # date property (P571 inception / P576 dissolution) gets NO start/end from
+        # this arm: _interval_from_statements reads the P580/P582 *qualifiers* off
+        # the base statement, but for P571/P576 the date is the statement VALUE
+        # itself, not a P580/P582 qualifier. v0.16.1 WS4 dropped the dead
+        # status_started/status_ended seed rows that exercised exactly this dead
+        # arm; the canonical groundings are Tier U (below) or the founded_in_year
+        # (P571) / dissolved_in_year (P576) date-in-object predicates on the normal
+        # KB path. A runtime-generated row that ever routes a statement-valued date
+        # property here still yields nothing — fail-closed by construction.
 
         # ALSO gather Tier U endpoint rows for the same predicate (the
         # *_started/_ended Tier U fact participates alongside the KB qualifier).
@@ -1174,9 +1806,9 @@ class Walker:
 
         # Merge: KB is authoritative; Tier U fills an endpoint the KB left open.
         # A conflict (both known, different values) is NOT silently reconciled —
-        # _interval_holds_at / _verify_interval_endpoint compare against the KB
-        # value, and the Tier U value only fills a gap. (Keeping the merge
-        # additive avoids fabricating an interval neither source asserts.)
+        # _verify_interval_endpoint compares against the KB value, and the Tier U
+        # value only fills a gap. (Keeping the merge additive avoids fabricating
+        # an interval neither source asserts.)
         merged = kb_interval or Interval()
         if tier_u_interval is not None:
             if not merged.start_known and tier_u_interval.start_known:
@@ -1208,6 +1840,12 @@ class Walker:
         if not statements:
             return None
 
+        # v0.16.1 WS5c: the start/end qualifier keys come from the KB adapter
+        # (the authority that populates Statement.qualifiers), not a hardcoded
+        # walker P-id. Fail-safe to the historical (P580, P582) default for
+        # adapters predating the accessor (behavior-neutral).
+        start_key, end_key = self._interval_qualifier_keys()
+
         # Prefer a single `preferred`-ranked statement when present (Wikidata
         # marks the canonical/current value preferred). Else require the starts
         # to agree; conflicting starts with no preferred ranking → abstain.
@@ -1229,7 +1867,7 @@ class Walker:
         unique = len(statements) == 1 or len(preferred) == 1
 
         starts = {
-            self._iso_or_none(s.qualifiers.get("P580"))
+            self._iso_or_none(s.qualifiers.get(start_key))
             for s in chosen
         }
         starts.discard(None)
@@ -1237,7 +1875,7 @@ class Walker:
             # Conflicting starts, no single preferred discriminator → abstain.
             return None
 
-        ends_raw = [s.qualifiers.get("P582") for s in chosen]
+        ends_raw = [s.qualifiers.get(end_key) for s in chosen]
         ends = {self._iso_or_none(e) for e in ends_raw}
         ends.discard(None)
         # A genuine open end (some statement has NO P582) keeps the interval
@@ -1266,6 +1904,24 @@ class Walker:
             end_known=end_known,
             unique=unique,
         )
+
+    def _interval_qualifier_keys(self) -> tuple[str, str]:
+        """v0.16.1 WS5c: the (start, end) temporal interval-qualifier keys to
+        read off `Statement.qualifiers`, sourced from the KB adapter (the
+        authority that populates them) via the optional KBProtocol
+        `interval_qualifier_keys` accessor. Falls back to the historical
+        (P580, P582) for adapters predating the accessor — behavior-neutral,
+        since interval grounding only runs against a live adapter that provides
+        it (`_gather_interval` returns None when `self._kb is None`)."""
+        accessor = getattr(self._kb, "interval_qualifier_keys", None)
+        if callable(accessor):
+            try:
+                keys = accessor()
+            except Exception:
+                keys = None
+            if isinstance(keys, (tuple, list)) and len(keys) == 2:
+                return keys[0], keys[1]
+        return ("P580", "P582")
 
     @staticmethod
     def _iso_or_none(value) -> Optional[str]:
@@ -1320,48 +1976,17 @@ class Walker:
             return Interval(end=date, end_known=True, unique=True)
         return None
 
-    def _interval_holds_at(self, interval: Interval, T: str) -> str:
-        """Three-valued holds-at-T table (spec §B.2). Lexical ISO compare —
-        valid for zero-padded YYYY-MM-DD / YYYY strings.
-
-        DORMANT-MECHANISM NOTE (round-1 follow-up): this is a forward-looking
-        primitive (covered by unit tests) NOT yet consumed by any verdict path
-        — the holds-at-T base-relation-scope consumer is deferred. Endpoint
-        grounding today uses _verify_interval_endpoint's year-aware equality
-        compare, not this holds-at scoping. Kept inert/tested for that future.
-
-        Returns 'true' | 'false' | 'unknown'.
-
-          start_known and start > T                         -> false (not begun)
-          end_known and end < T                             -> false (already ended)
-          start_known and end_known and start<=T<=end       -> true
-          start_known, end UNKNOWN (open=ongoing), start<=T -> true
-          start UNKNOWN, end_known, T<=end                  -> unknown
-          both unknown                                      -> unknown
-        """
-        if not T:
-            return "unknown"
-        if interval.start_known and interval.start is not None and interval.start > T:
-            return "false"
-        if interval.end_known and interval.end is not None and interval.end < T:
-            return "false"
-        if (
-            interval.start_known
-            and interval.end_known
-            and interval.start is not None
-            and interval.end is not None
-            and interval.start <= T <= interval.end
-        ):
-            return "true"
-        if (
-            interval.start_known
-            and not interval.end_known
-            and interval.start is not None
-            and interval.start <= T
-        ):
-            return "true"
-        # start unknown (end_known or not) → cannot place T within the interval.
-        return "unknown"
+    # v0.16.1 WS4: the three-valued holds-at-T primitive (_interval_holds_at,
+    # spec §B.2) was REMOVED. It had NO verdict-path consumer — its only intended
+    # caller is the deferred event-relative resolver (item 7 Stage 2): "did X hold
+    # relation R at time T". Wiring it to any present-day base-relation check would
+    # risk a false-contradict (returning 'false' for an interval that has ended,
+    # when a tenseless/historical claim makes no T assertion), turning current
+    # verifies into abstains or worse. Per the operator directive (default-to-
+    # remove when wiring carries false-contradict risk), the inert primitive and
+    # its unit tests were dropped; endpoint grounding stays on
+    # _verify_interval_endpoint's year-aware equality compare below. It returns
+    # with Stage 2 when a sound holds-at-T consumer actually exists.
 
     def _verify_interval_endpoint(
         self, claim: Claim, context: VerificationContext, trace
@@ -1379,11 +2004,15 @@ class Walker:
         terminal verdict, having emitted a kb_statement trace edge + provenance
         premise. Carries contradicting_value (WS5) on a contradiction and a
         retractable resolution-cache row id (WS3) when one was touched."""
+        # v0.16.1 WS5c: the start/end qualifier P-ids come from the KB adapter
+        # (the authority that populates Statement.qualifiers), not a hardcoded
+        # walker P-id. _started -> start qualifier, _ended -> end qualifier.
+        start_key, end_key = self._interval_qualifier_keys()
         pred = claim.predicate
         if pred.endswith("_started"):
-            qual_prop = "P580"
+            qual_prop = start_key
         elif pred.endswith("_ended"):
-            qual_prop = "P582"
+            qual_prop = end_key
         else:
             return None
 
@@ -1404,8 +2033,8 @@ class Walker:
         if interval is None:
             return None
 
-        kb_date = interval.start if qual_prop == "P580" else interval.end
-        endpoint_known = interval.start_known if qual_prop == "P580" else interval.end_known
+        kb_date = interval.start if qual_prop == start_key else interval.end
+        endpoint_known = interval.start_known if qual_prop == start_key else interval.end_known
         if not endpoint_known or kb_date is None:
             # The KB records no value for this endpoint (open end / unknown
             # start) — abstain rather than contradict (absence is not evidence).
@@ -1503,40 +2132,6 @@ class Walker:
             grounding["contradicting_value_type"] = "time"
         return verdict, grounding
 
-    def _is_persona_subject(self, claim: Claim) -> bool:
-        """True when the claim's subject is
-        a known user persona stipulated in Tier U via a `user identity X`
-        row. Used by `_direct_lookup` to skip KB verification — the
-        entity resolver would otherwise resolve the persona name to an
-        unrelated Wikidata entity (e.g. "Asa" → Asa, King of Judah) and
-        the kb_verifier's polarity-aware branch would emit
-        verified/contradicted on facts about that wrong entity.
-
-        Specifically catches: rows of the shape
-        `(asserting_party, 'user', 'identity', X, polarity=1)` where X
-        matches the claim's subject. The asserting_party check is the
-        claim's asserting_party so the persona is scoped to who's
-        asking — different parties can stipulate different personas.
-        """
-        if not claim.subject:
-            return False
-        # Defensive: a mock TierU might not expose this attribute.
-        try:
-            db = self._tier_u._db  # type: ignore[attr-defined]
-        except AttributeError:
-            return False
-        try:
-            row = db.execute(
-                """SELECT 1 FROM tier_u
-                   WHERE asserting_party=? AND subject='user'
-                     AND predicate='identity' AND object=?
-                     AND polarity=1 AND retracted_at IS NULL""",
-                (claim.asserting_party, claim.subject),
-            ).fetchone()
-        except Exception:
-            return False
-        return row is not None
-
     def _predicate_routing(self, predicate: str) -> Optional[str]:
         """Routing hint for `predicate` per the predicate translation oracle.
         Returns None when the consult fails — the walker treats an unknown
@@ -1549,6 +2144,20 @@ class Walker:
             return meta.routing_hint
         except Exception:
             return None
+
+    def _predicate_user_subject_required(self, predicate: str) -> bool:
+        """Whether `predicate` requires the claim subject to be the asserting
+        user (a first-person predicate such as `prefers` / `believes`) per the
+        predicate translation oracle. Relocated from the deleted Layer-2
+        Validator. Returns False on a consult failure — fail-OPEN on the GUARD
+        itself so an oracle miss never *blocks* a checkworthy claim; the guard
+        only ever turns a confirmed first-person-about-a-third-party claim into
+        an abstain (it cannot manufacture a verdict)."""
+        try:
+            meta = self._substrate.predicate_translation.consult(predicate)
+            return bool(meta.user_subject_required)
+        except Exception:
+            return False
 
     def _predicate_is_functional(self, predicate: str) -> bool:
         """Whether `predicate` is functional (single_valued) per predicate
@@ -1568,7 +2177,12 @@ class Walker:
             return False
 
     def _discover_chains(
-        self, node: Claim, trace: JustificationTrace, depth: int
+        self, node: Claim, trace: JustificationTrace, depth: int,
+        probes: Optional["_KBNeighborProbes"] = None,
+        functional_value_known: bool = False,
+        value_known_entity: bool = False,
+        functional_entity_predicate: bool = False,
+        work: Optional["_KBWork"] = None,
     ) -> tuple[list[Claim], int]:
         """v0.16 WS2 §2: LIBERAL chain discovery + SOUND per-edge verification.
 
@@ -1696,10 +2310,65 @@ class Walker:
             # wall-clock/LLM budget remain as the cost bounds. Removing the cap
             # is required for the bidirectional/forward search (contract item e).
             if not sub_produced:
-                kb_produced = self._expand_via_kb_neighbors(
-                    node, relation_type, preferred, dist.verdict, trace
+                # Direct-binding-first (§3.2 / budget): the KB-neighbor
+                # enumeration fallback is the UNBOUNDED live-KB fanout (e.g.
+                # chasing P17 country edges off a `holds_role` claim) that can
+                # consume the whole wall-clock without ever grounding. Fire it
+                # ONLY when the predicate can actually ground THROUGH this
+                # relation. A confident `neither` distribution forecloses every
+                # substitution: an is_a `neither` candidate is rejected by
+                # _verify_chain (so enumerating it is pure waste — verdict-
+                # preserving to skip), and a part_of substitution is unsound
+                # unless the predicate distributes over part_of (the
+                # premise_forward arm already fails closed on this). So a
+                # confident `neither` skips enumeration, leaving the claim's own
+                # direct predicate binding as the grounding path instead of
+                # fanning out over irrelevant neighbors. Fail OPEN — only a
+                # confident `neither` skips — so a wrong distribution verdict
+                # never causes a false-abstain (WS2 §3 intent preserved). Reuses
+                # the already-computed dist.verdict (no extra oracle call).
+                # Directed-over-enumerate (§3.2 / budget): skip the futile neighbor
+                # enumeration that only re-derives a grounding question the directed
+                # verifier path already answered by generate-and-test. Gated PER
+                # RELATION:
+                #  - part_of: skip when value_known_entity — the directed all-values
+                #    part_of subsumption upgrade already tested every held value's
+                #    containment against the claim object, so descending into the
+                #    object's P17/P131 children is futile. INDEPENDENT of
+                #    single_valued, so it fires for a cold-started "was born in" too
+                #    (the doomed "descend into Kenya" fanout — 19 of the 22 steps).
+                #  - is_a: skip only when functional_value_known (single_valued) —
+                #    substituting the subject's class can't ground a functional fact
+                #    whose value is fixed; but for a NON-functional/copula predicate
+                #    an is_a substitution may legitimately ground, so keep it.
+                # PLUS functional_entity_predicate (metadata, BOTH arms): a functional
+                # entity predicate grounds ONLY via the directed subsumption upgrade,
+                # so ALL enumeration is futile — and this signal is set even when the
+                # KB lookup found no statements (subject unresolved / no statement on
+                # the property), which is exactly when the two statements-based signals
+                # above are False. This is the fix for the live "Obama born_in Kenya"
+                # fanout: "Obama" resolved ambiguously / carried no P19, so statements
+                # were empty (an abstain, not the fast functional contradiction), and
+                # the old gate fanned out over Kenya's 20 P17 children anyway.
+                # Verdict-preserving: the only true cases are owned by the directed
+                # upgrade / the preserved is_a path. The bounded premise-forward arm
+                # below still runs.
+                skip_enum = (
+                    verdict_label == "neither"
+                    or functional_entity_predicate
+                    or (relation_type == "part_of" and value_known_entity)
+                    or (relation_type == "is_a" and functional_value_known)
                 )
-                expanded.extend(kb_produced)
+                if not skip_enum:
+                    kb_produced = self._expand_via_kb_neighbors(
+                        node, relation_type, preferred, dist.verdict, trace, probes, work
+                    )
+                    expanded.extend(kb_produced)
+                    # Stop discovering for this node once the per-walk probe
+                    # budget is spent — the remaining relation iteration would
+                    # only add ASKs the budget already disallows.
+                    if probes is not None and probes.exhausted:
+                        break
 
         # Discovery source 2: premise-forward frontier (§4).
         try:
@@ -1882,6 +2551,90 @@ class Walker:
             return qid
         return None
 
+    def _verify_vague_class_instance(
+        self,
+        node: Claim,
+        trace: JustificationTrace,
+    ) -> Optional[str]:
+        """v0.16.1 WS3 Step 0: SOUND class-instance check for a vague-class
+        object.
+
+        When a claim's OBJECT is a vague descriptive class ("a town in the
+        United States", "a state that borders New York") the walker cannot
+        match it as a literal entity, so today it abstains. This adds a
+        positive grounding path that fires ONLY on a confirmed class
+        membership, using the SAME subsumption authority the walker already
+        trusts (`verify_transitive_path` over `is_a` = P31|P279+):
+
+          1. Extract the bare class-noun head from the vague object.
+          2. Resolve it to a KB CLASS Q-id (via the substrate resolver, the
+             same resolver `_resolve_qid` uses).
+          3. Resolve the claim's SUBJECT to a Q-id.
+          4. Ask the KB whether `subject is_a class` holds transitively.
+          5. Return "verified" ONLY on a DEFINITE positive (holds=True,
+             error=None). On a non-resolution, a definite negative, an
+             uncertain/fail-open KB answer, or any exception, return None so
+             the caller KEEPS ABSTAINING — that is sound (§3.2). A cold LLM
+             positive is NEVER admitted: the only authority consulted is the
+             KB transitive path.
+
+        Returns "verified" on confirmed membership, else None (caller falls
+        through to the existing object-conflict / Stage-1 / external-grounding
+        logic, all of which still apply — this only ADDS a verify, it never
+        suppresses any other path).
+        """
+        # Subject-less or KB-less walks cannot run the check; abstain.
+        if self._kb is None or not node.subject:
+            return None
+        head = _vague_class_head(node.object)
+        if not head:
+            return None
+        # Resolve the class head and the subject to Q-ids. The class head is
+        # resolved in the object slot, the subject in the subject slot, exactly
+        # as `_resolve_qid` is used elsewhere.
+        class_qid = self._resolve_qid(node, head, "object")
+        if not class_qid:
+            return None  # vague class did not resolve to a Q-id -> abstain
+        subject_qid = self._resolve_qid(node, node.subject, "subject")
+        if not subject_qid:
+            return None
+        # Nogood veto FIRST (entailment-safety): a cached "does NOT hold"
+        # forecloses the edge without a network round-trip.
+        if self._nogood_vetoes(subject_qid, class_qid, "is_a"):
+            return None
+        # KB authority: does `subject is_a class` hold transitively (P31|P279+)?
+        try:
+            tp = self._kb.verify_transitive_path(
+                subject_qid, class_qid, None, relation_type="is_a"
+            )
+        except Exception:
+            return None
+        # Verify ONLY on a DEFINITE positive. A definite negative, a fail-open
+        # error, or a None result all KEEP ABSTAINING (sound — never guess).
+        if tp is None or getattr(tp, "error", None) is not None:
+            return None
+        if not getattr(tp, "holds", False):
+            return None
+        trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
+        trace.edges.append(TraceEdge(
+            edge_type="premise_lookup",
+            source=trace.root,
+            target=TraceNode("kb_statement", {"entity": node.subject}),
+            metadata={
+                "source": "kb",
+                "verdict": "verified",
+                "relation_type": "is_a",
+                "grounding": "vague_class_instance",
+                "class_head": head,
+                "subject_qid": subject_qid,
+                "class_qid": class_qid,
+                "establishing_property": getattr(tp, "establishing_property", None),
+                "polarity": node.polarity,
+            },
+        ))
+        self._record_premise(trace, source="kb", assertion=False)
+        return "verified"
+
     def _nogood_vetoes(
         self, child_qid: str, parent_qid: str, relation_type: str
     ) -> bool:
@@ -2016,6 +2769,8 @@ class Walker:
         preferred: set[str],
         distribution_verdict,
         trace: JustificationTrace,
+        probes: Optional["_KBNeighborProbes"] = None,
+        work: Optional["_KBWork"] = None,
     ) -> list[Claim]:
         """Enumerate KB neighbors of `node`'s slot entities
         and emit expanded claims with the slot substituted by each neighbor.
@@ -2047,8 +2802,13 @@ class Walker:
         """
         if self._kb is None:
             return []
-        properties = list(_D5_NEIGHBOR_PROPS_BY_RELATION.get(relation_type, ()))
-        if not properties:
+        # v0.16.1 WS5c: the relation -> KB-property mapping moved INTO the
+        # adapter's enumerate_neighbors. CORE passes the opaque relation_type
+        # (no P-id naming above the seam); the adapter resolves the property
+        # set. The walker only ever drives the two taxonomic/containment
+        # relations — guard to those so an unrecognized relation produces no
+        # KB expansion (preserving the former unknown-relation early-return).
+        if relation_type not in ("is_a", "part_of"):
             return []
 
         # v0.16 WS2 §3: both directions fire (gate removed); `preferred` ranks
@@ -2092,15 +2852,37 @@ class Walker:
                 continue
 
             for walker_dir, kb_dir in kb_calls:
+                if work is not None:
+                    work.charge(1)  # one live enumerate_neighbors round-trip
                 try:
                     neighbors_by_prop = self._kb.enumerate_neighbors(
-                        entity_qid, properties, direction=kb_dir,
+                        entity_qid, direction=kb_dir, relation_type=relation_type,
                     )
                 except Exception:
                     continue
 
                 for prop_id, neighbor_qids in neighbors_by_prop.items():
                     for neighbor_qid in neighbor_qids:
+                        # Each distinct candidate probe is also one transitive-path
+                        # ASK — charge the KB-work budget alongside the probe cap.
+                        if work is not None and probes is not None and neighbor_qid not in probes.seen:
+                            work.charge(1)
+                        # Per-walk probe budget: dedupe already-probed neighbor
+                        # QIDs (the same famous container — Q30, Q142 — recurs
+                        # across slots/directions/depths) and HARD-CAP the number
+                        # of distinct _verify_chain probes, each of which is one
+                        # rate-limited live SPARQL ASK. This counts the candidate
+                        # WHETHER OR NOT it is admitted — the dominant cost on a
+                        # non-grounding walk is the REJECTED candidates, which no
+                        # other counter bounds. Latch `exhausted` and stop.
+                        if probes is not None:
+                            if neighbor_qid in probes.seen:
+                                continue
+                            probes.seen.add(neighbor_qid)
+                            if probes.spent >= probes.limit:
+                                probes.exhausted = True
+                                break
+                            probes.spent += 1
                         # v0.16 soundness (SS3 symmetry): route every KB-enum
                         # candidate through the SAME entailment gate the
                         # find_neighbors arm uses. The single enumeration hop
@@ -2135,5 +2917,11 @@ class Walker:
                             },
                         ))
                         expanded.append(new_node)
+                    if probes is not None and probes.exhausted:
+                        break  # exit the property loop
+                if probes is not None and probes.exhausted:
+                    break  # exit the direction loop
+            if probes is not None and probes.exhausted:
+                break  # exit the slot loop
 
         return expanded

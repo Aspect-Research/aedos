@@ -524,6 +524,184 @@ class TestF042RoutingGate:
 
 
 # ---------------------------------------------------------------------------
+# TestPersonaSubjectRouting — v0.16.1 WS5b: a claim whose subject is a
+# stipulated user persona (a `user identity X` Tier U row) routes
+# user_authoritative — KB is structurally unreachable, so the entity resolver
+# can never misresolve the persona name and false-contradict. This is the
+# re-proof of the persona-abstain soundness pin formerly held by the deleted
+# _is_persona_subject KB-skip guard.
+# ---------------------------------------------------------------------------
+
+class _MisresolvingKBVerifier:
+    """Mock KBVerifier modelling the §3.2 failure mode the persona route
+    prevents: the entity resolver resolves the persona name "Asa" to an
+    unrelated Wikidata entity (e.g. Asa, King of Judah) and the polarity-aware
+    branch CONTRADICTS a negation claim because that wrong entity IS in France.
+    If the walker ever delegates a persona-subject claim to KB, this verifier
+    fires and the walk false-contradicts."""
+
+    def __init__(self):
+        self.call_count = 0
+
+    def verify(self, claim, current_time=None, source_text=None):
+        self.call_count += 1
+        return KBVerdict(verdict=KBVerdictType.CONTRADICTED, subject_kb_id="Q1online")
+
+
+def _make_persona_walker(kb_verifier, routing_hint="kb_resolvable",
+                         identity_object="Asa", asserting_party="user_test"):
+    """Walker with a REAL TierU (so has_identity resolves) seeded with a
+    `(party, user, identity, <identity_object>, polarity=1)` persona row."""
+    db = open_memory_db()
+    transport = MockTransport(routing_hint=routing_hint)
+    client = LLMClient(_transport=transport)
+    pt = PredicateTranslation(db=db, llm_client=client)
+
+    class StubKB:
+        def resolve_entity(self, r, lc): return [ResolutionCandidate("Q1online", score=0.9)]
+        def lookup_statements(self, e, p): return []
+        def subsumption(self, a, b, rt): return SubsumptionResult(verdict="unrelated")
+
+    resolver = EntityResolver(kb_protocol=StubKB(), db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=StubKB())
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub, predicate_distribution=pd)
+    tier_u = TierU(db=db, predicate_translation=pt)
+    # Seed the persona identity row directly (bypass_normalizer keeps the
+    # literal "user"/"identity"/object form has_identity matches on).
+    identity_claim = Claim(
+        claim_id="id1", subject="user", predicate="identity",
+        object=identity_object, polarity=1, source_text="seed",
+        asserting_party=asserting_party, triage_decision=TriageDecision.VERIFY,
+    )
+    tier_u.write(identity_claim, bypass_normalizer=True)
+    return Walker(
+        tier_u=tier_u,
+        kb_verifier=kb_verifier,
+        python_verifier=PythonVerifier(),
+        substrate=substrate,
+    )
+
+
+class TestPersonaSubjectRouting:
+    def test_persona_negation_does_not_false_contradict(self):
+        # "Asa is not in France" where Asa is a stipulated persona. The KB
+        # verifier WOULD contradict (misresolved entity is in France). The
+        # walker must route user_authoritative and abstain — never contradict.
+        kb = _MisresolvingKBVerifier()
+        walker = _make_persona_walker(kb, identity_object="Asa")
+        claim = _claim(subject="Asa", predicate="located_in",
+                       object_val="France", polarity=0)
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "abstained_given_assertion", (
+            f"Persona-subject negation must abstain (given-assertion), not "
+            f"false-contradict; got {result.verdict}"
+        )
+        assert kb.call_count == 0, (
+            "KB must be structurally unreachable for a persona subject; "
+            f"verifier was called {kb.call_count} times"
+        )
+
+    def test_persona_positive_claim_routes_user_authoritative(self):
+        # A positive persona-subject claim with no Tier U premise abstains as a
+        # given-assertion verdict (KB unreachable), never a bare verdict.
+        kb = _MisresolvingKBVerifier()
+        walker = _make_persona_walker(kb, identity_object="Asa")
+        claim = _claim(subject="Asa", predicate="located_in",
+                       object_val="France", polarity=1)
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "abstained_given_assertion"
+        assert kb.call_count == 0
+
+    def test_non_persona_subject_still_reaches_kb(self):
+        # A non-persona subject ("Obama") is NOT a stipulated identity, so the
+        # persona route does NOT fire and KB grounding remains reachable.
+        kb = _MisresolvingKBVerifier()
+        walker = _make_persona_walker(kb, identity_object="Asa")
+        claim = _claim(subject="Obama", predicate="located_in",
+                       object_val="France", polarity=0)
+        result = walker.walk(claim, _ctx())
+        # KB is reachable for a real (non-persona) subject — verifier fires.
+        assert kb.call_count == 1
+
+    def test_persona_scoped_to_asserting_party(self):
+        # Persona stipulated for user_test; a DIFFERENT party's claim about
+        # "Asa" is not a persona for them → KB reachable.
+        kb = _MisresolvingKBVerifier()
+        walker = _make_persona_walker(kb, identity_object="Asa",
+                                      asserting_party="user_test")
+        from datetime import datetime, timezone
+        other_ctx = VerificationContext(
+            current_time=datetime.now(timezone.utc).isoformat(),
+            asserting_party="user_other",
+        )
+        claim = Claim(
+            claim_id="c2", subject="Asa", predicate="located_in",
+            object="France", polarity=0, source_text="test",
+            asserting_party="user_other", triage_decision=TriageDecision.VERIFY,
+        )
+        result = walker.walk(claim, other_ctx)
+        assert kb.call_count == 1, (
+            "Persona is scoped to the stipulating party; a different party's "
+            "claim about the same name must still reach KB"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestTierUHasIdentity — v0.16.1 WS5b: the parameterized tier_u.has_identity
+# method that replaced the deleted walker._is_persona_subject + its raw SQL.
+# Assert the True/False contract directly through the public method (no raw
+# SQL, no _db access) — this is the predicate the persona route is built on.
+# ---------------------------------------------------------------------------
+
+class TestTierUHasIdentity:
+    def _tier_u(self):
+        db = open_memory_db()
+        transport = MockTransport(routing_hint="user_authoritative")
+        client = LLMClient(_transport=transport)
+        pt = PredicateTranslation(db=db, llm_client=client)
+        tier_u = TierU(db=db, predicate_translation=pt)
+        return tier_u
+
+    def _seed_identity(self, tier_u, object_val="Asa", asserting_party="user_test"):
+        tier_u.write(
+            Claim(
+                claim_id="id_seed", subject="user", predicate="identity",
+                object=object_val, polarity=1, source_text="seed",
+                asserting_party=asserting_party,
+                triage_decision=TriageDecision.VERIFY,
+            ),
+            bypass_normalizer=True,
+        )
+
+    def test_returns_true_for_stipulated_persona(self):
+        tier_u = self._tier_u()
+        self._seed_identity(tier_u, object_val="Asa", asserting_party="user_test")
+        assert tier_u.has_identity("user_test", "Asa") is True
+
+    def test_returns_false_for_non_persona_subject(self):
+        tier_u = self._tier_u()
+        self._seed_identity(tier_u, object_val="Asa", asserting_party="user_test")
+        # A different subject is not a stipulated identity for this party.
+        assert tier_u.has_identity("user_test", "Obama") is False
+
+    def test_returns_false_for_different_asserting_party(self):
+        # Identity is scoped to the stipulating party.
+        tier_u = self._tier_u()
+        self._seed_identity(tier_u, object_val="Asa", asserting_party="user_test")
+        assert tier_u.has_identity("user_other", "Asa") is False
+
+    def test_returns_false_for_empty_subject(self):
+        tier_u = self._tier_u()
+        self._seed_identity(tier_u, object_val="Asa", asserting_party="user_test")
+        assert tier_u.has_identity("user_test", "") is False
+
+    def test_returns_false_when_no_identity_seeded(self):
+        tier_u = self._tier_u()
+        assert tier_u.has_identity("user_test", "Asa") is False
+
+
+# ---------------------------------------------------------------------------
 # TestWalkerTrace
 # ---------------------------------------------------------------------------
 
@@ -763,3 +941,94 @@ class TestWalkerAbstentionReasonShortCircuit:
         result = walker.walk(claim, _ctx())
         assert result.verdict != "contradicted"
         assert result.verdict == "no_grounding_found"
+
+    def test_null_object_extractor_shape_never_false_verdict(self):
+        # Cross-layer §3.2 pin for the null-slot crash fix (autonomous cycle 2,
+        # C2c): the extractor coerces an LLM-emitted null object to "" and emits
+        # the shaped claim (Deletion #2 path, abstention_reason=None). This is
+        # the exact shape that reaches the walker. It must abstain
+        # (no_grounding_found) and NEVER false-verify/false-contradict — the
+        # conservative outcome the crash previously denied (the whole statement
+        # was lost as verdict='error'). Companion to
+        # test_extractor.py::test_null_object_coerced_not_none.
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = Claim(
+            claim_id="no1",
+            subject="Asa",
+            predicate="works_at",
+            object="",  # extractor-coerced from a null LLM slot
+            polarity=1,
+            source_text="Asa works at Google",
+            asserting_party="user_test",
+            triage_decision=TriageDecision.VERIFY,
+            abstention_reason=None,
+        )
+        result = walker.walk(claim, _ctx())
+        assert result.verdict not in ("verified", "contradicted")
+        assert result.verdict == "no_grounding_found"
+
+    def test_subject_absent_extractor_shape_short_circuits(self):
+        # The empty-SUBJECT half: the extractor stamps subject_absent_from_source
+        # (the new highest-precedence guard). That claim short-circuits at walk
+        # entry to no_grounding_found with zero lookups — never a false verdict.
+        walker, tier_u, kb_verifier = _make_counting_walker()
+        claim = _reasoned_claim(
+            "subject_absent_from_source",
+            subject="", predicate="works_at", object_val="Google",
+        )
+        result = walker.walk(claim, _ctx())
+        assert result.verdict == "no_grounding_found"
+        assert result.abstention_reason == "subject_absent_from_source"
+        assert tier_u.lookup_calls == 0
+        assert kb_verifier.verify_calls == 0
+
+
+# ---------------------------------------------------------------------------
+# TestEventRelativeRefsZeroVerdictRisk — v0.16.1 WS8 Stage 1: valid_from_ref /
+# valid_until_ref are WRITE-ONLY metadata. No grounding/verdict path reads them
+# (Stage 2 resolver deferred). This pins the zero-verdict-risk invariant: a
+# claim carrying the new *_ref fields walks to the SAME verdict as the identical
+# claim without them, across every verdict outcome.
+# ---------------------------------------------------------------------------
+
+def _ref_claim(valid_from_ref=None, valid_until_ref=None, **kw):
+    """A standard walker claim, optionally carrying the WS8 event-relative
+    bound refs. Everything else matches the module's _claim()."""
+    return Claim(
+        claim_id="cref",
+        subject=kw.get("subject", "Obama"),
+        predicate=kw.get("predicate", "holds_role"),
+        object=kw.get("object_val", "President"),
+        polarity=kw.get("polarity", 1),
+        source_text="test",
+        asserting_party="user_test",
+        triage_decision=TriageDecision.VERIFY,
+        valid_from_ref=valid_from_ref,
+        valid_until_ref=valid_until_ref,
+    )
+
+
+class TestEventRelativeRefsZeroVerdictRisk:
+    @pytest.mark.parametrize(
+        "make_kwargs",
+        [
+            dict(tier_u_found=False, kb_verdict=KBVerdictType.NO_MATCH),
+            dict(kb_verdict=KBVerdictType.VERIFIED),
+            dict(kb_verdict=KBVerdictType.CONTRADICTED),
+            dict(tier_u_found=True),
+        ],
+    )
+    def test_refs_do_not_change_verdict(self, make_kwargs):
+        # Same walker configuration; the only difference between the two walks
+        # is the presence of the event-relative refs on the claim. The verdict
+        # must be identical — nothing in the grounding/verdict path reads them.
+        without = _make_walker(**make_kwargs).walk(_ref_claim(), _ctx())
+        with_refs = _make_walker(**make_kwargs).walk(
+            _ref_claim(
+                valid_from_ref="claim_election",
+                valid_until_ref="claim_acquisition",
+            ),
+            _ctx(),
+        )
+        assert with_refs.verdict == without.verdict
+        assert with_refs.abstention_reason == without.abstention_reason

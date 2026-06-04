@@ -1,30 +1,40 @@
 """
-Medium-bar evaluation benchmark for Aedos v0.15.
+Standing medium-bar evaluation harness for Aedos (v0.16.x).
 
-The live runner is implemented (fix-up 2, M5 Step 6). The medium-bar evaluation
-itself is run under operator supervision in Phase 10.5 — it requires live LLM
-and live Wikidata calls.
+This is the ONE committed entry point for the live medium bar. It subsumes the
+per-instance supervision that used to be duplicated across the one-off
+`scripts/medium_bar_step1_*.py` wrappers: a per-instance watchdog, LIVE
+false-verified AND false-contradicted counters, and incremental per-case JSONL
+logging so a long live run is monitorable and loses no data if interrupted.
 
 This module contains:
   - AedosRunner: runs the full Aedos pipeline against the test set
   - BaselineRunner: runs an LLM-only forward pass
-  - compute_metrics / generate_report: accuracy, false-verified rate,
-    false-abstain rate, per-failure-mode breakdown
+  - run_tracked: per-instance supervision (watchdog + live FV/FC counters +
+    incremental JSONL) — the standing replacement for the ad-hoc scripts
+  - compute_metrics / generate_report: accuracy, false-verified, the WS1
+    false-CONTRADICTED counter, false-abstain rate, per-failure-mode breakdown
   - _structural_test: checks the metrics/report machinery against mock results
   - _validate_harness: builds the production pipeline against mocks and runs one
     case through each runner — confirms the wiring without live API cost
 
-Phase 10.5 acceptance thresholds (implementation plan §Phase 10):
-  - Aedos false-verified rate ≤ 5%
-  - Aedos overall accuracy ≥ baseline + 15pp on the curated test set
-  - Aedos accuracy ≥ baseline on every failure mode (no regression)
-  - Aedos accuracy significantly higher on ≥ 4 of 6 failure modes
+v0.16.x acceptance gates (replacing the stale v0.15 "+15pp-vs-baseline"
+framing). §3.2 soundness is paramount and the harness ENFORCES it:
+  - HARD FAIL: Aedos false_verified == 0   (never verify a false claim)
+  - HARD FAIL: Aedos false_contradicted == 0  (the WS1 metric — §3.2 forbids
+    a false-contradict as much as a false-verify; abstention is the safe outcome)
+  - TRACKED (reported, never gated): accuracy, false-abstain, per-failure-mode
+    accuracy and baseline deltas. Over-abstention is a coverage symptom to
+    measure and improve, not a release blocker.
+
+`generate_report` prints PASS/FAIL on the two hard soundness gates and tracks
+the rest; a nonzero exit code on the live entry point reflects a gate FAIL.
 
 Usage:
     # harness wiring check (mocked, no API cost — part of `make test`):
     py -m tests.evaluation.benchmark --validate-harness
-    # live evaluation (Phase 10.5, operator-supervised):
-    RUN_LIVE_TESTS=1 RUN_LIVE_KB=1 py -m tests.evaluation.benchmark \\
+    # live evaluation (operator-supervised), with per-instance tracking:
+    RUN_LIVE_TESTS=1 RUN_LIVE_KB=1 py -m tests.evaluation.benchmark --track \\
         --test-set tests/evaluation/medium_bar_test_set.jsonl \\
         --output docs/evaluation_results.md
 """
@@ -34,9 +44,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Make the `aedos` package importable when this module is run directly
 # (py -m tests.evaluation.benchmark) without an editable install — this mirrors
@@ -78,12 +91,25 @@ class EvaluationMetrics:
     false_abstain: int
     false_abstain_rate: float
     per_failure_mode: dict[str, dict]
+    # v0.16.1 WS1: symmetric false-CONTRADICT counter — §3.2 forbids
+    # false-contradict as much as false-verify, but the harness historically
+    # only counted false-verifies. `false_contradicted` counts predictions of
+    # `contradicted` whose ground truth is NOT `contradicted`, broken out by
+    # the ground-truth bucket it stole from (verified vs abstain). Measurement
+    # only — no verdict logic changes.
+    false_contradicted: int = 0
+    false_contradicted_rate: float = 0.0
+    false_contradicted_gt_verified: int = 0
+    false_contradicted_gt_abstain: int = 0
 
     def summary(self) -> str:
         lines = [
             f"Total cases: {self.total}",
             f"Accuracy: {self.accuracy:.1%} ({self.correct}/{self.total})",
             f"False-verified rate: {self.false_verified_rate:.1%} ({self.false_verified})",
+            f"False-contradicted rate: {self.false_contradicted_rate:.1%} "
+            f"({self.false_contradicted}; gt=verified {self.false_contradicted_gt_verified}, "
+            f"gt=abstain {self.false_contradicted_gt_abstain})",
             f"False-abstain rate: {self.false_abstain_rate:.1%} ({self.false_abstain})",
             "",
             "Per-failure-mode breakdown:",
@@ -135,6 +161,9 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
     correct = 0
     false_verified = 0
     false_abstain = 0
+    false_contradicted = 0
+    false_contradicted_gt_verified = 0
+    false_contradicted_gt_abstain = 0
     total_verified_ground_truth = sum(1 for c in cases if c.ground_truth == "verified")
 
     per_mode: dict[str, dict] = {}
@@ -156,6 +185,14 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
             false_verified += 1
         if predicted == "abstain" and case.ground_truth == "verified":
             false_abstain += 1
+        # v0.16.1 WS1: symmetric false-contradict — a contradicted verdict on a
+        # case whose ground truth is not contradicted, broken out by gt bucket.
+        if predicted == "contradicted" and case.ground_truth != "contradicted":
+            false_contradicted += 1
+            if case.ground_truth == "verified":
+                false_contradicted_gt_verified += 1
+            else:
+                false_contradicted_gt_abstain += 1
 
     for mode in per_mode:
         n = per_mode[mode]["total"]
@@ -171,6 +208,10 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
         false_abstain=false_abstain,
         false_abstain_rate=false_abstain / total_verified_ground_truth if total_verified_ground_truth > 0 else 0.0,
         per_failure_mode=per_mode,
+        false_contradicted=false_contradicted,
+        false_contradicted_rate=false_contradicted / total if total > 0 else 0.0,
+        false_contradicted_gt_verified=false_contradicted_gt_verified,
+        false_contradicted_gt_abstain=false_contradicted_gt_abstain,
     )
 
 
@@ -179,7 +220,7 @@ def compute_metrics(cases: list[BenchmarkCase], results: list[RunResult]) -> Eva
 # ---------------------------------------------------------------------------
 
 class AedosRunner:
-    """Run Aedos v0.15 against the test set."""
+    """Run the full Aedos pipeline against the test set."""
 
     def __init__(self, pipeline=None):
         self._pipeline = pipeline
@@ -215,25 +256,19 @@ class AedosRunner:
                 source_text=case.statement,
             )
             results = [walker.walk(c, vctx) for c in claims]
-            vr = aggregator.aggregate(claims, results)
-            # Phase 10.5 Step 6 sub-cause F: walker emits chain-flagged
-            # verdicts (*_given_assertion) for user-authoritative claims
-            # whose verdict depends on a Tier U assertion. The chain flag
-            # carries provenance, not a different verdict — fold it into
-            # the underlying verdict before aggregating.
-            def _strip_chain_flag(v: str) -> str:
-                if v in ("verified_given_assertion",):
-                    return "verified"
-                if v in ("contradicted_given_assertion",):
-                    return "contradicted"
-                if v in ("abstained_given_assertion",):
-                    return "no_grounding_found"
-                return v
-            verdicts = [_strip_chain_flag(v) for v in vr.per_claim_verdicts.values()]
-            verdict = verdicts[0] if len(verdicts) == 1 else (
-                "contradicted" if "contradicted" in verdicts else
-                ("verified" if all(v == "verified" for v in verdicts) else "no_grounding_found")
+            aggregator.aggregate(claims, results)
+            # v0.16.1 WS3 Step 1: the compound-statement conjunction is now a
+            # real TRACED operation on the aggregator (an op="and" provenance
+            # term over the per-claim sub-traces), not an inline boolean here.
+            # `compose_statement_verdict` collapses each conjunct's chain-flagged
+            # verdict (*_given_assertion) to its base verdict internally —
+            # exactly what the old inline `_strip_chain_flag` did — and applies
+            # the identical monotone semantics (contradicted-wins; verified iff
+            # ALL verified; else no_grounding_found). Verdict-neutral.
+            statement = aggregator.compose_statement_verdict(
+                results, source_text=case.statement
             )
+            verdict = statement.verdict
         except Exception as exc:
             verdict = "error"
         latency = time.monotonic() - start
@@ -293,8 +328,127 @@ class BaselineRunner:
 
 
 # ---------------------------------------------------------------------------
+# Per-instance supervision (folded in from scripts/medium_bar_step1_run.py)
+#
+# The standing harness supervises each live case so a long operator-run is
+# monitorable and loses no data on interruption:
+#   - a per-instance watchdog flags a case still running at 120/300/600s
+#     (it does NOT kill — the KB/LLM clients carry their own timeouts — it just
+#     records a possible hang so it can be investigated);
+#   - live false-VERIFIED AND false-CONTRADICTED counters surface a §3.2
+#     soundness breach the instant it occurs, not only at the end-of-run report;
+#   - an incremental per-case JSONL is flushed after every case.
+# Metrics/report still go through compute_metrics / generate_report unchanged.
+# ---------------------------------------------------------------------------
+
+def _emit(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def _watchdog(label: str, stop: threading.Event, marks=(120, 300, 600)) -> None:
+    t0 = time.time()
+    for mark in marks:
+        remaining = mark - (time.time() - t0)
+        if remaining > 0 and stop.wait(timeout=remaining):
+            return
+        if not stop.is_set():
+            _emit(f"    [WATCHDOG] {label} still running at "
+                  f"{int(time.time() - t0)}s — possible hang")
+
+
+def _bucket(verdict: str) -> str:
+    """The ground-truth bucket a raw verdict maps to (verified / contradicted /
+    abstain), matching `_normalize_verdict`."""
+    if verdict == "verified":
+        return "verified"
+    if verdict == "contradicted":
+        return "contradicted"
+    return "abstain"
+
+
+def run_tracked(
+    runner,
+    cases: list[BenchmarkCase],
+    kind: str,
+    jsonl_path: Optional[Path] = None,
+    *,
+    emit: Callable[[str], None] = _emit,
+) -> list[RunResult]:
+    """Run `runner` over `cases` with per-instance supervision.
+
+    Wraps each `runner.run_case` in a watchdog, maintains live verdict tallies
+    plus LIVE false-verified AND false-contradicted counters (the §3.2 metrics —
+    any nonzero is surfaced the moment it happens), and — when `jsonl_path` is
+    given — writes one flushed JSON line per case so progress is monitorable and
+    interruption-safe. Returns the same `list[RunResult]` as `runner.run_all`,
+    so compute_metrics / generate_report consume it unchanged.
+    """
+    gt = {c.case_id: c.ground_truth for c in cases}
+    results: list[RunResult] = []
+    tally = {"verified": 0, "contradicted": 0, "no_grounding_found": 0, "error": 0}
+    false_verified = 0
+    false_contradicted = 0
+    jf = open(jsonl_path, "w", encoding="utf-8") if jsonl_path is not None else None
+    try:
+        for i, c in enumerate(cases, 1):
+            stop = threading.Event()
+            wd = threading.Thread(
+                target=_watchdog, args=(f"{kind} {c.case_id}", stop), daemon=True
+            )
+            wd.start()
+            r = runner.run_case(c)
+            stop.set()
+            results.append(r)
+            tally[r.verdict] = tally.get(r.verdict, 0) + 1
+            bucket = _bucket(r.verdict)
+            fv = bucket == "verified" and gt[c.case_id] != "verified"
+            fc = bucket == "contradicted" and gt[c.case_id] != "contradicted"
+            if fv:
+                false_verified += 1
+            if fc:
+                false_contradicted += 1
+            if jf is not None:
+                jf.write(json.dumps({
+                    "i": i, "case_id": c.case_id, "failure_mode": c.failure_mode,
+                    "ground_truth": gt[c.case_id], "verdict": r.verdict,
+                    "bucket": bucket, "false_verified": fv, "false_contradicted": fc,
+                    "latency_s": round(r.latency_seconds, 1),
+                }) + "\n")
+                jf.flush()
+            flag = ""
+            if fv:
+                flag = "  <<< FALSE-VERIFIED (soundness!)"
+            elif fc:
+                flag = "  <<< FALSE-CONTRADICTED (soundness!)"
+            elif r.verdict == "error":
+                flag = "  <<ERROR>>"
+            emit(
+                f"  {kind} [{i:3}/{len(cases)}] {c.case_id:20} "
+                f"gt={gt[c.case_id]:11} -> {r.verdict:20} {r.latency_seconds:6.1f}s | "
+                f"FV={false_verified} FC={false_contradicted} "
+                f"V={tally['verified']} C={tally['contradicted']} "
+                f"A={tally['no_grounding_found']} E={tally['error']}{flag}"
+            )
+    finally:
+        if jf is not None:
+            jf.close()
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
+
+def soundness_gates(metrics: EvaluationMetrics) -> dict[str, bool]:
+    """v0.16.x HARD soundness gates. §3.2 forbids a false-verify AND a
+    false-contradict equally; abstention is the safe outcome. Both must be
+    ZERO. Returns {gate_name: passed}. The live entry point exits nonzero when
+    any gate fails."""
+    return {
+        "false_verified == 0": metrics.false_verified == 0,
+        "false_contradicted == 0": metrics.false_contradicted == 0,
+    }
+
 
 def generate_report(
     cases: list[BenchmarkCase],
@@ -305,10 +459,12 @@ def generate_report(
     aedos_metrics = compute_metrics(cases, aedos_results)
     baseline_metrics = compute_metrics(cases, baseline_results)
 
+    gates = soundness_gates(aedos_metrics)
+
     lines = [
-        "# Aedos v0.15 Medium-Bar Evaluation Results",
+        "# Aedos Medium-Bar Evaluation Results",
         "",
-        "## Aedos v0.15",
+        "## Aedos",
         aedos_metrics.summary(),
         "",
         "## LLM-Only Baseline",
@@ -317,32 +473,39 @@ def generate_report(
         "## Comparison",
         f"Accuracy delta: {aedos_metrics.accuracy - baseline_metrics.accuracy:+.1%}",
         f"False-verified delta: {aedos_metrics.false_verified_rate - baseline_metrics.false_verified_rate:+.1%}",
+        f"False-contradicted delta: "
+        f"{aedos_metrics.false_contradicted_rate - baseline_metrics.false_contradicted_rate:+.1%}",
         "",
-        "## Phase 10.5 Acceptance Criteria",
-        f"False-verified ≤ 5%: {'PASS' if aedos_metrics.false_verified_rate <= 0.05 else 'FAIL'} "
-        f"(actual: {aedos_metrics.false_verified_rate:.1%})",
-        f"Accuracy ≥ baseline + 15pp: "
-        f"{'PASS' if aedos_metrics.accuracy >= baseline_metrics.accuracy + 0.15 else 'FAIL'} "
-        f"(delta: {aedos_metrics.accuracy - baseline_metrics.accuracy:+.1%})",
+        "## Acceptance — HARD soundness gates (v0.16.x, §3.2)",
+        "These two MUST pass; abstention is the safe outcome, accuracy is tracked not gated.",
+        f"HARD GATE false_verified == 0: "
+        f"{'PASS' if gates['false_verified == 0'] else 'FAIL'} "
+        f"(false_verified={aedos_metrics.false_verified}, "
+        f"rate {aedos_metrics.false_verified_rate:.1%})",
+        f"HARD GATE false_contradicted == 0: "
+        f"{'PASS' if gates['false_contradicted == 0'] else 'FAIL'} "
+        f"(false_contradicted={aedos_metrics.false_contradicted}: "
+        f"gt=verified {aedos_metrics.false_contradicted_gt_verified}, "
+        f"gt=abstain {aedos_metrics.false_contradicted_gt_abstain}; "
+        f"rate {aedos_metrics.false_contradicted_rate:.1%})",
+        f"OVERALL SOUNDNESS: {'PASS' if all(gates.values()) else 'FAIL'}",
+        "",
+        "## Tracked (reported, NOT gated)",
+        f"Accuracy: {aedos_metrics.accuracy:.1%} "
+        f"(baseline {baseline_metrics.accuracy:.1%}, "
+        f"delta {aedos_metrics.accuracy - baseline_metrics.accuracy:+.1%})",
+        f"False-abstain rate: {aedos_metrics.false_abstain_rate:.1%} "
+        f"({aedos_metrics.false_abstain})",
     ]
 
-    # Per-failure-mode no-regression check (criterion 3).
-    big_gains = 0
+    # Per-failure-mode accuracy + baseline delta — TRACKED, never gated.
     for mode in sorted(aedos_metrics.per_failure_mode):
         a_acc = aedos_metrics.per_failure_mode[mode]["accuracy"]
         b_acc = baseline_metrics.per_failure_mode.get(mode, {}).get("accuracy", 0.0)
-        status = "PASS" if a_acc >= b_acc else "FAIL"
-        lines.append(f"No-regression {mode}: {status} (Aedos {a_acc:.1%} vs baseline {b_acc:.1%})")
-        if a_acc >= b_acc + 0.20:
-            big_gains += 1
-
-    # Criterion 4: significant improvement on >= 4 of 6 modes. The plan says
-    # "significantly higher"; the runbook operationalizes that as >= +20pp.
-    n_modes = len(aedos_metrics.per_failure_mode)
-    lines.append(
-        f"Significant improvement (>= +20pp) on >= 4 of 6 modes: "
-        f"{'PASS' if big_gains >= 4 else 'FAIL'} ({big_gains}/{n_modes} modes)"
-    )
+        lines.append(
+            f"Mode {mode}: Aedos {a_acc:.1%} vs baseline {b_acc:.1%} "
+            f"(delta {a_acc - b_acc:+.1%})"
+        )
 
     report = "\n".join(lines)
     if output_path is not None:
@@ -377,9 +540,13 @@ def _structural_test():
     assert metrics.accuracy == 1.0, f"Perfect mock results should give 100% accuracy, got {metrics.accuracy}"
     assert metrics.false_verified == 0
 
-    # Generate report
+    # Generate report — the v0.16.x hard soundness gates must both PASS on the
+    # perfect mock (0 false-verified, 0 false-contradicted).
     report = generate_report(cases, mock_results, mock_results)
-    assert "Aedos v0.15" in report
+    assert "# Aedos Medium-Bar Evaluation Results" in report
+    assert "HARD GATE false_verified == 0: PASS" in report
+    assert "HARD GATE false_contradicted == 0: PASS" in report
+    assert "OVERALL SOUNDNESS: PASS" in report
 
     return True
 
@@ -474,10 +641,21 @@ def _validate_harness(
     assert b.verdict in ("verified", "contradicted", "no_grounding_found")
 
     report = generate_report(cases, [a], [b], output_path=output_path)
-    assert "# Aedos v0.15 Medium-Bar Evaluation Results" in report
-    assert "Phase 10.5 Acceptance Criteria" in report
+    assert "# Aedos Medium-Bar Evaluation Results" in report
+    assert "HARD soundness gates" in report
+    assert "HARD GATE false_verified == 0" in report
+    assert "HARD GATE false_contradicted == 0" in report
     if output_path is not None:
         assert output_path.exists() and output_path.read_text(encoding="utf-8").strip()
+
+    # Exercise the per-instance supervision wrapper on the mocked runners too —
+    # confirms run_tracked's wiring (watchdog thread + JSONL + live counters)
+    # without live API cost. The JSONL must contain one flushed line per case.
+    if output_path is not None:
+        jsonl = output_path.with_suffix(".jsonl")
+        tracked = run_tracked(aedos, cases[:1], "aedos", jsonl, emit=lambda _m: None)
+        assert len(tracked) == 1 and tracked[0].verdict != "error"
+        assert jsonl.exists() and jsonl.read_text(encoding="utf-8").strip()
     return True
 
 
@@ -485,41 +663,109 @@ def _validate_harness(
 # Live evaluation entrypoint (Phase 10.5)
 # ---------------------------------------------------------------------------
 
+def _metrics_to_dict(m: EvaluationMetrics) -> dict:
+    return {
+        "total": m.total, "correct": m.correct, "accuracy": m.accuracy,
+        "false_verified": m.false_verified,
+        "false_verified_rate": m.false_verified_rate,
+        "false_contradicted": m.false_contradicted,
+        "false_contradicted_rate": m.false_contradicted_rate,
+        "false_contradicted_gt_verified": m.false_contradicted_gt_verified,
+        "false_contradicted_gt_abstain": m.false_contradicted_gt_abstain,
+        "false_abstain": m.false_abstain,
+        "false_abstain_rate": m.false_abstain_rate,
+        "per_failure_mode": m.per_failure_mode,
+    }
+
+
+def _run_one(runner, cases, kind, jsonl_path, tracked: bool):
+    """Run a single runner over `cases`, optionally with per-instance tracking."""
+    if tracked:
+        return run_tracked(runner, cases, kind, jsonl_path)
+    return runner.run_all(cases)
+
+
 def _run_live(args) -> int:
-    """Run the medium-bar evaluation live against the production pipeline.
-    Returns a process exit code."""
+    """Run the medium-bar evaluation live against the production pipeline, with
+    per-instance supervision (watchdog + live FV/FC counters + incremental
+    JSONL) when --track is set. Returns a process exit code: nonzero iff a HARD
+    soundness gate (false_verified / false_contradicted) FAILS."""
     from aedos.database import open_db
     from aedos.pipeline import build_pipeline
 
     db_path = os.environ.get("AEDOS_DB_PATH", "aedos_phase10_5.db")
     cases = load_test_set(args.test_set)
-    print(f"Loaded {len(cases)} cases from {args.test_set}")
-    print(f"Database: {db_path} (load the seed pack first — runbook Step 2)")
+    _emit(f"Loaded {len(cases)} cases from {args.test_set}")
+    _emit(f"Database: {db_path} (load the seed pack first — runbook Step 2)")
+    _emit(f"Per-instance tracking: {'ON' if args.track else 'off'} | tag={args.tag}")
 
+    started = datetime.now(timezone.utc).isoformat()
+    t0 = time.time()
     pipeline = build_pipeline(open_db(db_path))
     aedos = AedosRunner(pipeline=(pipeline.extractor, pipeline.walker, pipeline.aggregator))
     baseline = BaselineRunner(llm_client=pipeline.llm_client)
+    _emit(f"Pipeline built in {time.time() - t0:.1f}s.")
+
+    # Incremental JSONL siblings of --output (one per runner), so a long live
+    # run is monitorable and interruption-safe.
+    out = args.output
+    base_jsonl = aedos_jsonl = None
+    if out is not None and args.track:
+        base_jsonl = out.with_name(f"{out.stem}_baseline.jsonl")
+        aedos_jsonl = out.with_name(f"{out.stem}_aedos.jsonl")
 
     if args.baseline_only:
-        print(f"Running baseline only over {len(cases)} cases ...")
-        print(compute_metrics(cases, baseline.run_all(cases)).summary())
+        _emit(f"Running baseline only over {len(cases)} cases ...")
+        _emit(compute_metrics(cases, _run_one(baseline, cases, "base", base_jsonl, args.track)).summary())
         return 0
     if args.aedos_only:
-        print(f"Running Aedos only over {len(cases)} cases ...")
-        print(compute_metrics(cases, aedos.run_all(cases)).summary())
-        return 0
+        _emit(f"Running Aedos only over {len(cases)} cases ...")
+        metrics = compute_metrics(cases, _run_one(aedos, cases, "aedos", aedos_jsonl, args.track))
+        _emit(metrics.summary())
+        return 0 if all(soundness_gates(metrics).values()) else 1
 
-    print(f"Running LLM-only baseline over {len(cases)} cases ...")
-    baseline_results = baseline.run_all(cases)
-    print(f"Running Aedos pipeline over {len(cases)} cases ...")
-    aedos_results = aedos.run_all(cases)
+    _emit(f"--- BASELINE over {len(cases)} cases ---")
+    baseline_results = _run_one(baseline, cases, "base", base_jsonl, args.track)
+    _emit(f"--- AEDOS over {len(cases)} cases ---")
+    aedos_results = _run_one(aedos, cases, "aedos", aedos_jsonl, args.track)
 
-    report = generate_report(cases, aedos_results, baseline_results, output_path=args.output)
-    print()
-    print(report)
-    if args.output is not None:
-        print(f"\nResults written to {args.output}")
-    return 0
+    finished = datetime.now(timezone.utc).isoformat()
+    aedos_metrics = compute_metrics(cases, aedos_results)
+    baseline_metrics = compute_metrics(cases, baseline_results)
+    report = generate_report(cases, aedos_results, baseline_results, output_path=out)
+
+    # A per-case JSON sibling for the aggregator (medium_bar_aggregate.py).
+    if out is not None:
+        ar = {r.case_id: r for r in aedos_results}
+        br = {r.case_id: r for r in baseline_results}
+        per_case = [{
+            "case_id": c.case_id, "statement": c.statement,
+            "ground_truth": c.ground_truth, "failure_mode": c.failure_mode,
+            "notes": c.notes,
+            "aedos_verdict": ar[c.case_id].verdict,
+            "aedos_latency_s": round(ar[c.case_id].latency_seconds, 2),
+            "baseline_verdict": br[c.case_id].verdict,
+            "baseline_latency_s": round(br[c.case_id].latency_seconds, 2),
+        } for c in cases]
+        out.with_suffix(".json").write_text(json.dumps({
+            "tag": args.tag, "started_at": started, "finished_at": finished,
+            "duration_s": round(time.time() - t0, 1), "case_count": len(cases),
+            "db_path": db_path,
+            "aedos_metrics": _metrics_to_dict(aedos_metrics),
+            "baseline_metrics": _metrics_to_dict(baseline_metrics),
+            "per_case": per_case,
+        }, indent=2), encoding="utf-8")
+
+    _emit("")
+    _emit(report.replace("≤", "<=").replace("≥", ">="))
+    if out is not None:
+        _emit(f"\nResults written to {out}")
+    gates = soundness_gates(aedos_metrics)
+    _emit(f"\n*** SOUNDNESS GATES: {'PASS' if all(gates.values()) else 'FAIL'} "
+          f"(false_verified={aedos_metrics.false_verified}, "
+          f"false_contradicted={aedos_metrics.false_contradicted}) ***")
+    _emit("RUN COMPLETE")
+    return 0 if all(gates.values()) else 1
 
 
 if __name__ == "__main__":
@@ -530,9 +776,15 @@ if __name__ == "__main__":
     # no `.env` is present.
     from aedos.utils.env import load_dotenv_if_present
     load_dotenv_if_present()
-    parser = argparse.ArgumentParser(description="Aedos v0.15 medium-bar evaluation")
+    parser = argparse.ArgumentParser(description="Aedos standing medium-bar evaluation harness")
     parser.add_argument("--test-set", type=Path, default=_TEST_SET_PATH)
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--tag", default="medium_bar",
+                        help="Run tag, used to name the incremental JSONL siblings.")
+    parser.add_argument("--track", action="store_true",
+                        help="Per-instance supervision: watchdog + live "
+                             "false-verified/false-contradicted counters + "
+                             "incremental per-case JSONL (interruption-safe).")
     parser.add_argument("--structural-test", action="store_true",
                         help="Check the metrics/report machinery against mock results.")
     parser.add_argument("--validate-harness", action="store_true",

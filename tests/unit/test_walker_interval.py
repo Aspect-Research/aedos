@@ -2,10 +2,9 @@
 
 Covers (spec docs/v0_16/06_temporal.md §B):
   * `_iso_or_none` — BEFORE_PRESENT and empty → None (open end).
-  * `_interval_holds_at` — the three-valued holds-at-T table (§B.2):
-        open-end → true once start<=T; start>T → false; end<T → false;
-        unknown-start → unknown; both-unknown → unknown; BEFORE_PRESENT as an
-        end never forces a false.
+  * (`_interval_holds_at` and its three-valued holds-at-T suite were removed in
+        v0.16.1 WS4 — the primitive had no verdict-path consumer; see the walker
+        note where it lived.)
   * `_interval_from_statements` — P580/P582 gathering, preferred-rank
         disambiguation, conflicting-start abstention, open-end dominance.
   * `_verify_interval_endpoint` — verified / contradicted / abstain, driven by
@@ -72,11 +71,22 @@ class _StubKBVerifier:
 
 
 class _StubKB:
-    """lookup_statements keyed by (entity, property). Optionally raises."""
+    """lookup_statements keyed by (entity, property). Optionally raises.
 
-    def __init__(self, statements_by_key=None, raise_on_lookup=False):
+    v0.16.1 WS5c: when `qualifier_keys` is provided the stub exposes the
+    KBProtocol `interval_qualifier_keys` accessor returning it, so a test can
+    confirm CORE reads the start/end qualifier keys from the adapter rather than
+    a hardcoded P-id. When omitted, the stub has NO accessor (mirroring an
+    adapter predating WS5c) and the walker's fail-safe (P580, P582) default
+    applies — the behavior-neutral path the bulk of the suite exercises.
+    """
+
+    def __init__(self, statements_by_key=None, raise_on_lookup=False,
+                 qualifier_keys=None):
         self._by_key = statements_by_key or {}
         self._raise = raise_on_lookup
+        if qualifier_keys is not None:
+            self.interval_qualifier_keys = lambda: tuple(qualifier_keys)
 
     def lookup_statements(self, entity, prop):
         if self._raise:
@@ -189,71 +199,13 @@ class TestIsoOrNone:
 
 
 # ---------------------------------------------------------------------------
-# _interval_holds_at  (three-valued table, §B.2)
+# v0.16.1 WS4: the _interval_holds_at three-valued primitive (and its
+# TestIntervalHoldsAt suite) were REMOVED — the primitive had no verdict-path
+# consumer (its only intended caller is the deferred event-relative resolver,
+# item 7 Stage 2) and wiring it to a present-day check risked a false-contradict.
+# The BEFORE_PRESENT → end_known=False behavior it relied on is still covered by
+# the _iso_or_none tests above and the _interval_from_statements tests below.
 # ---------------------------------------------------------------------------
-
-class TestIntervalHoldsAt:
-    def setup_method(self):
-        self.w = _make_walker()
-
-    def test_closed_interval_T_inside_is_true(self):
-        iv = Interval(start="1933-01-01", end="1955-01-01",
-                      start_known=True, end_known=True)
-        assert self.w._interval_holds_at(iv, "1940-01-01") == "true"
-
-    def test_start_after_T_is_false(self):
-        # start > T → relation hadn't begun.
-        iv = Interval(start="1933-01-01", end="1955-01-01",
-                      start_known=True, end_known=True)
-        assert self.w._interval_holds_at(iv, "1920-01-01") == "false"
-
-    def test_end_before_T_is_false(self):
-        # end < T → relation already ended.
-        iv = Interval(start="1933-01-01", end="1955-01-01",
-                      start_known=True, end_known=True)
-        assert self.w._interval_holds_at(iv, "1990-01-01") == "false"
-
-    def test_open_end_with_start_le_T_is_true(self):
-        # Open end (ongoing) and start <= T → true.
-        iv = Interval(start="1912-01-01", start_known=True, end_known=False)
-        assert self.w._interval_holds_at(iv, "2024-01-01") == "true"
-
-    def test_open_end_with_start_gt_T_is_false(self):
-        # Even with an open end, a future start forces false.
-        iv = Interval(start="1912-01-01", start_known=True, end_known=False)
-        assert self.w._interval_holds_at(iv, "1900-01-01") == "false"
-
-    def test_unknown_start_known_end_is_unknown(self):
-        # start UNKNOWN, end known, T <= end → cannot place T → unknown.
-        iv = Interval(end="1955-01-01", start_known=False, end_known=True)
-        assert self.w._interval_holds_at(iv, "1940-01-01") == "unknown"
-
-    def test_unknown_start_end_before_T_is_false(self):
-        # An end strictly before T still forces false regardless of the
-        # unknown start.
-        iv = Interval(end="1955-01-01", start_known=False, end_known=True)
-        assert self.w._interval_holds_at(iv, "1990-01-01") == "false"
-
-    def test_both_unknown_is_unknown(self):
-        iv = Interval(start_known=False, end_known=False)
-        assert self.w._interval_holds_at(iv, "1940-01-01") == "unknown"
-
-    def test_before_present_end_never_forces_false(self):
-        # An interval gathered with BEFORE_PRESENT as its end maps to
-        # end_known=False (via _iso_or_none) — a soft past signal that must NOT
-        # force a false. With a known start <= T it holds (open-end semantics).
-        iv = self.w._interval_from_statements([
-            Statement(value="Q1", value_type="entity",
-                      qualifiers={"P580": "1912-01-01", "P582": BEFORE_PRESENT})
-        ])
-        assert iv is not None
-        assert iv.end_known is False
-        assert self.w._interval_holds_at(iv, "2024-01-01") == "true"
-
-    def test_empty_T_is_unknown(self):
-        iv = Interval(start="1933-01-01", start_known=True, end_known=True,
-                      end="1955-01-01")
-        assert self.w._interval_holds_at(iv, "") == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -835,3 +787,67 @@ class TestGatherInterval:
             _claim(predicate="employment_started"), "P108", _ctx()
         )
         assert iv is None
+
+
+# ---------------------------------------------------------------------------
+# v0.16.1 WS5c — interval qualifier keys sourced from the KB adapter
+# ---------------------------------------------------------------------------
+
+class TestWS5cIntervalQualifierKeys:
+    """CORE reads the (start, end) interval-qualifier keys from the KB adapter's
+    `interval_qualifier_keys` accessor, not a hardcoded walker P-id. With a stub
+    returning ALTERNATE keys, the endpoint grounds against statements carrying
+    those keys and the trace records them — proving the relocation is wired
+    (and behavior-neutral when the adapter returns the canonical P580/P582)."""
+
+    def test_accessor_keys_drive_interval_gathering(self):
+        # Stub returns alternate qualifier keys; statements carry them. The
+        # endpoint must ground against the start key the accessor reported.
+        alt_statements = [
+            Statement(value="Q11942", value_type="entity", rank="preferred",
+                      qualifiers={"START": "1933-10-01", "END": "1955-04-18"}),
+        ]
+        kb = _StubKB(
+            statements_by_key={("Q937", "P108"): alt_statements},
+            qualifier_keys=("START", "END"),
+        )
+        w = _make_walker(
+            kb=kb,
+            meta_by_pred={"employment_started": _StubMeta("P108"),
+                          "employment_ended": _StubMeta("P108")},
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_started", object_val="1933"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, grounding = out
+        assert verdict == "verified"
+        assert grounding["qualifier"] == "START"
+        assert grounding["endpoint_value"] == "1933-10-01"
+
+    def test_canonical_p580_p582_when_accessor_returns_them(self):
+        # An adapter returning the canonical keys is byte-identical to the
+        # historical hardcoded path.
+        kb = _StubKB(
+            statements_by_key={("Q937", "P108"): _ias_statements()},
+            qualifier_keys=("P580", "P582"),
+        )
+        w = _make_walker(
+            kb=kb,
+            meta_by_pred={"employment_started": _StubMeta("P108"),
+                          "employment_ended": _StubMeta("P108")},
+        )
+        out = w._verify_interval_endpoint(
+            _claim(predicate="employment_ended", object_val="1955"),
+            _ctx(), _trace(),
+        )
+        assert out is not None
+        verdict, grounding = out
+        assert verdict == "verified"
+        assert grounding["qualifier"] == "P582"
+
+    def test_adapter_exposes_interval_qualifier_keys(self):
+        # The live WikidataAdapter returns the canonical (P580, P582).
+        from aedos.layer4_sources.kb_wikidata import WikidataAdapter
+        assert WikidataAdapter().interval_qualifier_keys() == ("P580", "P582")

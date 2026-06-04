@@ -51,6 +51,8 @@ def _raw_claim(**kwargs) -> dict[str, Any]:
         "valid_from": None,
         "valid_until": None,
         "valid_during_ref": None,
+        "valid_from_ref": None,
+        "valid_until_ref": None,
     }
     return {**defaults, **kwargs}
 
@@ -102,6 +104,9 @@ class TestClaimDataclass:
         assert c.valid_from is None
         assert c.valid_until is None
         assert c.valid_during_ref is None
+        # v0.16.1 WS8 Stage 1: the event-relative bound refs default None.
+        assert c.valid_from_ref is None
+        assert c.valid_until_ref is None
         assert c.reified_event_id is None
 
     def test_polarity_is_integer(self):
@@ -264,11 +269,16 @@ class TestRule25IntervalEndpointPromptRules:
         assert "DO NOT apply Rule 25 when" in _SYSTEM_PROMPT
         assert "No date/year is present" in _SYSTEM_PROMPT
 
-    def test_rules_12_13_14_cross_reference_rule_25(self):
-        # The three interval-bearing rules each instruct the LLM to ALSO emit
-        # the Rule 25 endpoint claim.
+    def test_rules_12_13_cross_reference_rule_25(self):
+        # The interval-bearing employment rules (12/13) each instruct the LLM to
+        # ALSO emit the Rule 25 endpoint claim. (v0.16.1 WS4 dropped the dead
+        # status_started/status_ended seed rows, so Rule 14 no longer carries a
+        # Rule 25 status endpoint cross-reference and the prompt no longer
+        # elicits status_started/status_ended.)
         from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
-        assert _SYSTEM_PROMPT.count("per Rule 25") >= 3
+        assert _SYSTEM_PROMPT.count("per Rule 25") >= 2
+        assert "status_started" not in _SYSTEM_PROMPT
+        assert "status_ended" not in _SYSTEM_PROMPT
 
 
 class TestRule25EndpointClaimPipeline:
@@ -327,6 +337,92 @@ class TestRule25EndpointClaimPipeline:
         ep = by_pred["employment_ended"]
         assert ep.object == "2019"
         assert ep.abstention_reason is None
+
+
+class TestEventRelativeBoundRefs:
+    """v0.16.1 WS8 Stage 1: valid_from_ref / valid_until_ref are event-relative
+    bound references mirroring valid_during_ref. WRITE-ONLY metadata — no
+    grounding/verdict path reads them (Stage 2 resolver deferred).
+
+    These pin (1) the round-trip through _build_claim's
+    extract_temporal_scope call and single Claim construction, and (2) the split
+    Rule 16 prompt wording (before→valid_until_ref, after/since→valid_from_ref,
+    during→valid_during_ref) so a future prompt edit cannot silently collapse the
+    three directions back onto one field."""
+
+    def test_valid_until_ref_round_trips_through_build_claim(self):
+        # "before X" upper bound → valid_until_ref. The LLM emits the ref on the
+        # raw claim; _build_claim must thread it onto the produced Claim.
+        raw = _raw_claim(
+            subject="The team", predicate="had", object="five members",
+            verb_tense="past", valid_until_ref="claim_acquisition",
+            source_text="The team had five members before the acquisition",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract(
+            "The team had five members before the acquisition", _default_context()
+        )
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.valid_until_ref == "claim_acquisition"
+        assert c.valid_from_ref is None
+        assert c.valid_during_ref is None
+        # The ref suppresses the implicit-past-tense before_present default.
+        assert c.valid_until is None
+        assert c.valid_until != BEFORE_PRESENT
+
+    def test_valid_from_ref_round_trips_through_build_claim(self):
+        # "after/since X" lower bound → valid_from_ref.
+        raw = _raw_claim(
+            subject="she", predicate="was", object="President",
+            verb_tense="past", valid_from_ref="claim_election",
+            source_text="After the election, she was President",
+        )
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract(
+            "After the election, she was President", _default_context()
+        )
+        assert len(claims) == 1
+        c = claims[0]
+        assert c.valid_from_ref == "claim_election"
+        assert c.valid_until_ref is None
+        assert c.valid_during_ref is None
+        assert c.valid_until is None  # ref suppresses before_present
+
+    def test_refs_default_none_when_unset(self):
+        # A normal claim carries no event-relative refs.
+        raw = _raw_claim()
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        c = claims[0]
+        assert c.valid_from_ref is None
+        assert c.valid_until_ref is None
+
+    def test_prompt_rule_16_splits_before_to_valid_until_ref(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "16. EVENT-RELATIVE BOUNDS" in _SYSTEM_PROMPT
+        # Upper bound: "before X" / "until X" → valid_until_ref.
+        assert '"before X" or "until X"' in _SYSTEM_PROMPT
+        assert "set valid_until_ref" in _SYSTEM_PROMPT
+
+    def test_prompt_rule_16_splits_after_since_to_valid_from_ref(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        # Lower bound: "after X" / "since X" → valid_from_ref.
+        assert '"after X" or "since X"' in _SYSTEM_PROMPT
+        assert "set valid_from_ref" in _SYSTEM_PROMPT
+
+    def test_prompt_rule_16_redirects_during_to_rule_15_valid_during_ref(self):
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        # The co-temporal "during X" bound stays Rule 15 / valid_during_ref —
+        # Rule 16 explicitly cedes it, not collapsing all three onto one field.
+        assert 'A CO-TEMPORAL "during X" bound is Rule 15, not Rule 16' in _SYSTEM_PROMPT
+
+    def test_prompt_rule_16_carries_d45_non_triggers(self):
+        # D45 discipline: Rule 16 must carry explicit non-triggering conditions
+        # (date/year, plain past-tense, Rule-9 subordinate clause).
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "DO NOT apply Rule 16 when" in _SYSTEM_PROMPT
+        assert "X is a date or year" in _SYSTEM_PROMPT
 
 
 class TestExtractorRoundtrip:
@@ -643,6 +739,125 @@ class TestAbstentionReasonStamping:
             == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
         )
 
+    @pytest.mark.parametrize(
+        "subject,predicate,obj",
+        [
+            (None, "x", None),       # the reported crash shape
+            (None, None, None),      # all-null
+            ("Asa", None, "Google"), # null predicate
+            ("Asa", "works_at", None),  # null object
+            (None, "works_at", "Google"),  # null subject
+        ],
+    )
+    def test_null_slot_does_not_crash(self, subject, predicate, obj):
+        # Regression: an LLM-emitted explicit null in any of the three slots
+        # previously crashed _build_claim ('NoneType' has no attribute 'strip')
+        # at the self-referential check, propagating out of extract() and
+        # losing the whole statement (benchmark verdict='error'). The slots are
+        # coerced to "" at the point of use; a malformed claim must abstain,
+        # never raise.
+        raw = _raw_claim(subject=subject, predicate=predicate, object=obj,
+                         source_text="some source")
+        extractor, _ = _make_extractor([raw])
+        # Must not raise.
+        claims = extractor.extract("some source text", _default_context())
+        # The claim is emitted (WS4: never silently dropped) and any empty
+        # subject is routed to abstention rather than flowing as well-formed.
+        for c in claims:
+            if not (c.subject or "").strip():
+                assert (
+                    c.abstention_reason
+                    == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+                )
+
+    def test_null_source_text_and_polarity_do_not_crash(self):
+        # Defense-in-depth: explicit-null source_text (feeds a regex) and
+        # explicit-null polarity (int()) must not crash either; polarity
+        # defaults to the affirm value 1, not flipping a legitimate 0.
+        raw = _raw_claim(source_text=None, polarity=None)
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        assert len(claims) == 1
+        assert claims[0].polarity == 1
+
+    def test_null_slot_one_bad_claim_does_not_abort_batch(self):
+        # Defense-in-depth backstop: even if a raw claim somehow still raises
+        # in _build_claim, extract() must skip it and keep the good claims —
+        # one malformed claim cannot turn the whole statement into a lost case.
+        raws = [
+            _raw_claim(),  # well-formed, must survive
+            _raw_claim(subject=None, predicate="x", object=None,
+                       source_text="bad"),  # null-slot, must not abort batch
+        ]
+        extractor, _ = _make_extractor(raws)
+        claims = extractor.extract("Asa graduated from Williams College", _default_context())
+        # The good claim survives.
+        assert any(c.subject == "Asa" and c.abstention_reason is None for c in claims)
+
+    def test_build_claim_null_object_does_not_raise(self):
+        # _build_claim-level pin (the exact crash site): a raw claim with an
+        # explicit-null object reaches the self-referential check
+        # (raw_subject.strip().casefold() == raw_object.strip().casefold()) and
+        # previously raised "'NoneType' object has no attribute 'strip'". Call
+        # _build_claim directly so the regression is pinned at the unit it
+        # crashed in, not only through extract().
+        extractor, _ = _make_extractor([])
+        raw = _raw_claim(subject="Asa", predicate="works_at", object=None,
+                         source_text="Asa works at Google")
+        # Must not raise.
+        claim = extractor._build_claim(raw, "Asa works at Google", _default_context())
+        # A null object grounds to no_grounding_found (Deletion #2): it may be
+        # emitted as a shaped claim or carry an abstention_reason, but never
+        # crashes and never silently becomes well-formed-and-verifiable with a
+        # None object slot.
+        if claim is not None:
+            assert claim.object != None  # noqa: E711 — pin: coerced to "", not None
+
+    @pytest.mark.parametrize(
+        "subject,predicate,obj",
+        [
+            (None, "x", None),       # the reported crash shape
+            (None, None, None),      # all-null
+            (None, "works_at", "Google"),  # null subject (object present)
+        ],
+    )
+    def test_null_subject_routes_to_abstention(self, subject, predicate, obj):
+        # §3.2 soundness pin (task (b), empty-SUBJECT half — the extractor-side
+        # guarantee). A null/empty subject vacuously passes the hard-claim
+        # check ("" is a substring of any text), so without a guard it would
+        # flow as a well-formed triple. The extractor stamps
+        # subject_absent_from_source; the walker short-circuits any claim with
+        # abstention_reason to no_grounding_found PRE-lookup (walker.walk entry
+        # guard), so it can never reach a KB/Tier U/Python lookup and never
+        # becomes a spurious verified/contradicted. Pinned at the extractor.
+        raw = _raw_claim(subject=subject, predicate=predicate, object=obj,
+                         source_text="works at Google")
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("works at Google", _default_context())
+        for c in claims:
+            if not (c.subject or "").strip():
+                assert (
+                    c.abstention_reason
+                    == AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+                ), "empty-subject claim must abstain, never flow as a triple"
+
+    def test_null_object_coerced_not_none(self):
+        # §3.2 soundness pin (task (b), empty-OBJECT half — the extractor-side
+        # invariant). Per the documented Deletion #2 design the empty-object
+        # path is intentionally NOT stamped at the extractor; instead the object
+        # is coerced from None to "" and the shaped claim flows on to ground to
+        # no_grounding_found in the walker (an abstention). The extractor's
+        # contract here is narrower but load-bearing: the object slot is NEVER
+        # left as None (which would crash the downstream .strip()/grounding),
+        # always the empty string. The walker-side no_grounding_found outcome is
+        # pinned in test_walker.py::TestNullSlotClaimGrounding.
+        raw = _raw_claim(subject="Asa", predicate="works_at", object=None,
+                         source_text="Asa works at Google")
+        extractor, _ = _make_extractor([raw])
+        claims = extractor.extract("Asa works at Google", _default_context())
+        assert len(claims) == 1
+        assert claims[0].object == ""  # coerced, never None
+
 
 # ---------------------------------------------------------------------------
 # TestExtractionToolSchema
@@ -664,3 +879,12 @@ class TestExtractionToolSchema:
         required = item_schema["required"]
         for field in ("subject", "predicate", "object", "polarity", "source_text", "verb_tense"):
             assert field in required
+
+    def test_event_relative_ref_properties_in_schema(self):
+        # v0.16.1 WS8 Stage 1: the extract tool advertises the event-relative
+        # bound refs as optional (nullable) string properties, mirroring
+        # valid_during_ref, so the LLM can populate them.
+        props = EXTRACTION_TOOL["input_schema"]["properties"]["claims"]["items"]["properties"]
+        for field in ("valid_during_ref", "valid_from_ref", "valid_until_ref"):
+            assert field in props
+            assert props[field]["type"] == ["string", "null"]

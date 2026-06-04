@@ -6,6 +6,7 @@ Used by the Wikidata adapter for entity resolution and SPARQL queries.
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -32,6 +33,10 @@ class LRUHTTPCache:
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._max_size = max_size
         self._default_ttl = default_ttl_seconds
+        # v0.16.2 Phase C: the OrderedDict LRU (move_to_end/popitem) is not safe
+        # under concurrent access. Parallel verification shares one adapter's
+        # cache across walks, so guard every mutation/lookup with a lock.
+        self._lock = threading.Lock()
 
     def _key(self, url: str, params: Optional[dict[str, Any]] = None) -> str:
         raw = url
@@ -41,13 +46,14 @@ class LRUHTTPCache:
 
     def get(self, url: str, params: Optional[dict[str, Any]] = None) -> Optional[CacheEntry]:
         key = self._key(url, params)
-        entry = self._cache.get(key)
-        if entry is None:
-            return None
-        if entry.is_expired():
-            return None  # Expired; keep in dict for conditional-GET ETag reuse
-        self._cache.move_to_end(key)
-        return entry
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None
+            if entry.is_expired():
+                return None  # Expired; keep in dict for conditional-GET ETag reuse
+            self._cache.move_to_end(key)
+            return entry
 
     def put(
         self,
@@ -56,22 +62,26 @@ class LRUHTTPCache:
         params: Optional[dict[str, Any]] = None,
     ) -> None:
         key = self._key(url, params)
-        self._cache[key] = entry
-        self._cache.move_to_end(key)
-        if len(self._cache) > self._max_size:
-            self._cache.popitem(last=False)
+        with self._lock:
+            self._cache[key] = entry
+            self._cache.move_to_end(key)
+            if len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
 
     def get_expired(self, url: str, params: Optional[dict[str, Any]] = None) -> Optional[CacheEntry]:
         """Return an expired entry (without removing it) for conditional GET."""
         key = self._key(url, params)
-        return self._cache.get(key)
+        with self._lock:
+            return self._cache.get(key)
 
     def invalidate(self, url: str, params: Optional[dict[str, Any]] = None) -> None:
         key = self._key(url, params)
-        self._cache.pop(key, None)
+        with self._lock:
+            self._cache.pop(key, None)
 
     def __len__(self) -> int:
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
 
 
 class CachingHTTPClient:

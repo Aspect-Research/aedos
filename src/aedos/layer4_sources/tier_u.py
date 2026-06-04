@@ -307,9 +307,10 @@ class TierU:
             """INSERT INTO tier_u
                (asserting_party, subject, predicate, object, polarity,
                 valid_from, valid_until, valid_during_ref,
+                valid_from_ref, valid_until_ref,
                 source_text, source_context, asserted_at,
                 subject_surface, object_surface, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 claim.asserting_party,
                 subject_canonical,
@@ -319,6 +320,8 @@ class TierU:
                 claim.valid_from,
                 claim.valid_until,
                 claim.valid_during_ref,
+                claim.valid_from_ref,
+                claim.valid_until_ref,
                 claim.source_text,
                 source_ctx_json,
                 now,
@@ -488,6 +491,32 @@ class TierU:
         rows = [dict(r) for r in rows]
         return LookupResult(found=bool(rows), rows=rows, stage=1)
 
+    def has_identity(self, asserting_party: str, subject: str) -> bool:
+        """True when `subject` is a stipulated user identity/persona for
+        `asserting_party` — a row of the shape
+        `(asserting_party, subject='user', predicate='identity', object=subject,
+        polarity=1)` that is not retracted.
+
+        Used by the walker to route a persona-subject claim to
+        `user_authoritative`: a persona name (e.g. "Asa") is the asking user,
+        not a KB entity, so the entity resolver must never see it (it would
+        otherwise resolve "Asa" → an unrelated Wikidata entity such as
+        "Asa, King of Judah" and emit a §3.2 false verified/contradicted on
+        facts about that wrong entity). Scoped to `asserting_party` so
+        different parties can stipulate different personas. Parameterized
+        query — no caller reaches `_db`.
+        """
+        if not subject:
+            return False
+        row = self._db.execute(
+            """SELECT 1 FROM tier_u
+               WHERE asserting_party=? AND subject='user'
+                 AND predicate='identity' AND object=?
+                 AND polarity=1 AND retracted_at IS NULL""",
+            (asserting_party, subject),
+        ).fetchone()
+        return row is not None
+
     def retract(self, row_id: int, reason: str) -> None:
         """Retract a Tier U row."""
         now = _NOW()
@@ -506,6 +535,55 @@ class TierU:
         # *_given_assertion verdicts STALE for lazy re-derivation.
         if self._propagator is not None:
             self._propagator.propagate_retraction("tier_u", row_id)
+
+    def clear_party(self, asserting_party: str) -> int:
+        """Hard-delete ALL Tier U rows for one asserting party.
+
+        The "start fresh" reset for the v0.16.2 deployment's per-session
+        context. Party-SCOPED: `asserting_party` is the isolation boundary the
+        rest of Tier U keys on (see `lookup` / `write`), so clearing one party
+        never touches another's rows. A hard DELETE (not a soft `retract`) is the
+        correct reset semantics — it leaves no rows behind and does NOT fan the
+        retraction propagator out per row (a session reset is not a belief
+        revision). Returns the number of rows removed. A falsy party clears
+        nothing (guards against an accidental whole-table wipe).
+        """
+        if not asserting_party:
+            return 0
+        cursor = self._db.execute(
+            "DELETE FROM tier_u WHERE asserting_party=?", (asserting_party,)
+        )
+        removed = cursor.rowcount if cursor.rowcount is not None else 0
+        self._db.commit()
+        log_event(
+            self._db,
+            event_type="party_cleared",
+            event_subject=f"tier_u:party:{asserting_party}",
+            event_data={"rows_removed": removed},
+        )
+        return removed
+
+    def rows_for_party(self, asserting_party: str) -> list[dict]:
+        """Return the CURRENT (non-retracted) Tier U rows for one party.
+
+        The read side of the v0.16.2 deployment's per-session context inspector —
+        "what has Aedos retained from this conversation?". Party-scoped and
+        parameterized (the same isolation boundary as `lookup`/`clear_party`);
+        returns only the fields a UI needs (no internal row plumbing beyond id).
+        A falsy party returns nothing. Read-only — no verdict/grounding effect.
+        """
+        if not asserting_party:
+            return []
+        cursor = self._db.execute(
+            """SELECT id, subject, predicate, object, polarity, status,
+                      valid_from, valid_until, asserted_at
+               FROM tier_u
+               WHERE asserting_party=? AND retracted_at IS NULL
+               ORDER BY asserted_at""",
+            (asserting_party,),
+        )
+        cols = [c[0] for c in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
     def mark_externally_verified(
         self,

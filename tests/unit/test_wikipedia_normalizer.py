@@ -42,9 +42,11 @@ from aedos.utils.http_cache import CachingHTTPClient, LRUHTTPCache
 class _FakeKBAdapter:
     """Phase H D53: stub KB adapter for normalizer unit tests.
 
-    Returns predetermined wbsearchentities candidates and P31 type maps.
-    The normalizer's Stage B calls `wbsearchentities()`; Stage C may call
-    `_fetch_p31_for_candidates()` for the D33 type filter.
+    Returns predetermined search candidates and P31 type maps. v0.16.1 WS5c:
+    the normalizer's Stage B now calls the KBProtocol `search()` op and Stage C
+    calls `fetch_types()` (instead of reaching into `wbsearchentities` /
+    `_fetch_p31_for_candidates`). The stub exposes those protocol ops; the
+    `wbsearch_calls` / `p31_calls` recording is preserved unchanged.
     """
 
     def __init__(self, candidates=None, p31_by_qid=None):
@@ -53,11 +55,11 @@ class _FakeKBAdapter:
         self.wbsearch_calls: list[tuple[str, int]] = []  # (query, limit)
         self.p31_calls: list[list[str]] = []
 
-    def wbsearchentities(self, query, limit=None):
+    def search(self, query, limit=None):
         self.wbsearch_calls.append((query, limit))
         return list(self._candidates)
 
-    def _fetch_p31_for_candidates(self, qids):
+    def fetch_types(self, qids):
         self.p31_calls.append(list(qids))
         return ({q: list(self._p31.get(q, [])) for q in qids}, None)
 

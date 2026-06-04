@@ -141,6 +141,33 @@ def trace_to_json(trace: JustificationTrace) -> dict:
     }
 
 
+def trace_to_json_lossless(
+    trace: JustificationTrace, walk_result: Any = None
+) -> dict:
+    """`trace_to_json` PLUS the per-claim facts the trace itself does not carry.
+
+    `trace_to_json` already serializes the JustificationTrace losslessly — root,
+    edges with their full open `metadata` dicts (every key round-trips verbatim),
+    `polarity_trace`, `source_breakdown`, `walk_metadata`, `chain_includes_assertion`,
+    and the AND/OR `provenance` term. The two things it CANNOT carry live on the
+    `WalkResult`, not the trace: `budget_consumption` (wall_clock_ms / llm_calls) and
+    the walk-layer `abstention_reason`. Pass `walk_result` to fold them in for the
+    durable audit record (GET /verification/{id}). §3.2-neutral — serialization only,
+    no verdict path reads this."""
+    out = trace_to_json(trace)
+    if walk_result is not None:
+        bc = getattr(walk_result, "budget_consumption", None)
+        if bc is not None:
+            out["budget_consumption"] = {
+                "wall_clock_ms": getattr(bc, "wall_clock_ms", None),
+                "llm_calls": getattr(bc, "llm_calls", None),
+            }
+        ar = getattr(walk_result, "abstention_reason", None)
+        if ar is not None:
+            out["abstention_reason"] = ar
+    return out
+
+
 def trace_to_human(
     trace: JustificationTrace, *, claim: Any = None, verdict: Any = None
 ) -> str:

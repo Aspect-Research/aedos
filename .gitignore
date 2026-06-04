@@ -47,3 +47,10 @@ uv.lock
 
 # Claude Code per-machine state
 .claude/
+
+# Frontend (deploy/frontend) — node + Vite build artifacts
+node_modules/
+deploy/frontend/dist/
+deploy/frontend/node_modules/
+.vite/
+npm-debug.log*

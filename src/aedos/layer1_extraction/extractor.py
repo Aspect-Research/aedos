@@ -79,6 +79,8 @@ EXTRACTION_TOOL: dict[str, Any] = {
                         "valid_from": {"type": ["string", "null"]},
                         "valid_until": {"type": ["string", "null"]},
                         "valid_during_ref": {"type": ["string", "null"]},
+                        "valid_from_ref": {"type": ["string", "null"]},
+                        "valid_until_ref": {"type": ["string", "null"]},
                         "source_text": {
                             "type": "string",
                             "description": "Verbatim assertion span from text",
@@ -247,11 +249,6 @@ predicate='status', object='ended', valid_until='2024'.
 object='ended', valid_until='2019'.
     - 'The program began in 2015' → predicate='status', object='ongoing', \
 valid_from='2015'.
-    ALSO emit a SEPARATE date-in-object endpoint claim per Rule 25: a "began/\
-started/launched" date → status_started(subject, YEAR); an "ended/concluded/\
-completed" date → status_ended(subject, YEAR), with the bare year in the \
-OBJECT slot. (When the subject is an ORG, prefer the Rule 23 founded_in_year \
-/ dissolved_in_year date predicates over status_started/status_ended.)
     A STATE-BEARING subject is one that exists over a time interval and has \
 a current state. The defining clue is that the subject is referenced with \
 "the" + a noun denoting an ongoing thing (project, program, partnership, \
@@ -287,25 +284,30 @@ predicate='was', object='high', valid_during_ref='claim_recession'.
 (emit B as a separate claim and reference it).
 
 16. EVENT-RELATIVE BOUNDS — when the text bounds a claim by a NAMED EVENT \
-("before X", "after X", "until X", "since X" where X is a named event, \
-not a date), set valid_during_ref to a generated id referencing the \
-event AND leave valid_from / valid_until as None. The v0.15 Claim \
-shape lacks dedicated valid_from_ref / valid_until_ref fields for \
-event-relative bounds, so valid_during_ref carries the event reference \
-as the in-vocabulary representation. (Semantically "before X" and \
-"after X" differ from "during X"; the v0.16 plan adds valid_from_ref / \
-valid_until_ref to disambiguate. v0.15 expresses all three via \
-valid_during_ref to preserve the event reference.)
-    - 'The team had five members before the acquisition' → \
+(not a date), set a generated id referencing the event AND leave \
+valid_from / valid_until as None. Pick the field by the DIRECTION of the \
+bound:
+    - An UPPER bound — "before X" or "until X" (the claim holds up to the \
+event) → set valid_until_ref to the generated id. Leave valid_from_ref / \
+valid_during_ref None.
+      'The team had five members before the acquisition' → \
 subject='The team', predicate='had', object='five members', \
-valid_during_ref='claim_acquisition', valid_from=None, valid_until=None.
-    - 'After the election, she was President' → subject='she', \
-predicate='was', object='President', valid_during_ref='claim_election', \
-valid_from=None, valid_until=None.
-    - 'Since the merger, performance improved' → subject='performance', \
-predicate='improved', valid_during_ref='claim_merger', valid_from=None, \
-valid_until=None.
-    Emitting valid_during_ref is load-bearing: it suppresses the \
+valid_until_ref='claim_acquisition', valid_from=None, valid_until=None, \
+valid_from_ref=None, valid_during_ref=None.
+    - A LOWER bound — "after X" or "since X" (the claim holds from the \
+event onward) → set valid_from_ref to the generated id. Leave \
+valid_until_ref / valid_during_ref None.
+      'After the election, she was President' → subject='she', \
+predicate='was', object='President', valid_from_ref='claim_election', \
+valid_from=None, valid_until=None, valid_until_ref=None, \
+valid_during_ref=None.
+      'Since the merger, performance improved' → subject='performance', \
+predicate='improved', valid_from_ref='claim_merger', valid_from=None, \
+valid_until=None, valid_until_ref=None, valid_during_ref=None.
+    A CO-TEMPORAL "during X" bound is Rule 15, not Rule 16 — it sets \
+valid_during_ref (the claim holds throughout the event, not merely before \
+or after it).
+    Emitting an event ref is load-bearing: it suppresses the \
 implicit-past-tense default (valid_until='before_present') that would \
 otherwise fire for past-tense verbs without other temporal signals.
     DO NOT apply Rule 16 when:
@@ -473,17 +475,13 @@ treatment — the endpoint claim is independently verifiable against the \
 start-time / end-time qualifier the KB records on the relation's statement.
     The endpoint predicates are: employment_started / employment_ended (for \
 employed_by, Rules 12/13), membership_started / membership_ended (for \
-member_of), role_started / role_ended (for holds_role), status_started / \
-status_ended (for status, Rule 14).
+member_of), role_started / role_ended (for holds_role).
     - 'Asa joined Google in 2020' → TWO claims: \
 employed_by(Asa, Google, valid_from='2020') + employment_started(Asa, '2020').
     - 'Asa left Google in 2024' → \
 employed_by(Asa, Google, valid_until='2024') + employment_ended(Asa, '2024').
     - 'Asa became a senator in 2011' → \
 holds_role(Asa, senator, valid_from='2011') + role_started(Asa, '2011').
-    - 'The partnership ended in 2019' → \
-status(The partnership, ended, valid_until='2019') + \
-status_ended(The partnership, '2019').
     DO NOT apply Rule 25 when:
     - No date/year is present. A bare 'Asa joined Google' → ONLY \
 employed_by(Asa, Google); emit NO employment_started endpoint claim (there \
@@ -494,7 +492,7 @@ valid_until on the ENDPOINT claim. The endpoint claim's date is its OBJECT \
 The base relation claim keeps the scope; the endpoint claim does not repeat it.
     - The subject is an ORG with an inception/dissolution date — prefer the \
 Rule 23 founded_in_year / dissolved_in_year date predicates (the date is the \
-fact about the org itself), not status_started / status_ended.
+fact about the org itself).
 """
 
 
@@ -520,6 +518,12 @@ class Claim:
     valid_from: Optional[str] = None
     valid_until: Optional[str] = None
     valid_during_ref: Optional[str] = None
+    # v0.16.1 WS8 Stage 1: event-relative bound refs, mirroring
+    # valid_during_ref. WRITE-ONLY metadata; no grounding/verdict path reads
+    # them (Stage 2 resolver deferred). "after/since <event>" → valid_from_ref;
+    # "before <event>" → valid_until_ref; "during <event>" → valid_during_ref.
+    valid_from_ref: Optional[str] = None
+    valid_until_ref: Optional[str] = None
     reified_event_id: Optional[str] = None
     # v0.16 WS4: instead of silently dropping a malformed/non-checkworthy
     # claim, the extractor stamps the reason here (an AbstentionReason value)
@@ -548,7 +552,15 @@ class Extractor:
 
         claims: list[Claim] = []
         for raw in flat:
-            claim = self._build_claim(raw, text, context)
+            # Defense-in-depth: a single malformed raw claim must never abort
+            # the whole batch (one lost case → verdict="error" in the
+            # benchmark). The None-guards in _build_claim are the primary fix;
+            # this catch is the backstop for any unforeseen shape. Skipping a
+            # crashing raw claim is the conservative (abstain-safe) outcome.
+            try:
+                claim = self._build_claim(raw, text, context)
+            except Exception:
+                continue
             # v0.16 WS4: _build_claim now returns None ONLY for future-tense
             # claims (Rule 4 filter). Every other shaped claim is returned,
             # carrying an abstention_reason when malformed / not-checkworthy.
@@ -582,14 +594,37 @@ class Extractor:
         # The ONE remaining `return None` is the future-tense drop (Rule 4):
         # future claims are not shaped claims to verify. TestFutureTenseRejection
         # depends on it.
-        raw_subject = raw.get("subject", "")
-        raw_object = raw.get("object", "")
+        # Coerce the raw slot values to safe strings. raw.get(key, "") still
+        # returns None when the LLM emits an explicit null (the key is present
+        # with value None), so the `or ""` is load-bearing: it guarantees no
+        # downstream .strip()/.casefold()/.lower() is ever called on None (the
+        # extractor.py:637 self-referential-check crash). A well-formed claim
+        # (non-empty string slots) is unaffected — "x" or "" == "x" — so the
+        # normal path is byte-equivalent; only None/missing slots change, from
+        # a crash to "" (routed to abstention below). Mirrors the predicate
+        # coercion already used for the predicate==object check.
+        raw_subject = raw.get("subject") or ""
+        raw_object = raw.get("object") or ""
         reified_id = raw.get("reified_event_id")
 
         abstention_reason: Optional[str] = None
 
+        # A claim with an empty SUBJECT (after the coercion above) is malformed.
+        # It must not crash and must not flow as a well-formed claim: an empty
+        # subject vacuously passes the hard-claim check below ("" is a substring
+        # of any source text), so stamp the highest-precedence abstention reason
+        # here. The walker short-circuits it pre-lookup (WS4 verify-every-claim:
+        # emit, never silently drop). An empty OBJECT is intentionally left to
+        # flow (grounds to no_grounding_found — abstention; see Deletion #2
+        # comment below), so only the empty-subject case is stamped here.
+        if not raw_subject.strip():
+            abstention_reason = AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
+
         # Hard-claim discipline: subject/object absent from source text.
-        if not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id):
+        if (
+            abstention_reason is None
+            and not self._passes_hard_claim_check(raw_subject, raw_object, text, reified_id)
+        ):
             abstention_reason = AbstentionReason.SUBJECT_ABSENT_FROM_SOURCE.value
 
         # v0.16 WS4 Deletion #2: the content-less occurred/happened/took_place
@@ -659,15 +694,25 @@ class Extractor:
             valid_from_raw=raw.get("valid_from"),
             valid_until_raw=raw.get("valid_until"),
             valid_during_ref=raw.get("valid_during_ref"),
+            valid_from_ref=raw.get("valid_from_ref"),
+            valid_until_ref=raw.get("valid_until_ref"),
         )
         if scope.is_future:
             return None
 
         subject = self._canonicalize(raw_subject, context.asserting_party)
-        predicate = normalize_predicate(raw.get("predicate", ""))
+        # `or ""` again guards an explicit-null predicate slot: normalize_predicate
+        # calls raw.strip() and would crash on None ("" → "unknown_predicate").
+        predicate = normalize_predicate(raw.get("predicate") or "")
         object_value = raw_object
-        polarity = int(raw.get("polarity", 1))
-        source_text = raw.get("source_text", "")
+        # polarity is the {0, 1} negation flag; 0 is a VALID value (negation),
+        # so coerce only an explicit null/missing slot to the affirm default —
+        # `or 1` would wrongly flip a legitimate 0 to 1.
+        raw_polarity = raw.get("polarity")
+        polarity = int(raw_polarity) if raw_polarity is not None else 1
+        # `or ""` guards an explicit-null source_text: it feeds _RESIDENCE_VERB.search
+        # below, and re.search(None) raises TypeError.
+        source_text = raw.get("source_text") or ""
 
         # When the source-text
         # verb is a residence verb (lives/lived/resides/residing + in)
@@ -699,6 +744,8 @@ class Extractor:
             valid_from=scope.valid_from,
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
+            valid_from_ref=scope.valid_from_ref,
+            valid_until_ref=scope.valid_until_ref,
         )
         # v0.16 WS4: inert prose is the lowest-precedence reason — only stamp
         # it if no malformed reason was already captured above.
@@ -717,6 +764,8 @@ class Extractor:
             valid_from=scope.valid_from,
             valid_until=scope.valid_until,
             valid_during_ref=scope.valid_during_ref,
+            valid_from_ref=scope.valid_from_ref,
+            valid_until_ref=scope.valid_until_ref,
             reified_event_id=reified_id,
             abstention_reason=abstention_reason,
         )

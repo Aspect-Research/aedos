@@ -113,8 +113,11 @@ class TestBenchmarkHarness:
         from tests.evaluation.benchmark import RunResult, generate_report
         mock_results = [RunResult(case_id=c.case_id, verdict=c.ground_truth) for c in cases]
         report = generate_report(cases, mock_results, mock_results)
-        assert "Aedos v0.15" in report
+        assert "# Aedos Medium-Bar Evaluation Results" in report
         assert "Accuracy" in report
+        # The perfect mock passes both hard soundness gates.
+        assert "HARD GATE false_verified == 0: PASS" in report
+        assert "HARD GATE false_contradicted == 0: PASS" in report
 
     def test_structural_self_test_passes(self):
         from tests.evaluation.benchmark import _structural_test
@@ -180,10 +183,61 @@ class TestBenchmarkHarness:
         assert m.per_failure_mode["belief_revision"]["accuracy"] == 0.0
         assert m.per_failure_mode["principled_abstention"]["accuracy"] == 1.0
 
-    def test_report_renders_all_four_criteria(self):
-        # generate_report must render all four Phase 10.5 acceptance criteria
-        # the runbook lists (false-verified, accuracy delta, no-regression,
-        # significant improvement).
+    def test_false_contradicted_counter(self):
+        # v0.16.1 WS1: the symmetric false-contradict counter. §3.2 forbids a
+        # false-contradict as much as a false-verify. A `contradicted` prediction
+        # on a case whose ground truth is NOT contradicted counts as a
+        # false-contradict, broken out by the gt bucket it stole from; a
+        # `contradicted` prediction on a gt=contradicted case is correct and
+        # contributes 0. Pure measurement — no verdict logic is exercised here.
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, compute_metrics,
+        )
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("a1", "s", "abstain", "principled_abstention", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("c2", "s", "contradicted", "belief_revision", ""),
+        ]
+        results = [
+            RunResult("v1", "contradicted"),       # false-contradict (stole from verified)
+            RunResult("a1", "contradicted"),       # false-contradict (stole from abstain)
+            RunResult("c1", "contradicted"),       # correct — NOT a false-contradict
+            RunResult("c2", "no_grounding_found"), # a (false) abstain, not a false-contradict
+        ]
+        m = compute_metrics(cases, results)
+        assert m.false_contradicted == 2
+        assert m.false_contradicted_gt_verified == 1
+        assert m.false_contradicted_gt_abstain == 1
+        assert m.false_contradicted_rate == 0.5  # 2 of 4 cases
+        # A correct contradicted prediction never counts toward false-contradict.
+        assert m.per_failure_mode["belief_revision"]["correct"] == 1
+
+    def test_false_contradicted_zero_when_only_correct_contradictions(self):
+        # The gt=contradicted, predicted=contradicted case yields 0 — the
+        # discriminating other half of the counter (a green contradiction must
+        # never inflate the metric).
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, compute_metrics,
+        )
+        cases = [
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("c2", "s", "contradicted", "belief_revision", ""),
+        ]
+        results = [
+            RunResult("c1", "contradicted"),
+            RunResult("c2", "contradicted"),
+        ]
+        m = compute_metrics(cases, results)
+        assert m.false_contradicted == 0
+        assert m.false_contradicted_rate == 0.0
+        assert m.false_contradicted_gt_verified == 0
+        assert m.false_contradicted_gt_abstain == 0
+
+    def test_report_renders_false_contradicted_delta(self):
+        # generate_report surfaces the symmetric false-contradicted delta line
+        # alongside the false-verified delta (the observability the WS7 harness
+        # gate will read).
         from tests.evaluation.benchmark import (
             BenchmarkCase, RunResult, generate_report,
         )
@@ -192,9 +246,93 @@ class TestBenchmarkHarness:
             BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
         ]
         aedos = [RunResult("v1", "verified"), RunResult("c1", "contradicted")]
+        baseline = [RunResult("v1", "contradicted"), RunResult("c1", "verified")]
+        report = generate_report(cases, aedos, baseline)
+        assert "False-contradicted delta" in report
+        assert "False-contradicted rate" in report
+
+    def test_report_renders_v016_gates_and_tracked(self):
+        # v0.16.1 WS7: generate_report renders the two HARD soundness gates
+        # (false_verified, false_contradicted) plus the TRACKED (not gated)
+        # accuracy / false-abstain / per-mode lines. The stale v0.15
+        # "+15pp-vs-baseline" framing is gone.
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, generate_report,
+        )
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+        ]
+        # Sound run: verify the verified case, contradict the contradicted one.
+        aedos = [RunResult("v1", "verified"), RunResult("c1", "contradicted")]
         baseline = [RunResult("v1", "no_grounding_found"), RunResult("c1", "verified")]
         report = generate_report(cases, aedos, baseline)
-        assert "False-verified" in report
-        assert "baseline + 15pp" in report
-        assert "No-regression multi_hop_distribution" in report
-        assert "Significant improvement" in report
+        assert "HARD soundness gates" in report
+        assert "HARD GATE false_verified == 0: PASS" in report
+        assert "HARD GATE false_contradicted == 0: PASS" in report
+        assert "OVERALL SOUNDNESS: PASS" in report
+        assert "Tracked (reported, NOT gated)" in report
+        assert "Accuracy:" in report
+        assert "False-abstain rate:" in report
+        assert "Mode multi_hop_distribution:" in report
+        # The stale v0.15 framing must be gone.
+        assert "baseline + 15pp" not in report
+        assert "Significant improvement" not in report
+
+    def test_report_fails_hard_gates_on_unsound_run(self):
+        # The discriminating other half: a false-verify OR a false-contradict
+        # flips the corresponding HARD GATE to FAIL and OVERALL to FAIL.
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, generate_report, compute_metrics,
+            soundness_gates,
+        )
+        cases = [
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+        ]
+        # c1 (a false claim) wrongly VERIFIED → false_verified; v1 (a true claim)
+        # wrongly CONTRADICTED → false_contradicted.
+        aedos = [RunResult("c1", "verified"), RunResult("v1", "contradicted")]
+        baseline = [RunResult("c1", "no_grounding_found"), RunResult("v1", "no_grounding_found")]
+        report = generate_report(cases, aedos, baseline)
+        assert "HARD GATE false_verified == 0: FAIL" in report
+        assert "HARD GATE false_contradicted == 0: FAIL" in report
+        assert "OVERALL SOUNDNESS: FAIL" in report
+        gates = soundness_gates(compute_metrics(cases, aedos))
+        assert gates["false_verified == 0"] is False
+        assert gates["false_contradicted == 0"] is False
+
+    def test_run_tracked_writes_jsonl_and_flags_soundness(self, tmp_path):
+        # v0.16.1 WS7: run_tracked folds the per-instance watchdog + live FV/FC
+        # counters + incremental JSONL into the standing harness. With a stub
+        # runner it writes one flushed JSON line per case and flags a
+        # false-verify / false-contradict in the per-case record.
+        import json as _json
+        from tests.evaluation.benchmark import (
+            BenchmarkCase, RunResult, run_tracked,
+        )
+
+        class _StubRunner:
+            def __init__(self, verdicts):
+                self._v = verdicts
+            def run_case(self, case):
+                return RunResult(case.case_id, self._v[case.case_id])
+
+        cases = [
+            BenchmarkCase("v1", "s", "verified", "multi_hop_distribution", ""),
+            BenchmarkCase("c1", "s", "contradicted", "belief_revision", ""),
+            BenchmarkCase("a1", "s", "abstain", "principled_abstention", ""),
+        ]
+        # v1 correct; c1 wrongly verified (false-verify); a1 wrongly contradicted
+        # (false-contradict).
+        runner = _StubRunner({"v1": "verified", "c1": "verified", "a1": "contradicted"})
+        jsonl = tmp_path / "tracked.jsonl"
+        results = run_tracked(runner, cases, "aedos", jsonl, emit=lambda _m: None)
+        assert [r.verdict for r in results] == ["verified", "verified", "contradicted"]
+        lines = [_json.loads(l) for l in jsonl.read_text(encoding="utf-8").splitlines() if l.strip()]
+        assert len(lines) == 3
+        by_id = {l["case_id"]: l for l in lines}
+        assert by_id["c1"]["false_verified"] is True
+        assert by_id["a1"]["false_contradicted"] is True
+        assert by_id["v1"]["false_verified"] is False
+        assert by_id["v1"]["false_contradicted"] is False

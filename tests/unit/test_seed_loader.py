@@ -204,14 +204,22 @@ class TestSeedSingleValued:
 # v0.16 WS1 alias-row deletions (Decision 1.g)
 # ---------------------------------------------------------------------------
 
-# The 21 synonym alias rows deleted from the seed pack in v0.16 WS1. Synonymy is
+# The synonym alias rows deleted from the seed pack in v0.16 WS1. Synonymy is
 # now carried by the substrate's binding discovery (Wikidata ontology + SLING),
 # not by duplicate seed rows — so these surface forms become cold-start
 # discovery targets rather than pre-seeded aliases.
+#
+# v0.16.1 WS2 NOTE: `instance_of` was REMOVED from this deleted set and
+# RE-ADDED to the seed pack — NOT as a synonym duplicate of `is_a`, but because
+# the extractor actually emits `instance_of` (Rule 19/22 copula) and the row now
+# carries the P106 occupation CANDIDATE binding the copula-grounding fix needs.
+# A cold-start `instance_of` could not reliably acquire the value-type-gated
+# P106 candidate (the discovery path only emits it when P106's ontology is
+# fetchable), so the knowledge lives in the seed. It is the only re-add.
 _DELETED_ALIAS_PREDICATES = {
     "authored", "award_received", "birthplace_is", "date_of_birth",
     "date_of_death", "death_place_is", "founded_in", "graduated_from",
-    "has_population", "held_position", "inception_date", "instance_of",
+    "has_population", "held_position", "inception_date",
     "occupied_position", "part_of_region", "received_award",
     "shares_border_with", "spouse", "successor_of", "won_award", "won_prize",
     "works_at",
@@ -252,15 +260,23 @@ class TestSeedAliasDeletions:
             f"{sorted(missing)}"
         )
 
-    def test_seed_count_is_70_after_deletions_and_t1_additions(self, seeds):
-        # 83 pre-v0.16 rows minus 21 deleted aliases = 62, plus the 8 v0.16 WS6
-        # T1 interval-endpoint rows (employment/membership/role/status
-        # _started/_ended) = 70. A hard count guards against an accidental
-        # re-add of an alias, a silent drop of a canonical row, or a dropped
-        # endpoint row.
-        assert len(seeds) == 70, (
-            f"expected 70 seed rows (62 after the 21 alias deletions + 8 T1 "
-            f"interval-endpoint rows), got {len(seeds)}"
+    def test_seed_count_is_71_after_deletions_t1_ws2_and_ws3b_additions(self, seeds):
+        # 83 pre-v0.16 rows minus 21 deleted aliases = 62, plus the 6 v0.16 WS6
+        # T1 interval-endpoint rows (employment/membership/role _started/_ended)
+        # = 68, plus the 1 v0.16.1 WS2 `instance_of` copula row (the predicate
+        # the extractor actually emits; carries the P106 occupation candidate
+        # binding) = 69, plus the 2 v0.16.1 WS3b premise->Python comparison rows
+        # (born_before, founded_before; each carries `premise_properties`) = 71.
+        # v0.16.1 WS4 dropped the 2 dead status_started/status_ended rows (P571/
+        # P576): they can never fire — the kb_interval arm reads P580/P582
+        # qualifiers, not statement values, and org subjects already route to
+        # founded_in_year/dissolved_in_year. A hard count guards against an
+        # accidental re-add of an alias, a silent drop of a canonical row, or a
+        # dropped endpoint row.
+        assert len(seeds) == 71, (
+            f"expected 71 seed rows (62 after the 21 alias deletions + 6 T1 "
+            f"interval-endpoint rows + 1 WS2 instance_of copula row + 2 WS3b "
+            f"premise->Python rows), got {len(seeds)}"
         )
 
     def test_every_kb_resolvable_row_synthesizes_a_binding(self, seeds):
@@ -297,17 +313,21 @@ class TestSeedAliasDeletions:
 # v0.16 WS6 T1 — interval-endpoint seed rows + date→time reconciliation
 # ---------------------------------------------------------------------------
 
-# The 8 new *_started/_ended date-in-object endpoint predicates. Each grounds
+# The 6 *_started/_ended date-in-object endpoint predicates. Each grounds
 # against the P580 (start time) / P582 (end time) qualifier on the base
 # relation's KB statement; object_type='time', routing_hint='kb_interval',
 # slot_to_qualifier maps subject→statement_subject, org→statement_value,
 # object→qualifier:P580|P582.
+#
+# v0.16.1 WS4 dropped the dead status_started/status_ended rows (P571 inception /
+# P576 dissolution): the kb_interval arm reads P580/P582 *qualifiers* off a base
+# statement, but for P571/P576 the date is the statement VALUE itself, so the
+# qualifier-gathering arm yields nothing — those rows could never fire. Org
+# subjects already route to founded_in_year (P571) / dissolved_in_year (P576).
 _T1_ENDPOINT_BASE_PROPERTY = {
     "employment_started": "P108", "employment_ended": "P108",
     "membership_started": "P463", "membership_ended": "P463",
     "role_started": "P39", "role_ended": "P39",
-    # status_* maps to the org inception/dissolution statement properties.
-    "status_started": "P571", "status_ended": "P576",
 }
 
 # The 6 existing date predicates reconciled from object_type 'date' → 'time' in
@@ -413,14 +433,14 @@ class TestSeedT1IntervalEndpoints:
     def test_endpoint_rows_load_without_tripping_loader(self, tmp_path):
         # The reconciled date→time object_type and the new kb_interval routing
         # hint must both pass the seed loader's _validate_entry (the only
-        # load-time enum gate). A full load lands all 8 endpoint rows.
+        # load-time enum gate). A full load lands all 6 endpoint rows.
         from aedos.database import open_db
         from aedos.seed_loader import load_seeds_into_connection
 
         db_file = tmp_path / "t1.db"
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
-        assert n == 70
+        assert n == 71  # WS4 dropped 2 dead status_* rows; WS3b added born_before/founded_before
         conn.row_factory = __import__("sqlite3").Row
         rows = conn.execute(
             "SELECT aedos_predicate, object_type, routing_hint, kb_property "
@@ -469,7 +489,7 @@ class TestSeedDateToTimeReconciliation:
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
         conn.close()
-        assert n == 70
+        assert n == 71  # WS4 dropped 2 dead status_* rows; WS3b added 2 premise->Python rows
 
 
 # ---------------------------------------------------------------------------
@@ -597,3 +617,87 @@ class TestSeedLoading:
         assert row is not None
         assert row["subject_entity_types"] is None
         assert row["object_entity_types"] is None
+
+
+# ---------------------------------------------------------------------------
+# v0.16.1 WS2 — occupation-copula candidate binding synthesis
+# ---------------------------------------------------------------------------
+
+class TestSeedWS2CopulaCandidateBindings:
+    """The `instance_of` / `is_a` copula seed rows declare
+    candidate_kb_properties=["P106"]; the loader synthesizes the `bindings`
+    column = [P31 primary, P106 value-type-gated occupation candidate]. Every
+    other seed row keeps bindings NULL (read-synthesizes one legacy_scalar
+    binding from scalar columns, unchanged)."""
+
+    @pytest.fixture(scope="class")
+    def by_pred(self):
+        seeds = json.loads(_SEEDS_FILE.read_text(encoding="utf-8"))
+        return {e["aedos_predicate"]: e for e in seeds}
+
+    def test_instance_of_row_present_with_candidate(self, by_pred):
+        # The extractor emits `instance_of` (Rule 19/22), so the seeded row uses
+        # that exact predicate name and declares the P106 candidate.
+        assert "instance_of" in by_pred
+        row = by_pred["instance_of"]
+        assert row["kb_property"] == "P31"
+        assert row["candidate_kb_properties"] == ["P106"]
+        assert row["candidate_object_entity_types"]["P106"] == ["Q12737077", "Q28640"]
+
+    def test_is_a_row_also_carries_candidate(self, by_pred):
+        assert by_pred["is_a"]["candidate_kb_properties"] == ["P106"]
+
+    def test_synthesize_builds_p31_then_p106(self):
+        from aedos.seed_loader import _synthesize_bindings_json
+        entry = {
+            "aedos_predicate": "instance_of", "kb_namespace": "wikidata",
+            "kb_property": "P31",
+            "slot_to_qualifier": {"subject": "statement_subject", "object": "statement_value"},
+            "single_valued": 0,
+            "candidate_kb_properties": ["P106"],
+            "candidate_object_entity_types": {"P106": ["Q12737077", "Q28640"]},
+        }
+        binds = json.loads(_synthesize_bindings_json(entry))
+        assert [b["kb_property"] for b in binds] == ["P31", "P106"]
+        primary, candidate = binds
+        # Primary P31: NOT value-type-gated, no object_entity_types (open object).
+        assert primary["value_type_gated"] is False
+        assert primary["object_entity_types"] is None
+        assert primary["source"] == "legacy_scalar"
+        # Candidate P106: value-type-gated, occupation constraint, never contradicts.
+        assert candidate["value_type_gated"] is True
+        assert candidate["single_valued"] is False
+        assert candidate["object_entity_types"] == ["Q12737077", "Q28640"]
+        assert candidate["source"] == "candidate"
+
+    def test_non_candidate_row_synthesizes_null(self):
+        from aedos.seed_loader import _synthesize_bindings_json
+        entry = {"aedos_predicate": "born_in", "kb_namespace": "wikidata",
+                 "kb_property": "P19", "slot_to_qualifier": None, "single_valued": 1}
+        assert _synthesize_bindings_json(entry) is None
+
+    def test_loaded_instance_of_consults_two_bindings(self):
+        from aedos.database import open_memory_db
+        from aedos.seed_loader import load_seeds_into_connection
+        from aedos.layer3_substrate.predicate_translation import PredicateTranslation
+        from aedos.llm.client import LLMClient
+
+        class _T:
+            def extract_with_tool(self, *a, **k):
+                raise AssertionError("seeded row should not hit the oracle")
+
+            def chat(self, *a, **k):
+                return ""
+
+        db = open_memory_db()
+        load_seeds_into_connection(db)
+        pt = PredicateTranslation(db=db, llm_client=LLMClient(_transport=_T()))
+        meta = pt.consult("instance_of")
+        assert [b.kb_property for b in meta.bindings] == ["P31", "P106"]
+        # bindings[0] mirrors the scalar columns (primary P31, open object).
+        assert meta.kb_property == "P31"
+        assert meta.object_entity_types is None
+        p106 = meta.bindings[1]
+        assert p106.value_type_gated is True
+        assert p106.single_valued is False
+        assert p106.object_entity_types == ["Q12737077", "Q28640"]

@@ -25,7 +25,15 @@ LLM-generated code might produce when prompted for verification tasks:
 - Class-hierarchy traversal via `__class__` / `__subclasses__` /
   `__globals__` / `__bases__` attribute access.
 - Subprocess isolation (each verification runs in a fresh Python
-  process with a minimal environment; CWD is a clean tempdir).
+  process started in isolated mode (``-I``); CWD is a clean tempdir).
+- Environment scrubbing (v0.16.2): the child is spawned with an
+  EXPLICITLY CONSTRUCTED env containing only non-secret OS-infrastructure
+  vars (``_SAFE_ENV_PASSTHROUGH``), never the parent's. The process's API
+  keys (ANTHROPIC_API_KEY / OPENROUTER_API_KEY / ...) are structurally
+  absent from the child, so generated code — even if it escapes the AST
+  scan — cannot read them via ``os.environ`` (the env channel carries no
+  secret to leak). This is the load-bearing property for a key-holding
+  network deployment and is pinned by tests.
 - Wall-clock timeout (default 10s).
 
 What the sandbox does NOT block
@@ -43,6 +51,17 @@ What the sandbox does NOT block
   (``''.__class__.__base__.__subclasses__()``) — the attribute chain
   starts on a literal, not on a user-named variable; a blanket block
   would either also block legitimate uses or miss this pattern.
+
+Residual after an escape (v0.16.2, made explicit): a successful AST-scan
+escape (e.g. the encoded-dunder chain) yields arbitrary code execution
+*inside the child process*. That child still has NO API keys in its env
+(see "Environment scrubbing" above) and a clean tempdir CWD with a 5s
+wall-clock, but — absent OS-level confinement — it CAN read files the
+serving user can read and make outbound network calls. For internal,
+access-gated testing this is the accepted boundary; for true public
+exposure, containerize / RestrictedPython (below). Keep deployment
+secrets in the PROCESS ENVIRONMENT, never in a ``.env`` file readable
+from the serving directory.
 
 When this sandbox is appropriate
 --------------------------------
@@ -70,6 +89,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -129,6 +149,51 @@ _BLOCKED_DUNDER_ATTRS: frozenset[str] = frozenset([
 ])
 
 _DEFAULT_TIMEOUT_SECONDS = 10
+
+# v0.16.2: the child process is spawned with an EXPLICITLY CONSTRUCTED
+# environment (env=), never the parent's. Only these non-secret OS-infrastructure
+# variables are passed through — enough for the interpreter to start and to
+# locate temp space, nothing more. The API keys the parent process holds
+# (ANTHROPIC_API_KEY / OPENROUTER_API_KEY / ...) are NEVER on this list, so model-
+# generated code cannot read them via os.environ even if it escapes the AST scan
+# (the env channel carries no secret to leak). On Linux the typical result is a
+# near-empty env (most of these are unset), which is also the most restrictive.
+_SAFE_ENV_PASSTHROUGH: tuple[str, ...] = (
+    "SYSTEMROOT",   # Windows: required for the interpreter to start
+    "SystemDrive",  # Windows
+    "PATHEXT",      # Windows
+    "PATH",         # locate the interpreter's own runtime deps on some platforms
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "LANG",         # locale — affects text codecs, not capability
+    "LC_ALL",
+    "LC_CTYPE",
+)
+
+# A defense-in-depth guard: even if a secret-bearing name were ever added to the
+# passthrough list above, anything whose NAME looks like a credential is stripped
+# before it can reach the child. Keys never leave the parent process.
+_SECRET_NAME_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|_API_)", re.IGNORECASE)
+
+
+def _build_child_env() -> dict[str, str]:
+    """Build the child process's environment from scratch.
+
+    Returns a dict containing ONLY the non-secret infrastructure variables in
+    `_SAFE_ENV_PASSTHROUGH` that are present in the parent, with any
+    credential-looking name defensively stripped. The parent's API keys are
+    structurally absent — the sandbox child cannot read them via os.environ.
+    """
+    env: dict[str, str] = {}
+    for name in _SAFE_ENV_PASSTHROUGH:
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        if _SECRET_NAME_RE.search(name):
+            continue  # never pass a credential-looking var, even if whitelisted
+        env[name] = value
+    return env
 
 
 @dataclass
@@ -236,15 +301,17 @@ def run_code(
 
     started = time.monotonic()
     with tempfile.TemporaryDirectory() as workdir:
-        minimal_env: dict[str, str] = {}
-        if sys.platform == "win32":
-            for k in ("SYSTEMROOT", "PATH", "PATHEXT", "TEMP", "TMP"):
-                if k in os.environ:
-                    minimal_env[k] = os.environ[k]
+        # Explicitly constructed, secret-free environment (never the parent's).
+        minimal_env = _build_child_env()
 
         try:
+            # `-I` (isolated mode): ignore PYTHON* env vars, the user site-packages
+            # dir, and cwd/script-dir on sys.path. Defense-in-depth on top of the
+            # scrubbed env=; the key-leak protection is the empty env, this hardens
+            # the interpreter's own configuration surface. The child still only
+            # ever sees `minimal_env`, which carries no secrets.
             completed = subprocess.run(
-                [sys.executable, "-c", code],
+                [sys.executable, "-I", "-c", code],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

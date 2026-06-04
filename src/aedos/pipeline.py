@@ -128,9 +128,10 @@ def build_pipeline(
     propagator.replay()
 
     # v0.16 WS3 §3D: the bounded nogood cache. Wired into the KB adapter
-    # (verify_transitive_path consult/record), the subsumption oracle, the
-    # walker (_nogood_vetoes), and the kb_verifier (binding-loop veto). Discovered
-    # nogoods only — never seeded; an absent/flaky cache fails open everywhere.
+    # (verify_transitive_path consult/record), the walker (_nogood_vetoes), and
+    # the SubsumptionOracle (reserved-but-unread reference). The kb_verifier
+    # binding-loop veto consumer was removed in WS4. Discovered nogoods only —
+    # never seeded; an absent/flaky cache fails open everywhere.
     exception_cache = SubstrateExceptionCache(db)
     # Attribute injection keeps the adapter constructor (build_default_kb /
     # injected mocks) unchanged; verify_transitive_path reads self._exception_cache.
@@ -153,6 +154,10 @@ def build_pipeline(
         consistency_checker=consistency,
         property_relations=PropertyRelations(db, kb),
         sling=SlingFallback(db, kb, client),
+        # v0.16.1 WS4: SLING distant supervision is ACTIVATED by default; the
+        # AEDOS_ENABLE_SLING config flag gates whether its verify-only candidate
+        # bindings are produced/consumed.
+        enable_sling=config.enable_sling,
     )
 
     # Wikipedia normalizer wired into the resolver. The
@@ -212,7 +217,6 @@ def build_pipeline(
     )
     kb_verifier = KBVerifier(
         kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt,
-        exception_cache=exception_cache,
     )
     python_verifier = PythonVerifier(llm_client=client)
     walker = Walker(

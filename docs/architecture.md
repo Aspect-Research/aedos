@@ -195,6 +195,8 @@ Temporal scope is universal claim metadata. Three cases:
 
 A routing anomaly indicates an extraction error, not an Aedos verification failure. The claim is not processed; an audit-log entry is created; the deployment is informed.
 
+> **Implementation note (v0.16.1).** Layer 2 is no longer a standalone module (the former `layer2_routing/` `Router`/`Validator` were deleted). Routing is predicate-driven directly off the predicate translation oracle's `routing_hint` (consulted by the walker via `_predicate_routing`), and the three structural-invariant checks are now enforced in the live path: `user_subject_required` is a **fail-closed walk-entry guard** in the walker (a user_subject_required predicate asserted about a subject that is neither the asserting party nor a stipulated user persona short-circuits to an abstain before any source lookup — it can only ever abstain, never produce a verdict); `distinct_slots` (subject == object) is **superseded** by the extractor's `self_referential` abstention reason (stamped at extraction, short-circuited pre-lookup); and the object-type check is **superseded** by the kb_verifier value-type gate (`_object_satisfies_value_type`), which fails open (abstains on a type mismatch, never false-contradicts). A persona-subject claim (subject is a stipulated `user identity` Tier U row) routes `user_authoritative` so the KB is structurally unreachable and the entity resolver can never misresolve the persona name and false-contradict.
+
 **Responsibilities.**
 - Look up or trigger generation of the predicate's metadata.
 - Validate structural invariants.

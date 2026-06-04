@@ -45,6 +45,9 @@ _OPENROUTER = {"base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "O
 # distinction is preserved in configuration.
 DEFAULT_MODEL_BY_PURPOSE: dict[str, dict] = {
     "chat":                             {"model": "claude-haiku-4-5", **_ANTHROPIC},
+    # v0.16.2 Phase D: choosing which extracted claims are CENTRAL to answering
+    # the user's prompt (a fast, bounded judgment) — same fast model as chat.
+    "deployment:claim_selection":       {"model": "claude-haiku-4-5", **_ANTHROPIC},
     # Extractor purposes on claude-haiku-4-5 with the
     # extraction prompt (100% on the cleaned extraction corpus).
     "extractor:user":                   {"model": "claude-haiku-4-5", **_ANTHROPIC},

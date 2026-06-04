@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -62,6 +64,15 @@ _DEFAULT_ENTITY_TTL_SECONDS = 3600
 _DEFAULT_STATEMENT_TTL_SECONDS = 86400
 _RETRY_BACKOFF_SECONDS = 1.0
 
+# v0.16.1 WS9 (item 8 lever A): process-scoped positive-result memo for
+# verify_transitive_path. Bounded by an LRU cap AND a TTL so a Wikidata edit
+# cannot pin a stale answer for the whole process lifetime. The cap is sized
+# for a Medium-Bar run's distinct (relation, source, target) fan-out; the TTL
+# is short enough that a same-day edit is re-asked within the run. Behavior-
+# NEUTRAL: the memo only ever returns what a fresh definite ASK would.
+_TRANSITIVE_MEMO_MAX_ENTRIES = 4096
+_TRANSITIVE_MEMO_TTL_SECONDS = 3600.0
+
 # Wikidata identifier patterns. Used to validate inputs to SPARQL query
 # construction — defense-in-depth against injection via Q/P-id parameters.
 # All upstream sources (predicate translation oracle, entity resolver) produce
@@ -77,6 +88,14 @@ _PROPERTY_ID_PATTERN = re.compile(r"^P\d+$")
 # slot_to_qualifier maps are not collected here — v0.16 captures the
 # dynamic-discovery follow-up.
 _DEFAULT_QUALIFIER_PROPS = ("P580", "P582", "P642")
+
+# v0.16.1 WS5c: the temporal interval-qualifier keys, relocated here from CORE
+# (walker's interval resolver). P580 = start time, P582 = end time. These are
+# the qualifier P-ids `_live_lookup` populates on every `Statement.qualifiers`
+# dict; CORE reads them via the `interval_qualifier_keys` accessor rather than
+# baking the P-ids into the walker. (start_key, end_key) order is contractual.
+_INTERVAL_START_QUALIFIER = "P580"  # start time
+_INTERVAL_END_QUALIFIER = "P582"    # end time
 
 # When the wbsearchentities post-filter eliminates
 # all candidates AND expected_entity_types is non-empty, fall back to a SPARQL
@@ -184,6 +203,20 @@ _SUBSUMPTION_PROPERTIES = {
 # Other properties (P50 author, P108 employer, P39 position) are deferred
 # to v0.16.
 _DEFAULT_NEIGHBOR_PROPERTIES = ("P31", "P279", "P361", "P131", "P17")
+
+# v0.16.1 WS5c: per-relation KB neighbor property set, relocated here from CORE
+# (walker._D5_NEIGHBOR_PROPS_BY_RELATION). The walker passes the opaque
+# relation_type ("is_a"/"part_of") and the adapter resolves the Wikidata P-ids,
+# so no P-id naming survives above the seam. Mirrors `_SUBSUMPTION_PROPERTIES`
+# for is_a/part_of, plus P17 (country) and P361 (part of) on part_of for
+# country-/region-level grounding (e.g. Williams College P17 → United States;
+# useful for "X is in the United States" when the substrate's subsumption oracle
+# is cold). The tuples are byte-identical to the walker's former table so
+# neighbor enumeration is behavior-neutral.
+_NEIGHBOR_PROPERTIES_BY_RELATION: dict[str, tuple[str, ...]] = {
+    "is_a": ("P31", "P279"),
+    "part_of": ("P131", "P361", "P17"),
+}
 
 
 # Reverse enumeration's LIMIT. Unbounded properties like
@@ -319,6 +352,207 @@ _GEO_REGION_TYPES: tuple[str, ...] = (
     "Q123615496",  # region type observed on New England
 )
 _PART_OF_BRIDGE_PROPERTY = "P361"  # geographic "part of", type-guarded above
+
+
+# v0.16.1 WS5a: the geographic predicate cluster, relocated here from CORE
+# (kb_verifier) behind the kb_protocol seam. The closed seven-continent set and
+# the geographic P-ids are genuine Wikidata facts and belong inside the adapter.
+#
+# Canonical Q-ids for the seven continents + the principal supercontinent
+# groupings the medium-bar test set uses. Used by `geographic_disjoint` to
+# confidently flag KB-grounded "X is in [wrong continent]" claims as
+# CONTRADICTED rather than abstaining on the non-functional-predicate NO_MATCH
+# path. Hand-validated against Wikidata's canonical labels:
+#   Europe Q46, Asia Q48, Africa Q15, North America Q49, South America Q18,
+#   Oceania Q55643, Antarctica Q51, Australia Q3960 (continent; country is Q408).
+_CONTINENT_QIDS: frozenset[str] = frozenset([
+    "Q46", "Q48", "Q15", "Q49", "Q18", "Q55643", "Q51", "Q3960",
+])
+
+# KB properties whose semantics are GEOGRAPHIC location-containment, for which
+# the location-disjoint check is sound. Non-geographic relational predicates
+# (employed_by P108, member_of P463, child_of P40, ...) must NOT use the
+# disjoint check — two distinct entities can both satisfy a multi-valued
+# relational predicate without contradicting each other.
+_LOCATION_KB_PROPERTIES: frozenset[str] = frozenset([
+    "P131",  # located in the administrative territorial entity
+    "P17",   # country
+    "P30",   # continent
+    "P361",  # part of (used for geographic part_of)
+    "P206",  # located in body of water
+    "P276",  # location
+])
+
+# Geographic-container entity types that the per-predicate object-type lists
+# (e.g. located_in = [country, city, settlement, ...]) historically omit. A
+# claim like "Paris is in Europe" needs to resolve "Europe" to the continent
+# (Q46, instance-of continent Q5107); without continent in the accepted-type
+# set the resolver's type filter rejects Q46 and lands on a non-continent
+# homonym, so the containment subsumption (France subset Europe via P30) can
+# never match. CORE widens the object's type filter with these only for
+# geographic-location predicates. Continents are a closed 7-member set, so
+# admitting them cannot over-broaden resolution. (Region Q82794 is deliberately
+# NOT included — it is open-ended and the cases that would need it also need the
+# trimmed P361 subsumption path.)
+_GEO_CONTAINER_TYPES: frozenset[str] = frozenset([
+    "Q5107",  # continent
+])
+
+# v0.16.1 cycle-2: geographic-PLACE classes that gate the shared-continent
+# sub-region disjoint path (path b in `_geographic_disjoint`). The expected
+# object of a "X located_in Y" / "X part_of Y" claim must be a CONFIRMED
+# geographic place before path b may contradict — otherwise a non-geographic
+# object that merely sits on a continent (a supranational union, an
+# organization, a consortium) is mis-classified as a geographically disjoint
+# sub-region and the verifier FALSE-CONTRADICTS a TRUE claim.
+#
+# Two false-contradicts shared this root cause:
+#   - "Germany located_in the European Union" — the EU (Q458) carries P30=Europe
+#     so it shares Germany's continent under the part_of alternation, yet
+#     Germany↔EU is `unrelated` under P131/P30/P17 (EU membership is P463, which
+#     the alternation cannot see), so path b flagged them disjoint.
+#   - "Williams College part_of the Consortium of Liberal Arts Colleges" — P361
+#     is a location property, so an ORGANIZATIONAL part_of reached path b with a
+#     consortium object.
+#
+# The set is grounded in a live Wikidata P31/P279* probe of the medium-bar geo
+# entities. It admits countries, sovereign states, continents, rivers, bodies
+# of water, and natural geographic objects, and EXCLUDES the EU / Williams /
+# consortium (each False on every member):
+#   country Q6256, sovereign state Q3624078:  Germany/France/Vatican=True, EU=False
+#   continent Q5107:                           Europe/Asia/Africa=True
+#   body of water Q15324, river Q4022:         Thames=True
+#   natural geographic object Q35145263:       continents/physical features=True
+#
+# Deliberately EXCLUDES the broad "geographic region" (Q82794) and
+# "human-geographic territorial entity" (Q15642541) classes: the probe showed
+# BOTH subsume the EU (it is genuinely a human-geographic/region entity in
+# Wikidata's loose ontology), so admitting them would reopen the
+# Germany-in-EU false-contradict. Sub-national regions (US states, Italian
+# regions) as the EXPECTED container also fall outside this set; the gate then
+# fails closed -> abstain, the §3.2-safe outcome (no current pin needs a
+# sub-national region as a path-b container).
+_GEO_PLACE_CLASSES: tuple[str, ...] = (
+    "Q6256",      # country
+    "Q3624078",   # sovereign state
+    "Q5107",      # continent
+    "Q15324",     # body of water
+    "Q4022",      # river
+    "Q35145263",  # natural geographic object
+)
+
+
+def _is_confirmed_geographic_place(subsumption_fn, value: str) -> bool:
+    """v0.16.1 cycle-2: True when `value`'s instance-of/subclass-of chain is
+    subsumption-confirmed (is_a: P31|P279) to reach a geographic-PLACE class
+    (`_GEO_PLACE_CLASSES`). Drives the path-b object gate in
+    `_geographic_disjoint`.
+
+    Reuses the KBProtocol `subsumption` callable (`is_a` relation) so the
+    live/fixture path and SubsumptionResult shape are unchanged — the ASK is
+    `value (wdt:P31|wdt:P279)+ <place_class>`, which yields
+    `a_subsumed_by_b`/`equivalent` exactly when `value` is an instance of (a
+    subclass of) the place class.
+
+    FAILS CLOSED: a non-string value, a subsumption error, or no positive
+    verdict against ANY place class returns False — so an unconfirmed /
+    organization / union / consortium object can never satisfy the gate, and
+    path b abstains rather than false-contradicting. §3.2."""
+    if not isinstance(value, str) or not value:
+        return False
+    for place_class in _GEO_PLACE_CLASSES:
+        try:
+            r = subsumption_fn(value, place_class, "is_a")
+        except Exception:
+            continue
+        if r.verdict in ("a_subsumed_by_b", "equivalent"):
+            return True
+    return False
+
+
+def _geographic_disjoint(subsumption_fn, kb_value: str, expected_value: str) -> bool:
+    """v0.16.1 WS5a: relocated from `kb_verifier._location_disjoint`. True when
+    KB confirms the KB statement value is geographically disjoint from the
+    claim's expected value. `subsumption_fn(a, b, relation_type)` is the
+    KBProtocol `subsumption` callable (the adapter passes its own bound method,
+    so the live/fixture path and the SubsumptionResult shape are unchanged).
+
+    Two paths, both requiring positive KB evidence (a continent ancestor
+    confirmed by subsumption):
+
+    (a) Continent-level. expected_value is itself a known continent
+        (_CONTINENT_QIDS) and the KB value is subsumed by a DIFFERENT continent.
+        Direct evidence of disjoint continent. Targets "Thames in Asia" /
+        "Vatican in Africa".
+
+    (b) Shared-continent sub-region. Both values are subsumed by the SAME
+        continent AND subsumption is `unrelated` in both directions between
+        them. Two sub-regions sharing a continent ancestor with no mutual
+        containment are structurally disjoint within that continent (Italy and
+        Germany are both in Europe; neither contains the other; therefore
+        they're disjoint countries). Targets "Rome in Germany" — Rome's P131 =
+        Lazio (a sub-region of Italy), Italy's continent is Europe, Germany's
+        continent is Europe, and Lazio is unrelated to Germany in both
+        subsumption directions.
+
+        v0.16.1 cycle-2 GATE: path b additionally requires the EXPECTED object
+        (`expected_value`) to be a subsumption-confirmed geographic PLACE
+        (`_is_confirmed_geographic_place`). Without this, a non-geographic
+        object that merely sits on a continent under the part_of alternation —
+        a supranational union (the EU carries P30=Europe), an organization, a
+        consortium — is mis-read as a disjoint sub-region and a TRUE membership
+        claim is FALSE-CONTRADICTED ("Germany located_in the EU",
+        "Williams College part_of the Consortium"). The gate fails closed: an
+        object whose geographic-place membership is not confirmed yields no
+        disjoint -> the verifier abstains (NO_MATCH). Path a (continent-level)
+        is inherently geographic and does NOT need the gate.
+
+    Fails closed on error: any uncertainty preserves NO_MATCH (abstain). §3.2
+    soundness-over-completeness.
+    """
+    if not isinstance(kb_value, str) or not isinstance(expected_value, str):
+        return False
+    if kb_value == expected_value:
+        return False
+
+    # (a) Continent-level path
+    if expected_value in _CONTINENT_QIDS:
+        for continent in _CONTINENT_QIDS:
+            if continent == expected_value:
+                continue
+            try:
+                r = subsumption_fn(kb_value, continent, "part_of")
+            except Exception:
+                continue
+            if r.verdict in ("a_subsumed_by_b", "equivalent"):
+                return True
+        return False
+
+    # (b) Shared-continent sub-region path.
+    # GATE (v0.16.1 cycle-2): the expected object must be a confirmed geographic
+    # PLACE. A union / organization / consortium that merely shares a continent
+    # under the part_of alternation is NOT a disjoint sub-region — fail closed
+    # (abstain) rather than false-contradict a true membership claim.
+    if not _is_confirmed_geographic_place(subsumption_fn, expected_value):
+        return False
+    for continent in _CONTINENT_QIDS:
+        try:
+            kb_in = subsumption_fn(kb_value, continent, "part_of").verdict
+            exp_in = subsumption_fn(expected_value, continent, "part_of").verdict
+        except Exception:
+            continue
+        kb_in_ok = kb_in in ("a_subsumed_by_b", "equivalent")
+        exp_in_ok = exp_in in ("a_subsumed_by_b", "equivalent")
+        if not (kb_in_ok and exp_in_ok):
+            continue
+        # Both confirmed in the same continent; check mutual non-containment
+        try:
+            fwd = subsumption_fn(kb_value, expected_value, "part_of").verdict
+            rev = subsumption_fn(expected_value, kb_value, "part_of").verdict
+        except Exception:
+            return False
+        return fwd == "unrelated" and rev == "unrelated"
+    return False
 
 
 def _build_transitive_ask_query(
@@ -740,6 +974,8 @@ class WikidataAdapter:
         db=None,
         config=None,
         fixture_dir: Optional[Path] = None,
+        *,
+        clock: Optional[Callable[[], float]] = None,
     ) -> None:
         self._http = http_cache
         self._llm = llm_client
@@ -747,6 +983,30 @@ class WikidataAdapter:
         self._config = config
         self._fixture_dir = fixture_dir or _FIXTURE_DIR
         self._live = os.environ.get("RUN_LIVE_KB") == "1"
+
+        # v0.16.1 WS9 (item 8 lever A): process-scoped positive-result memo for
+        # verify_transitive_path — the positive twin of the negative nogood
+        # cache (`self._exception_cache`). Keyed by
+        # (cache_relation, source, target) -> (TransitivePathResult, expires_at).
+        # Stores ONLY DEFINITE answers (result.error is None); error/fail-open/
+        # timeout results are NEVER memoized so a transient failure cannot pin a
+        # wrong answer. Bounded by an LRU cap (OrderedDict move-to-end) AND a TTL
+        # (monotonic clock) so a Wikidata edit cannot pin a stale positive for the
+        # process lifetime. `clock` is injectable for deterministic TTL tests;
+        # defaults to time.monotonic. Behavior-NEUTRAL: a hit returns exactly what
+        # a fresh definite ASK would (same holds, error=None) without the network.
+        self._transitive_memo: "OrderedDict[tuple[str, str, str], tuple[TransitivePathResult, float]]" = (
+            OrderedDict()
+        )
+        self._transitive_memo_clock = clock or time.monotonic
+        # v0.16.2 Phase C: the memo is a bare OrderedDict LRU shared by ALL
+        # concurrent claim-walks of a turn (one adapter per pipeline). Like the
+        # sibling LRUHTTPCache and RateLimiter, its check-then-act mutations
+        # (get->del / move_to_end / popitem) are not concurrency-safe; guard them
+        # so a parallel walk can't race-raise inside verify_transitive_path (which
+        # the walker swallows to abstain) and silently diverge a verdict from
+        # serial. Leaf lock: held only across in-memory dict ops, never the ASK.
+        self._transitive_memo_lock = threading.Lock()
         # v0.16 WS3 §3D: bounded nogood cache (SubstrateExceptionCache). When
         # build_pipeline wires it, verify_transitive_path consults it BEFORE the
         # SPARQL ASK (return holds=False on a cached nogood — the leak guard) and
@@ -840,6 +1100,16 @@ class WikidataAdapter:
             cache_relation = kb_property or ""
         path = "|".join(p for p in props if p) if props else ""
 
+        # v0.16.1 WS9 (item 8 lever A): positive-result memo consult — at the
+        # TOP, before the rate-limited ASK. A live (non-expired) DEFINITE entry
+        # returns a result equivalent to a fresh definite ASK (same holds,
+        # error=None) without any network call. The memo holds only definite
+        # answers, so a hit can never replay a stale error/fail-open verdict.
+        if cache_relation:
+            memo_hit = self._transitive_memo_get(cache_relation, source, target)
+            if memo_hit is not None:
+                return memo_hit
+
         # Nogood consult FIRST — a cached "does NOT hold" closes the leak even
         # if the alternation was later widened, without re-hitting the network.
         if cache is not None and cache_relation:
@@ -878,7 +1148,80 @@ class WikidataAdapter:
                 )
             except Exception:
                 pass  # fail-open
+
+        # v0.16.1 WS9 (item 8 lever A): memoize ONLY a DEFINITE answer
+        # (result.error is None). An error/fail-open/timeout result is NEVER
+        # cached — it must re-hit the network so a transient failure cannot pin a
+        # wrong answer.
+        #
+        # Negative-result interaction with the nogood cache: when a nogood cache
+        # is wired, IT owns definite negatives (it is consulted above and a
+        # negative was just recorded) AND it honors operator retraction
+        # (`retract`) — so a definite holds=False is left to the nogood cache and
+        # NOT duplicated here, or the memo would serve a retracted negative for
+        # the rest of the TTL window. We therefore memoize a definite holds=False
+        # only when no nogood cache governs it (no retraction path exists; the
+        # TTL still bounds staleness). holds=True is always memoized (the nogood
+        # cache never records positives — this memo is its positive twin).
+        if cache_relation and getattr(result, "error", None) is None:
+            memoizable = result.holds or cache is None
+            if memoizable:
+                self._transitive_memo_put(cache_relation, source, target, result)
         return result
+
+    # ------------------------------------------------------------------
+    # v0.16.1 WS9 (item 8 lever A): positive-result memo for
+    # verify_transitive_path. Process-scoped per-adapter-instance; composes
+    # with the HTTP cache and the negative nogood cache (its positive twin).
+    # ------------------------------------------------------------------
+    def _transitive_memo_get(
+        self, cache_relation: str, source: KBEntityID, target: KBEntityID
+    ) -> Optional[TransitivePathResult]:
+        """Return a fresh definite result for a live (non-expired) memo entry,
+        else None. On a hit, returns a NEW TransitivePathResult with error=None
+        — identical to what a fresh definite ASK would yield — so callers can
+        never observe (or mutate) the stored object, and an expired or absent
+        entry simply falls through to the live ASK. An expired entry is dropped
+        on access (lazy TTL eviction)."""
+        key = (cache_relation, source, target)
+        with self._transitive_memo_lock:
+            entry = self._transitive_memo.get(key)
+            if entry is None:
+                return None
+            cached, expires_at = entry
+            if self._transitive_memo_clock() >= expires_at:
+                # Stale: drop so a Wikidata edit cannot pin it past the TTL.
+                del self._transitive_memo[key]
+                return None
+            self._transitive_memo.move_to_end(key)  # LRU touch
+            return TransitivePathResult(
+                holds=cached.holds,
+                establishing_property=cached.establishing_property,
+                error=None,
+            )
+
+    def _transitive_memo_put(
+        self,
+        cache_relation: str,
+        source: KBEntityID,
+        target: KBEntityID,
+        result: TransitivePathResult,
+    ) -> None:
+        """Store a DEFINITE result under a fresh TTL. Caller guarantees
+        result.error is None. Bounds the map: refresh-and-LRU-touch on an
+        existing key, then evict the oldest entries past the cap."""
+        key = (cache_relation, source, target)
+        expires_at = self._transitive_memo_clock() + _TRANSITIVE_MEMO_TTL_SECONDS
+        stored = TransitivePathResult(
+            holds=result.holds,
+            establishing_property=result.establishing_property,
+            error=None,
+        )
+        with self._transitive_memo_lock:
+            self._transitive_memo[key] = (stored, expires_at)
+            self._transitive_memo.move_to_end(key)
+            while len(self._transitive_memo) > _TRANSITIVE_MEMO_MAX_ENTRIES:
+                self._transitive_memo.popitem(last=False)  # evict oldest (LRU)
 
     def wbsearchentities(
         self, query: str, limit: Optional[int] = None
@@ -995,8 +1338,9 @@ class WikidataAdapter:
     def enumerate_neighbors(
         self,
         entity: KBEntityID,
-        properties: list[KBPropertyID],
+        properties: Optional[list[KBPropertyID]] = None,
         direction: str = "outgoing",
+        relation_type: Optional[str] = None,
     ) -> dict[KBPropertyID, list[KBEntityID]]:
         """Enumerate `entity`'s direct KB neighbors along
         the given `properties`, in the given `direction`. Returns a dict
@@ -1009,10 +1353,23 @@ class WikidataAdapter:
         other methods' input types — the live and fixture paths normalize
         it to a tuple before SPARQL construction.
 
+        v0.16.1 WS5c: the OPAQUE `relation_type` ("is_a"/"part_of") lets CORE
+        request a relation's neighbor property set without naming Wikidata
+        P-ids. When `properties` is empty/None and `relation_type` resolves in
+        `_NEIGHBOR_PROPERTIES_BY_RELATION`, the adapter uses that relation's
+        P-id tuple; an explicit `properties` list takes precedence (SLING's
+        co-occurrence path passes one), and an unknown/absent relation falls
+        back to `_DEFAULT_NEIGHBOR_PROPERTIES`.
+
         `direction` is "outgoing" (default) or "incoming"; see
         `KBProtocol.enumerate_neighbors` for the semantic distinction.
         """
-        props_tuple = tuple(properties) if properties else _DEFAULT_NEIGHBOR_PROPERTIES
+        if properties:
+            props_tuple = tuple(properties)
+        elif relation_type and relation_type in _NEIGHBOR_PROPERTIES_BY_RELATION:
+            props_tuple = _NEIGHBOR_PROPERTIES_BY_RELATION[relation_type]
+        else:
+            props_tuple = _DEFAULT_NEIGHBOR_PROPERTIES
         if self._live:
             return self._live_neighbors(entity, props_tuple, direction)
         return self._fixture_neighbors(entity, props_tuple, direction)
@@ -1044,6 +1401,66 @@ class WikidataAdapter:
         if self._live:
             return self._live_label(qid)
         return self._fixture_label(qid)
+
+    # ------------------------------------------------------------------
+    # v0.16.1 WS5a: geographic predicate cluster (relocated from CORE)
+    # ------------------------------------------------------------------
+
+    def is_location_property(self, kb_property: KBPropertyID) -> bool:
+        """v0.16.1 WS5a: True when `kb_property` is a GEOGRAPHIC
+        location-containment property (_LOCATION_KB_PROPERTIES = P131/P17/P30/
+        P361/P206/P276), for which the geographic-disjoint contradiction is
+        sound. Relocated from CORE's `binding.kb_property in
+        _LOCATION_KB_PROPERTIES` gate — behavior-identical."""
+        return kb_property in _LOCATION_KB_PROPERTIES
+
+    def geo_container_types(self) -> frozenset[KBEntityID]:
+        """v0.16.1 WS5a: the geographic-container entity types (Q5107 continent)
+        CORE uses to widen a location predicate's object-type filter. Relocated
+        from CORE's `_GEO_CONTAINER_TYPES` — same closed set."""
+        return _GEO_CONTAINER_TYPES
+
+    def geographic_disjoint(
+        self, value_qid: KBEntityID, expected_qid: KBEntityID
+    ) -> bool:
+        """v0.16.1 WS5a: True when KB confirms `value_qid` is geographically
+        DISJOINT from `expected_qid`. Relocated from CORE's `_location_disjoint`
+        (the logic lives in the module-level `_geographic_disjoint`, driven by
+        this adapter's own `subsumption` — the same self.subsumption calls the
+        CORE helper made on self._kb, so the live/fixture path and verdict are
+        byte-identical). Fails closed on uncertainty (§3.2)."""
+        return _geographic_disjoint(self.subsumption, value_qid, expected_qid)
+
+    # ------------------------------------------------------------------
+    # v0.16.1 WS5c: entity-surface search + type-fetch (relocated from the
+    # Wikipedia normalizer's reach-arounds into adapter privates).
+    # ------------------------------------------------------------------
+
+    def search(self, query: str, limit: Optional[int] = None) -> list:
+        """v0.16.1 WS5c: KBProtocol entity-surface search. Delegates to
+        `wbsearchentities` (the implementation is unchanged — behavior is
+        byte-identical), giving CORE a protocol-level search op so the
+        normalizer no longer reaches into `wbsearchentities` directly."""
+        return self.wbsearchentities(query, limit)
+
+    def fetch_types(
+        self, qids: list[KBEntityID]
+    ) -> tuple[dict[str, list[str]], Optional[str]]:
+        """v0.16.1 WS5c: KBProtocol batch P31 type-fetch. Delegates to
+        `_fetch_p31_for_candidates` (unchanged), giving CORE a protocol-level
+        type-fetch op so the normalizer no longer reaches into the adapter's
+        private `_fetch_p31_for_candidates`. Returns `(types_by_qid, error)`;
+        a non-None error is the fail-open signal (caller passes candidates
+        unfiltered)."""
+        return self._fetch_p31_for_candidates(qids)
+
+    def interval_qualifier_keys(self) -> tuple[KBPropertyID, KBPropertyID]:
+        """v0.16.1 WS5c: the (start, end) temporal interval-qualifier keys
+        (`P580`, `P582`) CORE's interval resolver reads off
+        `Statement.qualifiers`. Relocated from the walker's hardcoded P-ids so
+        the qualifier P-ids live with the adapter that populates them. Order is
+        contractual: (start_key, end_key)."""
+        return (_INTERVAL_START_QUALIFIER, _INTERVAL_END_QUALIFIER)
 
     # ------------------------------------------------------------------
     # Fixture-backed implementations
