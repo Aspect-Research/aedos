@@ -763,3 +763,121 @@ class TestVerifyChainKBNegativeAuthoritative:
         ]
         assert part_of_edges, "a holding KB path must admit the candidate"
         substrate.subsumption.consult.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Real-verifier regression (v0.16.2): the directed-over-enumerate skip must fire
+# even when the KB lookup found NO statements — the live "Obama born_in Kenya"
+# fanout. The `_FunctionalNoMatchKBVerifier` mock above ALWAYS hands the walker the
+# signal, so it can never catch a verifier that fails to emit it on the statements-
+# not-found NO_MATCH paths (subject_resolution_failed / no_statements). These wire
+# the REAL KBVerifier so the signal's provenance — binding METADATA, not
+# bool(statements) — is under test (the bug the mock masked).
+# ---------------------------------------------------------------------------
+
+
+class _MetaTransport:
+    """Cold-start transport driving a real PredicateTranslation: the predicate
+    maps to ONE entity binding on `kb_property`, single_valued per the flag."""
+
+    def __init__(self, single_valued=1, kb_property="P19", object_type="entity"):
+        self._sv = single_valued
+        self._prop = kb_property
+        self._ot = object_type
+
+    def extract_with_tool(self, *a, **kw):
+        return {
+            "object_type": self._ot, "user_subject_required": 0,
+            "distinct_slots": None, "routing_hint": "kb_resolvable",
+            "kb_namespace": "wikidata", "kb_property": self._prop,
+            "slot_to_qualifier": None, "single_valued": self._sv, "reason": "test",
+        }
+
+    def chat(self, *a, **kw):
+        return ""
+
+
+class _StatementlessKB:
+    """Real-verifier KB: resolves KNOWN refs, but lookup_statements is EMPTY (the
+    no_statements path); an ABSENT ref does not resolve (subject_resolution_failed).
+    No geo methods — the verifier's geo shims fail closed via getattr."""
+
+    def __init__(self, resolutions):
+        self._res = dict(resolutions)
+
+    def resolve_entity(self, ref, local_context):
+        qid = self._res.get(ref)
+        return [ResolutionCandidate(kb_identifier=qid, score=0.9)] if qid else []
+
+    def lookup_statements(self, entity, predicate):
+        return []
+
+    def subsumption(self, a, b, relation_type):
+        return SubsumptionResult(verdict="unrelated")
+
+
+def _real_verifier(resolutions, single_valued=1, kb_property="P19"):
+    from aedos.database import open_memory_db
+    from aedos.layer3_substrate.predicate_translation import PredicateTranslation
+    from aedos.layer3_substrate.resolver import EntityResolver
+    from aedos.layer4_sources.kb_verifier import KBVerifier
+    from aedos.llm.client import LLMClient
+
+    db = open_memory_db()
+    pt = PredicateTranslation(
+        db=db,
+        llm_client=LLMClient(_transport=_MetaTransport(single_valued, kb_property)),
+    )
+    kb = _StatementlessKB(resolutions)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    return KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+
+
+class TestRealVerifierStatementsNotFoundSkip:
+    """A FUNCTIONAL ENTITY predicate skips enumeration even when the KB found no
+    statements — the metadata signal (functional_entity_predicate) is present on
+    the NO_MATCH paths where the bool(statements)-gated signals vanish. Wired with
+    the REAL KBVerifier; the mock above hard-coded the signal and so masked the
+    live fanout."""
+
+    def _walk(self, kb_verifier):
+        substrate = _make_substrate(
+            distribution_verdict="distributes_down", sub_neighbors=[],
+            resolved_qid="Q114",  # the object resolves → enumeration WOULD fire
+        )
+        kb = _make_kb(
+            {"P31": ["Q1"], "P279": [], "P131": ["Q2"], "P361": [], "P17": ["Q3"]}
+        )
+        walker = Walker(
+            tier_u=_MockTierU(), kb_verifier=kb_verifier,
+            python_verifier=None, substrate=substrate, kb=kb,
+        )
+        result = walker.walk(
+            _claim(subject="Obama", predicate="born_in", object_val="Kenya"), _ctx()
+        )
+        return result, kb
+
+    def test_no_statements_functional_entity_skips_enumeration(self):
+        # Obama resolves (Q76) but carries NO P19 → no_statements NO_MATCH. The
+        # statements-based signals are False; the metadata signal still fires.
+        result, kb = self._walk(
+            _real_verifier({"Obama": "Q76", "Kenya": "Q114"}, single_valued=1)
+        )
+        kb.enumerate_neighbors.assert_not_called()
+        assert result.verdict == "no_grounding_found"
+
+    def test_subject_unresolved_functional_entity_skips_enumeration(self):
+        # 'Obama' absent from resolutions → subject_resolution_failed NO_MATCH.
+        # Again no statements-based signal, but the metadata signal fires.
+        result, kb = self._walk(_real_verifier({"Kenya": "Q114"}, single_valued=1))
+        kb.enumerate_neighbors.assert_not_called()
+        assert result.verdict == "no_grounding_found"
+
+    def test_non_functional_entity_no_statements_still_enumerates(self):
+        # Control / non-regression: single_valued=0 is NOT a functional entity
+        # predicate, so the metadata signal is False and enumeration is preserved
+        # (a non-functional predicate may legitimately ground via substitution).
+        result, kb = self._walk(
+            _real_verifier({"Obama": "Q76", "Kenya": "Q114"}, single_valued=0)
+        )
+        assert kb.enumerate_neighbors.called
