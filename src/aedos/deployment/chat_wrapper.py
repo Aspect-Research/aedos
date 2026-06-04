@@ -419,7 +419,10 @@ class ChatWrapper:
         # constructor shape) — the wrapper degrades cleanly to the
         # behavior of a wrapper built without Tier U.
         if self._tier_u is not None and self._extractor is not None and user_message:
-            from ..layer4_sources.promotion import promote_assertions
+            from ..layer4_sources.promotion import (
+                is_source_grounded,
+                promote_assertions,
+            )
             user_ctx = ExtractionContext(
                 asserting_party=asserting_party,
                 context_type="chat_user",
@@ -431,7 +434,22 @@ class ChatWrapper:
             # abstention_reason (not_checkworthy, self_referential,
             # predicate_eq_object, subject_absent_from_source). A malformed or
             # not-checkworthy user assertion must not become a Tier U premise.
-            user_claims = [c for c in user_claims if c.abstention_reason is None]
+            #
+            # v0.16.3: ALSO require SOURCE-GROUNDING — both the subject AND the
+            # object must appear in the user's message. The extractor's own guard
+            # is an OR (subject OR object present), so it over-promotes a QUESTION
+            # answered by the LLM: "What is the capital of France?" extracts
+            # (France, capital, Paris) where "Paris" is the model's answer, not in
+            # the source. Promoting that fabricated premise lets a later draft
+            # self-ground against it (verified_given_assertion, KB bypassed). The
+            # AND gate blocks the fabricated answer while preserving genuine
+            # stipulations ("France's capital is Paris" — both entities present).
+            # Checked against `user_message` (the real source the model cannot
+            # pad), so it is robust to a fabricated claim-level source_text span.
+            user_claims = [
+                c for c in user_claims
+                if c.abstention_reason is None and is_source_grounded(c, user_message)
+            ]
             if user_claims:
                 promote_assertions(user_claims, self._tier_u)
                 _emit("premises",

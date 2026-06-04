@@ -203,8 +203,12 @@ class TestChatWrapperUserMessagePromotion:
         # The mock transport's `extract_with_tool` always returns the
         # canned _EXTRACTED_CLAIMS (Obama born_in Honolulu). With Tier U
         # wired, respond() extracts on user_message first and promotes.
-        # That row lands in Tier U with status='asserted_unverified'.
-        wrapper.respond("Tell me about Obama.")
+        # v0.16.3: the user_message must be a genuine ASSERTION where BOTH
+        # entities (Obama, Honolulu) appear in the source — the source-grounding
+        # promotion gate now (correctly) blocks a request like "Tell me about
+        # Obama." whose object the LLM would fabricate. The row lands with
+        # status='asserted_unverified'.
+        wrapper.respond("Obama was born in Honolulu.")
         rows = db.execute(
             "SELECT subject, predicate, object, status FROM tier_u"
         ).fetchall()
@@ -218,7 +222,9 @@ class TestChatWrapperUserMessagePromotion:
     def test_user_message_promotion_emits_audit(self):
         from aedos.audit.log import query_events
         wrapper, _tier_u, db = _make_wrapper_with_tier_u()
-        wrapper.respond("Tell me about Obama.")
+        # v0.16.3: genuine assertion (both entities in source) so the
+        # source-grounding gate admits it; the audit records the promotion.
+        wrapper.respond("Obama was born in Honolulu.")
         # Promotion writes call TierU.write → log_event(row_created)
         # with the asserted_unverified status. Verify the audit trail
         # records the promotion explicitly.

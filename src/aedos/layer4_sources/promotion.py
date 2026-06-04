@@ -33,6 +33,65 @@ from ..layer1_extraction.extractor import Claim
 from ..layer4_sources.tier_u import TierU, WriteResult
 
 
+def is_source_grounded(claim: Claim, source_text: str) -> bool:
+    """v0.16.3: promotion-eligibility gate. A claim may become an
+    `asserted_unverified` Tier U premise ONLY when the entities that define its
+    relation — its SUBJECT and its OBJECT — are grounded in the SOURCE TEXT (what
+    the party actually wrote).
+
+    Motivation: the user-message extractor over-extracts a QUESTION into a fully
+    answered assertion — "What is the capital of France?" → (France, capital,
+    **Paris**) where the object "Paris" is the LLM's ANSWER, absent from the
+    source. The pre-existing extractor guard (_passes_hard_claim_check) is an OR
+    (subject OR object present), so a fabricated object slips through whenever the
+    subject is named. Promoting that fabricated answer makes a later draft "ground"
+    against the system's own guess (verified_given_assertion, KB bypassed). This
+    gate is the AND: both the subject and the object must appear in the source, so
+    only genuine stipulations ("France's capital is Paris" — both present) promote.
+
+    - Checked against the REAL source text (the party's message), not the claim's
+      LLM-emitted `source_text` span (which the model controls and could pad with
+      the fabricated answer).
+    - First-person subjects are canonicalized to the asserting party at extraction
+      ("I prefer X" → subject == asserting_party); they refer to the speaker and
+      are inherently grounded.
+    - An EMPTY object is not a fabricated answer (no LLM-supplied entity), so it is
+      not blocked here — such a claim cannot self-ground a later non-empty draft
+      claim anyway (Tier U matches on the object).
+
+    KNOWN LIMITATIONS (surfaced, all fail SAFE — feature-completeness loss only,
+    never a soundness issue; the claim still verifies normally when it appears,
+    and every case errs toward NOT promoting, the conservative direction). The
+    object check is a verbatim case-insensitive substring, so a genuine assertion
+    is NOT promoted whenever the LLM's OBJECT string diverges from the source span:
+      - normalization/expansion: a decade "the 70s" → "1970s", an abbreviation
+        "NYC" → "New York City" / "the US" → "United States", a currency "$5,000"
+        → "5000";
+      - demonym → country: "X is German" → has_nationality(X, "Germany") (the
+        country name is not the demonym in the source);
+      - first-person OBJECTS: "she praised me" canonicalizes the object to the
+        asserting party id, which is not a substring of the source (the
+        first-person exemption below covers the SUBJECT slot only).
+    Conversely, this gate does NOT close a yes/no question that NAMES the answer
+    ("Is Paris the capital of France?" — both entities present, so it promotes):
+    distinguishing that from a stipulation needs speech-act detection, which is a
+    deliberately broader change out of scope here. The resulting verdict still
+    carries the honest `_given_assertion` contingency marker."""
+    text = (source_text or "").lower()
+    if not text:
+        return False
+    subj = (claim.subject or "").strip()
+    obj = (claim.object or "").strip()
+    subject_grounded = (
+        bool(subj)
+        and (subj == claim.asserting_party or subj.lower() in text)
+    )
+    # Empty object → not an LLM-supplied entity → not blocked. Non-empty object
+    # must appear verbatim (case-insensitive) in the source.
+    object_grounded = (not obj) or (obj.lower() in text)
+    return subject_grounded and object_grounded
+
+
 @dataclass
 class PromotionResult:
     """One per claim promoted.
