@@ -152,7 +152,21 @@ def create_app(
             _app.state._db.close()
             _app.state._db = None
 
-    app = FastAPI(title="Aedos (deploy)", version=__version__, lifespan=_lifespan)
+    # v0.16.2 hardening: when the access gate is ON (the networked / public
+    # posture), disable the interactive API docs and the OpenAPI schema. They
+    # carry no auth dependency, so leaving them on would let any unauthenticated
+    # scanner read the full API contract (every route + request/response schema)
+    # at /openapi.json, /docs, /redoc — advertising the service behind the gate.
+    # They stay available only when the gate is explicitly off (local dev,
+    # AEDOS_REQUIRE_AUTH=0), which the README already scopes to no-network use.
+    _docs_kwargs: dict = (
+        {"openapi_url": None, "docs_url": None, "redoc_url": None}
+        if settings.require_auth
+        else {}
+    )
+    app = FastAPI(
+        title="Aedos (deploy)", version=__version__, lifespan=_lifespan, **_docs_kwargs
+    )
 
     app.state.settings = settings
     app.state._pipeline = pipeline

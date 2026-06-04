@@ -382,3 +382,116 @@ class TestEnvScrubbing:
         )
         assert result.success, result.stderr
         assert "2029" in result.stdout
+
+
+# ===========================================================================
+# v0.16.2 deployment hardening — per-process resource limits (RLIMIT_AS /
+# RLIMIT_CPU). WS-A scrubbed the env / added `-I`; it did NOT bound memory or
+# CPU, so an escaped or runaway child could still OOM/peg the host. These
+# exercise the REAL subprocess path (no mock): run_code forks `python -I -c
+# <payload>` with the production preexec_fn that sets the rlimits before exec.
+# ===========================================================================
+
+import signal  # noqa: E402
+import sys  # noqa: E402
+
+from aedos.utils.sandbox import _DEFAULT_MEMORY_LIMIT_BYTES  # noqa: E402
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason=(
+        "RLIMIT_AS / RLIMIT_CPU kill behavior is asserted against the real "
+        "subprocess on Linux (the deploy target). The limits are applied on any "
+        "POSIX platform; the import guard keeps the suite green on non-Linux."
+    ),
+)
+class TestResourceLimits:
+    def test_memory_bomb_dies_clean_not_consuming_host(self):
+        """A 700MB allocation under the production 512MB RLIMIT_AS must fail
+        with MemoryError (clean nonzero exit), NOT consume host memory.
+
+        700MB is the discriminator: small enough that any host with ~1GB free
+        could satisfy it, so a MemoryError here can ONLY be the 512MB cap —
+        proving the deployed bound is active, not the host's RAM ceiling. (A
+        naive multi-GB bomb would MemoryError even with the cap removed, proving
+        nothing.) Asserting MemoryError specifically also distinguishes the
+        clean in-process rlimit death from an OOM-killer SIGKILL."""
+        assert _DEFAULT_MEMORY_LIMIT_BYTES == 512 * 1024 * 1024
+        result = run_code("b = bytearray(700 * 1024 * 1024)\nprint(len(b))")
+        assert not result.success
+        assert result.exit_code != 0
+        assert not result.timed_out, (
+            "memory bomb should die on the allocation (MemoryError), not by "
+            "wall-clock timeout"
+        )
+        assert "MemoryError" in result.stderr, (
+            f"expected a clean MemoryError from the rlimit; got "
+            f"stderr={result.stderr!r}"
+        )
+
+    def test_memory_cap_is_the_active_mechanism(self):
+        """Host-independent proof that RLIMIT_AS — not host RAM — kills the
+        over-budget allocation. With an explicit 256MB cap, 128MB SUCCEEDS while
+        400MB fails with MemoryError; the boundary sits at the cap on ANY host.
+        Passing memory_limit_bytes exercises the same real preexec path as
+        production — only the budget changes, nothing is weakened."""
+        cap = 256 * 1024 * 1024
+        under = run_code("bytearray(128 * 1024 * 1024)", memory_limit_bytes=cap)
+        assert under.success, (
+            f"128MB under a 256MB cap must succeed; got stderr={under.stderr!r}"
+        )
+        over = run_code("bytearray(400 * 1024 * 1024)", memory_limit_bytes=cap)
+        assert not over.success
+        assert "MemoryError" in over.stderr, (
+            f"400MB over a 256MB cap must MemoryError; got stderr={over.stderr!r}"
+        )
+
+    def test_cpu_spin_killed_by_rlimit_cpu(self):
+        """A pure CPU spin must be killed by RLIMIT_CPU, demonstrably BEFORE the
+        wall-clock timeout. A small cpu_seconds (1s) with a large wall-clock
+        (20s) leaves the CPU rlimit as the only thing that can stop the spin in
+        time — isolating it from the parent timer. Same production preexec_fn;
+        only the CPU budget is small so SIGXCPU fires fast and deterministically."""
+        result = run_code("while True:\n    pass\n", timeout_seconds=20, cpu_seconds=1)
+        assert not result.success
+        assert not result.timed_out, (
+            "RLIMIT_CPU should kill the spin well before the 20s wall-clock; "
+            f"got duration_ms={result.duration_ms}"
+        )
+        assert result.exit_code in (-signal.SIGXCPU, -signal.SIGKILL), (
+            f"expected SIGXCPU/SIGKILL; got exit_code={result.exit_code}, "
+            f"stderr={result.stderr!r}"
+        )
+        assert result.duration_ms < 10_000
+
+    def test_normal_payload_unaffected_by_limits(self):
+        """The production 512MB / CPU limits (with `-I` + scrubbed env) must not
+        break legitimate verifier code — a normal computation still succeeds."""
+        result = run_code(
+            "from fractions import Fraction\n"
+            "print(sum(Fraction(1, n) for n in range(1, 50)))"
+        )
+        assert result.success, f"normal payload broke under rlimits: {result.stderr!r}"
+        assert result.stdout.strip()
+
+    def test_default_cpu_budget_derives_from_timeout(self, monkeypatch):
+        """When cpu_seconds is not given, the CPU budget defaults to the
+        wall-clock timeout (max(1, int(timeout_seconds))). The spin test
+        overrides cpu_seconds for determinism, so this asserts the DEFAULT
+        derivation wiring directly (spy on _build_preexec_fn) — catching a
+        regression in run_code's default path without a slow >timeout spin."""
+        import aedos.utils.sandbox as sandbox_mod
+
+        captured: dict[str, int] = {}
+        real = sandbox_mod._build_preexec_fn
+
+        def _spy(memory_limit_bytes, cpu_seconds):
+            captured["cpu_seconds"] = cpu_seconds
+            captured["memory_limit_bytes"] = memory_limit_bytes
+            return real(memory_limit_bytes, cpu_seconds)
+
+        monkeypatch.setattr(sandbox_mod, "_build_preexec_fn", _spy)
+        run_code("print('ok')", timeout_seconds=7)
+        assert captured["cpu_seconds"] == 7  # max(1, int(7))
+        assert captured["memory_limit_bytes"] == _DEFAULT_MEMORY_LIMIT_BYTES

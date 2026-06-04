@@ -59,6 +59,19 @@ class Config:
         not in ("0", "false", "no", "off")
     )
 
+    # v0.16.3 Batch B (piece 1): generation-time empirical direction validation.
+    # Default ON, but build_pipeline only wires it when the KB adapter is in LIVE
+    # mode (RUN_LIVE_KB=1) — direction validation needs real Wikidata grounding,
+    # so it is a no-op against fixtures/mocks. AEDOS_ENABLE_DIRECTION_VALIDATION in
+    # ('0','false','no','off') disables it even when live (the conservative kill
+    # switch — turning it off only forgoes a soundness check, never adds one).
+    enable_direction_validation: bool = field(
+        default_factory=lambda: os.getenv(
+            "AEDOS_ENABLE_DIRECTION_VALIDATION", "1"
+        ).strip().lower()
+        not in ("0", "false", "no", "off")
+    )
+
     # Wikidata
     wikidata_sparql_endpoint: str = "https://query.wikidata.org/sparql"
     wikidata_search_endpoint: str = "https://www.wikidata.org/w/api.php"

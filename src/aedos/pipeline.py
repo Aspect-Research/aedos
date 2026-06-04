@@ -18,6 +18,7 @@ from .layer1_extraction.extractor import Extractor
 from .layer1_extraction.wikipedia_normalizer import WikipediaNormalizer
 from .layer3_substrate import Substrate
 from .layer3_substrate.consistency import ConsistencyChecker
+from .layer3_substrate.direction_validator import DirectionValidator
 from .layer3_substrate.predicate_distribution import PredicateDistributionOracle
 from .layer3_substrate.predicate_translation import PredicateTranslation
 from .layer3_substrate.property_relations import PropertyRelations
@@ -137,27 +138,41 @@ def build_pipeline(
     # injected mocks) unchanged; verify_transitive_path reads self._exception_cache.
     if hasattr(kb, "_exception_cache"):
         kb._exception_cache = exception_cache
+
+    # v0.16 WS1: wire binding-discovery collaborators. `kb` was built above
+    # (build_default_kb / injected), so the ordering holds. Both collaborators
+    # fail open, so a mock kb (no fetch_property_ontology / enumerate_neighbors)
+    # simply yields the oracle's single primary binding = pre-v0.16 behavior.
+    property_relations = PropertyRelations(db, kb)
     consistency = ConsistencyChecker(
         db=db,
         retraction_propagator=propagator,
         # Thread circuit-breaker threshold through Config.
         circuit_breaker_threshold=config.circuit_breaker_threshold,
     )
-
-    # v0.16 WS1: wire binding-discovery collaborators. `kb` was built above
-    # (build_default_kb / injected), so the ordering holds. Both collaborators
-    # fail open, so a mock kb (no fetch_property_ontology / enumerate_neighbors)
-    # simply yields the oracle's single primary binding = pre-v0.16 behavior.
+    # v0.16.3 Batch B (piece 1): the empirical direction validator. Wired ONLY
+    # when the KB adapter is in LIVE mode (RUN_LIVE_KB=1) and the config flag is
+    # on — direction validation needs real Wikidata grounding, so against a
+    # fixture/mock KB it would have no examples to probe and would (per the
+    # never-CONTRADICT posture) needlessly suppress every contradiction license.
+    # Off → PredicateTranslation falls open to the prior oracle-direction behavior,
+    # so every mock-KB integration test is unaffected.
+    direction_validator = None
+    if config.enable_direction_validation and getattr(kb, "_live", False):
+        direction_validator = DirectionValidator(
+            kb=kb, property_relations=property_relations
+        )
     pt = PredicateTranslation(
         db=db,
         llm_client=client,
         consistency_checker=consistency,
-        property_relations=PropertyRelations(db, kb),
+        property_relations=property_relations,
         sling=SlingFallback(db, kb, client),
         # v0.16.1 WS4: SLING distant supervision is ACTIVATED by default; the
         # AEDOS_ENABLE_SLING config flag gates whether its verify-only candidate
         # bindings are produced/consumed.
         enable_sling=config.enable_sling,
+        direction_validator=direction_validator,
     )
 
     # Wikipedia normalizer wired into the resolver. The

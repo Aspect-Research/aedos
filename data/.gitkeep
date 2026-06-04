@@ -1,0 +1,3 @@
+# Keep the runtime data directory in the repo so the deploy systemd unit's
+# ReadWritePaths=/home/aedos/aedos/data target exists on a fresh checkout.
+# The SQLite DB files themselves (*.db, *.db-wal, *.db-shm) stay gitignored.

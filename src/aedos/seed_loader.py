@@ -141,11 +141,24 @@ def _validate_entry(entry: dict, idx: int) -> None:
 def load_seeds_into_connection(
     conn: sqlite3.Connection,
     seed_file: Path | str | None = None,
+    only_predicates: set[str] | None = None,
 ) -> int:
     """Load every seed entry into `conn`. Idempotent; commits inside.
 
     Returns the number of entries processed. The caller is responsible
     for deciding whether to load (e.g., gated on table emptiness).
+
+    `only_predicates`: when given, load ONLY the seed entries whose
+    `aedos_predicate` is in the set; every NON-matching row (operator edits,
+    retractions, oracle-generated rows) is left untouched. This is the
+    targeted-correction path (v0.16.3): an already-seeded live DB can re-apply
+    just the pinned predicate rows from the canonical seed pack via the same
+    validated INSERT OR REPLACE the full load uses. NOTE the matching rows ARE
+    overwritten in full — the INSERT resets used_count/last_consulted_at and
+    clears retracted_at, and INSERT OR REPLACE assigns a new row id. That is the
+    intended effect here (overwrite the bad oracle row with the pinned one); it
+    is NOT a merge, so a previously-retracted matching predicate would be
+    un-retracted.
     """
     path = Path(seed_file) if seed_file is not None else DEFAULT_SEED_FILE
     seeds_data = json.loads(path.read_text(encoding="utf-8"))
@@ -153,6 +166,8 @@ def load_seeds_into_connection(
     loaded = 0
     for idx, entry in enumerate(seeds_data):
         _validate_entry(entry, idx)
+        if only_predicates is not None and entry["aedos_predicate"] not in only_predicates:
+            continue
         slot_json = (
             json.dumps(entry["slot_to_qualifier"])
             if entry["slot_to_qualifier"] is not None
@@ -189,14 +204,19 @@ def load_seeds_into_connection(
                 (entry["aedos_predicate"],),
             )
         conn.execute(
+            # v0.16.3 Batch B (piece 2): every seed row is operator-curated and is
+            # written PINNED (pinned=1) — immune to oracle regeneration and to
+            # consistency/contradiction-trace retraction. This makes the durable
+            # guarantee the capital/capital_is corrections previously relied on
+            # (merely being present + non-retracted) machine-enforced.
             """
             INSERT OR REPLACE INTO predicate_translation
                 (aedos_predicate, object_type, user_subject_required, distinct_slots,
                  routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                  single_valued, subject_entity_types, object_entity_types,
                  reason, created_at, used_count, last_consulted_at, retracted_at,
-                 bindings, premise_properties)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
+                 bindings, premise_properties, pinned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, 1)
             """,
             (
                 entry["aedos_predicate"],

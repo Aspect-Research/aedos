@@ -211,6 +211,27 @@ class TestAuth:
         assert r.status_code == 200
 
 
+class TestDocsExposure:
+    """v0.16.2 hardening: the OpenAPI schema + interactive docs carry no auth
+    dependency, so they must NOT be reachable on the gated (networked) posture —
+    otherwise any unauthenticated scanner reads the full API contract. They are
+    permitted only when the gate is explicitly off (local-dev, require_auth=0)."""
+
+    def test_docs_disabled_when_gate_on(self):
+        c = _client(settings=_settings(require_auth=True),
+                    chat_wrapper=FakeChatWrapper(_vr()))
+        # No key sent — and these must not be an unauthenticated escape hatch.
+        assert c.get("/openapi.json").status_code == 404
+        assert c.get("/docs").status_code == 404
+        assert c.get("/redoc").status_code == 404
+
+    def test_docs_enabled_when_gate_off_for_local_dev(self):
+        c = _client(settings=_settings(require_auth=False),
+                    chat_wrapper=FakeChatWrapper(_vr()))
+        assert c.get("/openapi.json").status_code == 200
+        assert c.get("/docs").status_code == 200
+
+
 # --------------------------------------------------------------------------- #
 # CORS
 # --------------------------------------------------------------------------- #

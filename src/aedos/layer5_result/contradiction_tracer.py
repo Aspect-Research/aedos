@@ -74,11 +74,26 @@ class ContradictionTracer:
             # row. The table name comes from the propagator's trace index, which
             # is populated only with the fixed set of substrate tables.
             if self._db is not None and table in _RETRACTABLE_TABLES:
-                self._db.execute(
-                    f"UPDATE {table} SET retracted_at=?, retraction_reason=? WHERE id=?",
-                    (now, f"contradiction_trace:{contradicted_claim_id}", row_id),
-                )
-                self._db.commit()
+                # v0.16.3 Batch B (piece 2): a PINNED predicate_translation row is
+                # operator-authoritative and is never retracted, even by a
+                # contradiction trace. Skip the UPDATE (still propagate so dependent
+                # verdicts are re-derived against the surviving pinned row) and log.
+                if table == "predicate_translation" and self._is_pinned(row_id):
+                    log_event(
+                        self._db,
+                        event_type="pin_retraction_blocked",
+                        event_subject=f"predicate_translation:{row_id}",
+                        event_data={
+                            "reason": f"contradiction_trace:{contradicted_claim_id}",
+                            "source": "contradiction_tracer",
+                        },
+                    )
+                else:
+                    self._db.execute(
+                        f"UPDATE {table} SET retracted_at=?, retraction_reason=? WHERE id=?",
+                        (now, f"contradiction_trace:{contradicted_claim_id}", row_id),
+                    )
+                    self._db.commit()
 
             # Consume the stale-aware propagation result (§3E).
             all_retracted.extend(self._propagator.propagate_retraction(table, row_id))
@@ -96,3 +111,16 @@ class ContradictionTracer:
                 )
 
         return all_retracted
+
+    def _is_pinned(self, row_id) -> bool:
+        """True if predicate_translation row `row_id` is pinned. Defensive against
+        a pre-migration DB lacking the column (returns False → unchanged behavior)."""
+        if self._db is None:
+            return False
+        try:
+            row = self._db.execute(
+                "SELECT pinned FROM predicate_translation WHERE id=?", (row_id,)
+            ).fetchone()
+        except Exception:
+            return False
+        return bool(row[0]) if row is not None else False

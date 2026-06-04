@@ -433,6 +433,11 @@ class PredicateMetadata:
     # binding from the scalar fields (source='legacy_scalar'); when
     # `bindings` is provided it sets the scalars to mirror bindings[0].
     bindings: list["PredicateBinding"] = field(default_factory=list)
+    # v0.16.3 Batch B (piece 2): operator-authoritative row. When True the row is
+    # immune to retraction (consistency / contradiction-trace / explicit) and is
+    # never replaced by the oracle's INSERT OR REPLACE. Set for every seed row and
+    # for hand-pinned corrections (capital/capital_is). Row-scoped (not per-binding).
+    pinned: bool = False
 
     def __post_init__(self) -> None:
         if not self.bindings:
@@ -479,6 +484,7 @@ class PredicateTranslation:
         property_relations=None,
         sling=None,
         enable_sling: bool = True,
+        direction_validator=None,
     ) -> None:
         self._db = db
         self._llm = llm_client
@@ -493,6 +499,13 @@ class PredicateTranslation:
         # the SlingFallback is never consulted even if wired — turning SLING off
         # can only lose a (verify-only) candidate, never change a sound verdict.
         self._enable_sling = enable_sling
+        # v0.16.3 Batch B (piece 1): empirical direction validator. Optional and
+        # FAIL-OPEN — when None (every existing/mock/cold construction) generation
+        # behaves exactly as before; when wired (deployed pipeline) it validates
+        # the oracle's slot_to_qualifier DIRECTION against real KB grounding at
+        # write time and either confirms, corrects, or (if it cannot confirm)
+        # suppresses the contradiction license on the generated row.
+        self._direction_validator = direction_validator
 
     def consult(
         self,
@@ -510,7 +523,21 @@ class PredicateTranslation:
         return self._generate_and_store(aedos_predicate, kb_namespace)
 
     def retract(self, row_id: int, reason: str) -> None:
-        """Retract a row. Sets retracted_at; does not delete."""
+        """Retract a row. Sets retracted_at; does not delete.
+
+        v0.16.3 Batch B (piece 2): a PINNED row is operator-authoritative and is
+        never retracted — skip the UPDATE and log a `pin_retraction_blocked`
+        event instead. Without this, an explicit retract of a pinned seed/
+        correction would silently drop it (and, because _fetch filters
+        retracted_at IS NULL, expose it to oracle regeneration)."""
+        if self._is_pinned(row_id):
+            log_event(
+                self._db,
+                event_type="pin_retraction_blocked",
+                event_subject=f"predicate_translation:{row_id}",
+                event_data={"reason": reason, "source": "retract"},
+            )
+            return
         now = _NOW()
         self._db.execute(
             "UPDATE predicate_translation SET retracted_at=?, retraction_reason=? WHERE id=?",
@@ -523,6 +550,39 @@ class PredicateTranslation:
             event_subject=f"predicate_translation:{row_id}",
             event_data={"reason": reason},
         )
+
+    def _is_pinned(self, row_id: int) -> bool:
+        """True if predicate_translation row `row_id` is pinned (operator-
+        authoritative). Defensive against pre-migration DBs lacking the column."""
+        try:
+            row = self._db.execute(
+                "SELECT pinned FROM predicate_translation WHERE id=?", (row_id,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
+        return bool(row[0]) if row is not None else False
+
+    def _pinned_row_exists(self, aedos_predicate: str) -> bool:
+        """True if a non-retracted PINNED row exists for this predicate. Used as
+        the pre-INSERT gate in _generate_and_store so the oracle's INSERT OR
+        REPLACE never deletes+replaces a pinned row (which would drop the pin and
+        reassign the row id, dangling audit refs).
+
+        Adversarial-review fix ([4]): keyed on the PREDICATE only, NOT the
+        namespace. consult() passes no namespace (so the incoming kb_namespace is
+        None), while the INSERT OR REPLACE collides on the EFFECTIVE namespace
+        ('wikidata') decided during generation — a namespace-qualified gate matched
+        only NULL-namespace rows and was inert for exactly the wikidata seed/
+        correction rows it must protect. The pin guarantee is per-predicate."""
+        try:
+            row = self._db.execute(
+                "SELECT 1 FROM predicate_translation "
+                "WHERE aedos_predicate=? AND pinned=1 AND retracted_at IS NULL LIMIT 1",
+                (aedos_predicate,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
+        return row is not None
 
     def _borrow_seed_slot_to_qualifier(
         self, kb_namespace: str, kb_property: str
@@ -588,6 +648,17 @@ class PredicateTranslation:
     def _generate_and_store(
         self, aedos_predicate: str, kb_namespace: Optional[str]
     ) -> PredicateMetadata:
+        # v0.16.3 Batch B (piece 2): never regenerate over a PINNED row. consult()
+        # already serves a present non-retracted row from _fetch, so this only
+        # fires on an edge cache miss (e.g. a namespace-qualified call path) — but
+        # because the INSERT OR REPLACE below DELETES the colliding row, a missing
+        # guard here would silently drop the pin + reassign the row id. Return the
+        # pinned row's metadata instead of generating.
+        if self._pinned_row_exists(aedos_predicate):
+            pinned = self._fetch(aedos_predicate)
+            if pinned is not None:
+                self._touch(pinned.id)
+                return pinned
         try:
             raw = self._llm.extract_with_tool(
                 system=_GENERATION_SYSTEM_PROMPT,
@@ -676,6 +747,32 @@ class PredicateTranslation:
         else:
             primary_kb_property = raw.get("kb_property")
 
+        # v0.16.3 Batch B (piece 1): validate the slot_to_qualifier DIRECTION
+        # empirically before persisting. Only for entity-object KB-relational
+        # predicates (direction is meaningless for literal objects / non-KB rows).
+        # Orientation MUST use the oracle's RAW declared entity-types (raw.get),
+        # never the discovery-overridden binding types — discovery fills
+        # subject_entity_types from the ontology's statement-subject type ASSUMING
+        # standard direction, so using those would make the standard assumption
+        # self-confirming. Returns possibly-updated (sq, single_valued).
+        if (
+            self._direction_validator is not None
+            and primary_kb_property
+            and raw.get("routing_hint") == "kb_resolvable"
+            and raw.get("object_type") == "entity"
+        ):
+            slot_to_qualifier_raw, single_valued, bindings = (
+                self._apply_direction_validation(
+                    aedos_predicate,
+                    primary_kb_property,
+                    effective_kb_namespace,
+                    slot_to_qualifier_raw,
+                    single_valued,
+                    bindings,
+                    raw,
+                )
+            )
+
         bindings_json = (
             json.dumps([_binding_to_dict(b) for b in bindings]) if bindings else None
         )
@@ -688,8 +785,8 @@ class PredicateTranslation:
                (aedos_predicate, object_type, user_subject_required, distinct_slots,
                 routing_hint, kb_namespace, kb_property, slot_to_qualifier,
                 single_valued, subject_entity_types, object_entity_types,
-                reason, created_at, bindings, premise_properties)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                reason, created_at, bindings, premise_properties, pinned)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
             (
                 aedos_predicate,
                 raw["object_type"],
@@ -748,6 +845,79 @@ class PredicateTranslation:
             premise_properties=premise_properties_raw,
             bindings=bindings,
         )
+
+    def _apply_direction_validation(
+        self,
+        aedos_predicate: str,
+        kb_property: str,
+        kb_namespace: Optional[str],
+        slot_to_qualifier_raw: Optional[dict],
+        single_valued: int,
+        bindings: list,
+        raw: dict,
+    ):
+        """v0.16.3 Batch B (piece 1): consult the DirectionValidator and apply its
+        verdict to the row about to be written. Returns the (possibly corrected)
+        ``(slot_to_qualifier, single_valued, bindings)``.
+
+        - CORRECTED: rewrite slot_to_qualifier across the scalar AND every binding
+          (the back-compat invariant requires bindings[0]/scalars to agree).
+        - NOT validated (unconfirmed/suspect): keep the oracle direction for
+          positive grounding but force single_valued=0 — the operator-chosen
+          "never CONTRADICT on an unvalidated direction" posture (single_valued is
+          the only flag that licenses a CONTRADICTED verdict).
+        - CONFIRMED / SYMMETRIC: unchanged.
+        Always annotates the reason + logs an event for the audit trail. FAIL-OPEN
+        on any error (the validator itself never raises)."""
+        try:
+            verdict = self._direction_validator.validate(
+                kb_property,
+                kb_namespace,
+                slot_to_qualifier_raw,
+                raw.get("subject_entity_types"),
+                raw.get("object_entity_types"),
+            )
+        except Exception:
+            return slot_to_qualifier_raw, single_valued, bindings
+
+        if verdict.status == "corrected" and verdict.direction is not None:
+            slot_to_qualifier_raw = dict(verdict.direction)
+            for b in bindings:
+                b.slot_to_qualifier = dict(verdict.direction)
+
+        # Adversarial-review fix ([2]/[3]): keep the contradiction license ONLY on
+        # a CONFIRMED verdict — the oracle's OWN direction grounded the known-true
+        # example (independent corroboration that the oracle was self-consistent).
+        # A CORRECTED direction was re-derived using the oracle's (untrusted) raw
+        # entity-types, and a SYMMETRIC classification can be flipped by one
+        # anomalous reciprocal example — so neither may license a CONTRADICTED
+        # verdict. suspect/unconfirmed never did. The corrected DIRECTION is still
+        # applied above for positive grounding; only single_valued is suppressed.
+        if verdict.status != "confirmed":
+            single_valued = 0
+            for b in bindings:
+                b.single_valued = False
+
+        # Carry the validation outcome into the reason + audit log so the row's
+        # provenance is inspectable and the piece-4 audit can correlate.
+        suffix = f" [direction_validation:{verdict.status} ({verdict.reason})]"
+        if raw.get("reason"):
+            raw["reason"] = f"{raw['reason']}{suffix}"
+        else:
+            raw["reason"] = suffix.strip()
+        log_event(
+            self._db,
+            event_type="direction_validation",
+            event_subject=f"predicate_translation:{aedos_predicate}",
+            event_data={
+                "kb_property": kb_property,
+                "status": verdict.status,
+                "reason": verdict.reason,
+                "grounded": verdict.grounded,
+                "validated": verdict.is_validated,
+            },
+        )
+        return slot_to_qualifier_raw, single_valued, bindings
 
     def _discover_bindings(
         self,
@@ -994,6 +1164,14 @@ class PredicateTranslation:
         # When present and non-empty, deserialize each element into a
         # PredicateBinding; else leave bindings empty so PredicateMetadata
         # __post_init__ read-synthesizes one binding from the scalar columns.
+        # v0.16.3 Batch B: pinned is a later column addition — absent from older
+        # DBs (IndexError/KeyError) defaults to unpinned, mirroring the
+        # premise_properties defensive read above.
+        try:
+            pinned = bool(row["pinned"])
+        except (IndexError, KeyError):
+            pinned = False
+
         bindings: list[PredicateBinding] = []
         try:
             bindings_raw = _parse_json(row["bindings"])
@@ -1038,4 +1216,5 @@ class PredicateTranslation:
             object_entity_types=object_types,
             premise_properties=premise_properties,
             bindings=bindings,
+            pinned=pinned,
         )

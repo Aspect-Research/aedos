@@ -35,6 +35,11 @@ LLM-generated code might produce when prompted for verification tasks:
   secret to leak). This is the load-bearing property for a key-holding
   network deployment and is pinned by tests.
 - Wall-clock timeout (default 10s).
+- Per-process resource limits on POSIX (v0.16.2): RLIMIT_AS (~512MB) and
+  RLIMIT_CPU (aligned with the wall-clock timeout), set in a preexec_fn
+  before exec. A memory-bomb or CPU-spin payload dies with a clean nonzero
+  exit (MemoryError / SIGXCPU) instead of exhausting host memory or CPU.
+  Not applied on non-POSIX (the import is guarded); pinned by tests.
 
 What the sandbox does NOT block
 -------------------------------
@@ -56,8 +61,9 @@ Residual after an escape (v0.16.2, made explicit): a successful AST-scan
 escape (e.g. the encoded-dunder chain) yields arbitrary code execution
 *inside the child process*. That child still has NO API keys in its env
 (see "Environment scrubbing" above) and a clean tempdir CWD with a 5s
-wall-clock, but — absent OS-level confinement — it CAN read files the
-serving user can read and make outbound network calls. For internal,
+wall-clock plus RLIMIT_AS / RLIMIT_CPU caps (so it cannot exhaust host
+memory or CPU), but — absent OS-level confinement — it CAN still read
+files the serving user can read and make outbound network calls. For internal,
 access-gated testing this is the accepted boundary; for true public
 exposure, containerize / RestrictedPython (below). Keep deployment
 secrets in the PROCESS ENVIRONMENT, never in a ``.env`` file readable
@@ -95,7 +101,16 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+try:
+    # POSIX-only. On Linux this enforces the per-child RLIMIT_AS / RLIMIT_CPU
+    # caps applied in `_build_preexec_fn`. Guarded so the module (and the test
+    # suite) still imports on non-POSIX dev machines (e.g. Windows), where the
+    # limits are simply not applied and the wall-clock timeout is the only bound.
+    import resource
+except ImportError:  # pragma: no cover - exercised only on non-POSIX
+    resource = None  # type: ignore[assignment]
 
 
 ALLOWED_MODULES: frozenset[str] = frozenset([
@@ -149,6 +164,15 @@ _BLOCKED_DUNDER_ATTRS: frozenset[str] = frozenset([
 ])
 
 _DEFAULT_TIMEOUT_SECONDS = 10
+
+# Per-child resource caps applied via preexec_fn on POSIX (see
+# `_build_preexec_fn`). RLIMIT_AS bounds the child's *total virtual address
+# space*, so a memory-bomb payload (e.g. ``bytearray(2 * 1024**3)``) fails its
+# allocation with a clean MemoryError instead of driving the host into swap or
+# the OOM killer. 512 MiB is comfortably above what the allowed stdlib modules
+# need (an empty ``python -I -c`` starts in well under this) and far below host
+# RAM.
+_DEFAULT_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
 
 # v0.16.2: the child process is spawned with an EXPLICITLY CONSTRUCTED
 # environment (env=), never the parent's. Only these non-secret OS-infrastructure
@@ -277,13 +301,56 @@ def _check_sandbox_violations(
 _check_imports = _check_sandbox_violations
 
 
+def _build_preexec_fn(
+    memory_limit_bytes: int, cpu_seconds: int
+) -> Optional[Callable[[], None]]:
+    """Return a callable that caps the child's memory and CPU, or None.
+
+    The returned callable runs in the forked child after ``fork()`` and before
+    ``exec()`` (subprocess ``preexec_fn``), so the limits are in force for the
+    entire lifetime of the executed code. Returns None on platforms without the
+    ``resource`` module (non-POSIX), where the caller runs without rlimits and
+    the wall-clock timeout is the only bound.
+
+    - ``RLIMIT_AS`` caps total virtual address space; an over-large allocation
+      then fails with MemoryError (a clean nonzero exit) rather than exhausting
+      host memory. Soft == hard so the child cannot raise it back.
+    - ``RLIMIT_CPU`` caps CPU seconds; the kernel raises SIGXCPU at the soft
+      limit (which terminates the child — the verifier installs no handler) and
+      SIGKILL at the hard limit. A kernel-enforced backstop for CPU-bound
+      runaways, independent of the parent's wall-clock timer.
+    """
+    if resource is None:
+        return None
+
+    def _apply_limits() -> None:  # pragma: no cover - runs in forked child
+        resource.setrlimit(
+            resource.RLIMIT_AS, (memory_limit_bytes, memory_limit_bytes)
+        )
+        resource.setrlimit(
+            resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1)
+        )
+
+    return _apply_limits
+
+
 def run_code(
     code: str,
     *,
     timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS,
+    memory_limit_bytes: int = _DEFAULT_MEMORY_LIMIT_BYTES,
+    cpu_seconds: int | None = None,
     extra_allowed: frozenset[str] | None = None,
 ) -> SandboxResult:
     """Run code in a restricted subprocess after sandbox-violation scanning.
+
+    On POSIX the child also runs under per-process resource limits
+    (``RLIMIT_AS`` = ``memory_limit_bytes``, ``RLIMIT_CPU`` from ``cpu_seconds``)
+    so a memory-bomb or CPU-spin payload dies cleanly instead of exhausting the
+    host — see `_build_preexec_fn`. ``cpu_seconds`` defaults to the wall-clock
+    ``timeout_seconds`` (the kernel CPU backstop fires around when the parent
+    timer would); tests pass a smaller value to exercise ``RLIMIT_CPU`` in
+    isolation from the wall-clock timeout.
 
     See the module docstring for the threat model, the explicit list
     of what this sandbox does and does not block, and the upgrade path
@@ -298,6 +365,11 @@ def run_code(
             duration_ms=0, timed_out=False,
             import_violation=violation,
         )
+
+    effective_cpu_seconds = (
+        cpu_seconds if cpu_seconds is not None else max(1, int(timeout_seconds))
+    )
+    preexec_fn = _build_preexec_fn(memory_limit_bytes, effective_cpu_seconds)
 
     started = time.monotonic()
     with tempfile.TemporaryDirectory() as workdir:
@@ -319,6 +391,11 @@ def run_code(
                 env=minimal_env,
                 timeout=timeout_seconds,
                 text=True,
+                # POSIX: cap the child's address space and CPU before exec (None
+                # on non-POSIX, where subprocess ignores it). The wall-clock
+                # `timeout` above remains the bound for non-CPU hangs (sleeps,
+                # blocked I/O).
+                preexec_fn=preexec_fn,
             )
         except subprocess.TimeoutExpired as e:
             elapsed_ms = int((time.monotonic() - started) * 1000)

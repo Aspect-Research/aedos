@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Generator
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS predicate_translation (
     object_entity_types TEXT,
     bindings TEXT,
     premise_properties TEXT,
+    pinned INTEGER NOT NULL DEFAULT 0,
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_consulted_at TEXT,
@@ -345,6 +347,22 @@ def create_schema(conn: sqlite3.Connection, load_seeds: bool = False) -> None:
         conn.execute("ALTER TABLE predicate_translation ADD COLUMN premise_properties TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+    # v0.16.3 Batch B (piece 2): predicate_translation.pinned — a durable,
+    # machine-readable mark that a row is operator-authoritative (every seed row,
+    # plus hand-pinned corrections like capital/capital_is). A pinned row is (a)
+    # immune to consistency-driven / contradiction-trace / explicit retraction and
+    # (b) never replaced by the oracle's INSERT OR REPLACE in _generate_and_store.
+    # Before this, the capital/capital_is corrections relied only on a
+    # non-retracted row being present — a future cold-start regeneration over a
+    # true cache miss could silently re-invert them. Same idempotent ALTER pattern;
+    # NOT NULL DEFAULT 0 (constant default, permitted by SQLite ADD COLUMN) so
+    # existing oracle rows default to unpinned.
+    try:
+        conn.execute(
+            "ALTER TABLE predicate_translation ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
     if load_seeds:
         _maybe_load_seeds(conn)
@@ -415,6 +433,15 @@ def open_db(path: str, load_seeds: bool = True) -> sqlite3.Connection:
     gate in `create_schema` means re-opening an existing DB is a
     no-op for the seed table.
     """
+    # Defense-in-depth (v0.16.2 deploy hardening): create the parent dir if a
+    # directory component is present. sqlite3.connect() does NOT create it and
+    # would otherwise raise "unable to open database file" — e.g. when
+    # AEDOS_DB_PATH points at data/<db> on a host where data/ was not
+    # pre-created. A bare filename (no dir component) yields an empty dirname
+    # and is left untouched; ":memory:" goes through open_memory_db, not here.
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

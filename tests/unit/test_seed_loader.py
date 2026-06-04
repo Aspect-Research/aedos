@@ -50,6 +50,9 @@ _FUNCTIONAL_PREDICATES = {
     "status",        # one current status per entity (revisable)
     # Phase G D23 (2026-05-23) correction (was single_valued=0):
     "lives_in",      # one current residence per person (revisable on relocation)
+    # v0.16.3 pinned capital-direction corrections (standard has_capital shape):
+    "capital",       # a country has one capital in intended use
+    "capital_is",    # alias of `capital` ("X capital_is Y")
 }
 
 
@@ -273,10 +276,12 @@ class TestSeedAliasDeletions:
         # founded_in_year/dissolved_in_year. A hard count guards against an
         # accidental re-add of an alias, a silent drop of a canonical row, or a
         # dropped endpoint row.
-        assert len(seeds) == 71, (
-            f"expected 71 seed rows (62 after the 21 alias deletions + 6 T1 "
+        # v0.16.3 added 2 pinned capital-direction rows (capital, capital_is) = 73.
+        assert len(seeds) == 73, (
+            f"expected 73 seed rows (62 after the 21 alias deletions + 6 T1 "
             f"interval-endpoint rows + 1 WS2 instance_of copula row + 2 WS3b "
-            f"premise->Python rows), got {len(seeds)}"
+            f"premise->Python rows + 2 v0.16.3 capital-direction pins), "
+            f"got {len(seeds)}"
         )
 
     def test_every_kb_resolvable_row_synthesizes_a_binding(self, seeds):
@@ -440,7 +445,7 @@ class TestSeedT1IntervalEndpoints:
         db_file = tmp_path / "t1.db"
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
-        assert n == 71  # WS4 dropped 2 dead status_* rows; WS3b added born_before/founded_before
+        assert n == 73  # +2 v0.16.3 capital-direction pins (capital, capital_is)
         conn.row_factory = __import__("sqlite3").Row
         rows = conn.execute(
             "SELECT aedos_predicate, object_type, routing_hint, kb_property "
@@ -489,7 +494,64 @@ class TestSeedDateToTimeReconciliation:
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
         conn.close()
-        assert n == 71  # WS4 dropped 2 dead status_* rows; WS3b added 2 premise->Python rows
+        assert n == 73  # +2 v0.16.3 capital-direction pins (capital, capital_is)
+
+
+class TestSeedTargetedCorrection:
+    """v0.16.3: `only_predicates` applies just the named pinned rows, overwriting
+    a bad oracle row while leaving every other row untouched — the live-DB
+    targeted-correction path for the capital-direction fix."""
+
+    def test_only_predicates_applies_just_named_rows(self, tmp_path):
+        from aedos.database import open_db
+        from aedos.seed_loader import load_seeds_into_connection
+
+        db_file = tmp_path / "targeted.db"
+        conn = open_db(str(db_file))
+        conn.row_factory = __import__("sqlite3").Row
+
+        # Simulate the live state: an already-seeded DB whose `capital` row was
+        # oracle-generated with the INVERTED slot_to_qualifier, plus an unrelated
+        # operator-retracted row that must NOT be resurrected.
+        load_seeds_into_connection(conn)
+        conn.execute(
+            "UPDATE predicate_translation SET slot_to_qualifier=? "
+            "WHERE aedos_predicate='capital' AND kb_namespace='wikidata'",
+            ('{"subject": "statement_value", "object": "statement_subject"}',),
+        )
+        conn.execute(
+            "UPDATE predicate_translation SET retracted_at='2026-06-04T00:00:00+00:00', "
+            "retraction_reason='operator' WHERE aedos_predicate='born_in'",
+        )
+        conn.commit()
+
+        n = load_seeds_into_connection(
+            conn, only_predicates={"capital", "capital_is"}
+        )
+        assert n == 2  # only the two named rows were processed
+
+        # capital is now pinned STANDARD; capital_is too.
+        for pred in ("capital", "capital_is"):
+            row = conn.execute(
+                "SELECT slot_to_qualifier FROM predicate_translation "
+                "WHERE aedos_predicate=? AND kb_namespace='wikidata'", (pred,),
+            ).fetchone()
+            assert row["slot_to_qualifier"] == (
+                '{"subject": "statement_subject", "object": "statement_value"}'
+            )
+        # The unrelated retracted row was left untouched (not resurrected).
+        born = conn.execute(
+            "SELECT retracted_at FROM predicate_translation WHERE aedos_predicate='born_in'",
+        ).fetchone()
+        assert born["retracted_at"] == "2026-06-04T00:00:00+00:00"
+        # capital_of (the genuine inverse) is not in the set → untouched, still inverse.
+        cof = conn.execute(
+            "SELECT slot_to_qualifier FROM predicate_translation WHERE aedos_predicate='capital_of'",
+        ).fetchone()
+        assert cof["slot_to_qualifier"] == (
+            '{"subject": "statement_value", "object": "statement_subject"}'
+        )
+        conn.close()
 
 
 # ---------------------------------------------------------------------------

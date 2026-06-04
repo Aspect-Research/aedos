@@ -1,0 +1,77 @@
+# Aedos deployment-backend systemd unit (v0.16.2 deployment hardening).
+#
+# Runs the live deployment backend (deploy/backend/server.py) — the access-gated
+# FastAPI service with the per-session Tier-U scoping — NOT the bare engine app
+# (src/aedos/app.py). It is launched via uvicorn's --factory mode against
+# `deploy.backend.server:create_app`.
+#
+# Install:
+#   # data/ is tracked in git (data/.gitkeep) so a clone has the ReadWritePaths
+#   # target; if you deploy without it (rsync drops empty dirs), create it first —
+#   # systemd's mount-namespace setup hard-fails if the path does not exist:
+#   sudo -u aedos mkdir -p /home/aedos/aedos/data
+#   sudo cp deploy/aedos.service /etc/systemd/system/aedos.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now aedos
+#
+# Requires an EnvironmentFile at /etc/aedos/aedos.env (owned root:aedos, mode
+# 0640) carrying ONLY the secrets:
+#   ANTHROPIC_API_KEY=...        # LLM provider key (engine Config.from_env)
+#   AEDOS_DEPLOY_KEY=...         # shared access secret for the X-Aedos-Key gate
+#
+# Non-secret config is pinned in this unit (Environment= below): the CORS origin
+# is locked to https://aspectresearch.org, the gate is required, and the DB path
+# is pinned inside the single writable directory (data/). SQLite WAL mode also
+# writes <db>-wal / <db>-shm there; the verifier sandbox writes its scratch
+# tempdir under /tmp, which PrivateTmp provides as a private writable mount.
+
+[Unit]
+Description=Aedos deployment backend (access-gated FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aedos
+Group=aedos
+WorkingDirectory=/home/aedos/aedos
+EnvironmentFile=/etc/aedos/aedos.env
+# --- non-secret config, pinned here so the env file can't loosen it ---
+# CORS locked to EXACTLY the SPA origin (settings splits on comma -> single
+# entry). Not "*", not a regex. The API itself is served from
+# api.aspectresearch.org (see deploy/Caddyfile); the browser origin is the SPA.
+Environment=AEDOS_ALLOWED_ORIGINS=https://aspectresearch.org
+# Access gate ON (fails closed if AEDOS_DEPLOY_KEY is unset/empty).
+Environment=AEDOS_REQUIRE_AUTH=1
+# DB pinned inside the single writable dir (see ReadWritePaths); avoids the
+# relative default ("aedos_phase10_5.db") resolving into the read-only home.
+Environment=AEDOS_DB_PATH=/home/aedos/aedos/data/aedos_phase10_5.db
+# Avoid futile .pyc writes under the read-only home (ProtectHome=read-only).
+Environment=PYTHONDONTWRITEBYTECODE=1
+# aedos is an editable install and uvicorn adds the working dir to sys.path, so
+# `deploy.backend.server:create_app` imports without PYTHONPATH. Loopback only;
+# Caddy fronts it.
+ExecStart=/home/aedos/aedos/.venv/bin/uvicorn deploy.backend.server:create_app --factory --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=2
+
+# --- sandboxing / hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# The only path the service writes: the SQLite DB directory (DB + WAL/SHM).
+ReadWritePaths=/home/aedos/aedos/data
+
+# Additional low-risk hardening (none block the app: it opens only the loopback
+# HTTP listener + outbound HTTPS to the KB/LLM, loads no kernel modules, and
+# touches no kernel tunables / cgroups).
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
