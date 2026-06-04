@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Generator
@@ -415,6 +416,15 @@ def open_db(path: str, load_seeds: bool = True) -> sqlite3.Connection:
     gate in `create_schema` means re-opening an existing DB is a
     no-op for the seed table.
     """
+    # Defense-in-depth (v0.16.2 deploy hardening): create the parent dir if a
+    # directory component is present. sqlite3.connect() does NOT create it and
+    # would otherwise raise "unable to open database file" — e.g. when
+    # AEDOS_DB_PATH points at data/<db> on a host where data/ was not
+    # pre-created. A bare filename (no dir component) yields an empty dirname
+    # and is left untouched; ":memory:" goes through open_memory_db, not here.
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

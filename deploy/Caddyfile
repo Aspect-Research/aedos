@@ -1,0 +1,17 @@
+# Aedos deployment reverse proxy (v0.16.2 deployment hardening).
+#
+# Install:
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Caddy terminates TLS (automatic Let's Encrypt for the domain) and proxies to
+# the loopback-bound Aedos deployment backend. The service binds 127.0.0.1:8000
+# only (see deploy/aedos.service), so this proxy is the sole public entrypoint.
+#
+# The SPA is served from https://aspectresearch.org (its CORS origin); the API
+# answers at api.aspectresearch.org. The frontend's VITE_API_BASE must point at
+# https://api.aspectresearch.org, and AEDOS_ALLOWED_ORIGINS at the SPA origin.
+
+api.aspectresearch.org {
+	reverse_proxy 127.0.0.1:8000
+}
