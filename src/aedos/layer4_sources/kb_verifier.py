@@ -202,6 +202,11 @@ class KBVerifier:
         if verified_outcome is not None:
             chosen, trace = verified_outcome
             trace["bindings_tried"] = bindings_tried
+            # Surface the predicate-level metadata signal on grounded verdicts too
+            # (it is a property of the predicate, valid regardless of verdict) so the
+            # observability record carries it uniformly. Read-only; no verdict path
+            # consumes it on the grounded branch.
+            trace["functional_entity_predicate"] = functional_entity_predicate
             return KBVerdict(
                 verdict=chosen.verdict,
                 matched_statement=chosen.matched_statement,
@@ -211,6 +216,7 @@ class KBVerifier:
         if contradicted_outcome is not None:
             chosen, trace = contradicted_outcome
             trace["bindings_tried"] = bindings_tried
+            trace["functional_entity_predicate"] = functional_entity_predicate
             # Decision 5: surface the KB statement value that contradicted the
             # claim so the correction surface can name it.
             stmt = chosen.matched_statement

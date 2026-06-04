@@ -1435,6 +1435,25 @@ class Walker:
             self._functional_entity_predicate = bool(
                 kb_result.trace.get("functional_entity_predicate")
             )
+            # v0.16.2 observability stamp (§3.2-NEUTRAL — no verdict path reads
+            # walk_metadata): persist the ROOT claim's KB-verify facts so the
+            # durable audit (GET /verification/{id}) can surface resolved QIDs +
+            # the directed-over-enumerate signals even on an abstaining walk (the
+            # signals are otherwise thread-local + transient on kb_result.trace).
+            # setdefault → the root claim's verify wins; later discovery-node
+            # verifies (substitutions) do NOT overwrite the claim-level facts.
+            wm = trace.walk_metadata
+            wm.setdefault("functional_value_known", self._functional_value_known)
+            wm.setdefault("value_known_entity", self._value_known_entity)
+            wm.setdefault("functional_entity_predicate", self._functional_entity_predicate)
+            if kb_result.subject_kb_id is not None:
+                wm.setdefault("resolved_subject_qid", kb_result.subject_kb_id)
+            _vqid = kb_result.trace.get("value_entity")
+            if _vqid is not None:
+                wm.setdefault("resolved_value_qid", _vqid)
+            _rcid = kb_result.trace.get("resolution_cache_row_id")
+            if _rcid is not None:
+                wm.setdefault("resolved_subject_cache_row_id", _rcid)
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
                 # WS3: the resolver's entity_resolution_cache row the KB

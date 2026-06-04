@@ -205,6 +205,7 @@ def create_app(
     def _ensure_chat_wrapper():
         if app.state._chat_wrapper is None:
             from aedos.deployment.chat_wrapper import ChatWrapper
+            from aedos.deployment.verification_store import VerificationStore
 
             p = _ensure_pipeline()
             app.state._chat_wrapper = ChatWrapper(
@@ -214,8 +215,17 @@ def create_app(
                 llm_client=p.llm_client,
                 tier_u=p.tier_u,
                 kb=p.kb,
+                # Durable observability store on the shared pipeline connection
+                # (single conn, check_same_thread=False; writes run under engine_lock).
+                verification_store=VerificationStore(p.db),
             )
         return app.state._chat_wrapper
+
+    def _verification_store():
+        """The durable store on the shared pipeline DB (read + /verify write path)."""
+        from aedos.deployment.verification_store import VerificationStore
+
+        return VerificationStore(_ensure_pipeline().db)
 
     def _rate_limit(party: str) -> None:
         if not app.state.limiter.allow(party):
@@ -311,39 +321,77 @@ def create_app(
         ]
         emit({"phase": "extracted", "detail": f"found {len(claims)} claim(s)"})
         groundable = [c for c in claims if c.abstention_reason is None]
-        if not groundable:
-            return {
-                "extracted_claims": extracted, "observability": [],
-                "given_assertion": {"count": 0, "claim_ids": []},
-                "note": "no groundable claims in the input text",
-            }
         vctx = VerificationContext(
             current_time=datetime.now(timezone.utc).isoformat(),
             asserting_party=party, source_text=text,
         )
-        total = len(groundable)
-        for i, c in enumerate(groundable):
-            emit({
-                "phase": "verifying",
-                "detail": f"verifying: {c.subject} {c.predicate} {c.object}",
-                "index": i + 1, "total": total, "claim_id": c.claim_id,
-            })
+        results: list = []
+        if groundable:
+            total = len(groundable)
+            for i, c in enumerate(groundable):
+                emit({
+                    "phase": "verifying",
+                    "detail": f"verifying: {c.subject} {c.predicate} {c.object}",
+                    "index": i + 1, "total": total, "claim_id": c.claim_id,
+                })
 
-        def _on(index, claim, result):
-            emit({"phase": "verdict", "detail": str(result.verdict),
-                  "index": index + 1, "total": total,
-                  **walk_result_observability(claim, result)})
+            def _on(index, claim, result):
+                emit({"phase": "verdict", "detail": str(result.verdict),
+                      "index": index + 1, "total": total,
+                      **walk_result_observability(claim, result)})
 
-        results = walk_claims_parallel(
-            pipeline.walker, groundable, vctx,
-            max_workers=settings.verify_workers, on_result=_on,
-        )
-        vr = pipeline.aggregator.aggregate(groundable, results)
-        observability = claim_observability(vr)
-        return {
+            results = walk_claims_parallel(
+                pipeline.walker, groundable, vctx,
+                max_workers=settings.verify_workers, on_result=_on,
+            )
+        # EVERY /verify run is durably addressable — incl. an all-abstained input,
+        # whose extracted (abstention-reason-bearing) claims are still captured. For
+        # the empty-groundable case build a minimal empty result directly (no walk,
+        # nothing to aggregate) rather than aggregating an empty list.
+        if groundable:
+            vr = pipeline.aggregator.aggregate(
+                groundable, results, text_input={"draft": text}
+            )
+            observability = claim_observability(vr)
+        else:
+            from aedos.layer5_result.aggregator import VerificationResult
+
+            vr = VerificationResult(
+                claims_extracted=[], per_claim_verdicts={}, per_claim_traces={},
+                aggregate_metadata={"claim_count": 0}, audit_log_entries=[],
+                text_input={"draft": text}, consistency_warnings=[], claim_verdicts=[],
+            )
+            observability = []
+        # Mint an id + persist durably so GET /verification/{id} resolves a /verify
+        # run too (it produced no id before). The id is returned ONLY on a confirmed
+        # persist, so a client never holds an id that 404s forever; a store failure
+        # is logged and the verify response (observability inline) still returns.
+        import uuid as _uuid
+
+        verification_id = str(_uuid.uuid4())
+        persisted = False
+        try:
+            _verification_store().persist(
+                verification_id, party, vr,
+                source_kind="verify",
+                created_at=vctx.current_time,
+                walk_results=results,
+                chat_extras=None,
+                extracted_claims=extracted,
+            )
+            _track_verification(verification_id, party)
+            persisted = True
+        except Exception:
+            _log.exception("verification_store.persist (verify) failed")
+        body = {
             "extracted_claims": extracted, "observability": observability,
             "given_assertion": _annotate(observability),
         }
+        if not groundable:
+            body["note"] = "no groundable claims in the input text"
+        if persisted:
+            body["verification_id"] = verification_id
+        return body
 
     # ----- routes -------------------------------------------------------- #
 
@@ -439,27 +487,16 @@ def create_app(
     async def get_verification(
         verification_id: str, party: str = Depends(session_party)
     ) -> JSONResponse:
-        # Party-scoped (pure dict get — safe on the loop; same 404 for missing vs.
-        # other-party, no existence oracle).
-        if app.state._verification_party.get(verification_id) != party:
-            raise HTTPException(status_code=404, detail="verification not found")
-
-        # B1: get_verification can re-walk stale claims (live KB/LLM). Run it off
-        # the loop and under the engine lock like every other engine route —
-        # otherwise it re-introduces the loop-blocking + shared-connection race.
+        # Reads the DURABLE store — no re-walk, survives restart. Party-scoping is
+        # the PERSISTED `asserting_party` (the in-memory party map didn't survive a
+        # restart). Same 404 for missing vs. other-party (no existence oracle). The
+        # SQLite read runs under the engine lock + off the loop like every engine
+        # route (shared single connection).
         def work():
-            from aedos.deployment.chat_wrapper import claim_observability
-
-            wrapper = _ensure_chat_wrapper()
-            vr = wrapper.get_verification(verification_id)
-            if vr is None:
+            payload = _verification_store().load(verification_id)
+            if payload is None or payload.get("asserting_party") != party:
                 return None
-            return {
-                "verification_id": verification_id,
-                "per_claim_verdicts": vr.per_claim_verdicts,
-                "aggregate_metadata": vr.aggregate_metadata,
-                "claims": claim_observability(vr, verbose=True),
-            }
+            return payload
 
         async with app.state.engine_lock:
             body = await run_in_threadpool(work)
