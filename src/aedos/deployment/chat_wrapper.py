@@ -254,6 +254,146 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
 
 
+# --------------------------------------------------------------------------- #
+# v0.16.4: inline verified-edit. Instead of appending an "Aedos verification
+# notes" section, a final constrained-rewrite step folds the per-claim verdicts
+# INTO the reply once every claim is processed — correcting wrong facts to the
+# verified value, removing unverifiable claims, and caveating
+# assertion-conditional ones — producing one coherent message. The editor is
+# bounded (it may only apply the listed instructions and may NOT introduce new
+# facts); any failure falls back to the deterministic draft+notes composition,
+# and the structured observability still carries the true per-claim verdicts, so
+# the audit trail stays honest regardless of the prose.
+# --------------------------------------------------------------------------- #
+
+_REVISE_SYSTEM_PROMPT = """\
+You are the final editor of a fact-verified assistant. You receive a draft reply
+and a list of verification instructions from a system that has checked the
+draft's factual claims against authoritative sources. Produce ONE natural,
+coherent revised reply that applies EVERY instruction.
+
+Rules — follow them exactly:
+1. CORRECT: where an instruction gives a verified value, state THAT value; never
+   repeat the original wrong value.
+2. REMOVE: drop the named claim entirely — do not mention it, hedge it, or hint
+   at it.
+3. CAVEAT: keep the claim but add a brief, natural note that it rests on the
+   user's own assertion and is not independently confirmed.
+4. VERIFIED or unmentioned content: keep it; you may rephrase for flow.
+5. NEVER introduce any new fact, name, number, date, place, or claim that is not
+   in the draft or the instructions. Do not fill gaps from your own knowledge.
+6. If, after applying the instructions, there is essentially nothing verified
+   left to say, reply with a SHORT honest sentence that you could not verify
+   enough to answer — do not pad it.
+
+Output ONLY the revised reply text. No preamble, no notes, no headers.
+"""
+
+
+def _is_blank(text: Optional[str]) -> bool:
+    """True when editor output has no substantive content — empty, whitespace, or
+    only punctuation/markdown noise ('.', '- ', '—'). Treated as a
+    strip-to-nothing edit so a near-empty fragment can't slip through as the
+    answer (adversarial-review D2)."""
+    return not any(ch.isalnum() for ch in (text or ""))
+
+
+def _corrected_value_display(cv: ClaimVerdict, label_fetcher=None):
+    """The verified value to substitute for a CONTRADICTED claim, reverse-labeling
+    an entity Q-id to its name when possible (mirrors _format_correction). Returns
+    None when no distinct contradicting value was captured (§3.2-safe: we only
+    assert a correction when a concrete value was genuinely found)."""
+    value = cv.contradicting_value
+    if not value:
+        return None
+    display = value
+    if (
+        cv.contradicting_value_type == "entity"
+        and isinstance(value, str)
+        and value.startswith("Q")
+        and label_fetcher is not None
+    ):
+        try:
+            label = label_fetcher(value)
+        except Exception:
+            label = None
+        if label:
+            display = label
+    return display
+
+
+def _revision_instructions(claim_verdicts, label_fetcher=None) -> list[str]:
+    """Build the per-claim editor instructions from the verdicts (richer than the
+    annotation strings: carries the concrete corrected value). not_checkworthy
+    claims are quiet — no instruction, exactly as they are absent from the notes."""
+    lines: list[str] = []
+    for cv in claim_verdicts:
+        if cv.abstention_reason == AbstentionReason.NOT_CHECKWORTHY.value:
+            continue
+        triple = f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}"
+        if cv.claim.polarity == 0:
+            triple += " (negated)"
+        base = base_verdict_of(cv.verdict)
+        conditional = is_given_assertion(cv.verdict)
+        if base == "verified":
+            if conditional:
+                lines.append(
+                    f"CAVEAT — \"{triple}\": keep this, but note it rests on the "
+                    f"user's own assertion, not an independent source."
+                )
+            else:
+                lines.append(f"VERIFIED — \"{triple}\": confirmed; keep it.")
+        elif base == "contradicted":
+            corrected = _corrected_value_display(cv, label_fetcher)
+            if corrected:
+                lines.append(
+                    f"CORRECT — \"{triple}\": this is WRONG; the verified value is "
+                    f"\"{corrected}\". State the correct value, not the original."
+                )
+            else:
+                lines.append(
+                    f"REMOVE — \"{triple}\": contradicted by a source and cannot be "
+                    f"corrected; remove it."
+                )
+        else:  # no_grounding_found / abstained_given_assertion
+            lines.append(
+                f"REMOVE — \"{triple}\": could not be verified; remove it (do not "
+                f"assert it)."
+            )
+    return lines
+
+
+def revise_response(
+    user_message: str,
+    draft: str,
+    claim_verdicts,
+    llm,
+    label_fetcher=None,
+) -> Optional[str]:
+    """v0.16.4 constrained final edit. Returns the revised reply (stripped; may be
+    "" after a strip-to-nothing edit), or None on any LLM error so the caller can
+    fall back to the deterministic composition. Never raises."""
+    instructions = _revision_instructions(claim_verdicts, label_fetcher)
+    instr_block = (
+        "\n".join(f"- {line}" for line in instructions)
+        if instructions else "- (no changes required)"
+    )
+    user = (
+        f"User's question:\n{user_message}\n\n"
+        f"Draft reply:\n{draft}\n\n"
+        f"Verification instructions (apply EVERY one):\n{instr_block}"
+    )
+    try:
+        revised = llm.chat(
+            system=_REVISE_SYSTEM_PROMPT,
+            messages=[ChatMessage(role="user", content=user)],
+            purpose="chat:revise",
+        )
+    except Exception:
+        return None
+    return revised.strip() if isinstance(revised, str) else None
+
+
 def walk_result_observability(claim, walk_result) -> dict:
     """Per-claim observability built from a raw WalkResult (pre-aggregation), for
     STREAMING each claim's verdict + reasoning trace the moment its walk
@@ -570,8 +710,34 @@ class ChatWrapper:
         label_fetcher = getattr(self._kb, "fetch_label", None)
         plan = select_interventions(vr.claim_verdicts, label_fetcher=label_fetcher)
 
-        # 6. Build response (Format A: draft + per-claim notes)
-        final = build_response(draft, plan)
+        # 6. Final reply (v0.16.4): a constrained rewrite that folds the per-claim
+        # verdicts INTO the message (correct wrong facts to the verified value,
+        # remove unverifiable claims, caveat assertion-conditional ones), instead
+        # of appending an "Aedos verification notes" section. The structured
+        # observability / per_claim_actions below are UNCHANGED, so the audit trail
+        # carries every true per-claim verdict regardless of how the prose reads.
+        if plan.overall == InterventionType.PASS_THROUGH:
+            # Every claim verified — nothing to apply; the draft stands verbatim.
+            final = draft
+        elif plan.overall == InterventionType.DECLINE:
+            # §3.2: DECLINE means ZERO independently-verified claims. There is no
+            # verified spine to anchor a rewrite, and the edited prose is NOT
+            # re-verified — so a free LLM rewrite here could ship unverified text
+            # as the answer. The only sound coherent reply is an honest one. The
+            # per-claim detail (including any corrections) remains in the
+            # structured observability / per_claim_actions for the UI.
+            final = "I couldn't verify enough of this to answer confidently."
+        else:
+            # INTERVENE: a verified spine is present. Fold the verdicts in. The
+            # editor is FAIL-SAFE — error / non-str / blank output falls back to
+            # the deterministic draft+notes composition (`_is_blank` catches a
+            # near-empty strip-to-nothing, not just exact ""), so a reply is never
+            # broken or silently blanked.
+            _emit("revising", "revising the reply to reflect verification")
+            revised = revise_response(
+                user_message, draft, vr.claim_verdicts, self._llm, label_fetcher
+            )
+            final = revised if (revised and not _is_blank(revised)) else build_response(draft, plan)
 
         verification_id = str(uuid.uuid4())
         self._verification_store[verification_id] = vr
