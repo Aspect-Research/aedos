@@ -223,6 +223,16 @@ class TestDeterministicStringCount:
     def test_vowel_count_contradicted(self):
         r = self._pv().verify(_claim("superstrawberry", "vowel_count", "9"))
         assert r.verdict == "contradicted"
+        assert r.runtime_metadata.get("deterministic_kind") == "string_count"
+        assert r.runtime_metadata.get("computed_counts") == [4, 5]
+        assert r.runtime_metadata.get("computed_count") is None
+
+    def test_consonant_count_contradiction_reports_computed_count(self):
+        r = self._pv().verify(
+            _claim("Exclamation markpoints", "consonant_count", "99"))
+        assert r.verdict == "contradicted"
+        assert r.runtime_metadata.get("count_measure") == "consonant"
+        assert r.runtime_metadata.get("computed_count") == 13
 
     def test_subject_wrapper_and_object_unit_are_normalized(self):
         # The wrapped subject and a "N vowels" object still compute over the word.

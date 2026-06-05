@@ -1585,6 +1585,14 @@ class Walker:
             else:
                 py_result = self._python_verifier.verify(node)
             if py_result.verdict != "no_terminal_result":
+                py_metadata = getattr(py_result, "runtime_metadata", {}) or {}
+                py_contradicting_value = None
+                py_contradicting_value_type = None
+                if py_result.verdict == "contradicted":
+                    computed_count = py_metadata.get("computed_count")
+                    if computed_count is not None:
+                        py_contradicting_value = computed_count
+                        py_contradicting_value_type = "quantity"
                 trace.source_breakdown["python"] = trace.source_breakdown.get("python", 0) + 1
                 trace.edges.append(TraceEdge(
                     edge_type="premise_lookup",
@@ -1599,6 +1607,8 @@ class Walker:
                         # Observability: which premises fed the computation.
                         "premise_count": len(premise_literals),
                         "premise_includes_assertion": premise_assertion,
+                        "contradicting_value": py_contradicting_value,
+                        "contradicting_value_type": py_contradicting_value_type,
                     },
                 ))
                 # Gate 3 (provenance AND-term): the Python verdict rests on the

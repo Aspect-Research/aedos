@@ -370,7 +370,7 @@ def _acceptable_counts(measure: str, text: str) -> set:
     return set()
 
 
-def _string_count_verdict(claim: Claim) -> Optional[str]:
+def _string_count_verdict(claim: Claim) -> Optional[tuple[str, dict[str, Any]]]:
     """'verified'/'contradicted' for a string-count claim, computed EXACTLY over
     the subject literal; None (→ codegen) when it is not a count predicate, the
     target is empty, or the object carries no integer count. Counting is always
@@ -387,10 +387,20 @@ def _string_count_verdict(claim: Claim) -> Optional[str]:
     acceptable = _acceptable_counts(measure, target)
     if not acceptable:
         return None
-    return "verified" if claimed in acceptable else "contradicted"
+    verdict = "verified" if claimed in acceptable else "contradicted"
+    metadata: dict[str, Any] = {
+        "deterministic_kind": "string_count",
+        "count_measure": measure,
+        "computed_counts": sorted(acceptable),
+    }
+    if len(acceptable) == 1:
+        metadata["computed_count"] = next(iter(acceptable))
+    return verdict, metadata
 
 
-def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Optional[str]:
+def _deterministic_verdict(
+    claim: Claim, premises: Optional[dict] = None
+) -> Optional[tuple[str, dict[str, Any]]]:
     """Try a TOTAL, EXACT, deterministic parse+evaluation of `claim`. Returns
     'verified' / 'contradicted' on a fully-parsed exact computation, else None
     (the caller then proceeds to the existing LLM codegen). §3.2: this can never
@@ -426,6 +436,7 @@ def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Opt
     obj = obj_raw if obj_raw is not None else claim.object
 
     verdict: Optional[str] = None
+    metadata: dict[str, Any] = {}
 
     # 1) Numeric comparison (greater_than / less_than / at_least / at_most /
     #    equals / measure_* family). Both operands must be STRICT numbers.
@@ -457,7 +468,9 @@ def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Opt
     #    count over the SUBJECT literal vs the claimed object count). Uses the
     #    claim's literal slots — counting is never over a fetched premise.
     if verdict is None:
-        verdict = _string_count_verdict(claim)
+        count_result = _string_count_verdict(claim)
+        if count_result is not None:
+            verdict, metadata = count_result
 
     if verdict is None:
         return None
@@ -465,7 +478,7 @@ def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Opt
     # Honor polarity (a negated comparison inverts the deterministic verdict).
     if getattr(claim, "polarity", 1) == 0:
         verdict = "contradicted" if verdict == "verified" else "verified"
-    return verdict
+    return verdict, metadata
 
 
 class PythonVerifier:
@@ -515,13 +528,14 @@ class PythonVerifier:
         # returns None for ANYTHING not totally + unambiguously parsed, in which
         # case verify() proceeds to the existing codegen path below exactly as
         # before. It needs no LLM, so it runs even when self._llm is None.
-        det = _deterministic_verdict(claim, premises_payload or None)
-        if det is not None:
+        deterministic_result = _deterministic_verdict(claim, premises_payload or None)
+        if deterministic_result is not None:
+            det, deterministic_metadata = deterministic_result
             return PythonVerdict(
                 verdict=det,
                 inputs=inputs,
                 output=det,
-                runtime_metadata={"deterministic": True},
+                runtime_metadata={"deterministic": True, **deterministic_metadata},
             )
 
         if self._llm is None:
