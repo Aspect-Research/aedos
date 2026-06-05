@@ -135,6 +135,18 @@ def _format_conditional(cv: ClaimVerdict) -> str:
     )
 
 
+def _format_temporal_caveat(cv: ClaimVerdict) -> str:
+    """v0.16.4: annotation for a present-tense fact that verified, but whose
+    claimed start date ("since <year>") could not be confirmed (it precedes the
+    value's actual KB start). The present fact is stated as confirmed; the date is
+    explicitly flagged as unconfirmed so it is never presented as verified."""
+    return (
+        f"Aedos verified this is currently true, but could NOT confirm the claimed "
+        f"start date / 'since' — that time bound is unconfirmed: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}."
+    )
+
+
 def _format_abstention(cv: ClaimVerdict) -> str:
     """Generic abstention annotation for a claim without grounding. The
     `abstention_reason` (if present) gives operators a hook; the
@@ -171,7 +183,14 @@ def _reconcile_for_composition(claim_verdicts):
         if base == "contradicted":
             return 3
         if base == "verified":
-            return 2 if not is_given_assertion(cv.verdict) else 1
+            # A CLEAN verified (independent, fully in-scope) outranks a caveated
+            # one — assertion-conditional or temporal-scope-unconfirmed — for the
+            # same triple, so the clean assertion represents the group. A caveated
+            # verified still outranks an abstention (it confirms the present fact).
+            caveated = is_given_assertion(cv.verdict) or getattr(
+                cv, "temporal_scope_unconfirmed", False
+            )
+            return 1 if caveated else 2
         return 0  # no_grounding_found / abstained / not_checkworthy
 
     groups: dict = {}
@@ -244,7 +263,17 @@ def select_interventions(
         conditional = is_given_assertion(cv.verdict)
         if base == "verified":
             verified_count += 1
-            if conditional:
+            if getattr(cv, "temporal_scope_unconfirmed", False):
+                # v0.16.4: present base fact verified, but the claimed start date
+                # ("since <year>") could not be confirmed. Surface as a caveat
+                # (observability + notes fallback) — verified, not a problem, but
+                # the date is flagged so it is never presented as confirmed.
+                actions.append(ClaimAction(
+                    claim_id=cv.claim_id,
+                    action_type=ClaimActionType.CONFIRM_CONDITIONAL,
+                    annotation=_format_temporal_caveat(cv),
+                ))
+            elif conditional:
                 # WS5: surface the conditional verification (observability) —
                 # not independently grounded, but not a problem either.
                 actions.append(ClaimAction(
@@ -381,7 +410,13 @@ def _revision_instructions(claim_verdicts, label_fetcher=None) -> list[str]:
         base = base_verdict_of(cv.verdict)
         conditional = is_given_assertion(cv.verdict)
         if base == "verified":
-            if conditional:
+            if getattr(cv, "temporal_scope_unconfirmed", False):
+                lines.append(
+                    f"PRESENT-ONLY — \"{triple}\": this is CURRENTLY true and "
+                    f"confirmed — assert it, but do NOT state the claimed start "
+                    f"date or 'since <year>'; that time bound could not be confirmed."
+                )
+            elif conditional:
                 lines.append(
                     f"CAVEAT — \"{triple}\": keep this, but note it rests on the "
                     f"user's own assertion, not an independent source."

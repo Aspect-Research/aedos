@@ -1464,6 +1464,10 @@ class Walker:
             _scid = kb_result.trace.get("aedos_subject_cache_row_id")
             if _scid is not None:
                 wm.setdefault("resolved_subject_cache_row_id", _scid)
+            # v0.16.4: the present base fact verified but the claim's "since <date>"
+            # could not be confirmed — composition asserts the fact, drops the date.
+            if kb_result.trace.get("temporal_scope_unconfirmed"):
+                wm.setdefault("temporal_scope_unconfirmed", True)
             if kb_result.verdict == KBVerdictType.VERIFIED:
                 trace.source_breakdown["kb"] = trace.source_breakdown.get("kb", 0) + 1
                 # WS3: the resolver's entity_resolution_cache row the KB

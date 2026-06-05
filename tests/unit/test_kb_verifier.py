@@ -407,15 +407,34 @@ class TestKBVerifierTemporalScope:
         result = verifier.verify(_claim(valid_from="2010-01-01", valid_until="2016-01-01"))
         assert result.verdict == KBVerdictType.VERIFIED
 
-    def test_scope_mismatch_returns_no_match(self):
-        # Claim says 2005 but statement only starts 2009 -> scope incompatible.
+    def test_too_early_present_fact_verifies_with_scope_unconfirmed(self):
+        # v0.16.4: claim says "since 2005" but the (still-current) statement only
+        # starts 2009. The entity DOES currently hold the value, so the PRESENT
+        # base fact verifies — and the trace flags `temporal_scope_unconfirmed`
+        # because the claimed start precedes the actual one (it is NOT confirmed).
+        # Pre-v0.16.4 this was a flat NO_MATCH (over-refusal of an answerable fact).
         stmts = [Statement(
             value="Q11696", value_type="entity",
             qualifiers={"P580": "2009-01-20"}
         )]
         verifier = _make_verifier(stmts)
         result = verifier.verify(_claim(valid_from="2005-01-01"))
+        assert result.verdict == KBVerdictType.VERIFIED
+        assert result.trace.get("temporal_scope_unconfirmed") is True
+
+    def test_too_early_start_but_role_ended_returns_no_match(self):
+        # The rescue is gated to a CURRENTLY-held value: if the statement has
+        # provably ENDED (P582 in the past), the entity no longer holds it, so the
+        # present fact is false and the verifier still abstains — never asserting
+        # "is president" for someone whose term ended.
+        stmts = [Statement(
+            value="Q11696", value_type="entity",
+            qualifiers={"P580": "2009-01-20", "P582": "2017-01-20"}
+        )]
+        verifier = _make_verifier(stmts)
+        result = verifier.verify(_claim(valid_from="2005-01-01"))
         assert result.verdict == KBVerdictType.NO_MATCH
+        assert not result.trace.get("temporal_scope_unconfirmed")
 
 
 # ---------------------------------------------------------------------------

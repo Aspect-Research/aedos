@@ -32,7 +32,7 @@ from aedos.layer4_sources.kb_verifier import KBVerifier
 from aedos.layer4_sources.python_verifier import PythonVerifier
 from aedos.layer4_sources.tier_u import TierU
 from aedos.layer4_sources.walker import Walker
-from aedos.layer5_result.aggregator import Aggregator, ClaimVerdict
+from aedos.layer5_result.aggregator import Aggregator, ClaimVerdict, base_verdict_of
 from aedos.layer1_extraction.extractor import Claim
 from aedos.llm.client import LLMClient
 from aedos.seed_loader import load_seeds_into_connection
@@ -393,3 +393,200 @@ def test_respond_reconciles_temporal_duplicate_before_editing():
     assert "REMOVE — \"Tamás Sulyok holds_role" not in transport.revise_prompt   # NOT removed
     # The reply is the edit (president kept), not an over-refusal.
     assert resp.final_message == "EDITED: Tamás Sulyok is the president of Hungary."
+
+
+# ---------------------------------------------------------------------------
+# Present-fact-with-too-early-start (option-2 verifier fallback) → composition
+# ---------------------------------------------------------------------------
+
+class TestTemporalScopeUnconfirmedComposition:
+    """A `verified` claim flagged `temporal_scope_unconfirmed` (present base fact
+    holds; the claimed "since <date>" precedes the value's actual start and could
+    not be confirmed). Composition must: count it as VERIFIED (so the turn is not a
+    DECLINE), INTERVENE so the editor runs, and instruct the editor to assert the
+    present fact WITHOUT the unconfirmed date."""
+
+    @staticmethod
+    def _cv(s, p, o, verdict, *, ts=False, pol=1):
+        c = Claim(claim_id="c", subject=s, predicate=p, object=o, polarity=pol,
+                  source_text="", asserting_party="u", triage_decision=TriageDecision.VERIFY)
+        return ClaimVerdict(claim_id=s + p + o, claim=c, verdict=verdict,
+                            temporal_scope_unconfirmed=ts)
+
+    def test_lone_temporal_unconfirmed_intervenes_not_passthrough(self):
+        """A present fact whose date is unconfirmed must NOT pass through verbatim
+        (the draft may carry the wrong date) — it INTERVENES so the editor edits."""
+        from aedos.deployment.chat_wrapper import select_interventions, InterventionType
+        cvs = [self._cv("Sulyok", "holds_role", "President of Hungary", "verified", ts=True)]
+        plan = select_interventions(cvs)
+        assert plan.overall == InterventionType.INTERVENE       # editor will run
+        # Surfaced as a non-problematic caveat (verified), so never a DECLINE.
+        assert len(plan.per_claim_actions) == 1
+        assert "could NOT confirm" in plan.per_claim_actions[0].annotation
+
+    def test_temporal_unconfirmed_with_abstention_is_not_decline(self):
+        """The live shape: the present role (verified-but-date-unconfirmed) +
+        a separate abstained start-date claim. verified_count >= 1 → INTERVENE, not
+        the over-refusal DECLINE that zero-verified would give."""
+        from aedos.deployment.chat_wrapper import select_interventions, InterventionType
+        cvs = [
+            self._cv("Sulyok", "holds_role", "President of Hungary", "verified", ts=True),
+            self._cv("Sulyok", "role_started", "2022", "no_grounding_found"),
+        ]
+        plan = select_interventions(cvs)
+        assert plan.overall == InterventionType.INTERVENE
+
+    def test_instruction_asserts_present_drops_date(self):
+        from aedos.deployment.chat_wrapper import _revision_instructions
+        cvs = [self._cv("Sulyok", "holds_role", "President of Hungary", "verified", ts=True)]
+        lines = _revision_instructions(cvs)
+        joined = "\n".join(lines)
+        assert any(l.startswith("PRESENT-ONLY") for l in lines)
+        assert "do NOT state the claimed start date" in joined
+        # It is NOT a plain "VERIFIED keep" (that would keep a wrong since-date).
+        assert not any(l.startswith("VERIFIED") for l in lines)
+
+    def test_reconcile_clean_verified_outranks_temporal_caveat(self):
+        """Same triple, one clean verified (scope OK) + one temporal-unconfirmed:
+        the clean one represents the group (no needless date-drop)."""
+        from aedos.deployment.chat_wrapper import _reconcile_for_composition
+        cvs = [
+            self._cv("X", "holds_role", "Y", "verified", ts=True),
+            self._cv("X", "holds_role", "Y", "verified", ts=False),
+        ]
+        rec = _reconcile_for_composition(cvs)
+        assert len(rec) == 1 and rec[0].temporal_scope_unconfirmed is False
+
+    def test_reconcile_temporal_caveat_outranks_abstention(self):
+        """Same triple, temporal-unconfirmed verified + abstention: the verified
+        (present fact) wins — the answer is not lost."""
+        from aedos.deployment.chat_wrapper import _reconcile_for_composition
+        cvs = [
+            self._cv("X", "holds_role", "Y", "no_grounding_found"),
+            self._cv("X", "holds_role", "Y", "verified", ts=True),
+        ]
+        rec = _reconcile_for_composition(cvs)
+        assert len(rec) == 1 and base_verdict_of(rec[0].verdict) == "verified"
+        assert rec[0].temporal_scope_unconfirmed is True
+
+
+# Real pipeline + REAL aggregator: the live "since 2022" claim flows verifier →
+# walker stamp → aggregator threading → composition → editor, end to end.
+
+_SULYOK, _PRES = "Q28599854", "Q520765"
+
+
+class _HungaryKB:
+    """Sulyok currently holds President of Hungary (P39), started 2024-03 (safely
+    in the past). A 'since 2022' claim is value-correct but the start is too early
+    → present fact verifies, date flagged unconfirmed."""
+
+    def resolve_entity(self, reference, local_context):
+        qid = {"Tamás Sulyok": _SULYOK, "President of Hungary": _PRES}.get(reference)
+        return [ResolutionCandidate(kb_identifier=qid, score=0.95)] if qid else []
+
+    def lookup_statements(self, entity, predicate):
+        if (entity, predicate) == (_SULYOK, "P39"):
+            return [Statement(value=_PRES, value_type="entity",
+                              qualifiers={"P580": "2024-03-05T00:00:00Z"})]
+        return []
+
+    def subsumption(self, a, b, relation_type):
+        return SubsumptionResult(verdict="unrelated")
+
+    def verify_transitive_path(self, *a, **kw):
+        return TransitivePathResult(holds=False)
+
+    def is_location_property(self, prop):
+        return False
+
+    def geo_container_types(self):
+        return frozenset()
+
+    def geographic_disjoint(self, a, b):
+        return False
+
+    def fetch_types(self, qids):
+        return ({q: [] for q in qids}, None)
+
+    def fetch_label(self, qid):
+        return {_SULYOK: "Tamás Sulyok", _PRES: "President of Hungary"}.get(qid)
+
+
+class _HungaryTransport:
+    """Emits ONE holds_role claim carrying valid_from='2022' (the extractor's
+    folded-in too-early start), and a capturing editor that drops the date."""
+
+    EDIT = "Tamás Sulyok is the president of Hungary."
+
+    def __init__(self):
+        self.revise_calls = 0
+        self.revise_prompt = None
+
+    def chat(self, *a, purpose=None, **kw):
+        if purpose == "chat:revise":
+            self.revise_calls += 1
+            msgs = kw.get("messages") or (a[1] if len(a) > 1 else [])
+            self.revise_prompt = msgs[0].content if msgs else ""
+            return self.EDIT
+        return "Tamás Sulyok is the president of Hungary, in office since 2022."
+
+    def extract_with_tool(self, *a, tool=None, purpose=None, **kw):
+        if tool is None:
+            for arg in a:
+                if isinstance(arg, dict) and "name" in arg:
+                    tool = arg
+                    break
+        name = tool["name"] if tool else ""
+        if name == "extract_claims":
+            return {"claims": [{
+                "subject": "Tamás Sulyok", "predicate": "holds_role",
+                "object": "President of Hungary", "polarity": 1,
+                "source_text": "Tamás Sulyok is the president of Hungary",
+                "verb_tense": "present", "valid_from": "2022",
+            }]}
+        return {
+            "object_type": "entity", "user_subject_required": 0, "distinct_slots": None,
+            "routing_hint": "kb_resolvable", "kb_namespace": None, "kb_property": None,
+            "slot_to_qualifier": None, "single_valued": 0,
+            "verdict": "neither", "reason": "test",
+        }
+
+
+def test_since_2022_present_fact_edits_to_dropped_date_end_to_end():
+    """Full real path (real Extractor + walk + REAL Aggregator + composition): the
+    'since 2022' claim verifies its present fact with temporal_scope_unconfirmed,
+    so the turn INTERVENES (not DECLINE), the editor is told PRESENT-ONLY, and the
+    reply asserts the president with the unconfirmed date dropped."""
+    from aedos.deployment.chat_wrapper import InterventionType
+    db = open_memory_db()
+    load_seeds_into_connection(db)
+    transport = _HungaryTransport()
+    client = LLMClient(_transport=transport)
+    kb = _HungaryKB()
+    pt = PredicateTranslation(db=db, llm_client=client)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt,
+                          subsumption=sub, predicate_distribution=pd)
+    tier_u = TierU(db=db, predicate_translation=pt)
+    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier,
+                    python_verifier=PythonVerifier(), substrate=substrate, kb=None)
+    wrapper = ChatWrapper(extractor=Extractor(llm_client=client), walker=walker,
+                          aggregator=Aggregator(), llm_client=client, tier_u=tier_u, kb=kb)
+
+    resp = wrapper.respond("Who is the president of Hungary?", {"asserting_party_id": "session:hu2"})
+
+    # Aggregator threaded the flag onto the verified claim (honest observability).
+    hv = [c for c in resp.verification_result.claim_verdicts if c.claim.predicate == "holds_role"]
+    assert len(hv) == 1
+    assert base_verdict_of(hv[0].verdict) == "verified"
+    assert hv[0].temporal_scope_unconfirmed is True
+    # Not an over-refusal: INTERVENE, editor invoked, reply is the edit.
+    assert resp.intervention_plan.overall == InterventionType.INTERVENE
+    assert transport.revise_calls == 1
+    assert transport.revise_prompt is not None and "PRESENT-ONLY" in transport.revise_prompt
+    assert resp.final_message == _HungaryTransport.EDIT
+    db.close()
