@@ -32,6 +32,7 @@ from aedos.layer4_sources.kb_verifier import KBVerifier
 from aedos.layer4_sources.python_verifier import PythonVerifier
 from aedos.layer4_sources.tier_u import TierU
 from aedos.layer4_sources.walker import VerificationContext, Walker
+from aedos.layer5_result.aggregator import Aggregator
 from aedos.llm.client import LLMClient
 
 _REPO_ROOT = Path(__file__).parents[2]
@@ -144,6 +145,20 @@ def test_wrong_vowel_count_is_contradicted_via_python(tmp_path):
     r = _walker(db).walk(_claim("superstrawberry", "vowel_count", "9"), _ctx())
     assert r.verdict == "contradicted"
     assert r.trace.source_breakdown.get("python") == 1
+    db.close()
+
+
+def test_wrong_consonant_count_carries_python_correction_value(tmp_path):
+    db = _seeded_db(tmp_path)
+    claim = _claim("Exclamation markpoints", "consonant_count", "99")
+    r = _walker(db).walk(claim, _ctx())
+    assert r.verdict == "contradicted"
+    assert r.trace.source_breakdown.get("python") == 1
+
+    vr = Aggregator().aggregate([claim], [r])
+    cv = vr.claim_verdicts[0]
+    assert cv.contradicting_value == "13"
+    assert cv.contradicting_value_type == "quantity"
     db.close()
 
 
