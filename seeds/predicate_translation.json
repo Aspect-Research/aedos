@@ -958,5 +958,31 @@
     "single_valued": 0,
     "premise_properties": {"subject": "P571"},
     "reason": "v0.16.1 WS3b (premise -> Python channel). 'X founded before <year>' fetches the subject org's inception year (P571) as a premise and compares it to the literal year in the object slot; only the subject is fetched (the object is a literal). routing_hint=python. FAIL-CLOSED: a missing inception year abstains."
+  },
+  {
+    "aedos_predicate": "taller_than",
+    "object_type": "entity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "premise_properties": {"subject": "P2048", "object": "P2048"},
+    "reason": "v0.16.5 (premise -> Python channel). A height comparison over two structures: neither slot is a literal, so both heights (P2048) are fetched as premises and the comparison is computed (deterministic gt front-end; LLM codegen fallback). routing_hint=python. FAIL-CLOSED: a missing height for either entity abstains — and it never self-grounds on a promoted question (see excluded_tier_u_row_ids)."
+  },
+  {
+    "aedos_predicate": "shorter_than",
+    "object_type": "entity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "premise_properties": {"subject": "P2048", "object": "P2048"},
+    "reason": "v0.16.5 (premise -> Python channel). The inverse of taller_than: both heights (P2048) are fetched as premises and compared (deterministic lt front-end; LLM codegen fallback). routing_hint=python. FAIL-CLOSED: a missing height for either entity abstains."
   }
 ]

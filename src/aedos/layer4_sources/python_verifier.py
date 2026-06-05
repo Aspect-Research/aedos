@@ -186,6 +186,11 @@ def _strict_year(text: Optional[str]) -> Optional[int]:
 #   ge  : greater-or-equal          le  : less-or-equal
 #   eq  : equal
 _COMPARATORS: tuple[tuple[str, Optional[str]], ...] = (
+    # v0.16.5 physical-dimension comparisons (height). Over two FETCHED P2048
+    # premises: "X taller_than Y" -> X_height > Y_height (gt); shorter_than -> lt.
+    # Listed first; they do not overlap any token below.
+    ("taller_than", "gt"),
+    ("shorter_than", "lt"),
     ("greater_than_or_equal", "ge"),
     ("less_than_or_equal", "le"),
     ("at_least", "ge"),

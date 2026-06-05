@@ -154,6 +154,23 @@ class TestDeterministicFrontEnd:
         result = pv.verify(_claim("Newton", "born_before", "Einstein"), premises=premises)
         assert result.verdict == "verified"
 
+    def test_taller_than_compares_height_premises(self):
+        # v0.16.5: "X taller_than Y" over two fetched P2048 heights -> X > Y.
+        # Codegen RAISES, so a verdict proves the deterministic gt path computed it.
+        pv = _make_verifier(raises=True)
+        premises = {
+            "subject": {"value": "330", "kb_property": "P2048"},  # Eiffel
+            "object": {"value": "93", "kb_property": "P2048"},    # Statue
+        }
+        assert pv.verify(_claim("Eiffel", "taller_than", "Statue"),
+                         premises=premises).verdict == "verified"
+        assert pv.verify(_claim("Eiffel", "shorter_than", "Statue"),
+                         premises=premises).verdict == "contradicted"
+        # Reverse direction contradicts taller_than.
+        rev = {"subject": {"value": "93"}, "object": {"value": "330"}}
+        assert pv.verify(_claim("Statue", "taller_than", "Eiffel"),
+                         premises=rev).verdict == "contradicted"
+
     # ---- None -> fallback (must reach codegen) ----
 
     def test_non_numeric_operand_falls_through(self):

@@ -647,11 +647,14 @@ class ChatWrapper:
         # Skip the promotion path when `tier_u` was not wired (legacy
         # constructor shape) — the wrapper degrades cleanly to the
         # behavior of a wrapper built without Tier U.
+        #
+        # v0.16.5: the user-message premises are EXTRACTED + filtered here but
+        # PROMOTED (written to Tier U) only AFTER the draft walk below — so the
+        # draft cannot self-ground on the message it is answering. See the deferred
+        # `promote_assertions` call after the walk for the full rationale.
+        pending_user_premises: list = []
         if self._tier_u is not None and self._extractor is not None and user_message:
-            from ..layer4_sources.promotion import (
-                is_source_grounded,
-                promote_assertions,
-            )
+            from ..layer4_sources.promotion import is_source_grounded
             user_ctx = ExtractionContext(
                 asserting_party=asserting_party,
                 context_type="chat_user",
@@ -675,20 +678,16 @@ class ChatWrapper:
             # stipulations ("France's capital is Paris" — both entities present).
             # Checked against `user_message` (the real source the model cannot
             # pad), so it is robust to a fabricated claim-level source_text span.
-            user_claims = [
+            # Defer the WRITE: collect the grounded premises and promote them only
+            # AFTER the draft walk (below), so the draft never self-grounds on this
+            # turn's message. The promotion's pre_verdicts (cross-source
+            # contradictions vs. prior externally-verified rows) are not surfaced to
+            # this turn's intervention anyway — the audit log carries the trail — so
+            # deferring the write does not lose anything this turn.
+            pending_user_premises = [
                 c for c in user_claims
                 if c.abstention_reason is None and is_source_grounded(c, user_message)
             ]
-            if user_claims:
-                promote_assertions(user_claims, self._tier_u)
-                _emit("premises",
-                      f"recorded {len(user_claims)} premise(s) from your message as session context")
-                # The promotion's pre_verdicts (cross-source contradictions
-                # on the user's own assertions vs. prior externally-verified
-                # rows) are not surfaced to this turn's intervention — the
-                # user spoke, we recorded what they said. The audit-log
-                # entries (cross_source_contradiction) are the trail.
-                # A future deployment surface may consume them.
 
         # 1. Generate draft
         _emit("draft", "composing a draft reply")
@@ -783,6 +782,23 @@ class ChatWrapper:
             self._walker, central, verification_context,
             max_workers=verify_workers, on_result=_on_result,
         )
+
+        # v0.16.5: promote THIS turn's user-message premises NOW — AFTER the draft
+        # walk, not before it. Promotion accumulates user-asserted knowledge across
+        # a session (future turns), but the current draft must never ground against
+        # the very message it is answering. Before this, a yes/no QUESTION ("Is the
+        # Eiffel Tower taller than the Statue of Liberty?") promoted
+        # `taller_than(Eiffel, Statue)` (both entities are in the question, so the
+        # source-grounding gate admits it) and the draft's matching claim then
+        # self-grounded as `verified_given_assertion` ("according to your assertion")
+        # at depth 0 — crediting the user with an assertion they never made. Deferring
+        # the WRITE leaves the draft walk to see only PRIOR-turn standing premises.
+        if pending_user_premises:
+            from ..layer4_sources.promotion import promote_assertions
+            promote_assertions(pending_user_premises, self._tier_u)
+            _emit("premises",
+                  f"recorded {len(pending_user_premises)} premise(s) from your message "
+                  f"as session context")
 
         # 4. Aggregate (central claims only; peripheral pass through the draft)
         _emit("composing", "composing the final reply")
