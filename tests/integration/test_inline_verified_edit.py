@@ -245,3 +245,151 @@ class TestRevisionInstructions:
             assert _is_blank(blank) is True
         for real in ["Paris", "N/A", "I couldn't verify it.", "0"]:
             assert _is_blank(real) is False
+
+
+# ---------------------------------------------------------------------------
+# Temporal-duplicate reconciliation (the over-refusal fix)
+# ---------------------------------------------------------------------------
+
+class TestTemporalDuplicateReconciliation:
+    """The extractor emits temporal variants of one fact as separate claims with
+    the SAME triple (e.g. 'X is president' → verified, 'X took office in May 2022'
+    → holds_role(X, president) valid_from=2022-05 → no_grounding). Composing
+    per-claim handed the editor 'keep X' AND 'remove X' for one triple → it struck
+    the verified fact (over-refusal). Reconciliation collapses the triple with
+    verified-beats-abstention precedence."""
+
+    @staticmethod
+    def _cv(s, p, o, verdict, cval=None, ctype=None, pol=1):
+        c = Claim(claim_id="x", subject=s, predicate=p, object=o, polarity=pol,
+                  source_text="", asserting_party="u", triage_decision=TriageDecision.VERIFY)
+        return ClaimVerdict(claim_id=verdict + o, claim=c, verdict=verdict,
+                            contradicting_value=cval, contradicting_value_type=ctype)
+
+    def test_verified_wins_over_same_triple_abstention(self):
+        from aedos.deployment.chat_wrapper import _reconcile_for_composition
+        cvs = [
+            self._cv("Tamás Sulyok", "holds_role", "President of Hungary", "verified"),
+            self._cv("Tamás Sulyok", "holds_role", "President of Hungary", "no_grounding_found"),
+            self._cv("Tamás Sulyok", "role_started", "2022-05", "no_grounding_found"),
+        ]
+        rec = _reconcile_for_composition(cvs)
+        # The president triple collapses to ONE verified rep; the distinct
+        # role_started triple is preserved.
+        assert len(rec) == 2
+        pres = [cv for cv in rec if cv.claim.predicate == "holds_role"]
+        assert len(pres) == 1 and pres[0].verdict == "verified"
+        assert any(cv.claim.predicate == "role_started" for cv in rec)
+
+    def test_no_conflicting_instructions_for_temporal_duplicate(self):
+        from aedos.deployment.chat_wrapper import _reconcile_for_composition, _revision_instructions
+        cvs = [
+            self._cv("Tamás Sulyok", "holds_role", "President of Hungary", "verified"),
+            self._cv("Tamás Sulyok", "holds_role", "President of Hungary", "no_grounding_found"),
+            self._cv("Tamás Sulyok", "role_started", "2022-05", "no_grounding_found"),
+        ]
+        lines = _revision_instructions(_reconcile_for_composition(cvs))
+        assert any(l.startswith("VERIFIED") and "President of Hungary" in l for l in lines)
+        assert any(l.startswith("REMOVE") and "role_started" in l for l in lines)
+        # CRUCIAL: no instruction tells the editor to REMOVE the verified president.
+        assert not any(l.startswith("REMOVE") and "holds_role" in l for l in lines)
+
+    def test_contradicted_beats_verified_for_same_triple(self):
+        """Conservative precedence: a contradiction in ANY scope wins, so a triple
+        some scope refutes is never asserted plainly."""
+        from aedos.deployment.chat_wrapper import _reconcile_for_composition
+        cvs = [
+            self._cv("X", "holds_role", "Y", "verified"),
+            self._cv("X", "holds_role", "Y", "contradicted", cval="Z"),
+        ]
+        rec = _reconcile_for_composition(cvs)
+        assert len(rec) == 1 and rec[0].verdict == "contradicted"
+
+    def test_distinct_triples_all_preserved(self):
+        from aedos.deployment.chat_wrapper import _reconcile_for_composition
+        cvs = [
+            self._cv("A", "p", "B", "verified"),
+            self._cv("C", "p", "D", "no_grounding_found"),
+            self._cv("A", "p", "B", "verified"),  # exact dup of the first
+        ]
+        rec = _reconcile_for_composition(cvs)
+        assert len(rec) == 2  # the exact dup collapses; the distinct triple stays
+
+
+class _MockAggregator:
+    def __init__(self, vr):
+        self._vr = vr
+
+    def aggregate(self, claims, per_claim_results, text_input):
+        return self._vr
+
+
+class _CapturingTransport(_Transport):
+    """Captures the editor's user prompt so the test can assert respond() passed
+    RECONCILED instructions (no conflicting president REMOVE)."""
+
+    def __init__(self, draft, claims):
+        super().__init__(draft, claims, revise="EDITED: Tamás Sulyok is the president of Hungary.")
+        self.revise_prompt = None
+
+    def chat(self, *a, purpose=None, **kw):
+        if purpose == "chat:revise":
+            msgs = kw.get("messages") or (a[1] if len(a) > 1 else [])
+            self.revise_prompt = msgs[0].content if msgs else ""
+        return super().chat(*a, purpose=purpose, **kw)
+
+
+def test_respond_reconciles_temporal_duplicate_before_editing():
+    """End-to-end wiring: a VerificationResult with the verified + same-triple
+    abstained duplicate is reconciled before composition, so the editor is told to
+    KEEP the verified president (not remove it) and the reply is the edit, not a
+    refusal."""
+    from aedos.deployment.chat_wrapper import ChatWrapper
+    from aedos.layer5_result.aggregator import VerificationResult
+
+    db = open_memory_db()
+    load_seeds_into_connection(db)
+    transport = _CapturingTransport(
+        draft="Tamás Sulyok is the president of Hungary. He took office in May 2022.",
+        claims=[("Tamás Sulyok", "holds_role", "President of Hungary")],
+    )
+    client = LLMClient(_transport=transport)
+    kb = _KeyedKB()
+    pt = PredicateTranslation(db=db, llm_client=client)
+    resolver = EntityResolver(kb_protocol=kb, db=db)
+    sub = SubsumptionOracle(db=db, llm_client=client, kb_protocol=kb)
+    pd = PredicateDistributionOracle(db=db, llm_client=client)
+    substrate = Substrate(resolver=resolver, predicate_translation=pt, subsumption=sub,
+                          predicate_distribution=pd)
+    tier_u = TierU(db=db, predicate_translation=pt)
+    kb_verifier = KBVerifier(kb_protocol=kb, entity_resolver=resolver, predicate_translation=pt)
+    walker = Walker(tier_u=tier_u, kb_verifier=kb_verifier,
+                    python_verifier=PythonVerifier(), substrate=substrate, kb=None)
+
+    def _cv(o, predicate, verdict):
+        c = Claim(claim_id=verdict + predicate, subject="Tamás Sulyok", predicate=predicate,
+                  object=o, polarity=1, source_text="", asserting_party="u",
+                  triage_decision=TriageDecision.VERIFY)
+        return ClaimVerdict(claim_id=verdict + predicate, claim=c, verdict=verdict)
+    cvs = [
+        _cv("President of Hungary", "holds_role", "verified"),
+        _cv("President of Hungary", "holds_role", "no_grounding_found"),
+        _cv("2022-05", "role_started", "no_grounding_found"),
+    ]
+    vr = VerificationResult(
+        claims_extracted=[cv.claim for cv in cvs], per_claim_verdicts={},
+        per_claim_traces={}, aggregate_metadata={}, audit_log_entries=[],
+        text_input={"message": "Who is the president of Hungary?", "draft": transport.draft},
+        claim_verdicts=cvs,
+    )
+    wrapper = ChatWrapper(extractor=Extractor(llm_client=client), walker=walker,
+                          aggregator=_MockAggregator(vr), llm_client=client, tier_u=tier_u, kb=kb)
+
+    resp = wrapper.respond("Who is the president of Hungary?", {"asserting_party_id": "session:hu"})
+    # The editor was handed reconciled instructions: keep the president, remove the date.
+    assert transport.revise_prompt is not None
+    assert "VERIFIED" in transport.revise_prompt and "President of Hungary" in transport.revise_prompt
+    assert "REMOVE — \"Tamás Sulyok role_started" in transport.revise_prompt
+    assert "REMOVE — \"Tamás Sulyok holds_role" not in transport.revise_prompt   # NOT removed
+    # The reply is the edit (president kept), not an over-refusal.
+    assert resp.final_message == "EDITED: Tamás Sulyok is the president of Hungary."

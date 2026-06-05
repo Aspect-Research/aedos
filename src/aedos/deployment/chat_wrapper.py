@@ -146,6 +146,51 @@ def _format_abstention(cv: ClaimVerdict) -> str:
     )
 
 
+def _reconcile_for_composition(claim_verdicts):
+    """Collapse claims that share a (subject, predicate, object, polarity) triple
+    to ONE representative for USER-FACING COMPOSITION (the intervention plan + the
+    editor instructions). Raw per-claim observability is untouched — this only
+    governs what the final reply says.
+
+    Motivation: the extractor emits temporal variants of the same fact as separate
+    claims with the SAME triple — e.g. "X is president" (unscoped → verified) and
+    "X took office in May 2022" → holds_role(X, president) with valid_from=2022-05
+    (a date that doesn't ground → no_grounding). Composing per-claim then handed
+    the editor CONTRADICTORY instructions for one triple ("keep X" AND "remove X"),
+    so it struck the very fact it had verified — an over-refusal. Reconciling by
+    triple with a verdict precedence (a verified base fact is NOT struck by a
+    same-triple temporal abstention) fixes it; the distinct temporal detail (the
+    role_started/date claim) is a different triple and is preserved.
+
+    Precedence (most→least authoritative for what to tell the user about a triple):
+    contradicted > verified > verified_given_assertion > abstained. A contradiction
+    in ANY scope wins (conservative: never assert a triple some scope refutes); a
+    plain verification beats a mere absence-of-grounding."""
+    def _rank(cv) -> int:
+        base = base_verdict_of(cv.verdict)
+        if base == "contradicted":
+            return 3
+        if base == "verified":
+            return 2 if not is_given_assertion(cv.verdict) else 1
+        return 0  # no_grounding_found / abstained / not_checkworthy
+
+    groups: dict = {}
+    order: list = []
+    for cv in claim_verdicts:
+        key = (
+            (cv.claim.subject or "").strip().lower(),
+            cv.claim.predicate,
+            (cv.claim.object or "").strip().lower(),
+            cv.claim.polarity,
+        )
+        if key not in groups:
+            groups[key] = cv
+            order.append(key)
+        elif _rank(cv) > _rank(groups[key]):
+            groups[key] = cv
+    return [groups[k] for k in order]
+
+
 def select_interventions(
     claim_verdicts: list[ClaimVerdict], label_fetcher=None
 ) -> InterventionPlan:
@@ -708,7 +753,12 @@ class ChatWrapper:
         # ("the source indicates {label} instead"). getattr-guarded: a kb
         # without fetch_label (or no kb) yields None → raw value / generic form.
         label_fetcher = getattr(self._kb, "fetch_label", None)
-        plan = select_interventions(vr.claim_verdicts, label_fetcher=label_fetcher)
+        # Reconcile temporal/duplicate variants of the SAME triple to one
+        # representative for composition, so a verified base fact is never struck
+        # by a same-triple temporal abstention (the over-refusal bug). Raw
+        # vr.claim_verdicts (the persisted per-claim observability) is unchanged.
+        composed_verdicts = _reconcile_for_composition(vr.claim_verdicts)
+        plan = select_interventions(composed_verdicts, label_fetcher=label_fetcher)
 
         # 6. Final reply (v0.16.4): a constrained rewrite that folds the per-claim
         # verdicts INTO the message (correct wrong facts to the verified value,
@@ -735,7 +785,7 @@ class ChatWrapper:
             # broken or silently blanked.
             _emit("revising", "revising the reply to reflect verification")
             revised = revise_response(
-                user_message, draft, vr.claim_verdicts, self._llm, label_fetcher
+                user_message, draft, composed_verdicts, self._llm, label_fetcher
             )
             final = revised if (revised and not _is_blank(revised)) else build_response(draft, plan)
 
