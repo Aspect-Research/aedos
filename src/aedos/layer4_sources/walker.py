@@ -1446,6 +1446,13 @@ class Walker:
             wm.setdefault("functional_value_known", self._functional_value_known)
             wm.setdefault("value_known_entity", self._value_known_entity)
             wm.setdefault("functional_entity_predicate", self._functional_entity_predicate)
+            # v0.16.x observability: stamp the KB-verifier's per-property attempt
+            # list (bindings_tried = [{property, source, verdict, abstention_reason,
+            # found_values}]) so the durable trace can show WHAT was looked up even
+            # on an edgeless NO_MATCH abstain. setdefault → root claim's verify wins.
+            _bt = kb_result.trace.get("bindings_tried")
+            if _bt is not None:
+                wm.setdefault("kb_bindings_tried", _bt)
             # v0.16.3 Defect-2: stamp resolved QIDs by the claim's AEDOS slot, not
             # the KB statement position. The verifier's `_slot_trace` records
             # `aedos_subject_qid` / `aedos_object_qid` (and their cache rows) with

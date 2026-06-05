@@ -697,6 +697,12 @@ class ChatWrapper:
             messages=[ChatMessage(role="user", content=user_message)],
             purpose="chat",
         )
+        # Surface the composed draft to the streaming UI as soon as it exists.
+        # The earlier "draft" step fires before this LLM call (no text yet), so
+        # this second emit carries the draft body. Additive `draft` field —
+        # consumers that ignore it are unaffected; `_emit` swallows sink errors.
+        if draft:
+            _emit("draft", "draft composed", draft=draft)
 
         # 2. Extract claims from the draft (the LLM's response — the
         # text whose factual content we intervene on).

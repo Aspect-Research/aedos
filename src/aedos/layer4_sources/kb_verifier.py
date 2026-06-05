@@ -144,6 +144,7 @@ class KBVerifier:
                     "source": binding.source,
                     "verdict": outcome.verdict.value,
                     "abstention_reason": outcome.trace.get("abstention_reason"),
+                    "found_values": outcome.trace.get("found_values"),
                 }
             )
 
@@ -689,6 +690,15 @@ class KBVerifier:
             # born_in. (is_a enumeration is still gated on functional_value_known,
             # since a non-functional predicate may legitimately ground via is_a.)
             "value_known_entity": bool(statements) and meta.object_type == "entity",
+            # v0.16.x observability: the KB statement values examined for this
+            # property, so a NO_MATCH can show WHAT was found vs the claimed value
+            # ("the KB lists [v1, v2]; none matched"). Observability-only; the raw
+            # value (a QID or literal) coerced to str for JSON.
+            "found_values": [
+                str(getattr(s, "value", ""))
+                for s in (statements or [])
+                if getattr(s, "value", None) is not None
+            ],
         }
         # When the verdict is an abstention (NO_MATCH), record *why* —
         # debugging needs to tell a resolution failure apart from a genuine
