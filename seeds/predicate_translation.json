@@ -862,6 +862,78 @@
     "reason": "v0.16 T1. Role/position end date = P582 (end time) qualifier on the P39 (position held) statement. kb_interval resolver. Multi-valued."
   },
   {
+    "aedos_predicate": "vowel_count",
+    "object_type": "quantity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "reason": "v0.16.4. Count of vowels in the SUBJECT string vs the claimed object count. Deterministic string computation over the literal slots (no KB lookup, no premise) -> routing_hint=python; the python verifier's exact string-count front-end computes it (y-as-vowel ambiguity absorbed). single_valued=0 per the python-predicate convention (the flag is inert on the python path)."
+  },
+  {
+    "aedos_predicate": "consonant_count",
+    "object_type": "quantity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "reason": "v0.16.4. Count of consonants in the SUBJECT string vs the claimed count. Deterministic string computation over the literal slots -> routing_hint=python (exact front-end; y-as-consonant ambiguity absorbed)."
+  },
+  {
+    "aedos_predicate": "letter_count",
+    "object_type": "quantity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "reason": "v0.16.4. Count of alphabetic letters in the SUBJECT string vs the claimed count. Deterministic string computation over the literal slots -> routing_hint=python (exact front-end)."
+  },
+  {
+    "aedos_predicate": "character_count",
+    "object_type": "quantity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "reason": "v0.16.4. Count of characters (length) in the SUBJECT string vs the claimed count. Deterministic string computation over the literal slots -> routing_hint=python (exact front-end; with/without-spaces ambiguity absorbed)."
+  },
+  {
+    "aedos_predicate": "word_count",
+    "object_type": "quantity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "reason": "v0.16.4. Count of whitespace-separated words in the SUBJECT string vs the claimed count. Deterministic string computation over the literal slots -> routing_hint=python (exact front-end)."
+  },
+  {
+    "aedos_predicate": "syllable_count",
+    "object_type": "quantity",
+    "user_subject_required": 0,
+    "distinct_slots": null,
+    "routing_hint": "python",
+    "kb_namespace": null,
+    "kb_property": null,
+    "slot_to_qualifier": null,
+    "single_valued": 0,
+    "reason": "v0.16.4. Count of syllables in the SUBJECT word vs the claimed count. routing_hint=python, but syllable counting is HEURISTIC (dictionary-dependent), so there is no exact deterministic front-end for it; the LLM codegen path handles it and typically abstains (None) on uncertainty -> sound."
+  },
+  {
     "aedos_predicate": "born_before",
     "object_type": "entity",
     "user_subject_required": 0,

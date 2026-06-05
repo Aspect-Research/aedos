@@ -493,6 +493,25 @@ The base relation claim keeps the scope; the endpoint claim does not repeat it.
     - The subject is an ORG with an inception/dissolution date — prefer the \
 Rule 23 founded_in_year / dissolved_in_year date predicates (the date is the \
 fact about the org itself).
+
+26. STRING-PROPERTY COUNT — when a claim states (or answers) how many vowels, \
+consonants, letters, characters, words, or syllables are in a concrete WORD or \
+STRING, emit a count predicate '<measure>_count' with the BARE string being \
+measured as the subject and the BARE integer count in the object. The measure \
+predicates are exactly: vowel_count, consonant_count, letter_count, \
+character_count, word_count, syllable_count. These are deterministic \
+computations over the literal string, not facts to look up.
+    - 'The word "superstrawberry" has 4 vowels.' → \
+predicate='vowel_count', subject='superstrawberry', object='4'.
+    - '"cat" has 3 letters.' → predicate='letter_count', subject='cat', object='3'.
+    - 'banana has three syllables.' → predicate='syllable_count', \
+subject='banana', object='3'.
+    Make the subject the EXACT string being measured (preserve its spelling/case) \
+— 'superstrawberry', NOT 'the word superstrawberry' and NOT '"superstrawberry"'. \
+Put ONLY the integer in the object — '4', NOT '4 vowels'; write a spelled-out \
+count as digits ('three' → '3'). Apply ONLY to a concrete, spelled-out \
+word/string present in the text — NOT to a self-referential 'this prompt / this \
+sentence / your message' (whose text is not a literal in the slot).
 """
 
 
