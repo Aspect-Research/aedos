@@ -66,7 +66,9 @@ class _NoGenTransport:
 
 class _KeyedKB:
     def __init__(self, p580="2024-03-05T00:00:00Z", p582=None):
-        quals = {"P580": p580}
+        quals = {}
+        if p580:
+            quals["P580"] = p580
         if p582:
             quals["P582"] = p582
         self._stmt = Statement(value=_PRES, value_type="entity", qualifiers=quals)
@@ -150,6 +152,34 @@ def test_since_2023_also_too_early(tmp_path):
     r = _run(tmp_path, valid_from="2023")
     assert r.verdict == "verified"
     assert r.trace.walk_metadata.get("temporal_scope_unconfirmed") is True
+
+
+def test_since_date_with_no_start_qualifier_is_flagged(tmp_path):
+    """Issue-1 / live gap: the KB statement carries NO P580 start qualifier (common
+    in Wikidata). _scope_compatible treats a no-qualifier statement as always-valid,
+    so a "since <date>" claim VALUE-matches and verifies on the present fact — but
+    the KB never confirmed the start, so it must be flagged unconfirmed (not
+    presented as a plainly-verified date)."""
+    r = _run(tmp_path, valid_from="2022-05", p580=None)   # statement has no P580
+    assert r.verdict == "verified"
+    assert r.trace.walk_metadata.get("temporal_scope_unconfirmed") is True
+
+
+def test_unscoped_present_no_qualifier_is_plain_verified(tmp_path):
+    """The no-P580 flag is for explicit since-dates only: a bare present claim with
+    no valid_from still verifies plainly (nothing temporal to flag)."""
+    r = _run(tmp_path, valid_from=None, p580=None)
+    assert r.verdict == "verified"
+    assert r.trace.walk_metadata.get("temporal_scope_unconfirmed") is None
+
+
+def test_since_date_with_confirming_start_is_not_flagged(tmp_path):
+    """When the KB statement's start is at/before the claimed since-date, the date
+    IS confirmed (the value has been held since at least the claimed date) — verify
+    plainly, no flag."""
+    r = _run(tmp_path, valid_from="2024-06", p580="2024-03-05T00:00:00Z")
+    assert r.verdict == "verified"
+    assert r.trace.walk_metadata.get("temporal_scope_unconfirmed") is None
 
 
 # ---------------------------------------------------------------------------

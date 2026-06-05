@@ -246,6 +246,18 @@ class TestRevisionInstructions:
         for real in ["Paris", "N/A", "I couldn't verify it.", "0"]:
             assert _is_blank(real) is False
 
+    def test_editor_prompt_tells_it_to_drop_stale_knowledge_hedges(self):
+        """Issue 2: the editor must reconcile the draft's epistemic stance with the
+        verification — verification runs against CURRENT sources, so a VERIFIED fact
+        should not be hedged as possibly stale ("as of my last update", "check a
+        recent source"). The system prompt carries that instruction."""
+        from aedos.deployment.chat_wrapper import _REVISE_SYSTEM_PROMPT
+        p = _REVISE_SYSTEM_PROMPT.lower()
+        assert "current authoritative sources" in p
+        assert "stale" in p or "out of date" in p or "may have changed" in p
+        # It must scope the rule to VERIFIED facts, not blanket-drop all hedges.
+        assert "verified" in p
+
 
 # ---------------------------------------------------------------------------
 # Temporal-duplicate reconciliation (the over-refusal fix)

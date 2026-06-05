@@ -359,6 +359,15 @@ Rules — follow them exactly:
 6. If, after applying the instructions, there is essentially nothing verified
    left to say, reply with a SHORT honest sentence that you could not verify
    enough to answer — do not pad it.
+7. The verification was run against CURRENT authoritative sources, not your
+   training data. So do NOT hedge a VERIFIED fact as possibly stale: drop "as of
+   my last update / as of <date>" cutoff framing and "this may have changed / I'd
+   recommend checking a recent source to confirm" currency disclaimers about facts
+   the instructions VERIFIED — they contradict a fact just confirmed against live
+   data. State verified facts plainly and confidently. (Keep honest uncertainty
+   ONLY where an instruction marks a claim unconfirmed, caveated, or removed — e.g.
+   a present fact whose start date could not be confirmed: assert the fact, omit
+   the date, and do not add a stale-knowledge hedge in its place.)
 
 Output ONLY the revised reply text. No preamble, no notes, no headers.
 """

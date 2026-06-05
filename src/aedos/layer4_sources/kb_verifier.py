@@ -638,6 +638,24 @@ class KBVerifier:
                     }),
                 )
 
+        # v0.16.4 unconfirmed-start on the VERIFIED path. A present-reaching claim
+        # that asserts a START ("since <date>") but value-matched a statement with
+        # NO start qualifier (P580) is grounded for the PRESENT fact only — the KB
+        # holds the value but records no start, so it cannot confirm the claimed
+        # since-date. Flag it `temporal_scope_unconfirmed` (composition asserts the
+        # present fact and DROPS the date) instead of presenting an unverifiable
+        # date as verified. A statement that DOES carry a P580 reaching here passed
+        # _scope_compatible, i.e. its start is at/before the claimed date — which
+        # positively confirms "since <date>" — so it is NOT flagged. (The too-LATE
+        # P580 case is the NO_MATCH fallback above.)
+        if (
+            pos_verdict == KBVerdictType.VERIFIED
+            and not temporal_scope_unconfirmed
+            and statement is not None
+            and _present_start_unconfirmed(claim, statement, meta.object_type)
+        ):
+            temporal_scope_unconfirmed = True
+
         # Step 7: apply claim polarity. A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
         final_verdict = _apply_polarity(pos_verdict, claim.polarity)
@@ -1682,3 +1700,19 @@ def _norm_date_str(value) -> str:
     """Normalize an ISO-ish date for prefix comparison: drop a leading Wikidata
     '+' sign so "+2024-03-05T..." and a claim's "2024" share a prefix."""
     return str(value).lstrip("+")
+
+
+def _present_start_unconfirmed(claim, stmt, object_type: str) -> bool:
+    """True when a present-reaching ENTITY claim asserts a start ("since <date>")
+    that the matched VERIFIED statement does not confirm — because the statement
+    carries NO start qualifier (P580). The KB grounds the present fact but records
+    no start, so the claimed since-date is unverifiable. (A statement WITH a P580
+    that reached VERIFIED already passed the scope check — its start is at/before
+    the claim's, which confirms the since-date — so it is not flagged here.)"""
+    if (
+        object_type != "entity"
+        or not getattr(claim, "valid_from", None)
+        or not _claim_reaches_present(claim)
+    ):
+        return False
+    return not (stmt.qualifiers.get("P580") if stmt is not None else None)
