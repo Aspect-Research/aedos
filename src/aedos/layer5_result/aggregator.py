@@ -96,6 +96,11 @@ class ClaimVerdict:
     abstention_reason: Optional[str] = None
     contradicting_value: Optional[str] = None
     contradicting_value_type: Optional[str] = None
+    # v0.16.4: True when the verdict is `verified` for the PRESENT base fact but
+    # the claim's lower temporal bound (its "since <date>") could not be confirmed
+    # (it precedes the value's actual KB start). Composition asserts the present
+    # fact and drops/flags the date; it never asserts the claimed date.
+    temporal_scope_unconfirmed: bool = False
 
 
 @dataclass
@@ -242,6 +247,9 @@ class Aggregator:
             cv_value, cv_value_type = (None, None)
             if base_verdict_of(result.verdict) == "contradicted":
                 cv_value, cv_value_type = _extract_contradicting_value(result.trace)
+            ts_unconfirmed = bool(
+                getattr(result.trace, "walk_metadata", {}).get("temporal_scope_unconfirmed")
+            )
             claim_verdicts.append(ClaimVerdict(
                 claim_id=cid,
                 claim=claim,
@@ -249,6 +257,7 @@ class Aggregator:
                 abstention_reason=result.abstention_reason,
                 contradicting_value=cv_value,
                 contradicting_value_type=cv_value_type,
+                temporal_scope_unconfirmed=ts_unconfirmed,
             ))
 
             base_count_bucket = _VERDICT_TO_BASE_COUNT.get(result.verdict)

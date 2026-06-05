@@ -194,6 +194,17 @@ class TestVerbShapePromptRules:
         assert "status" in _SYSTEM_PROMPT
         assert "The project ended in 2024" in _SYSTEM_PROMPT
 
+    def test_prompt_carries_rule_26_string_property_count(self):
+        # v0.16.4: shape "X has N vowels/letters/…" as a <measure>_count predicate
+        # (bare word subject, bare integer object) so it routes to the python tier.
+        from aedos.layer1_extraction.extractor import _SYSTEM_PROMPT
+        assert "STRING-PROPERTY COUNT" in _SYSTEM_PROMPT
+        assert "vowel_count" in _SYSTEM_PROMPT
+        assert "superstrawberry" in _SYSTEM_PROMPT
+        # It must steer the subject to the bare word and the object to the integer.
+        assert "NOT 'the word superstrawberry'" in _SYSTEM_PROMPT
+        assert "NOT '4 vowels'" in _SYSTEM_PROMPT
+
     def test_prompt_carries_rule_8_event_non_trigger(self):
         # Rule 14 must not over-apply to historical events — its non-trigger
         # explicitly cedes 'the war ended in 1945' to Rule 8.

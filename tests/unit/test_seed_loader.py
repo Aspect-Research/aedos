@@ -277,11 +277,13 @@ class TestSeedAliasDeletions:
         # accidental re-add of an alias, a silent drop of a canonical row, or a
         # dropped endpoint row.
         # v0.16.3 added 2 pinned capital-direction rows (capital, capital_is) = 73.
-        assert len(seeds) == 73, (
-            f"expected 73 seed rows (62 after the 21 alias deletions + 6 T1 "
+        # v0.16.4 added 6 string-count python rows (vowel/consonant/letter/
+        # character/word/syllable _count) = 79.
+        assert len(seeds) == 79, (
+            f"expected 79 seed rows (62 after the 21 alias deletions + 6 T1 "
             f"interval-endpoint rows + 1 WS2 instance_of copula row + 2 WS3b "
-            f"premise->Python rows + 2 v0.16.3 capital-direction pins), "
-            f"got {len(seeds)}"
+            f"premise->Python rows + 2 v0.16.3 capital-direction pins + 6 v0.16.4 "
+            f"string-count python rows), got {len(seeds)}"
         )
 
     def test_every_kb_resolvable_row_synthesizes_a_binding(self, seeds):
@@ -445,7 +447,7 @@ class TestSeedT1IntervalEndpoints:
         db_file = tmp_path / "t1.db"
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
-        assert n == 73  # +2 v0.16.3 capital-direction pins (capital, capital_is)
+        assert n == 79  # +2 v0.16.3 capital pins, +6 v0.16.4 string-count python rows
         conn.row_factory = __import__("sqlite3").Row
         rows = conn.execute(
             "SELECT aedos_predicate, object_type, routing_hint, kb_property "
@@ -494,7 +496,7 @@ class TestSeedDateToTimeReconciliation:
         conn = open_db(str(db_file))
         n = load_seeds_into_connection(conn)
         conn.close()
-        assert n == 73  # +2 v0.16.3 capital-direction pins (capital, capital_is)
+        assert n == 79  # +2 v0.16.3 capital pins, +6 v0.16.4 string-count python rows
 
 
 class TestSeedTargetedCorrection:

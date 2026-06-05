@@ -513,6 +513,29 @@ class KBVerifier:
             statements, claim, expected_value, value_resolved, meta, binding, current_time
         )
 
+        # v0.16.4 present-fact-with-too-early-start fallback. _compare_positive
+        # abstains when a value-matching statement is scope-incompatible — including
+        # the case where the entity CURRENTLY holds the claimed value but the
+        # claim's lower temporal bound precedes the value's actual start ("X is
+        # president since 2022" vs a KB term that began in 2024). The COMPOUND claim
+        # (value + since-date) isn't grounded, but the PRESENT base fact IS. Surface
+        # VERIFIED for the present fact and flag `temporal_scope_unconfirmed`, so
+        # composition asserts the current fact and drops/flags the unconfirmed date
+        # rather than refusing an answerable question. SOUND: gated to
+        # PRESENT-reaching entity claims (a past-scoped "X was president in 1990" is
+        # never rescued by a current statement), and the composition never asserts
+        # the claimed too-early date.
+        temporal_scope_unconfirmed = False
+        if pos_verdict == KBVerdictType.NO_MATCH and value_resolved:
+            early = _present_value_match_too_early(
+                statements, claim, expected_value, current_time, meta.object_type
+            )
+            if early is not None:
+                pos_verdict = KBVerdictType.VERIFIED
+                statement = early
+                abstention_reason = None
+                temporal_scope_unconfirmed = True
+
         # RESOLVED-ENTITY NAME-MATCH (§3.2): a single_valued ENTITY contradiction
         # can be a famous-entity QID tangle, not a real conflict. The value surface
         # form ("Tokyo") resolved to a DIFFERENT same-named QID (e.g. the special-
@@ -615,6 +638,24 @@ class KBVerifier:
                     }),
                 )
 
+        # v0.16.4 unconfirmed-start on the VERIFIED path. A present-reaching claim
+        # that asserts a START ("since <date>") but value-matched a statement with
+        # NO start qualifier (P580) is grounded for the PRESENT fact only — the KB
+        # holds the value but records no start, so it cannot confirm the claimed
+        # since-date. Flag it `temporal_scope_unconfirmed` (composition asserts the
+        # present fact and DROPS the date) instead of presenting an unverifiable
+        # date as verified. A statement that DOES carry a P580 reaching here passed
+        # _scope_compatible, i.e. its start is at/before the claimed date — which
+        # positively confirms "since <date>" — so it is NOT flagged. (The too-LATE
+        # P580 case is the NO_MATCH fallback above.)
+        if (
+            pos_verdict == KBVerdictType.VERIFIED
+            and not temporal_scope_unconfirmed
+            and statement is not None
+            and _present_start_unconfirmed(claim, statement, meta.object_type)
+        ):
+            temporal_scope_unconfirmed = True
+
         # Step 7: apply claim polarity. A negated claim asserts the triple
         # is false, so a KB-supported triple makes it CONTRADICTED, and vice versa.
         final_verdict = _apply_polarity(pos_verdict, claim.polarity)
@@ -659,6 +700,12 @@ class KBVerifier:
             # (the KB value is the same-named entity the claim refers to), not a
             # direct Q-id equality in the value-match loop.
             trace["entity_name_match"] = True
+        if temporal_scope_unconfirmed:
+            # v0.16.4: the present base fact is verified, but the claim's lower
+            # temporal bound (its "since <date>") precedes the value's actual start
+            # and could NOT be confirmed. Composition asserts the present fact and
+            # drops/flags the date; it never asserts the claimed date.
+            trace["temporal_scope_unconfirmed"] = True
         _slot_trace(trace)
 
         return KBVerdict(
@@ -1601,3 +1648,71 @@ def _scope_compatible(
             return False
 
     return True
+
+
+def _present_value_match_too_early(
+    statements, claim, expected_value, current_time: str, object_type: str
+):
+    """v0.16.4: return the CURRENT value-matching statement when the entity holds
+    the claimed value NOW but the claim's lower temporal bound precedes the value's
+    actual start ("X is president since 2022" vs a KB term that began in 2024) —
+    i.e. the present base fact is grounded and only the claimed start date is not.
+    Returns None when it does not apply.
+
+    SOUND gating: only for PRESENT-reaching ENTITY claims carrying an explicit
+    valid_from. A past-scoped claim ("X was president in 1990") is NEVER rescued by
+    a current statement — its current value says nothing about a past window. The
+    matching statement must itself be CURRENT (not provably ended; start not in the
+    future), and the sole scope conflict must be the claimed start preceding the
+    actual start."""
+    if (
+        object_type != "entity"
+        or not getattr(claim, "valid_from", None)
+        or not _claim_reaches_present(claim)
+    ):
+        return None
+    for stmt in statements:
+        if not _value_matches(stmt.value, expected_value):
+            continue
+        stmt_from = stmt.qualifiers.get("P580")
+        stmt_until = stmt.qualifiers.get("P582")
+        if stmt_until and _end_provably_past(stmt_until, current_time):
+            continue  # the value is no longer held
+        if stmt_from and _start_provably_future(stmt_from, current_time):
+            continue  # the value has not begun
+        # Genuinely too early: the claimed lower bound precedes the actual start
+        # AND is not merely a coarser-grained CONTAINMENT of it. "since 2024" vs a
+        # start of "2024-03-05" is the SAME year (containment) — consistent, NOT
+        # too early — so it does NOT trip this fallback (it stays a plain NO_MATCH,
+        # unchanged). "since 2022" vs "2024-03-05" is an earlier year — genuinely
+        # too early. The prefix test handles ISO granularity (year / year-month /
+        # full) without date parsing.
+        if (
+            stmt_from
+            and claim.valid_from < stmt_from
+            and not _norm_date_str(stmt_from).startswith(_norm_date_str(claim.valid_from))
+        ):
+            return stmt  # currently held; only the claimed start is genuinely early
+    return None
+
+
+def _norm_date_str(value) -> str:
+    """Normalize an ISO-ish date for prefix comparison: drop a leading Wikidata
+    '+' sign so "+2024-03-05T..." and a claim's "2024" share a prefix."""
+    return str(value).lstrip("+")
+
+
+def _present_start_unconfirmed(claim, stmt, object_type: str) -> bool:
+    """True when a present-reaching ENTITY claim asserts a start ("since <date>")
+    that the matched VERIFIED statement does not confirm — because the statement
+    carries NO start qualifier (P580). The KB grounds the present fact but records
+    no start, so the claimed since-date is unverifiable. (A statement WITH a P580
+    that reached VERIFIED already passed the scope check — its start is at/before
+    the claim's, which confirms the since-date — so it is not flagged here.)"""
+    if (
+        object_type != "entity"
+        or not getattr(claim, "valid_from", None)
+        or not _claim_reaches_present(claim)
+    ):
+        return False
+    return not (stmt.qualifiers.get("P580") if stmt is not None else None)

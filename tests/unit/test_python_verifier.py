@@ -188,6 +188,67 @@ class TestDeterministicFrontEnd:
         assert result.verdict == "no_terminal_result"
 
 
+class TestDeterministicStringCount:
+    """v0.16.4: exact vowel/consonant/letter/character/word counting over the
+    subject literal — the deterministic counterpart of LLM codegen for
+    'the word superstrawberry has 4 vowels'. Codegen RAISES, so a verdict here
+    proves the count was computed deterministically, no LLM."""
+
+    def _pv(self) -> PythonVerifier:
+        return _make_verifier(raises=True)
+
+    def test_vowel_count_verified(self):
+        # superstrawberry: u,e,a,e = 4 vowels.
+        r = self._pv().verify(_claim("superstrawberry", "vowel_count", "4"))
+        assert r.verdict == "verified"
+        assert r.runtime_metadata.get("deterministic") is True
+
+    def test_vowel_count_contradicted(self):
+        r = self._pv().verify(_claim("superstrawberry", "vowel_count", "9"))
+        assert r.verdict == "contradicted"
+
+    def test_subject_wrapper_and_object_unit_are_normalized(self):
+        # The wrapped subject and a "N vowels" object still compute over the word.
+        r = self._pv().verify(_claim("the word 'superstrawberry'", "vowel_count", "4 vowels"))
+        assert r.verdict == "verified"
+
+    def test_letter_and_character_and_word_counts(self):
+        pv = self._pv()
+        assert pv.verify(_claim("cat", "letter_count", "3")).verdict == "verified"
+        assert pv.verify(_claim("cat", "letter_count", "5")).verdict == "contradicted"
+        assert pv.verify(_claim("hello", "character_count", "5")).verdict == "verified"
+        assert pv.verify(_claim("hello world", "word_count", "2")).verdict == "verified"
+
+    def test_y_ambiguity_absorbed_never_false_contradicts(self):
+        # 'rhythm' has 0 aeiou vowels and 1 if y counts. BOTH 0 and 1 verify;
+        # only a count matching NEITHER interpretation contradicts (soundness).
+        pv = self._pv()
+        assert pv.verify(_claim("rhythm", "vowel_count", "0")).verdict == "verified"
+        assert pv.verify(_claim("rhythm", "vowel_count", "1")).verdict == "verified"
+        assert pv.verify(_claim("rhythm", "vowel_count", "3")).verdict == "contradicted"
+
+    def test_polarity_inverts_count_verdict(self):
+        c = _claim("cat", "vowel_count", "1")  # cat has 1 vowel -> verified
+        assert self._pv().verify(c).verdict == "verified"
+        c.polarity = 0                          # "cat does NOT have 1 vowel" -> contradicted
+        assert self._pv().verify(c).verdict == "contradicted"
+
+    def test_syllable_count_is_not_deterministic_falls_through(self):
+        # Syllable counting is heuristic, so it is NOT in the exact front-end;
+        # it falls through to codegen (here the raising stub -> no_terminal_result).
+        r = self._pv().verify(_claim("banana", "syllable_count", "3"))
+        assert r.verdict == "no_terminal_result"
+
+    def test_non_count_predicate_with_letter_token_falls_through(self):
+        # 'wrote_letter' merely contains 'letter' — it is NOT a count predicate.
+        r = self._pv().verify(_claim("Lincoln", "wrote_letter", "3"))
+        assert r.verdict == "no_terminal_result"
+
+    def test_non_integer_object_falls_through(self):
+        r = self._pv().verify(_claim("cat", "letter_count", "three"))
+        assert r.verdict == "no_terminal_result"
+
+
 # ---------------------------------------------------------------------------
 # v0.16.1 WS6 — deterministic front-end SKIPS the LLM; fallback INVOKES it.
 #

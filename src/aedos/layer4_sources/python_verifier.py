@@ -296,6 +296,95 @@ def _arithmetic_verdict(subject: str, predicate: str, obj: str) -> Optional[str]
     return "verified" if holds else "contradicted"
 
 
+# Exact string-property counting (vowel / consonant / letter / character / word
+# count over the SUBJECT string) — the deterministic counterpart of LLM codegen
+# for "the word 'superstrawberry' has 4 vowels". The subject is the string, the
+# object the claimed count. §3.2: CONTRADICT only when the claimed count matches
+# NO reasonable interpretation — the y-as-vowel/consonant and spaces-in-character
+# ambiguities are absorbed into a SET of acceptable counts, so a claim correct
+# under any common reading is never false-contradicted.
+_VOWELS = frozenset("aeiou")
+_VOWELS_Y = frozenset("aeiouy")
+_COUNT_MEASURES = ("vowel", "consonant", "character", "letter", "word")
+_DESCRIPTOR_RE = re.compile(r"(?i)^the\s+(?:word|phrase|string|name|term|text)\s+(.*)$")
+
+
+def _count_measure_of(pred_lower: str) -> Optional[str]:
+    """The measure named by a COUNT predicate (`vowel_count`, `count_vowels`,
+    `number_of_letters`, …), or None when it is not a recognized string-count
+    predicate. Strict: an arbitrary predicate that merely contains 'letter' (e.g.
+    'wrote_letter') does NOT match. `syllable_count` is deliberately absent —
+    syllable counting is heuristic, not exact, so it is left to codegen (where it
+    typically abstains)."""
+    for m in _COUNT_MEASURES:
+        if pred_lower in (
+            f"{m}_count", f"count_{m}", f"count_{m}s",
+            f"number_of_{m}s", f"num_{m}s", f"{m}s_count",
+        ):
+            return m
+    return None
+
+
+def _count_target(subject: Optional[str]) -> str:
+    """The string to count over: strip a 'the word/phrase/string "X"' descriptor
+    and surrounding quotes, so a subject of `the word 'superstrawberry'` counts
+    over `superstrawberry`, not the wrapper. The extractor emits the bare word;
+    this is defense for the wrapped shape."""
+    s = (subject or "").strip()
+    m = _DESCRIPTOR_RE.match(s)
+    if m:
+        s = m.group(1).strip()
+    return s.strip("'\"“”‘’").strip()
+
+
+def _claimed_count(obj: Optional[str]) -> Optional[int]:
+    """The leading non-negative integer of the object slot ('4' or '4 vowels' →
+    4); None when the object has no leading integer ('four' → codegen)."""
+    m = re.match(r"\s*(\d+)", str(obj or ""))
+    return int(m.group(1)) if m else None
+
+
+def _acceptable_counts(measure: str, text: str) -> set:
+    """The set of exact counts that make the claim TRUE, spanning the benign
+    ambiguities (y as vowel/consonant; characters with/without spaces)."""
+    low = text.lower()
+    if measure == "vowel":
+        return {sum(c in _VOWELS for c in low), sum(c in _VOWELS_Y for c in low)}
+    if measure == "consonant":
+        alpha = [c for c in low if c.isalpha()]
+        return {
+            sum(c not in _VOWELS for c in alpha),    # y counts as a consonant
+            sum(c not in _VOWELS_Y for c in alpha),  # y counts as a vowel
+        }
+    if measure == "letter":
+        return {sum(1 for c in text if c.isalpha())}
+    if measure == "character":
+        return {len(text), sum(1 for c in text if not c.isspace())}
+    if measure == "word":
+        return {len(text.split())}
+    return set()
+
+
+def _string_count_verdict(claim: Claim) -> Optional[str]:
+    """'verified'/'contradicted' for a string-count claim, computed EXACTLY over
+    the subject literal; None (→ codegen) when it is not a count predicate, the
+    target is empty, or the object carries no integer count. Counting is always
+    over the claim's literal slots, never a fetched premise."""
+    measure = _count_measure_of((claim.predicate or "").lower())
+    if measure is None:
+        return None
+    target = _count_target(claim.subject)
+    if not target:
+        return None
+    claimed = _claimed_count(claim.object)
+    if claimed is None:
+        return None
+    acceptable = _acceptable_counts(measure, target)
+    if not acceptable:
+        return None
+    return "verified" if claimed in acceptable else "contradicted"
+
+
 def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Optional[str]:
     """Try a TOTAL, EXACT, deterministic parse+evaluation of `claim`. Returns
     'verified' / 'contradicted' on a fully-parsed exact computation, else None
@@ -358,6 +447,12 @@ def _deterministic_verdict(claim: Claim, premises: Optional[dict] = None) -> Opt
     # 3) Simple exact arithmetic ("N squared K", "N cubed K").
     if verdict is None:
         verdict = _arithmetic_verdict(subject, predicate, obj)
+
+    # 4) Exact string-property counting (vowel/consonant/letter/character/word
+    #    count over the SUBJECT literal vs the claimed object count). Uses the
+    #    claim's literal slots — counting is never over a fetched premise.
+    if verdict is None:
+        verdict = _string_count_verdict(claim)
 
     if verdict is None:
         return None

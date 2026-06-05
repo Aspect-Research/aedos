@@ -135,6 +135,18 @@ def _format_conditional(cv: ClaimVerdict) -> str:
     )
 
 
+def _format_temporal_caveat(cv: ClaimVerdict) -> str:
+    """v0.16.4: annotation for a present-tense fact that verified, but whose
+    claimed start date ("since <year>") could not be confirmed (it precedes the
+    value's actual KB start). The present fact is stated as confirmed; the date is
+    explicitly flagged as unconfirmed so it is never presented as verified."""
+    return (
+        f"Aedos verified this is currently true, but could NOT confirm the claimed "
+        f"start date / 'since' — that time bound is unconfirmed: "
+        f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}."
+    )
+
+
 def _format_abstention(cv: ClaimVerdict) -> str:
     """Generic abstention annotation for a claim without grounding. The
     `abstention_reason` (if present) gives operators a hook; the
@@ -144,6 +156,58 @@ def _format_abstention(cv: ClaimVerdict) -> str:
         f"Aedos could not verify: "
         f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}{polarity_marker}."
     )
+
+
+def _reconcile_for_composition(claim_verdicts):
+    """Collapse claims that share a (subject, predicate, object, polarity) triple
+    to ONE representative for USER-FACING COMPOSITION (the intervention plan + the
+    editor instructions). Raw per-claim observability is untouched — this only
+    governs what the final reply says.
+
+    Motivation: the extractor emits temporal variants of the same fact as separate
+    claims with the SAME triple — e.g. "X is president" (unscoped → verified) and
+    "X took office in May 2022" → holds_role(X, president) with valid_from=2022-05
+    (a date that doesn't ground → no_grounding). Composing per-claim then handed
+    the editor CONTRADICTORY instructions for one triple ("keep X" AND "remove X"),
+    so it struck the very fact it had verified — an over-refusal. Reconciling by
+    triple with a verdict precedence (a verified base fact is NOT struck by a
+    same-triple temporal abstention) fixes it; the distinct temporal detail (the
+    role_started/date claim) is a different triple and is preserved.
+
+    Precedence (most→least authoritative for what to tell the user about a triple):
+    contradicted > verified > verified_given_assertion > abstained. A contradiction
+    in ANY scope wins (conservative: never assert a triple some scope refutes); a
+    plain verification beats a mere absence-of-grounding."""
+    def _rank(cv) -> int:
+        base = base_verdict_of(cv.verdict)
+        if base == "contradicted":
+            return 3
+        if base == "verified":
+            # A CLEAN verified (independent, fully in-scope) outranks a caveated
+            # one — assertion-conditional or temporal-scope-unconfirmed — for the
+            # same triple, so the clean assertion represents the group. A caveated
+            # verified still outranks an abstention (it confirms the present fact).
+            caveated = is_given_assertion(cv.verdict) or getattr(
+                cv, "temporal_scope_unconfirmed", False
+            )
+            return 1 if caveated else 2
+        return 0  # no_grounding_found / abstained / not_checkworthy
+
+    groups: dict = {}
+    order: list = []
+    for cv in claim_verdicts:
+        key = (
+            (cv.claim.subject or "").strip().lower(),
+            cv.claim.predicate,
+            (cv.claim.object or "").strip().lower(),
+            cv.claim.polarity,
+        )
+        if key not in groups:
+            groups[key] = cv
+            order.append(key)
+        elif _rank(cv) > _rank(groups[key]):
+            groups[key] = cv
+    return [groups[k] for k in order]
 
 
 def select_interventions(
@@ -199,7 +263,17 @@ def select_interventions(
         conditional = is_given_assertion(cv.verdict)
         if base == "verified":
             verified_count += 1
-            if conditional:
+            if getattr(cv, "temporal_scope_unconfirmed", False):
+                # v0.16.4: present base fact verified, but the claimed start date
+                # ("since <year>") could not be confirmed. Surface as a caveat
+                # (observability + notes fallback) — verified, not a problem, but
+                # the date is flagged so it is never presented as confirmed.
+                actions.append(ClaimAction(
+                    claim_id=cv.claim_id,
+                    action_type=ClaimActionType.CONFIRM_CONDITIONAL,
+                    annotation=_format_temporal_caveat(cv),
+                ))
+            elif conditional:
                 # WS5: surface the conditional verification (observability) —
                 # not independently grounded, but not a problem either.
                 actions.append(ClaimAction(
@@ -252,6 +326,161 @@ def build_response(draft: str, plan: InterventionPlan) -> str:
     # INTERVENE
     notes = "\n".join(f"- {a.annotation}" for a in plan.per_claim_actions)
     return f"{draft}\n\n---\nAedos verification notes:\n{notes}"
+
+
+# --------------------------------------------------------------------------- #
+# v0.16.4: inline verified-edit. Instead of appending an "Aedos verification
+# notes" section, a final constrained-rewrite step folds the per-claim verdicts
+# INTO the reply once every claim is processed — correcting wrong facts to the
+# verified value, removing unverifiable claims, and caveating
+# assertion-conditional ones — producing one coherent message. The editor is
+# bounded (it may only apply the listed instructions and may NOT introduce new
+# facts); any failure falls back to the deterministic draft+notes composition,
+# and the structured observability still carries the true per-claim verdicts, so
+# the audit trail stays honest regardless of the prose.
+# --------------------------------------------------------------------------- #
+
+_REVISE_SYSTEM_PROMPT = """\
+You are the final editor of a fact-verified assistant. You receive a draft reply
+and a list of verification instructions from a system that has checked the
+draft's factual claims against authoritative sources. Produce ONE natural,
+coherent revised reply that applies EVERY instruction.
+
+Rules — follow them exactly:
+1. CORRECT: where an instruction gives a verified value, state THAT value; never
+   repeat the original wrong value.
+2. REMOVE: drop the named claim entirely — do not mention it, hedge it, or hint
+   at it.
+3. CAVEAT: keep the claim but add a brief, natural note that it rests on the
+   user's own assertion and is not independently confirmed.
+4. VERIFIED or unmentioned content: keep it; you may rephrase for flow.
+5. NEVER introduce any new fact, name, number, date, place, or claim that is not
+   in the draft or the instructions. Do not fill gaps from your own knowledge.
+6. If, after applying the instructions, there is essentially nothing verified
+   left to say, reply with a SHORT honest sentence that you could not verify
+   enough to answer — do not pad it.
+7. The verification was run against CURRENT authoritative sources, not your
+   training data. So do NOT hedge a VERIFIED fact as possibly stale: drop "as of
+   my last update / as of <date>" cutoff framing and "this may have changed / I'd
+   recommend checking a recent source to confirm" currency disclaimers about facts
+   the instructions VERIFIED — they contradict a fact just confirmed against live
+   data. State verified facts plainly and confidently. (Keep honest uncertainty
+   ONLY where an instruction marks a claim unconfirmed, caveated, or removed — e.g.
+   a present fact whose start date could not be confirmed: assert the fact, omit
+   the date, and do not add a stale-knowledge hedge in its place.)
+
+Output ONLY the revised reply text. No preamble, no notes, no headers.
+"""
+
+
+def _is_blank(text: Optional[str]) -> bool:
+    """True when editor output has no substantive content — empty, whitespace, or
+    only punctuation/markdown noise ('.', '- ', '—'). Treated as a
+    strip-to-nothing edit so a near-empty fragment can't slip through as the
+    answer (adversarial-review D2)."""
+    return not any(ch.isalnum() for ch in (text or ""))
+
+
+def _corrected_value_display(cv: ClaimVerdict, label_fetcher=None):
+    """The verified value to substitute for a CONTRADICTED claim, reverse-labeling
+    an entity Q-id to its name when possible (mirrors _format_correction). Returns
+    None when no distinct contradicting value was captured (§3.2-safe: we only
+    assert a correction when a concrete value was genuinely found)."""
+    value = cv.contradicting_value
+    if not value:
+        return None
+    display = value
+    if (
+        cv.contradicting_value_type == "entity"
+        and isinstance(value, str)
+        and value.startswith("Q")
+        and label_fetcher is not None
+    ):
+        try:
+            label = label_fetcher(value)
+        except Exception:
+            label = None
+        if label:
+            display = label
+    return display
+
+
+def _revision_instructions(claim_verdicts, label_fetcher=None) -> list[str]:
+    """Build the per-claim editor instructions from the verdicts (richer than the
+    annotation strings: carries the concrete corrected value). not_checkworthy
+    claims are quiet — no instruction, exactly as they are absent from the notes."""
+    lines: list[str] = []
+    for cv in claim_verdicts:
+        if cv.abstention_reason == AbstentionReason.NOT_CHECKWORTHY.value:
+            continue
+        triple = f"{cv.claim.subject} {cv.claim.predicate} {cv.claim.object}"
+        if cv.claim.polarity == 0:
+            triple += " (negated)"
+        base = base_verdict_of(cv.verdict)
+        conditional = is_given_assertion(cv.verdict)
+        if base == "verified":
+            if getattr(cv, "temporal_scope_unconfirmed", False):
+                lines.append(
+                    f"PRESENT-ONLY — \"{triple}\": this is CURRENTLY true and "
+                    f"confirmed — assert it, but do NOT state the claimed start "
+                    f"date or 'since <year>'; that time bound could not be confirmed."
+                )
+            elif conditional:
+                lines.append(
+                    f"CAVEAT — \"{triple}\": keep this, but note it rests on the "
+                    f"user's own assertion, not an independent source."
+                )
+            else:
+                lines.append(f"VERIFIED — \"{triple}\": confirmed; keep it.")
+        elif base == "contradicted":
+            corrected = _corrected_value_display(cv, label_fetcher)
+            if corrected:
+                lines.append(
+                    f"CORRECT — \"{triple}\": this is WRONG; the verified value is "
+                    f"\"{corrected}\". State the correct value, not the original."
+                )
+            else:
+                lines.append(
+                    f"REMOVE — \"{triple}\": contradicted by a source and cannot be "
+                    f"corrected; remove it."
+                )
+        else:  # no_grounding_found / abstained_given_assertion
+            lines.append(
+                f"REMOVE — \"{triple}\": could not be verified; remove it (do not "
+                f"assert it)."
+            )
+    return lines
+
+
+def revise_response(
+    user_message: str,
+    draft: str,
+    claim_verdicts,
+    llm,
+    label_fetcher=None,
+) -> Optional[str]:
+    """v0.16.4 constrained final edit. Returns the revised reply (stripped; may be
+    "" after a strip-to-nothing edit), or None on any LLM error so the caller can
+    fall back to the deterministic composition. Never raises."""
+    instructions = _revision_instructions(claim_verdicts, label_fetcher)
+    instr_block = (
+        "\n".join(f"- {line}" for line in instructions)
+        if instructions else "- (no changes required)"
+    )
+    user = (
+        f"User's question:\n{user_message}\n\n"
+        f"Draft reply:\n{draft}\n\n"
+        f"Verification instructions (apply EVERY one):\n{instr_block}"
+    )
+    try:
+        revised = llm.chat(
+            system=_REVISE_SYSTEM_PROMPT,
+            messages=[ChatMessage(role="user", content=user)],
+            purpose="chat:revise",
+        )
+    except Exception:
+        return None
+    return revised.strip() if isinstance(revised, str) else None
 
 
 def walk_result_observability(claim, walk_result) -> dict:
@@ -568,10 +797,41 @@ class ChatWrapper:
         # ("the source indicates {label} instead"). getattr-guarded: a kb
         # without fetch_label (or no kb) yields None → raw value / generic form.
         label_fetcher = getattr(self._kb, "fetch_label", None)
-        plan = select_interventions(vr.claim_verdicts, label_fetcher=label_fetcher)
+        # Reconcile temporal/duplicate variants of the SAME triple to one
+        # representative for composition, so a verified base fact is never struck
+        # by a same-triple temporal abstention (the over-refusal bug). Raw
+        # vr.claim_verdicts (the persisted per-claim observability) is unchanged.
+        composed_verdicts = _reconcile_for_composition(vr.claim_verdicts)
+        plan = select_interventions(composed_verdicts, label_fetcher=label_fetcher)
 
-        # 6. Build response (Format A: draft + per-claim notes)
-        final = build_response(draft, plan)
+        # 6. Final reply (v0.16.4): a constrained rewrite that folds the per-claim
+        # verdicts INTO the message (correct wrong facts to the verified value,
+        # remove unverifiable claims, caveat assertion-conditional ones), instead
+        # of appending an "Aedos verification notes" section. The structured
+        # observability / per_claim_actions below are UNCHANGED, so the audit trail
+        # carries every true per-claim verdict regardless of how the prose reads.
+        if plan.overall == InterventionType.PASS_THROUGH:
+            # Every claim verified — nothing to apply; the draft stands verbatim.
+            final = draft
+        elif plan.overall == InterventionType.DECLINE:
+            # §3.2: DECLINE means ZERO independently-verified claims. There is no
+            # verified spine to anchor a rewrite, and the edited prose is NOT
+            # re-verified — so a free LLM rewrite here could ship unverified text
+            # as the answer. The only sound coherent reply is an honest one. The
+            # per-claim detail (including any corrections) remains in the
+            # structured observability / per_claim_actions for the UI.
+            final = "I couldn't verify enough of this to answer confidently."
+        else:
+            # INTERVENE: a verified spine is present. Fold the verdicts in. The
+            # editor is FAIL-SAFE — error / non-str / blank output falls back to
+            # the deterministic draft+notes composition (`_is_blank` catches a
+            # near-empty strip-to-nothing, not just exact ""), so a reply is never
+            # broken or silently blanked.
+            _emit("revising", "revising the reply to reflect verification")
+            revised = revise_response(
+                user_message, draft, composed_verdicts, self._llm, label_fetcher
+            )
+            final = revised if (revised and not _is_blank(revised)) else build_response(draft, plan)
 
         verification_id = str(uuid.uuid4())
         self._verification_store[verification_id] = vr
