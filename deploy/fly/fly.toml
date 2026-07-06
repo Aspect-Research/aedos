@@ -16,6 +16,13 @@ primary_region = "iad"
 
 [env]
   AEDOS_DB_PATH = "/data/aedos.db"
+  # mistralai/devstral-small (the paper-validated python_verifier, 0 false-
+  # verifieds on the corpus) vanished from the OpenRouter catalog in July
+  # 2026. devstral-2512 is its successor but is NOT re-validated against
+  # python_verification_corpus — this override keeps the public demo working
+  # without changing the repo's validated default table. Re-validate and
+  # update DEFAULT_MODEL_BY_PURPOSE when there's time.
+  AEDOS_OVERRIDE_MODEL_BY_PURPOSE = '{"python_verifier": {"model": "mistralai/devstral-2512", "base_url": "https://openrouter.ai/api/v1", "api_key_env_var": "OPENROUTER_API_KEY"}}'
   AEDOS_REQUIRE_AUTH = "1"
   AEDOS_AUTH_MODE = "byok"
   AEDOS_ALLOWED_ORIGINS = "https://aspectresearch.org,http://localhost:3000"
