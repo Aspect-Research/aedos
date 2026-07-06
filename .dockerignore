@@ -1,0 +1,17 @@
+# Keep the build context small: the seeded runtime DB (hundreds of MB) and its
+# backups live on the deploy volume, never in the image.
+*.db
+*.db-*
+*.db.*
+.git
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+tests/
+docs/
+static/
+data/
+*.diff
+*.bundle
+.env

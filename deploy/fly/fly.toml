@@ -1,0 +1,48 @@
+# Fly.io config for the public BYOK Aedos API (demo backend for
+# aspectresearch.org). Deploy from the repo root:
+#   flyctl deploy -c deploy/fly/fly.toml
+#
+# No provider API keys are set on this app: AEDOS_AUTH_MODE=byok means
+# callers bring their own keys per request. AEDOS_DEPLOY_KEY may be set as a
+# secret for the ops back door (flyctl secrets set AEDOS_DEPLOY_KEY=...).
+
+app = "aedos-api"
+primary_region = "iad"
+
+# NOTE: dockerfile is resolved relative to THIS file; the build context is
+# the directory flyctl runs from (the repo root).
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  AEDOS_DB_PATH = "/data/aedos.db"
+  AEDOS_REQUIRE_AUTH = "1"
+  AEDOS_AUTH_MODE = "byok"
+  AEDOS_ALLOWED_ORIGINS = "https://aspectresearch.org,http://localhost:3000"
+  AEDOS_USER_AGENT = "AedosDemo/0.16 (https://aspectresearch.org; asa@aspectresearch.org)"
+  AEDOS_RATE_LIMIT_REQUESTS = "30"
+  AEDOS_IP_RATE_LIMIT_REQUESTS = "60"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Demo traffic is sparse: stop the machine when idle, wake on request.
+  # The volume (and thus the DB) persists across stops.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[mounts]
+  source = "aedos_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
