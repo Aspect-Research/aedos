@@ -23,6 +23,25 @@ class DeploySettings:
     # an unset key with auth on means the gate fails CLOSED (rejects all).
     deploy_key: str = ""
     require_auth: bool = True
+    # Authorization model when require_auth is on:
+    #   "key"  — the shared X-Aedos-Key gate (default; matches prior releases).
+    #   "byok" — a request is authorized by carrying the CALLER'S provider keys
+    #            (X-User-Anthropic-Key + X-User-OpenRouter-Key, or OpenRouter
+    #            only with X-Aedos-Free-Models: 1). The caller pays for LLM
+    #            calls; keys are scoped to the request and never persisted.
+    #            The shared deploy key still works as an ops back door when set.
+    auth_mode: str = "key"
+    # Free-models mode: the single OpenRouter model every purpose (incl. chat)
+    # is routed to when a BYOK caller sets X-Aedos-Free-Models: 1.
+    free_model: str = "deepseek/deepseek-chat-v3-0324:free"
+    # Public-perimeter caps (BYOK posture): largest accepted request body and
+    # longest accepted chat/verify text.
+    max_body_bytes: int = 32_768
+    max_message_chars: int = 8_000
+    # Per-client-IP sliding-window limit (same window as the per-session limit).
+    # Session ids are caller-chosen, so the per-session limit alone is
+    # bypassable by rotating ids; the IP limit is the backstop.
+    ip_rate_limit_requests: int = 60
     # Browser origins permitted by CORS (the Vite dev server, both hostnames, +
     # the deployed UI). localhost and 127.0.0.1 are distinct origins to a browser.
     allowed_origins: list[str] = field(
@@ -57,6 +76,15 @@ class DeploySettings:
         return cls(
             deploy_key=os.environ.get("AEDOS_DEPLOY_KEY", ""),
             require_auth=os.environ.get("AEDOS_REQUIRE_AUTH", "1") != "0",
+            auth_mode=os.environ.get("AEDOS_AUTH_MODE", "key"),
+            free_model=os.environ.get(
+                "AEDOS_FREE_MODEL", "deepseek/deepseek-chat-v3-0324:free"
+            ),
+            max_body_bytes=int(os.environ.get("AEDOS_MAX_BODY_BYTES", "32768")),
+            max_message_chars=int(os.environ.get("AEDOS_MAX_MESSAGE_CHARS", "8000")),
+            ip_rate_limit_requests=int(
+                os.environ.get("AEDOS_IP_RATE_LIMIT_REQUESTS", "60")
+            ),
             allowed_origins=_split_origins(
                 os.environ.get("AEDOS_ALLOWED_ORIGINS", "http://localhost:5173")
             ),

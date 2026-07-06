@@ -1,7 +1,11 @@
-"""FastAPI service for the Aedos v0.16.2 live deployment.
+"""FastAPI service for the Aedos live deployment.
 
-Endpoints (all except /health require the X-Aedos-Key access header; the session
-token travels in the X-Aedos-Session header — never the URL/body):
+Endpoints (all except /health require authorization; the session token travels
+in the X-Aedos-Session header — never the URL/body). Two auth modes
+(AEDOS_AUTH_MODE): "key" gates on the shared X-Aedos-Key secret; "byok" gates
+on the CALLER'S provider keys (X-User-Anthropic-Key + X-User-OpenRouter-Key,
+or OpenRouter alone with X-Aedos-Free-Models: 1), which fund the LLM calls and
+are scoped to the request — never logged or persisted:
   GET  /health                 liveness (unauthenticated)
   POST /chat                   conversational turn (buffered)
   POST /chat/stream            conversational turn, SSE: live steps then result
@@ -26,11 +30,11 @@ import dataclasses
 import hmac
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Callable, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -62,6 +66,46 @@ def _key_matches(provided: Optional[str], expected: str) -> bool:
         return False
     provided_b = (provided or "").encode("utf-8")
     return hmac.compare_digest(provided_b, expected_b)
+
+
+# --------------------------------------------------------------------------- #
+# BYOK: caller-supplied provider keys, scoped to one request. Never logged,
+# never persisted; threaded into the engine's LLM client for the call only.
+# --------------------------------------------------------------------------- #
+
+_MAX_USER_KEY_LEN = 512
+
+
+class InvalidUserKey(ValueError):
+    pass
+
+
+def _clean_user_key(raw: Optional[str], header: str) -> Optional[str]:
+    """Normalize a caller-supplied provider key header: strip whitespace,
+    reject absurd lengths and non-printable content. Returns None for
+    absent/empty. The key VALUE never appears in the error."""
+    if raw is None:
+        return None
+    key = raw.strip()
+    if not key:
+        return None
+    if len(key) > _MAX_USER_KEY_LEN or not key.isprintable():
+        raise InvalidUserKey(f"malformed {header} header")
+    return key
+
+
+@dataclasses.dataclass(frozen=True)
+class UserKeys:
+    anthropic: Optional[str] = None
+    openrouter: Optional[str] = None
+    free_models: bool = False
+
+    def authorizes(self) -> bool:
+        """BYOK authorization: the default routing needs BOTH providers; free
+        mode reroutes every purpose to OpenRouter so that key alone suffices."""
+        if not self.openrouter:
+            return False
+        return bool(self.anthropic) or self.free_models
 
 
 # --------------------------------------------------------------------------- #
@@ -176,18 +220,41 @@ def create_app(
     app.state.limiter = SlidingWindowLimiter(
         settings.rate_limit_requests, settings.rate_limit_window_seconds
     )
+    # Per-client-IP backstop: session ids are caller-chosen, so the per-session
+    # limiter alone is bypassable by rotating ids.
+    app.state.ip_limiter = SlidingWindowLimiter(
+        settings.ip_rate_limit_requests, settings.rate_limit_window_seconds
+    )
     # Serializes engine work across requests: the engine assumes a single-threaded
     # pipeline (one shared SQLite connection, per-instance rate limiters), so even
     # though work is offloaded to a threadpool (to free the event loop), only one
     # engine call runs at a time. Concurrent requests queue here, loop stays free.
     app.state.engine_lock = asyncio.Lock()
 
+    # Registered BEFORE CORSMiddleware so CORS stays outermost — a 413 must
+    # still carry CORS headers or the browser reports it as a CORS failure.
+    @app.middleware("http")
+    async def _body_cap(request: Request, call_next):
+        length = request.headers.get("content-length")
+        if length and length.isdigit() and int(length) > settings.max_body_bytes:
+            return JSONResponse(
+                {"detail": "request body too large"}, status_code=413
+            )
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Aedos-Key", "X-Aedos-Session"],
+        allow_headers=[
+            "Content-Type",
+            "X-Aedos-Key",
+            "X-Aedos-Session",
+            "X-User-Anthropic-Key",
+            "X-User-OpenRouter-Key",
+            "X-Aedos-Free-Models",
+        ],
     )
 
     # ----- helpers (closures over app.state) ----------------------------- #
@@ -241,7 +308,15 @@ def create_app(
 
         return VerificationStore(_ensure_pipeline().db)
 
-    def _rate_limit(party: str) -> None:
+    def _client_ip(http_request: Request) -> str:
+        # Fly terminates TLS and forwards the true client address here; the
+        # direct peer address is the proxy's. Fall back for local/dev runs.
+        return (
+            http_request.headers.get("fly-client-ip")
+            or (http_request.client.host if http_request.client else "unknown")
+        )
+
+    def _rate_limit(party: str, http_request: Optional[Request] = None) -> None:
         if not app.state.limiter.allow(party):
             retry = app.state.limiter.retry_after_seconds(party)
             raise HTTPException(
@@ -249,6 +324,47 @@ def create_app(
                 detail="rate limit exceeded; slow down",
                 headers={"Retry-After": str(int(retry) + 1)},
             )
+        if http_request is not None:
+            ip = _client_ip(http_request)
+            if not app.state.ip_limiter.allow(ip):
+                retry = app.state.ip_limiter.retry_after_seconds(ip)
+                raise HTTPException(
+                    status_code=429,
+                    detail="rate limit exceeded; slow down",
+                    headers={"Retry-After": str(int(retry) + 1)},
+                )
+
+    def _check_text_len(text: str) -> None:
+        if len(text) > settings.max_message_chars:
+            raise HTTPException(
+                status_code=413,
+                detail=f"text too long (max {settings.max_message_chars} characters)",
+            )
+
+    def _llm_overrides(keys: UserKeys) -> Optional[dict]:
+        """kwargs for `LLMClient.request_overrides(...)` when the caller
+        supplied their own provider keys; None → operator-key mode."""
+        if not (keys.anthropic or keys.openrouter):
+            return None
+        kw: dict = {
+            "anthropic_api_key": keys.anthropic,
+            "api_keys_by_env_var": (
+                {"OPENROUTER_API_KEY": keys.openrouter} if keys.openrouter else {}
+            ),
+        }
+        if keys.free_models and keys.openrouter:
+            kw["route_all_to"] = {
+                "model": settings.free_model,
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key_env_var": "OPENROUTER_API_KEY",
+                "extra_body": None,
+            }
+        return kw
+
+    def _override_ctx(overrides: Optional[dict]):
+        if overrides is None:
+            return nullcontext()
+        return _ensure_pipeline().llm_client.request_overrides(**overrides)
 
     def _track_verification(verification_id: str, party: str) -> None:
         store = app.state._verification_party
@@ -258,11 +374,50 @@ def create_app(
 
     # ----- dependencies -------------------------------------------------- #
 
+    async def user_keys(
+        x_user_anthropic_key: Optional[str] = Header(
+            default=None, alias="X-User-Anthropic-Key"
+        ),
+        x_user_openrouter_key: Optional[str] = Header(
+            default=None, alias="X-User-OpenRouter-Key"
+        ),
+        x_aedos_free_models: Optional[str] = Header(
+            default=None, alias="X-Aedos-Free-Models"
+        ),
+    ) -> UserKeys:
+        try:
+            return UserKeys(
+                anthropic=_clean_user_key(x_user_anthropic_key, "X-User-Anthropic-Key"),
+                openrouter=_clean_user_key(
+                    x_user_openrouter_key, "X-User-OpenRouter-Key"
+                ),
+                free_models=(x_aedos_free_models or "").strip() == "1",
+            )
+        except InvalidUserKey as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     async def require_access(
         x_aedos_key: Optional[str] = Header(default=None, alias="X-Aedos-Key"),
+        keys: UserKeys = Depends(user_keys),
     ) -> None:
         if not settings.require_auth:
             return
+        if settings.auth_mode == "byok":
+            # A request is authorized by carrying the caller's own provider
+            # keys (they fund the LLM calls). The shared deploy key remains an
+            # ops back door when configured.
+            if keys.authorizes():
+                return
+            if _key_matches(x_aedos_key, settings.deploy_key):
+                return
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "provide your provider keys: X-User-OpenRouter-Key plus "
+                    "X-User-Anthropic-Key, or the OpenRouter key alone with "
+                    "X-Aedos-Free-Models: 1"
+                ),
+            )
         if not _key_matches(x_aedos_key, settings.deploy_key):
             raise HTTPException(status_code=401, detail="missing or invalid access key")
 
@@ -309,7 +464,18 @@ def create_app(
             "selection": getattr(response, "selection_summary", ""),
         }
 
-    def _run_verify(party: str, text: str, emit: Callable[[dict], None]) -> dict:
+    def _run_verify(
+        party: str,
+        text: str,
+        emit: Callable[[dict], None],
+        overrides: Optional[dict] = None,
+    ) -> dict:
+        """BYOK-aware wrapper: installs the caller's request-scoped provider
+        keys (if any) around the verify body. Runs under the engine lock."""
+        with _override_ctx(overrides):
+            return _run_verify_inner(party, text, emit)
+
+    def _run_verify_inner(party: str, text: str, emit: Callable[[dict], None]) -> dict:
         """The shared /verify body: extract -> walk claims CONCURRENTLY ->
         aggregate, emitting per-step progress (a `verdict` event with the full
         reasoning trace as each claim completes). `emit` is a no-op for the
@@ -414,18 +580,26 @@ def create_app(
         return {"status": "ok", "version": __version__}
 
     @app.post("/chat", dependencies=auth)
-    async def chat(request: ChatRequest, party: str = Depends(session_party)) -> JSONResponse:
-        _rate_limit(party)
+    async def chat(
+        request: ChatRequest,
+        http_request: Request,
+        party: str = Depends(session_party),
+        keys: UserKeys = Depends(user_keys),
+    ) -> JSONResponse:
+        _check_text_len(request.message)
+        _rate_limit(party, http_request)
+        overrides = _llm_overrides(keys)
 
         def work() -> dict:
             wrapper = _ensure_chat_wrapper()
-            response = wrapper.respond(
-                request.message,
-                conversation_context={"asserting_party_id": party},
-                verify_workers=settings.verify_workers,
-                select_central=settings.select_central_claims,
-                select_min_claims=settings.select_min_claims,
-            )
+            with _override_ctx(overrides):
+                response = wrapper.respond(
+                    request.message,
+                    conversation_context={"asserting_party_id": party},
+                    verify_workers=settings.verify_workers,
+                    select_central=settings.select_central_claims,
+                    select_min_claims=settings.select_min_claims,
+                )
             _track_verification(response.verification_id, party)
             return _chat_body(response)
 
@@ -438,40 +612,65 @@ def create_app(
         return JSONResponse(body)
 
     @app.post("/chat/stream", dependencies=auth)
-    async def chat_stream(request: ChatRequest, party: str = Depends(session_party)):
-        _rate_limit(party)
+    async def chat_stream(
+        request: ChatRequest,
+        http_request: Request,
+        party: str = Depends(session_party),
+        keys: UserKeys = Depends(user_keys),
+    ):
+        _check_text_len(request.message)
+        _rate_limit(party, http_request)
+        overrides = _llm_overrides(keys)
 
         def work(emit: Callable[[dict], None]) -> dict:
             wrapper = _ensure_chat_wrapper()
-            response = wrapper.respond(
-                request.message,
-                conversation_context={"asserting_party_id": party},
-                progress=emit,
-                verify_workers=settings.verify_workers,
-                select_central=settings.select_central_claims,
-                select_min_claims=settings.select_min_claims,
-            )
+            with _override_ctx(overrides):
+                response = wrapper.respond(
+                    request.message,
+                    conversation_context={"asserting_party_id": party},
+                    progress=emit,
+                    verify_workers=settings.verify_workers,
+                    select_central=settings.select_central_claims,
+                    select_min_claims=settings.select_min_claims,
+                )
             _track_verification(response.verification_id, party)
             return _chat_body(response)
 
         return await _sse_response(work, lock=app.state.engine_lock)
 
     @app.post("/verify", dependencies=auth)
-    async def verify(request: VerifyRequest, party: str = Depends(session_party)) -> JSONResponse:
-        _rate_limit(party)
+    async def verify(
+        request: VerifyRequest,
+        http_request: Request,
+        party: str = Depends(session_party),
+        keys: UserKeys = Depends(user_keys),
+    ) -> JSONResponse:
+        _check_text_len(request.text)
+        _rate_limit(party, http_request)
+        overrides = _llm_overrides(keys)
         try:
             async with app.state.engine_lock:
-                body = await run_in_threadpool(_run_verify, party, request.text, lambda e: None)
+                body = await run_in_threadpool(
+                    _run_verify, party, request.text, lambda e: None, overrides
+                )
         except Exception as exc:
             _log.exception("verify failed")
             raise HTTPException(status_code=500, detail=f"verification failed: {type(exc).__name__}")
         return JSONResponse(body)
 
     @app.post("/verify/stream", dependencies=auth)
-    async def verify_stream(request: VerifyRequest, party: str = Depends(session_party)):
-        _rate_limit(party)
+    async def verify_stream(
+        request: VerifyRequest,
+        http_request: Request,
+        party: str = Depends(session_party),
+        keys: UserKeys = Depends(user_keys),
+    ):
+        _check_text_len(request.text)
+        _rate_limit(party, http_request)
+        overrides = _llm_overrides(keys)
         return await _sse_response(
-            lambda emit: _run_verify(party, request.text, emit), lock=app.state.engine_lock
+            lambda emit: _run_verify(party, request.text, emit, overrides),
+            lock=app.state.engine_lock,
         )
 
     @app.post("/session/reset", dependencies=auth)

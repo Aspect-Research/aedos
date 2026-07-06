@@ -14,8 +14,9 @@ import json
 import logging
 import os
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 import anthropic
 
@@ -212,6 +213,13 @@ class LLMClient:
         self._constructor_openai_key = openai_api_key
         # OpenAI-compatible clients, cached per base_url (OpenAI, OpenRouter, …).
         self._openai_clients: dict[str, Any] = {}
+        # Request-scoped BYOK overrides (see `request_overrides`). Plain instance
+        # state: the deploy backend serializes engine calls behind a lock, so at
+        # most one request's overrides are installed at a time. The walker's
+        # intra-turn worker threads only READ these fields.
+        self._req_anthropic_key: Optional[str] = None
+        self._req_keys_by_env: dict[str, str] = {}
+        self._req_route_all: Optional[dict] = None
 
         if _transport is not None:
             self._anthropic_client: Any = None
@@ -224,21 +232,86 @@ class LLMClient:
             self._anthropic_client = None
 
     # ------------------------------------------------------------------
+    # Request-scoped BYOK overrides
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def request_overrides(
+        self,
+        *,
+        anthropic_api_key: Optional[str] = None,
+        api_keys_by_env_var: Optional[dict[str, str]] = None,
+        route_all_to: Optional[dict] = None,
+    ) -> Iterator[None]:
+        """Scope caller-supplied (BYOK) credentials — and optionally a routing
+        override — to the enclosed engine call.
+
+        - `anthropic_api_key`: used for every native-Anthropic call instead of
+          the process client. The per-request SDK client is constructed fresh
+          and never cached.
+        - `api_keys_by_env_var`: keys for OpenAI-compatible endpoints, keyed by
+          the env-var name a purpose's config points at (e.g.
+          ``{"OPENROUTER_API_KEY": "sk-or-..."}``). Bypasses the process-wide
+          client cache.
+        - `route_all_to`: a full ``{model, base_url, api_key_env_var,
+          extra_body}`` config applied to EVERY purpose *including chat*
+          (unlike `AEDOS_OVERRIDE_MODEL_BY_PURPOSE`, whose ``"*"`` spares the
+          chat slot). This is the deploy backend's free-models mode.
+
+        Keys live in instance fields for the duration of the block only and
+        are never logged or persisted. Callers must hold the deploy engine
+        lock (engine calls are serialized), so overrides cannot interleave.
+        """
+        self._req_anthropic_key = anthropic_api_key
+        self._req_keys_by_env = dict(api_keys_by_env_var or {})
+        self._req_route_all = dict(route_all_to) if route_all_to else None
+        try:
+            yield
+        finally:
+            self._req_anthropic_key = None
+            self._req_keys_by_env = {}
+            self._req_route_all = None
+
+    def _anthropic(self) -> Any:
+        """The Anthropic client for the current call: a fresh per-request
+        client when a BYOK key is installed, else the process client."""
+        if self._req_anthropic_key:
+            return anthropic.Anthropic(api_key=self._req_anthropic_key)
+        return self._anthropic_client
+
+    # ------------------------------------------------------------------
     # Routing
     # ------------------------------------------------------------------
 
     def _cfg(self, purpose: Optional[str]) -> dict:
-        """Routing config for a call. The chat slot (and an untagged call)
-        follows `self.model` (constructor / `AEDOS_CHAT_MODEL` / default), with
-        the provider inferred; every other purpose resolves via the per-purpose
-        table."""
+        """Routing config for a call. A request-scoped `route_all_to` override
+        wins for every purpose (incl. chat). Otherwise the chat slot (and an
+        untagged call) follows `self.model` (constructor / `AEDOS_CHAT_MODEL` /
+        default), with the provider inferred; every other purpose resolves via
+        the per-purpose table."""
+        if self._req_route_all is not None:
+            return dict(self._req_route_all)
         if purpose in (None, "chat"):
             return _config_for_model(self.model)
         return _resolve_purpose_config(purpose, self.model)
 
     def _openai_client(self, base_url: Optional[str], api_key_env_var: str) -> Any:
         """Return (cached) an OpenAI-compatible client for the given endpoint.
-        Raises a clear error if the endpoint's API key env var is unset."""
+        Raises a clear error if the endpoint's API key env var is unset.
+
+        A request-scoped BYOK key for this endpoint's env var bypasses the
+        cache entirely: the client is built fresh for this call and discarded,
+        so a caller's key never outlives their request."""
+        req_key = self._req_keys_by_env.get(api_key_env_var)
+        if req_key:
+            try:
+                import openai as _openai
+            except ImportError:
+                raise RuntimeError(
+                    "openai package not installed; cannot route to an "
+                    "OpenAI-compatible endpoint"
+                )
+            return _openai.OpenAI(api_key=req_key, base_url=base_url)
         cache_key = base_url or "openai-default"
         client = self._openai_clients.get(cache_key)
         if client is None:
@@ -302,7 +375,8 @@ class LLMClient:
     ) -> str:
         if self._transport is not None:
             return self._transport.chat(system, list(messages), model=model, purpose=purpose)
-        if self._anthropic_client is None:
+        client = self._anthropic()
+        if client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         t0 = time.monotonic()
         # Anthropic rejects cache_control on empty text blocks (req fails with
@@ -317,7 +391,7 @@ class LLMClient:
             kwargs["system"] = [
                 {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
             ]
-        response = self._anthropic_client.messages.create(**kwargs)
+        response = client.messages.create(**kwargs)
         self._record(purpose, model, response, (time.monotonic() - t0) * 1000)
         return _first_text(response)
 
@@ -396,11 +470,12 @@ class LLMClient:
             text = self._openai_chat(system, messages, cfg, max_tokens, purpose)
             on_token(text)
             return text
-        if self._anthropic_client is None:
+        client = self._anthropic()
+        if client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         t0 = time.monotonic()
         parts: list[str] = []
-        with self._anthropic_client.messages.stream(
+        with client.messages.stream(
             model=cfg["model"],
             max_tokens=max_tokens,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
@@ -475,10 +550,11 @@ class LLMClient:
             except Exception as exc:
                 _attach_raw_response(exc, resp)
                 raise
-        if self._anthropic_client is None:
+        client = self._anthropic()
+        if client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         t0 = time.monotonic()
-        response = self._anthropic_client.messages.create(
+        response = client.messages.create(
             model=cfg["model"],
             max_tokens=max_tokens,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
@@ -516,7 +592,8 @@ class LLMClient:
             return self._openai_chat(
                 system, [ChatMessage(role="user", content=user_message)], cfg, max_tokens, purpose,
             )
-        if self._anthropic_client is None:
+        client = self._anthropic()
+        if client is None:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
         kwargs: dict[str, Any] = {
             "model": cfg["model"],
@@ -533,6 +610,6 @@ class LLMClient:
                     temperature, cfg["model"],
                 )
         t0 = time.monotonic()
-        response = self._anthropic_client.messages.create(**kwargs)
+        response = client.messages.create(**kwargs)
         self._record(purpose, cfg["model"], response, (time.monotonic() - t0) * 1000)
         return _first_text(response)
