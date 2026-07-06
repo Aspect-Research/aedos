@@ -32,8 +32,11 @@ class DeploySettings:
     #            The shared deploy key still works as an ops back door when set.
     auth_mode: str = "key"
     # Free-models mode: the single OpenRouter model every purpose (incl. chat)
-    # is routed to when a BYOK caller sets X-Aedos-Free-Models: 1.
-    free_model: str = "deepseek/deepseek-chat-v3-0324:free"
+    # is routed to when a BYOK caller sets X-Aedos-Free-Models: 1. The free
+    # variant of the same Qwen model the paid substrate purposes use — the
+    # most faithful free routing available. Free slugs churn: verify against
+    # https://openrouter.ai/api/v1/models when this misbehaves.
+    free_model: str = "qwen/qwen3-next-80b-a3b-instruct:free"
     # Public-perimeter caps (BYOK posture): largest accepted request body and
     # longest accepted chat/verify text.
     max_body_bytes: int = 32_768
@@ -78,7 +81,7 @@ class DeploySettings:
             require_auth=os.environ.get("AEDOS_REQUIRE_AUTH", "1") != "0",
             auth_mode=os.environ.get("AEDOS_AUTH_MODE", "key"),
             free_model=os.environ.get(
-                "AEDOS_FREE_MODEL", "deepseek/deepseek-chat-v3-0324:free"
+                "AEDOS_FREE_MODEL", "qwen/qwen3-next-80b-a3b-instruct:free"
             ),
             max_body_bytes=int(os.environ.get("AEDOS_MAX_BODY_BYTES", "32768")),
             max_message_chars=int(os.environ.get("AEDOS_MAX_MESSAGE_CHARS", "8000")),
